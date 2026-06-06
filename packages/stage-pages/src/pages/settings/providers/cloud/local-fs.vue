@@ -26,6 +26,7 @@ async function handleValidate() {
     const res = await syncStore.validatePath(fsBackupPath.value)
     if (res.success) {
       validationStatus.value = 'success'
+      syncStore.activeProvider = 'local-fs'
     }
     else {
       validationStatus.value = 'failed'
