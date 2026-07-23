@@ -2181,6 +2181,7 @@ Cyber companion әлеміңе шексіз мүмкіндіктер 🤖✨
 
 <a href="https://ipfs.orbitor.dev/ipfs/bafybeic2pxdpgdfc43bkvpbt3jtjushebfszp4yvjn3lwqb264hvogr5me">
   <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fvi70x3%2Fairi&label=%F0%9F%92%93%20my%20little%20clicks%20counter&countColor=%23263759&style=flat" alt=":3" />
+</a>
 <!--
 <a href="https://github.com/orgs/anlma/repositories">
   <img src="https://raw.githubusercontent.com/anlma/ios/refs/heads/main/docs/content/public/assets/corp-heatmap.svg" alt="Corp Heatmap">
