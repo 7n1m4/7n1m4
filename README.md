@@ -412,6 +412,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
   </p>
 </sub>
 <img width="1195" height="1316" alt="anima-logo-ko-v7 1" src="https://github.com/user-attachments/assets/21c2b883-8f67-4ed2-90dd-3eb170313c5a" />  
+</div>
 
 ## 🌙 비전
 
