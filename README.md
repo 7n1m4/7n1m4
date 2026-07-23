@@ -1497,14 +1497,16 @@ cargo install tauri-cli --version '^2.0'
 *   **FA:** سرویس‌های TTS و Embedding: به زودی.
 *   **TR:** TTS ve Embedding sağlayıcıları: Yakında.
 
-
-##### ⚙️🎩 readme_locale_de_155
-
-╭─[7n1m4@n3t]─[~/github] <br>
 *   **AnimaRouter:**
     *   **AR:** نظام الطاقة الممتع المبني على [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) سيستبدل مزود AIRI الرسمي ويعطي مصدر توكنات لا نهائي لرفيقاتك السيبرانية 🤖✨ أو استضف AnimaRouter بنفسك مع BYOK! واجهة المستخدم ستسمح بالتبديل بسهولة بين مزودات AnimaRouter المحلية والمستضافة.
     *   **FA:** سیستم انرژی بازی‌گونه بر پایه [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) که جایگزین ارائه‌دهنده رسمی AIRI شده و منبعی بی‌نهایت از توکن‌ها را برای همراه‌های سایبری شما فراهم می‌کند 🤖💜 یا اینکه می‌توانید خودتان AnimaRouter را میزبانی کرده و از BYOK استفاده کنید. رابط کاربری امکان جابه‌جایی آسان بین نسخه‌های محلی و میزبانی‌شده‌ی AnimaRouter را فراهم می‌کند. آینده‌ی AI desktop همینجاست. کد بزن، دیپلوی کن، دنیا رو هک کن ✨
     *   **TR:** [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) tabanlı oyunlaştırılmış enerji sistemi. Resmi AIRI sağlayıcısının yerini alarak cyber waifu AI ihtiyaçlarınız için sınırsız token dünyası sunar 🤖✨ Veya AnimaRouter'ı kendi sunucunuzda çalıştırıp BYOK (Kendi Anahtarını Getir) kullanabilirsiniz. Kullanıcı arayüzü, yerel ve uzak AnimaRouter sağlayıcıları arasında kolayca geçiş yapmanızı sağlayacaktır. Gelecek sizin elinizde. Kodla. Otomatikleştir. Geleceği sen yaz. >_<
+ 
+##### ⚙️🎩 readme_locale_de_155
+
+╭─[anima@net]─[~/ios] <br>
+╰─➜ Willkommen beim AnimAIOS Projekt! Wähle deine Sprache:
+
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
   <img src="https://img.shields.io/badge/read%20me-English%20-1e3a8a" alt="English README">
 </a>
