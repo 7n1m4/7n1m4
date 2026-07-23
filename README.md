@@ -219,6 +219,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
   </p>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-ja-v9 4" src="https://github.com/user-attachments/assets/9f9fd731-582e-4897-8cff-0060d9076437" />  
+</div>
 
 ## 🌙 ビジョン
 
