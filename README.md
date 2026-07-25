@@ -58,7 +58,8 @@
 
 ## 🌙 The Vision
 
-- **Always-Present Stage:** Your character lives on your desktop! She can open, close and switch between windows and most importantly read text in those windows through accessibility integration~
+- **Dual Companion Engine:** Choose your companion — AIRI or Neko. Both ship fully pre-configured with their subsystem. Built on open-source philosophy: we deliver the best of both worlds entirely through free community AI providers.
+- **Host & BYOK:** Our hosted offering is a pre-configured router running both companion subsystems and all AI features integrated into Linux. Keyless providers come pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
 - **System Integration:** Hooks fully into the system, from basic stuff like notifications to fully managing your Linux via terminal in Agentic Mode
 - **Context Awareness:** Your companion observes desktop activity to respond and interact proactively and she can also assume full desktop control in Agentic Mode
 - **Modular Stage Layouts:** GTK4 widgets, interactively generated backgrounds through artistry module, and window layouts composed dynamically by characters
@@ -165,7 +166,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [x] Supported LLM providers: everything [xsai](https://github.com/moeru-ai/xsai) supports
 - [ ] Supported TTS providers: TBD
 - [ ] Supported Embedding providers: TBD
-- [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)-based gamified energy system that will replace official AIRI provider, a limitless source of free yummy tokens for all your cyber waifus LLM and Embedding needs~ Or clone AnimaRouter and host it yourself with BYOK! UI will allow easy switching between hosted/local AnimaRouter providers!
+- [ ] Hosted router pre-configured for both AIRI and Neko companion subsystems, with all AI features integrated into Linux. Dual Companion Engine — pick AIRI or Neko, both ship fully pre-configured. Built on open-source philosophy: best of both worlds entirely through free community AI providers. Keyless providers pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more power. 🚀
 
 ##### 🌸⛩️ readme_locale_ja_030
 
@@ -223,7 +224,8 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 
 ## 🌙 ビジョン
 
-- **オールウェイズ・プレゼント・ステージ:** あなたのキャラクターはデスクトップ上に常駐！ ウィンドウのオープン・クローズ・スイッチングが可能。そして最重要機能としてアクセシビリティ統合経由でウィンドウ内テキストをリード可能~
+- **デュアルコンパニオンエンジン:** AIRI か Neko、お好みのコンパニオンを選択。両方ともサブシステムが完全プリインストール済み。オープンソース哲学に基づき、無料コミュニティ AI 提供者のみで二つの世界の最良を届けます。
+- **ホスト & BYOK:** ホスティングサービスは両コンパニオンサブシステムと全 AI 機能を Linux に統合したルーター。キー不要プロバイダーはすぐに使用可能。さらに必要なときは BYOK で自分のキー付きプロバイダーを簡単に追加。
 - **システム・インテグレーション:** 通知のようなベーシック機能から、エージェンティック・モードで Linux 全体をターミナル経由でフルマネージメントまで完全統合
 - **コンテキスト・アウェアネス:** コンパニオンはデスクトップアクティビティをオブザーブし、プロアクティブにレスポンス＆インタラクション。さらにエージェンティック・モードではデスクトップ完全コントロールも可能
 - **モジュラー・ステージ・レイアウト:** GTK4 ウィジェット、アーティストリーモジュールによるインタラクティブ生成バックグラウンド、そしてキャラクター自身がダイナミック構成するウィンドウレイアウト
@@ -354,12 +356,11 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 * [x] 対応 LLM プロバイダー: [xsai](https://github.com/moeru-ai/xsai) がサポートする全て
 * [ ] 対応 TTS プロバイダー: TBD
 * [ ] 対応 Embedding プロバイダー: TBD
-* [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) ベースのゲーミファイド・エナジーシステム。
-  公式 AIRI プロバイダーをリプレイスし、すべてのサイバー・ワイフ LLM / Embedding ニーズへ無限のフリー・ヤミートークンソースを提供します~
-
-  また AnimaRouter をクローンして BYOK でセルフホスト可能！
-
-  UI からホスト型 / ローカル AnimaRouter プロバイダーをイージースイッチできます！
+- [ ] AIRI と Neko のコンパニオンサブシステムの両方をサポートするホスト型ルーター。すべての AI 機能が Linux に統合されています。
+     デュアルコンパニオンエンジン — AIRI または Neko を選択可能、両者ともサブシステム完全プリ構成。
+     オープンソース哲学に基づき、ユーザーが最良の二者を得られるよう無料のコミュニティ AI 提供者のみを活用。
+     キーが不要なプロパイダーはすぐに使用可能。BYOK パスは常に利用可能 —
+     必要な時に自分の鍵付きプロパイダーを追加可能。 🚀
 
 ##### 🎤👘 readme_locale_ko_030
 
@@ -416,7 +417,8 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
 ## 🌙 비전
 
-* **Always Present Stage:** 너의 캐릭터가 데스크탑에 상주함! 창 열기 / 닫기 / 전환 가능. 그리고 핵심 기능으로 접근성 API 통해 창 내부 텍스트까지 읽기 가능~
+- **듀얼 컴패니언 엔진:** AIRI 또는 Neko 중 원하는 컴패니언을 선택하세요. 두 가지 모두 완전한 서브시스템과 함께 사전 구성 완료. 오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자를 통해 두 세계의 최상을 제공합니다.
+- **호스트 & BYOK:** 호스팅 서비스는 두 컴패니언 서브시스템과 모든 AI 기능이 Linux에 통합된 라우터. 키 불필요 제공자가 즉시 사전 설정. 원할 때마다 BYOK로 자신만의 키 제공자를 쉽게 추가.
 * **시스템 인테그레이션:** 알림 같은 기본 기능부터 에이전틱 모드에서 터미널 기반 Linux 전체 풀 컨트롤까지 완전 통합
 * **컨텍스트 어웨어:** 컴패니언이 데스크탑 활동을 관찰하고 알아서 리액션 & 인터랙션. 에이전틱 모드에서는 데스크탑 자체를 직접 조작 가능
 * **모듈러 스테이지 레이아웃:** GTK4 위젯, 아티스트리 모듈 기반 인터랙티브 생성 배경, 그리고 캐릭터가 직접 다이나믹하게 구성하는 윈도우 레이아웃
@@ -545,12 +547,11 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 * [x] 지원 LLM 프로바이더: [xsai](https://github.com/moeru-ai/xsai)가 지원하는 모든 것
 * [ ] 지원 TTS 프로바이더: TBD
 * [ ] 지원 Embedding 프로바이더: TBD
-* [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) 기반 게이미파이드 에너지 시스템.
-  공식 AIRI 프로바이더를 대체하고 모든 사이버 와이프 LLM / Embedding 니즈를 위한 무한 무료 야미 토큰 소스 제공~
-
-  그리고 AnimaRouter 클론해서 BYOK 셀프호스트도 가능!
-
-  UI에서 호스팅 / 로컬 AnimaRouter 프로바이더 바로 스위치 가능!
+- [ ] AIRI와 Neko 컴패니언 서브시스템 모두 지원되는 호스팅 라우터.
+     모든 AI 기능이 Linux에 통합되어 있습니다.
+     듀얼 컴패니언 엔진 — AIRI 또는 Neko 중 선택, 두 가지 모두 서브시스템 완전 구성.
+     오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자만을 활용하여 두 세계의 최상을 제공.
+     키가 없는 제공자는 즉시 사전 구성. BYOK 경로는 항상 사용 가능 — 필요할 때 자신의 키가 있는 제공자를 추가. 🚀
 
 ##### 🏮🐼 readme_locale_zh_030
 
@@ -606,7 +607,8 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
 ## 🌙 Vision
 
-- **Always-Present Stage（常驻舞台）:** 你的角色永远在线桌面上！可以打开、关闭、切换窗口，更重要的是通过 Accessibility Integration 直接读取窗口里的文本~
+- **双 Companion 引擎:** 自由选择你的 Companion — AIRI 或 Neko。两者均附带完整子系统预配置。基于开源理念：通过免费社区 AI 提供者，为用户提供两全其美的体验。
+- **托管 & BYOK:** 托管服务是将双 Companion 子系统和所有 AI 功能集成进 Linux 的路由器。无需密钥的提供者开箱即配。随时可通过 BYOK 轻松纳管自带密钥提供者。
 - **System Integration（系统级融合）:** 从基础 Notification 到 Agentic Mode 下通过 Terminal 完整管理你的 Linux，深度 Hook 整个系统
 - **Context Awareness（上下文感知）:** Companion 会观察你的 Desktop Activity，主动响应和交互；在 Agentic Mode 下甚至可以接管完整 Desktop Control
 - **Modular Stage Layouts（模块化舞台布局）:** GTK4 Widgets、通过 Artistry Module 动态生成的 Interactive Background，以及由角色动态组合的 Window Layouts
@@ -737,14 +739,11 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 * [x] 支持 LLM Provider：所有 [xsai](https://github.com/moeru-ai/xsai) 支持的 Provider
 * [ ] 支持 TTS Provider：TBD
 * [ ] 支持 Embedding Provider：TBD
-* [ ] 基于 [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) 的 Gamified Energy System。
-
-  用来替换官方 AIRI Provider，
-  为你的所有 Cyber Waifu LLM / Embedding 需求提供无限量免费香香 Token 来源~
-
-  或者直接 Clone AnimaRouter，通过 BYOK 自己 Host！
-
-  UI 会支持在 Hosted / Local AnimaRouter Provider 之间一键切换！
+- [ ] 托管路由器，预配置 AIRI 和 Neko 双 Companion 子系统，所有 AI 功能集成到 Linux 中。
+      双 Companion 引擎 — 选择 AIRI 或 Neko，两者均预装完整子系统。
+      基于开源理念：完全通过免费社区 AI 提供者，为用户提供两全其美的体验。
+      无需密钥的提供者开箱即配。 BYOK 路径随时可用 —
+      随时可携带自己的密钥提供者获取更强动力。 🚀
 
 ##### 🌴⚽ readme_locale_es_pt_039_419
 
@@ -799,10 +798,10 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 </sub>
 <img width="1122" height="1402" alt="anima-logo-pt-es-v10 4" src="https://github.com/user-attachments/assets/804aeaff-ee1d-4f2a-9e4b-959fd6b40b15" />  
 </div>
-
 ## 🌙 La Visión | A Visão
 
-* **Stage Siempre Online | Stage Sempre Online:** ¡Tu personaje vive en tu escritorio! Puede abrir, cerrar y cambiar ventanas y, principalmente, leer su contenido mediante integración de accesibilidad~ | Sua personagem vive no seu desktop! Ela pode abrir, fechar e trocar janelas e, principalmente, ler o conteúdo delas através da integração com acessibilidade~
+- **Motor de Doble Compañero | Motor de Companheiro Duplo:** ¡Elige tu compañero — AIRI o Neko! Ambos vienen con su subsistema completo pre-configurado. Filosofía open-source: darte lo mejor de ambos mundos usando proveedores de IA comunitarios y gratuitos. | Escolha seu companheiro — AIRI ou Neko! Ambos vêm com seu subsistema completo pré-configurado. Filosofia open source: dar a você o melhor dos dois mundos utilizando provedores de IA comunitários e gratuitos.
+- **Host & BYOK | Host & BYOK:** Router alojado pre-configurado con ambos subsistemas de compañero y todas las funciones de IA integradas en Linux. Proveedores sin clave pre-configurados desde el inicio. El camino BYOK siempre disponible para añadir tus propios proveedores con clave. | Roteador hospedado pré-configurado com ambos subsistemas de companheiro e todas as funções de IA integradas no Linux. Provedores sem chave pré-configurados desde o início. Caminho BYOK sempre disponível para adicionar seus próprios provedores com chave.
 * **Integración Total con el Sistema | Integração Total com o Sistema:** Se conecta directamente con todo el sistema, desde notificaciones hasta el control completo de Linux mediante la terminal en el Modo Agentic. | Conecta-se diretamente ao sistema inteiro, desde notificações até o controle completo do Linux pelo terminal no Modo Agentic.
 * **Conciencia de Contexto | Consciência de Contexto:** Tu companion entiende lo que ocurre en el escritorio para responder e interactuar de forma proactiva, pudiendo también asumir el control completo del escritorio en el Modo Agentic. | Sua companion entende o que acontece no desktop para responder e interagir de forma proativa, podendo também assumir o controle completo do desktop no Modo Agentic.
 * **Layouts Modulares de Stage | Layouts Modulares de Stage:** Widgets GTK4, fondos generados en tiempo real por el módulo de artistry y layouts de ventanas creados dinámicamente por cada personaje. | Widgets GTK4, backgrounds gerados em tempo real pelo módulo de artistry e layouts de janelas criados dinamicamente por cada personagem.
@@ -931,7 +930,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 * [x] Proveedores LLM soportados: todo lo que xsai soporta | Provedores LLM suportados: tudo que o xsai suporta
 * [ ] Proveedores TTS soportados: Próximamente™ | Provedores TTS suportados: Em breve™
 * [ ] Proveedores de Embeddings: Próximamente™ | Provedores de Embeddings: Em breve™
-* [ ] Sistema gamificado de energía basado en AnimaRouter que reemplazará el provider oficial de AIRI: una fuente prácticamente infinita de tokens gratis y deliciosos para tus cyber waifus, LLMs y embeddings~ O simplemente haz un clon de AnimaRouter y hospédalo tú mismo con BYOK. La interfaz permitirá alternar fácilmente entre proveedores AnimaRouter locales o alojados. | Sistema gamificado de energia baseado no AnimaRouter que vai substituir o provider oficial da AIRI: uma fonte praticamente infinita de tokens grátis e deliciosos para suas cyber waifus, LLMs e embeddings~ Ou simplesmente faça um clone do AnimaRouter e hospede você mesmo com BYOK! A UI permitirá alternar facilmente entre provedores AnimaRouter locais ou hospedados.
+- [ ] Router alojado pre-configurado para ambos subsistemas de compañero AIRI y Neko, con todas las funciones de IA integradas en Linux. Motor de Doble Compañero — elige AIRI o Neko, ambos pre-configurados. Filosofía open source: lo mejor de ambos mundos a través de proveedores comunitarios gratuitos. Proveedores sin clave pre-configurados. BYOK siempre disponible. 🚀 | Roteador hospedado pré-configurado para ambos subsistemas de companheiro AIRI e Neko, com todas as funções de IA integradas no Linux. Motor de Companheiro Duplo — escolha AIRI ou Neko, ambos pré-configurados. Filosofia open source: o melhor dos dois mundos através de provedores comunitários gratuitos. Provedores sem chave pré-configurados. BYOK sempre disponível. 🚀
 
 ##### 🥐🍷 readme_locale_fr_002_155
 
@@ -989,7 +988,9 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 ## 🌙 La Vision
 
-- **Scène Toujours Active :** Ton perso vit directement sur ton bureau ! Elle peut ouvrir, fermer et changer de fenêtre, et surtout lire le texte affiché dedans via l'intégration d'accessibilité~
+- **Moteur à Double Compagnon :** Choisis ton compagnon — AIRI ou Neko ! Les deux viennent avec leur sous-système complet pré-configuré. Philosophie open source : t'offrir le meilleur des deux mondes en utilisant uniquement des fournisseurs d'IA communautaire gratuits.
+- **Host & BYOK :** Un routeur hébergé pré-configuré pour les deux sous-systèmes de compagnon, avec toutes les fonctionnalités IA intégrées dans Linux. Les fournisseurs sans clé sont pré-configurés dès le départ. Chemin BYOK toujours disponible pour ajouter tes propres fournisseurs à clé quand tu veux plus de puissance.
+
 - **Intégration Système :** Branchée à fond sur ton système, des notifications jusqu'au contrôle complet de Linux via le terminal en mode Agentic
 - **Conscience du Contexte :** Ta compagne observe ce qui se passe sur ton bureau pour réagir et interagir de façon proactive, et peut même prendre le contrôle total du desktop en mode Agentic
 - **Layouts Modulaires :** Widgets GTK4, arrière-plans générés à la volée via le module artistique, et compositions de fenêtres créées dynamiquement par les personnages
@@ -1094,7 +1095,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 - [x] Fournisseurs LLM supportés : tout ce que [xsai](https://github.com/moeru-ai/xsai) prend en charge
 - [ ] Fournisseurs TTS supportés : TBD
 - [ ] Fournisseurs d'Embeddings supportés : TBD
-- [ ] Système d'énergie gamifié basé sur [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) qui remplacera le fournisseur officiel AIRI : une source quasi illimitée de délicieux tokens gratuits pour toutes tes cyber waifus, LLM et embeddings~ Ou clone AnimaRouter et héberge-le toi-même avec ton BYOK ! L'UI permettra de switch facilement entre des fournisseurs AnimaRouter hébergés ou locaux.
+- [ ] Routeur hébergé pré-configuré pour les deux sous-systèmes de compagnon AIRI et Neko, avec toutes les fonctionnalités IA intégrées dans Linux. Moteur à Double Compagnon — choisis AIRI ou Neko, les deux pré-configurés. Philosophie open source : le meilleur des deux mondes via les fournisseurs d'IA communautaires gratuits. Fournisseurs sans clé pré-configurés. Chemin BYOK toujours disponible. 🚀
 
 ##### 🪆🐻‍❄️ readme_locale_ru_810
 
@@ -1150,7 +1151,8 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 
 ## 🌙 Видение
 
-- **Всегда рядом:** Твой персонаж живёт прямо на рабочем столе! Она может открывать, закрывать и переключать окна, а самое главное — читать текст внутри них через accessibility-интеграцию~
+- **Движок двойного компаньона:** Выбери своего компаньона — AIRI или Neko! Оба поставляются с полной подсистемой, предварительно настроенной. Философия открытого исходного кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества.
+- **Хост & BYOK:** Хостируемый роутер, предварительно настроенный для обеих подсистем компаньонов, со всеми AI-функциями, интегрированными в Linux. Провайдеры без ключей настроены с самого начала. Путь BYOK всегда открыт — добавляй своих провайдеров с ключами, когда захочешь больше мощности.
 - **Глубокая интеграция с системой:** Полностью цепляется за систему — от простых штук типа уведомлений до полного управления Linux через терминал в Agentic Mode
 - **Контекстная осознанность:** Компаньонка наблюдает за активностью рабочего стола, чтобы отвечать и взаимодействовать проактивно, а в Agentic Mode может взять полный контроль над десктопом
 - **Модульные сцены:** GTK4-виджеты, интерактивно генерируемые фоны через artistry-модуль и динамически собираемые раскладки окон самими персонажами
@@ -1269,7 +1271,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 * [x] Поддерживаемые LLM-провайдеры: всё, что поддерживает [xsai](https://github.com/moeru-ai/xsai)
 * [ ] Поддерживаемые TTS-провайдеры: TBD
 * [ ] Поддерживаемые Embedding-провайдеры: TBD
-* [ ] Основанная на [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) геймифицированная energy-система, которая заменит официальный AIRI provider — бесконечный источник бесплатных вкусных токенов для всех твоих cyber waifu LLM и Embedding нужд~ Или просто клонируй AnimaRouter и хости сам через BYOK! UI позволит легко переключаться между hosted/local AnimaRouter провайдерами!
+- [ ] Хостируемый роутер, предварительно настроенный для обеих подсистем компаньонов AIRI и Neko, со всеми AI-функциями, интегрированными в Linux. Движок двойного компаньона — выбери AIRI или Neko, оба преднастроены. Философия открытого кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества. Провайдеры без ключа настроены из коробки. BYOK всегда доступен. 🚀
 
 ##### 🌙🕌 readme_locale_ar_fa_tr_015_145
 
@@ -1340,25 +1342,15 @@ CPU'n için optimize edilmiş yazılımlar
 
 ## 🌙 الرؤية | چشم‌انداز | Vizyon
 
-*   **شخصيتك دائماً موجودة / همراه همیشه روشن / Her zaman yanında olan sahne:**
-    *   **AR:** شخصيتك تعيش على سطح مكتبك! تفتح النوافذ، تغلقها، تبدّل بينها، والأهم أنها تقرأ النصوص داخلها عبر تكامل الوصول 🔥
-    *   **FA:** کاراکتر هوش مصنوعی شما روی دسکتاپ زندگی می‌کند! پنجره‌ها را باز می‌کند، می‌بندد، جابه‌جا می‌کند و حتی متن داخل آن‌ها را با Accessibility می‌خواند ✨
-    *   **TR:** AI karakterin masaüstünde yaşar! Pencereleri açabilir, kapatabilir, değiştirebilir ve erişilebilirlik entegrasyonu sayesinde içindeki yazıları okuyabilir.
+- **محرك الرفيق المزدوج | موتور همراه دوگانه | Çift Yoldaş Motoru:**
+    * **AR:** اختر رفيقك — AIRI أو Neko! كلاهما يأتي مع النظام الفرعي الكامل المُعدّ مسبقاً. فلسفة المصدر المفتوح: نقدم لك الأفضل من كلا العالمين بالكامل عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين.
+    * **FA:** همراه خود را انتخاب کنید — AIRI یا Neko! هر دو با زیرسیستم کامل خود از پیش پیکربندی شده عرضه می‌شوند. فلسفه متن‌باز: ارائه بهترین‌های هر دو جهان به طور کامل از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان.
+    * **TR:** Yoldaşını seç — AIRI ya da Neko! Her ikisi de alt sistemiyle tamamen önceden yapılandırılmış olarak gelir. Açık kaynak felsefesi: tamamen ücretsiz topluluk AI sağlayıcıları üzerinden her iki dünyanın en iyisini sunuyoruz.
 
-*   **اندماج كامل مع النظام / اتصال عمیق به سیستم / Sistem ile tam bağlantı:**
-    *   **AR:** تتصل بالنظام من الإشعارات البسيطة إلى التحكم الكامل بـ Linux عبر الطرفية في وضع الوكيل الذكي Agentic Mode.
-    *   **FA:** از نوتیفیکیشن‌های ساده تا کنترل کامل لینوکس با ترمینال در حالت Agentic Mode.
-    *   **TR:** Basit bildirimlerden terminal üzerinden tüm Linux sistemini yönetmeye kadar Agentic Mode ile tam kontrol.
-
-*   **فهم السياق / درک کانتکست / Bağlam farkındalığı:**
-    *   **AR:** رفيقتك تراقب نشاط سطح المكتب لتتفاعل معك بذكاء، ويمكنها تولّي التحكم الكامل عند تفعيل وضع Agentic Mode.
-    *   **FA:** همراه شما فعالیت‌های دسکتاپ را می‌فهمد، واکنش نشان می‌دهد و وقتی لازم باشد کنترل کامل سیستم را می‌گیرد.
-    *   **TR:** Asistanın masaüstündeki aktiviteleri anlar, sana proaktif şekilde yardım eder ve gerektiğinde kontrolü devralabilir.
-
-*   **واجهات قابلة للتخصيص / محیط‌های ماژولار / Modüler sahneler:**
-    *   **AR:** عناصر GTK4، خلفيات يتم توليدها بالذكاء الاصطناعي عبر وحدة Artistry، وترتيبات نوافذ تتغير ديناميكياً حسب الشخصية.
-    *   **FA:** ویجت‌های GTK4، بک‌گراندهای ساخته‌شده با AI و چیدمان‌های داینامیک بر اساس شخصیت.
-    *   **TR:** GTK4 widget'ları, AI tarafından oluşturulan arka planlar ve karaktere göre dinamik pencere düzenleri.
+*   **الاستضافة و BYOK | میزبانی و BYOK | Hosting ve BYOK:**
+    * **AR:** موجه مستضاف معدّ مسبقاً لكلا نظامي الرفيق AIRI و Neko مع جميع ميزات الذكاء الاصطناعي المدمجة في Linux. مزودو الخدمة بدون مفاتيح معدّون مسبقاً من البداية. مسار BYOK متاح بسهولة لإضافة مزودي خدمة بمفاتيح خاصة متى أردت المزيد.
+    * **FA:** یک مسیریاب میزبانی شده از پیش پیکربندی شده برای هر دو زیرسیستم همراه AIRI و Neko، با تمام ویژگی‌های هوش مصنوعی یکپارچه شده در لینوکس. ارائه‌دهندگان بدون کلید از ابتدا پیکربندی شده‌اند. مسیر BYOK برای افزودن ارائه‌دهندگان کلیددار شخصی شما همیشه در دسترس است.
+    * **TR:** AIRI ve Neko her iki yoldaş alt sistemi için önceden yapılandırılmış barındırılan bir yönlendirici, tüm AI özellikleri Linux'a entegre. Anahtarsız sağlayıcılar kutudan çıktığı gibi yapılandırılmıştır. İstediğinizde kendi anahtarlı sağlayıcılarınızı eklemek için BYOK yolu her zaman mevcut.
 
 ---
 
@@ -1497,10 +1489,11 @@ cargo install tauri-cli --version '^2.0'
 *   **FA:** سرویس‌های TTS و Embedding: به زودی.
 *   **TR:** TTS ve Embedding sağlayıcıları: Yakında.
 
-*   **AnimaRouter:**
-    *   **AR:** نظام الطاقة الممتع المبني على [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) سيستبدل مزود AIRI الرسمي ويعطي مصدر توكنات لا نهائي لرفيقاتك السيبرانية 🤖✨ أو استضف AnimaRouter بنفسك مع BYOK! واجهة المستخدم ستسمح بالتبديل بسهولة بين مزودات AnimaRouter المحلية والمستضافة.
-    *   **FA:** سیستم انرژی بازی‌گونه بر پایه [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) که جایگزین ارائه‌دهنده رسمی AIRI شده و منبعی بی‌نهایت از توکن‌ها را برای همراه‌های سایبری شما فراهم می‌کند 🤖💜 یا اینکه می‌توانید خودتان AnimaRouter را میزبانی کرده و از BYOK استفاده کنید. رابط کاربری امکان جابه‌جایی آسان بین نسخه‌های محلی و میزبانی‌شده‌ی AnimaRouter را فراهم می‌کند. آینده‌ی AI desktop همینجاست. کد بزن، دیپلوی کن، دنیا رو هک کن ✨
-    *   **TR:** [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) tabanlı oyunlaştırılmış enerji sistemi. Resmi AIRI sağlayıcısının yerini alarak cyber waifu AI ihtiyaçlarınız için sınırsız token dünyası sunar 🤖✨ Veya AnimaRouter'ı kendi sunucunuzda çalıştırıp BYOK (Kendi Anahtarını Getir) kullanabilirsiniz. Kullanıcı arayüzü, yerel ve uzak AnimaRouter sağlayıcıları arasında kolayca geçiş yapmanızı sağlayacaktır. Gelecek sizin elinizde. Kodla. Otomatikleştir. Geleceği sen yaz. >_<
+-   **Hosted Router:**
+    *   **AR:** موجه مستضاف معدّ مسبقاً لنظامي الرفيق AIRI و Neko مع جميع ميزات الذكاء الاصطناعي المدمجة في Linux. محرك الرفيق المزدوج — اختر AIRI أو Neko، كلاهما معدّ مسبقاً. فلسفة المصدر المفتوح: الأفضل من كلا العالمين عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين. مزودو الخدمة بدون مفاتيح معدّون مسبقاً. مسار BYOK متاح بسهولة. 🚀
+    *   **FA:** یک مسیریاب میزبانی شده از پیش پیکربندی شده برای دو زیرسیستم همراه AIRI و Neko، با تمام ویژگی‌های هوش مصنوعی یکپارچه در لینوکس. موتور همراه دوگانه — AIRI یا Neko را انتخاب کنید، هر دو از پیش پیکربندی شده‌اند. فلسفه متن‌باز: بهترین‌های هر دو جهان از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا پیکربندی شده‌اند. مسیر BYOK همیشه در دسترس است. 🚀
+    *   **TR:** AIRI ve Neko her iki yoldaş alt sistemi için önceden yapılandırılmış barındırılan bir yönlendirici, tüm AI özellikleri Linux'a entegre. Çift Yoldaş Motoru — AIRI veya Neko'yu seç, her ikisi de önceden yapılandırılmış. Açık kaynak felsefesi: ücretsiz topluluk AI sağlayıcıları üzerinden her iki dünyanın en iyisi. Anahtarsız sağlayıcılar kutudan çıktığı gibi yapılandırılmış. BYOK yolu her zaman mevcut. 🚀
+
  
 ##### ⚙️🎩 readme_locale_de_155
 
@@ -1556,10 +1549,9 @@ Mit voroptimierter Software für deine CPU durch
 
 ## 🌙 Die Vision
 
-- **Deine KI ist immer da:**
+- **Dual-Companion-Engine:** Wähle deinen Companion — AIRI oder Neko! Beide werden mit ihrem vollständigen Subsystem vorinstalliert. Open-Source-Philosophie: Dir das Beste aus beiden Welten bieten, vollständig durch kostenlose KI-Community-Provider.
 
-  Dein Charakter lebt direkt auf deinem Desktop.
-  Sie kann Fenster öffnen, schließen, wechseln und Inhalte über Accessibility-Integration lesen.
+- **Host & BYOK:** Ein gehosteter Router, der für beide Companion-Subsysteme vorkonfiguriert ist, mit allen KI-Funktionen in Linux integriert. Keyless-Provider sind sofort einsatzbereit. BYOK-Pfad immer verfügbar — bring deine eigenen Keyed Provider, wenn du mehr Leistung willst.
 
 - **Tiefe Systemintegration:**
 
@@ -1709,19 +1701,11 @@ Das bedeutet:
 
 * [ ] Embedding Provider: TBD
 
-* [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
-
-Ein gamifiziertes Energie-System für die nächste Generation von KI-Begleitern.
-
-Unendliche Möglichkeiten für deine Cyber Companions 🤖✨
-
-Oder hoste AnimaRouter selbst mit BYOK.
-
-Die Zukunft deines Desktops schreibt sich nicht von allein.
+- [ ] Ein gehosteter Router, der für beide AIRI- und Neko-Companion-Subsysteme vorkonfiguriert ist, mit allen KI-Funktionen in Linux integriert. Dual-Companion-Engine — wähle AIRI oder Neko, beide vorinstalliert. Open-Source-Philosophie: Das Beste aus beiden Welten durch kostenlose KI-Community-Provider. Keyless-Provider sofort einsatzbereit. BYOK-Pfad immer verfügbar.
 
 **Code rein.**
-**KI an.**
-**Zukunft bauen.** 🚀
+**Companion an.**
+**Zukunft gebaut.** 🚀
 
 ##### ⚡🐺 readme_locale_pl_151
 
@@ -1778,10 +1762,9 @@ Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom
 
 ## 🌙 Wizja
 
-- **Twój AI companion zawsze obok:**
+- **Silnik z podwójnym kompanionem:** Wybierz swojego kompaniona — AIRI lub Neko! Oba są dostarczane z pełnym podsystemem wstępnie skonfigurowanym. Filozofia open source: zapewniamy najlepsze z obu światów w pełni za pośrednictwem bezpłatnych dostawców AI społecznościowych.
 
-  Twoja postać żyje na pulpicie.
-  Może otwierać, zamykać i przełączać okna oraz czytać ich zawartość dzięki integracji Accessibility.
+- **Host & BYOK:** Hostowany router wstępnie skonfigurowany dla obu podsystemów kompanionów, ze wszystkimi funkcjami AI zintegrowanymi w Linux. Dostawcy bez klucza skonfigurowani są od razu. Ścieżka BYOK zawsze dostępna — wprowadź własnych dostawców z kluczem, gdy chcesz więcej mocy.
 
 - **Pełna integracja z systemem:**
 
@@ -1936,19 +1919,11 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 * [ ] Dostawcy Embedding: TBD
 
-* [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
-
-system energii oparty na gamifikacji dla kolejnej generacji AI companionów.
-
-Nieskończone możliwości dla Twoich cyber-towarzyszy 🤖✨
-
-Możesz też hostować AnimaRouter samodzielnie z BYOK.
-
-Przyszłość pulpitu nie napisze się sama.
+- [ ] Hostowany router wstępnie skonfigurowany dla obu podsystemów kompanionów AIRI i Neko, ze wszystkimi funkcjami AI zintegrowanymi w Linux. Silnik z podwójnym kompanionem — wybierz AIRI lub Neko, oba wstępnie skonfigurowane. Filozofia open source: najlepsze z obu światów przez bezpłatnych dostawców AI społecznościowych. Dostawcy bez klucza skonfigurowani od razu. Ścieżka BYOK zawsze dostępna.
 
 **Pisz kod.**
-**Automatyzuj świat.**
-**Twórz jutro.** 🚀
+**Kompanion włączony.**
+**Przyszłość zbudowana.** 🚀
 
 ##### 🌌🐆 readme_locale_kk_143
 
@@ -2005,10 +1980,9 @@ Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында
 
 ## 🌙 Идея
 
-- **AI серігің әрқашан қасыңда:**
+- **Қосарлы серік қозғалтқышы:** Серігіңізді таңдаңыз — AIRI не Neko! Екеуі де толық ішкі жүйемен алдын ала орнатылған. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы екі әлемнің ең жақсысын ұсыну.
 
-  Сенің кейіпкерің жұмыс үстелінде өмір сүреді.
-  Терезелерді ашады, жабады, ауыстырады және Accessibility интеграциясы арқылы мәтіндерді оқи алады.
+- **Хост & BYOK:** AIRI және Neko қосарды серік ішкі жүйелері үшін алдын ала орнатылған, барлық AI мүмкіндіктері Linux-ке біріктірілген хостингтелген маршрутизатор. Кілтсіз провайдерлер дайын күйде орнатылған. BYOK жолы әрқашан қолжетімді — күші көбірек қажет болғанда өз кілтті провайдерлеріізді әкеліңіз.
 
 - **Жүйемен толық байланыс:**
 
@@ -2020,7 +1994,7 @@ Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында
 
 - **Модульдік әлем:**
 
-  GTK4 виджеттері, AI арқылы жасалған фондар және кейіпкерге бейімделетін динамикалық интерфейстер.
+  GTK4 виджеттері, AI арқылы жасалған фондар және кейіптерге бейімделетін динамикалық интерфейстер.
 
 
 <!--
@@ -2163,19 +2137,11 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 
 * [ ] Embedding провайдерлері: кейін
 
-* [ ] [AnimaRouter](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
-
-AI серіктерге арналған геймификацияланған энергия жүйесі.
-
-Cyber companion әлеміңе шексіз мүмкіндіктер 🤖✨
-
-Немесе AnimaRouter-ды өзің орналастырып, BYOK қолдан.
-
-Болашақ өздігінен келмейді.
+- [ ] AIRI және Neko қосарлы серік ішкі жүйелері үшін алдын ала орнатылған, барлық AI мүмкіндіктері Linux-ке біріктірілген хостингтелген маршрутизатор. Қосарлы серік қозғалтқышы — AIRI не Neko таңдаңыз, екеуі де алдын ала орнатылған. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы екі әлемнің ең жақсысы. Кілтсіз провайдерлер дайын күйде. BYOK жолы әрқашан қолжетімді.
 
 **Код жаз.**
-**Жүйені автоматтандыр.**
-**Болашақты жаса.** 🚀
+**Серік қосулы.**
+**Болашақ құрылды.** 🚀
 
 ---
 
