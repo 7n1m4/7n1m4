@@ -50,7 +50,8 @@
     </p>
     <p>
         Comes with software pre-optimized for your CPU using 
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories.</h2>
+        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and 
+        <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</h2>
     </p>
 </sub>
 </div>
@@ -215,7 +216,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
     </p>
     <p>
         <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>
-        リポジトリによる CPU 最適化済みソフトウェアをプリインストール。
+        リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール。
     </h2>
   </p>
 </sub>
@@ -408,7 +409,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
     </p>
     <p>
         <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>
-        리포 기반 CPU 최적화 소프트웨어 기본 탑재.
+        リポと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재.
     </h2>
   </p>
 </sub>
@@ -597,8 +598,8 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
         基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimAIOS 发行版， 今秋登陆你的 Linux Desktop / Termux / CyberDeck / Wearable。
     </p>
     <p>
-        搭载通过 <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 
-        Repo 针对 CPU 深度优化的软件生态。
+        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 
+        Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态。
     </h2>
     </p>
 </sub>
@@ -792,7 +793,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
     </p>
     <p>
         Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
+        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.
     </h2>
     </p>
 </sub>
@@ -979,7 +980,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
     </p>
     <p>
         Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
+        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.
     </h2>
     </p>
 </sub>
