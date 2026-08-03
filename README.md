@@ -44,14 +44,8 @@
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
   <sub>
-    <p><h2>
-        AnimAIOS distro based on 
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, on your Linux Desktop / Termux / CyberDeck / Wearable, this fall.
-    </p>
-    <p>
-        Comes with software pre-optimized for your CPU using 
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and 
-        <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</h2>
+    <h2>AnimAIOS distro based on <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, on your Linux Desktop / Termux / CyberDeck / Wearable, this fall.</h2>
+    <p>Comes with software pre-optimized for your CPU using <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
     </p>
 </sub>
 </div>
@@ -210,15 +204,8 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 </a>
   <sub>
   <p>
-    <h2>
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>
-        ベースの AnimAIOS ディストリビューション。 この秋、あなたの Linux デスクトップ / Termux / サイバーデッキ / ウェアラブルへ。
-    </p>
-    <p>
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>
-        リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール。
-    </h2>
-  </p>
+    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> ベースの AnimAIOS ディストリビューション。 この秋、あなたの Linux デスクトップ / Termux / サイバーデッキ / ウェアラブルへ。</h2>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール。</p>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-ja-v9 4" src="https://github.com/user-attachments/assets/9f9fd731-582e-4897-8cff-0060d9076437" />  
 </div>
@@ -403,15 +390,8 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 </a>
   <sub>
   <p>
-    <h2>
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>
-        기반 AnimAIOS 디스트로. 이번 가을, 너의 Linux 데스크탑 / Termux / 사이버덱 / 웨어러블로 ㄱㄱ.
-    </p>
-    <p>
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>
-        リポと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재.
-    </h2>
-  </p>
+    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 기반 AnimAIOS 디스트로. 이번 가을, 너의 Linux 데스크탑 / Termux / 사이버덱 / 웨어러블로 ㄱㄱ.</h2>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 리포와 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재.</p>
 </sub>
 <img width="1195" height="1316" alt="anima-logo-ko-v7 1" src="https://github.com/user-attachments/assets/21c2b883-8f67-4ed2-90dd-3eb170313c5a" />  
 </div>
@@ -593,16 +573,8 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-  <sub>
-    <p><h2>
-        基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimAIOS 发行版， 今秋登陆你的 Linux Desktop / Termux / CyberDeck / Wearable。
-    </p>
-    <p>
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 
-        Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态。
-    </h2>
-    </p>
-</sub>
+    <h2>基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimAIOS 发行版， 今秋登陆你的 Linux Desktop / Termux / CyberDeck / Wearable。</h2>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态。</p>
 <img width="1218" height="1292" alt="anima-logo-zh-v9 2" src="https://github.com/user-attachments/assets/77ad419a-9d19-4e23-9af6-a6246b650305" />  
 </div>
 
@@ -787,16 +759,8 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 </a>
   <sub>
     <p>
-    <h2>
-        A distro AnimAIOS baseada no
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pro seu Desktop Linux / Termux / CyberDeck / Wearable, chegando neste outono.
-    </p>
-    <p>
-        Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.
-    </h2>
-    </p>
-</sub>
+    <h2>A distro AnimAIOS baseada no <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pro seu Desktop Linux / Termux / CyberDeck / Wearable, chegando neste outono.</h2>
+    <p>Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1122" height="1402" alt="anima-logo-pt-es-v10 4" src="https://github.com/user-attachments/assets/804aeaff-ee1d-4f2a-9e4b-959fd6b40b15" />  
 </div>
 ## 🌙 La Visión | A Visão
@@ -974,16 +938,8 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 </a>
   <sub>
     <p>
-    <h2>
-        Distribution AnimAIOS basée sur
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pour ton Desktop Linux / Termux / CyberDeck / Wearable, cet automne.
-    </p>
-    <p>
-        Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.
-    </h2>
-    </p>
-</sub>
+    <h2>Distribution AnimAIOS basée sur <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pour ton Desktop Linux / Termux / CyberDeck / Wearable, cet automne.</h2>
+    <p>Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1200" height="1311" alt="anima-logo-fr-v7 4" src="https://github.com/user-attachments/assets/85a8ea15-b959-4798-a15d-8e0c9122632c" />  
 </div>
 
