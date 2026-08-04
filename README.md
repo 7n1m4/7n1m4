@@ -1094,14 +1094,8 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
   <sub>
-    <p><h2>
-        Дистрибутив AnimAIOS на базе 
-        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / Termux / CyberDeck / Wearable уже этой осенью.
-    </p>
-    <p>
-        В комплекте софт, заранее затюненный под твой CPU через 
-        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозитории.</h2>
-    </p>
+    <h2>Дистрибутив AnimAIOS на базе <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / Termux / CyberDeck / Wearable уже этой осенью.</h2>
+    <p>В комплекте софт, заранее затюненный под твой CPU через <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозитории и <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, обеспечивая вирус-фри Arch опыт.</p>
 </sub>
 <img width="1205" height="1305" alt="anima-logo-ru-v11 1" src="https://github.com/user-attachments/assets/9d730026-1681-4b13-b356-34653d32560d" />
 </div>
@@ -1269,27 +1263,8 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-<sub>
-<h2>
-<b>AnimAIOS</b> مبنية على 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / Termux / CyberDeck / الأجهزة القابلة للارتداء، قريباً في عالمك.
-<br>
-توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، Termux، CyberDeck و دستگاه‌های پوشیدنی آینده.
-<br>
-<b>AnimAIOS</b>, 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi. Linux Desktop / Termux / CyberDeck / Wearable cihazlarında geleceğin AI yol arkadaşını yanında taşı.
-</h2>
-<h3>
-تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
-<br>
-با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
-<br>
-CPU'n için optimize edilmiş yazılımlar 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> depoları ile geliyor.
-</h3>
+    <h2><b>AnimAIOS</b> مبنية على <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / Termux / CyberDeck / الأجهزة القابلة للارتداء، قريباً في عالمك.<br>توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، Termux، CyberDeck و دستگاه‌های پوشیدنی آینده.<br><b>AnimAIOS</b>, <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi. Linux Desktop / Termux / CyberDeck / Wearable cihazlarında geleceğin AI yol arkadaşını yanında taşı.</h2>
+    <h3>تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، لتجربة Arch خالية من الفيروسات.<br>با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، برای تجربه‌ی Arch بدون ویروس.<br>CPU'n için optimize edilmiş yazılımlar <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> ve <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> depoları ile geliyor, virüsüz Arch deneyimi sunuyor.</h3>
 </sub>
 
 <img width="1254" height="1254" alt="anima-logo-ar-fa-tr-v2 1" src="https://github.com/user-attachments/assets/bae8d9ba-a9be-407d-8143-e5eb4859a885" />  
@@ -1490,16 +1465,8 @@ cargo install tauri-cli --version '^2.0'
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-<sub>
-<h2>
-<b>AnimAIOS</b> ist eine KI-native Distribution auf Basis von
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>.
-Dein persönlicher KI-Begleiter für Linux Desktop, Termux, CyberDecks und Wearables.
-</h2>
-<h3>
-Mit voroptimierter Software für deine CPU durch
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repositories.
-</h3>
+    <h2><b>AnimAIOS</b> ist eine KI-native Distribution auf Basis von <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Dein persönlicher KI-Begleiter für Linux Desktop, Termux, CyberDecks und Wearables.</h2>
+    <h3>Mit voroptimierter Software für deine CPU durch <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repositories und <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, für ein virenfreies Arch-Erlebnis.</h3>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-de-v5 4" src="https://github.com/user-attachments/assets/0bdbfbf5-4269-4e05-8a97-c1be29b4cfed" />
 </div>
@@ -1703,16 +1670,8 @@ Das bedeutet:
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-<sub>
-<h2>
-<b>AnimAIOS</b> — dystrybucja nowej generacji oparta na
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>.
-Twój osobisty towarzysz AI dla Linux Desktop, Termux, CyberDecków i urządzeń przyszłości.
-</h2>
-<h3>
-Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
-</h3>
+    <h2><b>AnimAIOS</b> — dystrybucja nowej generacji oparta na <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Twój osobisty towarzysz AI dla Linux Desktop, Termux, CyberDecków i urządzeń przyszłości.</h2>
+    <h3>Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> i <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, zapewniając doświadczenie Arch bez wirusów.</h3>
 </sub>
 <img width="1206" height="1305" alt="anima-logo-pl-v8 1" src="https://github.com/user-attachments/assets/81f62662-90fc-4818-9080-0f90a8f6d6ae" />
 </div>
@@ -1921,16 +1880,8 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-<sub>
-<h2>
-<b>AnimAIOS</b> — 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы.
-</h2>
-<h3>
-Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында
-өзіңнің AI серігіңді іске қос. CPU-ға арнайы оңтайландырылған бағдарламалар
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозиторийлерімен келеді.
-</h3>
+    <h2><b>AnimAIOS</b> — <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы.</h2>
+    <h3>Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында өзіңнің AI серігіңді іске қос. CPU-ға арнайы оңтайландырылған бағдарламалар <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозиторийлерімен және <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> арқылы келеді, вируссыз Arch тәжірибесін қамтамасыз етеді.</h3>
 </sub>
 <img width="1200" height="1311" alt="anima-logo-143-v5 2" src="https://github.com/user-attachments/assets/4e60c020-dbdb-4bac-b493-a8fee2a3a076" />
 </div>
