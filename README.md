@@ -7,7 +7,7 @@
 <!--TODO expand 151 region with sr and cz/sk locales --> 
 
 ##### 🗽🦅 readme_locale_en_021
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ Welcome to AnimAIOS Project! Please choose your language:
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -165,7 +165,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 
 ##### 🌸⛩️ readme_locale_ja_030
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ AnimAIOS プロジェクトへようこそ！言語を選択してください:
 
 <div align="center">
@@ -352,7 +352,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
 ##### 🎤👘 readme_locale_ko_030
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ AnimAIOS 프로젝트에 오신 걸 환영합니다! 언어를 선택해 주세요:
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -536,7 +536,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
 ##### 🏮🐼 readme_locale_zh_030
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ 欢迎来到 AnimAIOS 项目！先选个语言开冲：
 
 <div align="center">
@@ -720,7 +720,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 
 ##### 🌴⚽ readme_locale_es_pt_039_419
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ Bem-vindo ao projeto AnimAIOS! Escolha seu idioma:
 
 <div align=center>
@@ -899,7 +899,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 ##### 🥐🍷 readme_locale_fr_155
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ Bienvenue sur le projet AnimAIOS ! Choisissez votre langue :
 
 <div align=center>
@@ -1056,7 +1056,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 
 ##### 🪆🐻‍❄️ readme_locale_ru_810
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ Добро пожаловать в проект AnimAIOS! Выберите язык:
 
 <div align=center>
@@ -1226,7 +1226,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 
 ##### 🌙🕌 readme_locale_ar_fa_145
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ أهلاً بك في مشروع AnimAIOS! اختر لغتك:
 
 <div align="center">
@@ -1633,7 +1633,7 @@ Das bedeutet:
 
 ##### ⚡🐺 readme_locale_pl_151
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ Witaj w projekcie AnimAIOS! Wybierz swój język:
 
 <div align="center">
@@ -1843,7 +1843,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 ##### 🌌🐆 readme_locale_kk_143
 
-╭─[7n1m4@n3t]─[~/github] <br>
+╭─[7n1m4@n3t]─[~/g1t] <br>
 ╰─➜ AnimAIOS жобасына қош келдің! Тіліңді таңда:
 
 <div align="center">
