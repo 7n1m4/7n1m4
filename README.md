@@ -22,16 +22,16 @@
 <a href="https://github.com/7n1m4#-readme_locale_zh_030">
   <img src="https://img.shields.io/badge/读我-中文%20-dc2626" alt="Chinese README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
+<a href="https://github.com/7n1m4#-readme_locale_es_pt_005">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -184,13 +184,13 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -370,13 +370,13 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -555,13 +555,13 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -739,13 +739,13 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -897,7 +897,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 * [ ] Proveedores de Embeddings: Próximamente™ | Provedores de Embeddings: Em breve™
 - [ ] Router autoalojado pre-configurado para ambos subsistemas de compañero AIRI y Neko, con todas las funciones de IA integradas en Linux. Motor de Doble Compañero — elige AIRI o Neko, ambos pre-configurados. Filosofía open source: lo mejor de ambos mundos a través de proveedores comunitarios gratuitos. Proveedores sin clave pre-configurados. BYOK siempre disponible. 🚀 | Roteador auto-hospedado pré-configurado para ambos subsistemas de companheiro AIRI e Neko, com todas as funções de IA integradas no Linux. Motor de Companheiro Duplo — escolha AIRI ou Neko, ambos pré-configurados. Filosofia open source: o melhor dos dois mundos através de provedores comunitários gratuitos. Provedores sem chave pré-configurados. BYOK sempre disponível. 🚀
 
-##### 🥐🍷 readme_locale_fr_002_155
+##### 🥐🍷 readme_locale_fr_155
 
 ╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Bienvenue sur le projet AnimAIOS ! Choisissez votre langue :
@@ -918,13 +918,13 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1075,13 +1075,13 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1224,7 +1224,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 * [ ] Поддерживаемые Embedding-провайдеры: TBD
 - [ ] Маршрутизатор для самостоятельного размещения, предварительно настроенный для обеих подсистем компаньонов AIRI и Neko, со всеми AI-функциями, интегрированными в Linux. Движок двойного компаньона — выбери AIRI или Neko, оба преднастроены. Философия открытого кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества. Провайдеры без ключа настроены из коробки. BYOK всегда доступен. 🚀
 
-##### 🌙🕌 readme_locale_ar_fa_tr_015_145
+##### 🌙🕌 readme_locale_ar_fa_145
 
 ╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ أهلاً بك في مشروع AnimAIOS! اختر لغتك:
@@ -1245,13 +1245,13 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1447,13 +1447,13 @@ cargo install tauri-cli --version '^2.0'
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1652,13 +1652,13 @@ Das bedeutet:
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1862,13 +1862,13 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
