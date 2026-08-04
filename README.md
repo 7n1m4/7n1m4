@@ -1270,26 +1270,12 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
 <sub>
-<h2>
-<b>AnimAIOS</b> مبنية على 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / Termux / CyberDeck / الأجهزة القابلة للارتداء، قريباً في عالمك.
-<br>
-توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، Termux، CyberDeck و دستگاه‌های پوشیدنی آینده.
-<br>
-<b>AnimAIOS</b>, 
-<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi. Linux Desktop / Termux / CyberDeck / Wearable cihazlarında geleceğin AI yol arkadaşını yanında taşı.
-</h2>
-<h3>
-تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
-<br>
-با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
-<br>
-CPU'n için optimize edilmiş yazılımlar 
-<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> depoları ile geliyor.
-</h3>
+    <h2><b>AnimAIOS</b> مبنية على <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / Termux / CyberDeck / الأجهزة القابلة للارتداء.</h2>
+    <h2>توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، Termux، CyberDeck و دستگاه‌های پوشیدنی.</h2>
+    <h2><b>AnimAIOS</b>, <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi.</h2>
+    <p>تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، لتجربة Arch خالية من الفيروسات.</p>
+    <p>با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، برای تجربه‌ی Arch بدون ویروس.</p>
+    <p>CPU'n için optimize edilmiş yazılımlar <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> ve <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> depoları ile geliyor, virüsüz Arch deneyimi sunuyor.</p>
 </sub>
 
 <img width="1254" height="1254" alt="anima-logo-ar-fa-tr-v2 1" src="https://github.com/user-attachments/assets/bae8d9ba-a9be-407d-8143-e5eb4859a885" />  
