@@ -7,7 +7,7 @@
 <!--TODO expand 151 region with sr and cz/sk locales --> 
 
 ##### 🗽🦅 readme_locale_en_021
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Welcome to AnimAIOS Project! Please choose your language:
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -22,16 +22,16 @@
 <a href="https://github.com/7n1m4#-readme_locale_zh_030">
   <img src="https://img.shields.io/badge/读我-中文%20-dc2626" alt="Chinese README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_es_pt_005">
+<a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -45,7 +45,7 @@
 </a>
   <sub>
     <h2>AnimAIOS distro based on <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, on your Linux Desktop / Termux / CyberDeck / Wearable, this fall.</h2>
-    <p>Comes with software pre-optimized for your CPU using <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, providing a virus-free Arch experience.</p>
+    <p>Comes with software pre-optimized for your CPU using <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
     </p>
 </sub>
 </div>
@@ -165,7 +165,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 
 ##### 🌸⛩️ readme_locale_ja_030
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ AnimAIOS プロジェクトへようこそ！言語を選択してください:
 
 <div align="center">
@@ -184,13 +184,13 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -205,7 +205,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
   <sub>
   <p>
     <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> ベースの AnimAIOS ディストリビューション。 この秋、あなたの Linux デスクトップ / Termux / サイバーデッキ / ウェアラブルへ。</h2>
-    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール（ウイルスフリーな Arch 体験を提供）。</p>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール。</p>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-ja-v9 4" src="https://github.com/user-attachments/assets/9f9fd731-582e-4897-8cff-0060d9076437" />  
 </div>
@@ -352,7 +352,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
 ##### 🎤👘 readme_locale_ko_030
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ AnimAIOS 프로젝트에 오신 걸 환영합니다! 언어를 선택해 주세요:
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -370,13 +370,13 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -391,7 +391,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
   <sub>
   <p>
     <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 기반 AnimAIOS 디스트로. 이번 가을, 너의 Linux 데스크탑 / Termux / 사이버덱 / 웨어러블로 ㄱㄱ.</h2>
-    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 리포와 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재 (바이러스 없는 Arch 경험 제공).</p>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 리포와 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재.</p>
 </sub>
 <img width="1195" height="1316" alt="anima-logo-ko-v7 1" src="https://github.com/user-attachments/assets/21c2b883-8f67-4ed2-90dd-3eb170313c5a" />  
 </div>
@@ -536,7 +536,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
 ##### 🏮🐼 readme_locale_zh_030
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ 欢迎来到 AnimAIOS 项目！先选个语言开冲：
 
 <div align="center">
@@ -555,13 +555,13 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -574,7 +574,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
     <h2>基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimAIOS 发行版， 今秋登陆你的 Linux Desktop / Termux / CyberDeck / Wearable。</h2>
-    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态（提供无病毒的 Arch 体验）。</p>
+    <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态。</p>
 <img width="1218" height="1292" alt="anima-logo-zh-v9 2" src="https://github.com/user-attachments/assets/77ad419a-9d19-4e23-9af6-a6246b650305" />  
 </div>
 
@@ -720,7 +720,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 
 ##### 🌴⚽ readme_locale_es_pt_039_419
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Bem-vindo ao projeto AnimAIOS! Escolha seu idioma:
 
 <div align=center>
@@ -739,13 +739,13 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -760,7 +760,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
   <sub>
     <p>
     <h2>A distro AnimAIOS baseada no <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pro seu Desktop Linux / Termux / CyberDeck / Wearable, chegando neste outono.</h2>
-    <p>Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, proporcionando uma experiência Arch livre de vírus.</p>
+    <p>Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1122" height="1402" alt="anima-logo-pt-es-v10 4" src="https://github.com/user-attachments/assets/804aeaff-ee1d-4f2a-9e4b-959fd6b40b15" />  
 </div>
 ## 🌙 La Visión | A Visão
@@ -897,9 +897,9 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 * [ ] Proveedores de Embeddings: Próximamente™ | Provedores de Embeddings: Em breve™
 - [ ] Router autoalojado pre-configurado para ambos subsistemas de compañero AIRI y Neko, con todas las funciones de IA integradas en Linux. Motor de Doble Compañero — elige AIRI o Neko, ambos pre-configurados. Filosofía open source: lo mejor de ambos mundos a través de proveedores comunitarios gratuitos. Proveedores sin clave pre-configurados. BYOK siempre disponible. 🚀 | Roteador auto-hospedado pré-configurado para ambos subsistemas de companheiro AIRI e Neko, com todas as funções de IA integradas no Linux. Motor de Companheiro Duplo — escolha AIRI ou Neko, ambos pré-configurados. Filosofia open source: o melhor dos dois mundos através de provedores comunitários gratuitos. Provedores sem chave pré-configurados. BYOK sempre disponível. 🚀
 
-##### 🥐🍷 readme_locale_fr_155
+##### 🥐🍷 readme_locale_fr_002_155
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Bienvenue sur le projet AnimAIOS ! Choisissez votre langue :
 
 <div align=center>
@@ -918,13 +918,13 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -939,7 +939,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
   <sub>
     <p>
     <h2>Distribution AnimAIOS basée sur <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pour ton Desktop Linux / Termux / CyberDeck / Wearable, cet automne.</h2>
-    <p>Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, pour une expérience Arch sans virus.</p>
+    <p>Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1200" height="1311" alt="anima-logo-fr-v7 4" src="https://github.com/user-attachments/assets/85a8ea15-b959-4798-a15d-8e0c9122632c" />  
 </div>
 
@@ -1056,7 +1056,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 
 ##### 🪆🐻‍❄️ readme_locale_ru_810
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Добро пожаловать в проект AnimAIOS! Выберите язык:
 
 <div align=center>
@@ -1075,13 +1075,13 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1094,8 +1094,14 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
   <sub>
-    <h2>Дистрибутив AnimAIOS на базе <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / Termux / CyberDeck / Wearable уже этой осенью.</h2>
-    <p>В комплекте софт, заранее затюненный под твой CPU через <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозитории и <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, обеспечивая вирус-фри Arch опыт.</p>
+    <p><h2>
+        Дистрибутив AnimAIOS на базе 
+        <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / Termux / CyberDeck / Wearable уже этой осенью.
+    </p>
+    <p>
+        В комплекте софт, заранее затюненный под твой CPU через 
+        <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозитории.</h2>
+    </p>
 </sub>
 <img width="1205" height="1305" alt="anima-logo-ru-v11 1" src="https://github.com/user-attachments/assets/9d730026-1681-4b13-b356-34653d32560d" />
 </div>
@@ -1224,9 +1230,9 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 * [ ] Поддерживаемые Embedding-провайдеры: TBD
 - [ ] Маршрутизатор для самостоятельного размещения, предварительно настроенный для обеих подсистем компаньонов AIRI и Neko, со всеми AI-функциями, интегрированными в Linux. Движок двойного компаньона — выбери AIRI или Neko, оба преднастроены. Философия открытого кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества. Провайдеры без ключа настроены из коробки. BYOK всегда доступен. 🚀
 
-##### 🌙🕌 readme_locale_ar_fa_145
+##### 🌙🕌 readme_locale_ar_fa_tr_015_145
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ أهلاً بك في مشروع AnimAIOS! اختر لغتك:
 
 <div align="center">
@@ -1245,13 +1251,13 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="README en Português / Español">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="README en Français">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="README بالعربية">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1263,8 +1269,27 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-    <h2><b>AnimAIOS</b>: AI-native distro based on <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, for Linux Desktop / Termux / CyberDeck / Wearable.</h2>
-    <h3>Pre-optimized software using <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> and <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, providing a virus-free Arch experience.</h3>
+<sub>
+<h2>
+<b>AnimAIOS</b> مبنية على 
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / Termux / CyberDeck / الأجهزة القابلة للارتداء، قريباً في عالمك.
+<br>
+توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی 
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، Termux، CyberDeck و دستگاه‌های پوشیدنی آینده.
+<br>
+<b>AnimAIOS</b>, 
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi. Linux Desktop / Termux / CyberDeck / Wearable cihazlarında geleceğin AI yol arkadaşını yanında taşı.
+</h2>
+<h3>
+تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات 
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
+<br>
+با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن 
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
+<br>
+CPU'n için optimize edilmiş yazılımlar 
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> depoları ile geliyor.
+</h3>
 </sub>
 
 <img width="1254" height="1254" alt="anima-logo-ar-fa-tr-v2 1" src="https://github.com/user-attachments/assets/bae8d9ba-a9be-407d-8143-e5eb4859a885" />  
@@ -1447,13 +1472,13 @@ cargo install tauri-cli --version '^2.0'
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1465,8 +1490,16 @@ cargo install tauri-cli --version '^2.0'
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-    <h2><b>AnimAIOS</b> ist eine KI-native Distribution auf Basis von <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Dein persönlicher KI-Begleiter für Linux Desktop, Termux, CyberDecks und Wearables.</h2>
-    <h3>Mit voroptimierter Software für deine CPU durch <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repositories und <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, für ein virenfreies Arch-Erlebnis.</h3>
+<sub>
+<h2>
+<b>AnimAIOS</b> ist eine KI-native Distribution auf Basis von
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>.
+Dein persönlicher KI-Begleiter für Linux Desktop, Termux, CyberDecks und Wearables.
+</h2>
+<h3>
+Mit voroptimierter Software für deine CPU durch
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repositories.
+</h3>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-de-v5 4" src="https://github.com/user-attachments/assets/0bdbfbf5-4269-4e05-8a97-c1be29b4cfed" />
 </div>
@@ -1633,7 +1666,7 @@ Das bedeutet:
 
 ##### ⚡🐺 readme_locale_pl_151
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Witaj w projekcie AnimAIOS! Wybierz swój język:
 
 <div align="center">
@@ -1652,13 +1685,13 @@ Das bedeutet:
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1670,8 +1703,16 @@ Das bedeutet:
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-    <h2><b>AnimAIOS</b> — dystrybucja nowej generacji oparta na <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Twój osobisty towarzysz AI dla Linux Desktop, Termux, CyberDecków i urządzeń przyszłości.</h2>
-    <h3>Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> i <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, zapewniając doświadczenie Arch bez wirusów.</h3>
+<sub>
+<h2>
+<b>AnimAIOS</b> — dystrybucja nowej generacji oparta na
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>.
+Twój osobisty towarzysz AI dla Linux Desktop, Termux, CyberDecków i urządzeń przyszłości.
+</h2>
+<h3>
+Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a>.
+</h3>
 </sub>
 <img width="1206" height="1305" alt="anima-logo-pl-v8 1" src="https://github.com/user-attachments/assets/81f62662-90fc-4818-9080-0f90a8f6d6ae" />
 </div>
@@ -1843,7 +1884,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 ##### 🌌🐆 readme_locale_kk_143
 
-╭─[7n1m4@n3t]─[~/g1t] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ AnimAIOS жобасына қош келдің! Тіліңді таңда:
 
 <div align="center">
@@ -1862,13 +1903,13 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 <a href="https://github.com/7n1m4#-readme_locale_es_pt_039_419">
   <img src="https://img.shields.io/badge/leia%20me-Español%20%2F%20Português%20-16a34a" alt="Português README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_fr_155">
+<a href="https://github.com/7n1m4#-readme_locale_fr_002_155">
   <img src="https://img.shields.io/badge/lisez%20moi-Français%20-B59410" alt="Français README">
 </a>
 <a href="https://github.com/7n1m4#%E2%80%8D%EF%B8%8F-readme_locale_ru_810">
   <img src="https://img.shields.io/badge/прочитай%20меня-Русский%20-71706E" alt="Русский README">
 </a>
-<a href="https://github.com/7n1m4#-readme_locale_ar_fa_145">
+<a href="https://github.com/7n1m4#-readme_locale_ar_fa_tr_015_145">
   <img src="https://img.shields.io/badge/%D8%A7%D9%82%D8%B1%D8%A3%D9%86%D9%8A%20%2F%20%D8%A8%D8%AE%D9%88%D9%86%D8%B4%20%2F%20Oku%20Beni-%D8%A7%D9%84%D8%B9%D8%B1%D8%A8%D9%8A%D8%A9%20%2F%20%D9%81%D8%A7%D8%B1%D8%B3%DB%8C%20%2F%20T%C3%BCrk%C3%A7e-8b5cf6" alt="Arabic README">
 </a>
 <a href="https://github.com/7n1m4#%EF%B8%8F-readme_locale_de_155">
@@ -1880,8 +1921,16 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-    <h2><b>AnimAIOS</b> — <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы.</h2>
-    <h3>Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында өзіңнің AI серігіңді іске қос. CPU-ға арнайы оңтайландырылған бағдарламалар <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> және <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> арқылы келеді, вируссыз Arch тәжірибесін қамтамасыз етеді.</h3>
+<sub>
+<h2>
+<b>AnimAIOS</b> — 
+<a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы.
+</h2>
+<h3>
+Linux Desktop / Termux / CyberDeck / Wearable құрылғыларында
+өзіңнің AI серігіңді іске қос. CPU-ға арнайы оңтайландырылған бағдарламалар
+<a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозиторийлерімен келеді.
+</h3>
 </sub>
 <img width="1200" height="1311" alt="anima-logo-143-v5 2" src="https://github.com/user-attachments/assets/4e60c020-dbdb-4bac-b493-a8fee2a3a076" />
 </div>
