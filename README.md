@@ -1,3 +1,6 @@
+<a href="https://github.com/7n1m4#readme_codebase">
+  <img src="https://img.shields.io/badge/skip%to%20code-1e3a8a" alt="skip to code">
+</a>
 <img width="1122" height="1402" alt="anima-banner-v7" src="https://github.com/user-attachments/assets/0a518f8b-7f16-4976-b82b-ee6600b52545" />
 
 <!--TODO add 034 region locales -->
@@ -1588,6 +1591,7 @@ Das bedeutet:
 <a href="https://discord.gg/TgQ3Cu2F7A">
 <img src="https://img.shields.io/badge/Discord-Community%20beitreten-5865F2">
 </a>
+
 ## 🚙 Roadmap
 
 * [x] **Gehirn 🧠**
@@ -2075,3 +2079,4 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 <img width="1383" height="1137" alt="she never asked for this v2" src="https://github.com/user-attachments/assets/77a915c5-646c-4628-997a-3b4a1d7c11db" />
 <img width="1387" height="1134" alt="she never asked for this v1" src="https://github.com/user-attachments/assets/9e33a8ed-9999-418b-b15c-bf47767dff4e" />
 
+##### readme_codebase
