@@ -56,12 +56,11 @@
 
 ## 🌙 The Vision
 
-- **Dual Companion Engine:** Choose your companion — AIRI or Neko. Both ship fully pre-configured with their subsystem. Built on open-source philosophy: we deliver the best of both worlds entirely through free community AI providers.
-- **Self-Hosted & BYOK:** Our self-hosted router comes pre-configured for both companion subsystems and all AI features integrated into Linux. Keyless providers come pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
+- **AIRI Companion Engine:** Your companion — AIRI. Ships fully pre-configured with her subsystem. Built on open-source philosophy: we deliver the best experience entirely through free community AI providers.
+- **Self-Hosted & BYOK:** Our self-hosted router comes pre-configured for AIRI companion subsystem and all AI features integrated into Linux. Keyless providers come pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
 - **System Integration:** Hooks fully into the system, from basic stuff like notifications to fully managing your Linux via terminal in Agentic Mode
 - **Context Awareness:** Your companion observes desktop activity to respond and interact proactively and she can also assume full desktop control in Agentic Mode
 - **Modular Stage Layouts:** GTK4 widgets, interactively generated backgrounds through artistry module, and window layouts composed dynamically by characters
-
 <!--
 ## 🖥️ Development
 
@@ -164,7 +163,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [x] Supported LLM providers: everything [xsai](https://github.com/moeru-ai/xsai) supports
 - [ ] Supported TTS providers: TBD
 - [ ] Supported Embedding providers: TBD
-- [ ] Self-hosted router pre-configured for both AIRI and Neko companion subsystems, with all AI features integrated into Linux. Dual Companion Engine — pick AIRI or Neko, both ship fully pre-configured. Built on open-source philosophy: best of both worlds entirely through free community AI providers. Keyless providers pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more power. 🚀
+- [ ] Self-hosted router pre-configured for AIRI companion subsystem, with all AI features integrated into Linux. AIRI Companion Engine — AIRI ships fully pre-configured. Built on open-source philosophy: best experience entirely through free community AI providers. Keyless providers pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more power. 🚀
 
 ##### 🌸⛩️ readme_locale_ja_030
 
@@ -215,12 +214,11 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 
 ## 🌙 ビジョン
 
-- **デュアルコンパニオンエンジン:** AIRI か Neko、お好みのコンパニオンを選択。両方ともサブシステムが完全プリインストール済み。オープンソース哲学に基づき、無料コミュニティ AI 提供者のみで二つの世界の最良を届けます。
-- **セルフホスト & BYOK:** セルフホスト版ルーターは両コンパニオンサブシステムと全 AI 機能を Linux に統合。キー不要プロバイダーはすぐに使用可能。さらに必要なときは BYOK で自分のキー付きプロバイダーを簡単に追加。
+- **AIRI コンパニオンエンジン:** あなたのコンパニオン — AIRI。サブシステムが完全プリインストール済み。オープンソース哲学に基づき、無料コミュニティ AI 提供者のみで最高の体験を届けます。
+- **ダイナミック フォールバック システム:** AIRI に直接組み込まれた動的フォールバック機能により、複数の無料 AI プロバイダー間をシームレスに切り替え。キー不要プロバイダーはすぐに使用可能。BYOK で自分のキー付きプロバイダーも簡単に追加。
 - **システム・インテグレーション:** 通知のようなベーシック機能から、エージェンティック・モードで Linux 全体をターミナル経由でフルマネージメントまで完全統合
 - **コンテキスト・アウェアネス:** コンパニオンはデスクトップアクティビティをオブザーブし、プロアクティブにレスポンス＆インタラクション。さらにエージェンティック・モードではデスクトップ完全コントロールも可能
 - **モジュラー・ステージ・レイアウト:** GTK4 ウィジェット、アーティストリーモジュールによるインタラクティブ生成バックグラウンド、そしてキャラクター自身がダイナミック構成するウィンドウレイアウト
-
 <!--
 ## 🖥️ デベロップメント
 
@@ -347,11 +345,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 * [x] 対応 LLM プロバイダー: [xsai](https://github.com/moeru-ai/xsai) がサポートする全て
 * [ ] 対応 TTS プロバイダー: TBD
 * [ ] 対応 Embedding プロバイダー: TBD
-* [ ] AIRI と Neko のコンパニオンサブシステムの両方をサポートするセルフホスト版ルーター。すべての AI 機能が Linux に統合されています。
-     デュアルコンパニオンエンジン — AIRI または Neko を選択可能、両者ともサブシステム完全プリ構成。
-     オープンソース哲学に基づき、ユーザーが最良の二者を得られるよう無料のコミュニティ AI 提供者のみを活用。
-     キーが不要なプロパイダーはすぐに使用可能。BYOK パスは常に利用可能 —
-     必要な時に自分の鍵付きプロパイダーを追加可能。 🚀
+* [ ] AIRI に組み込まれたダイナミック フォールバック システム。複数の無料 AI プロバイダー間をシームレスに切り替え。オープンソース哲学に基づき、無料コミュニティ AI 提供者のみを活用。キーが不要なプロバイダーはすぐに使用可能。BYOK パスは常に利用可能 — 必要な時に自分の鍵付きプロバイダーを追加可能。 🚀
 
 ##### 🎤👘 readme_locale_ko_030
 
@@ -401,12 +395,11 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
 ## 🌙 비전
 
-- **듀얼 컴패니언 엔진:** AIRI 또는 Neko 중 원하는 컴패니언을 선택하세요. 두 가지 모두 완전한 서브시스템과 함께 사전 구성 완료. 오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자를 통해 두 세계의 최상을 제공합니다.
-- **셀프 호스트 & BYOK:** 셀프 호스팅 라우터는 두 컴패니언 서브시스템과 모든 AI 기능이 Linux에 통합된 라우터. 키 불필요 제공자가 즉시 사전 설정. 원할 때마다 BYOK로 자신만의 키 제공자를 쉽게 추가.
-* **시스템 인테그레이션:** 알림 같은 기본 기능부터 에이전틱 모드에서 터미널 기반 Linux 전체 풀 컨트롤까지 완전 통합
-* **컨텍스트 어웨어:** 컴패니언이 데스크탑 활동을 관찰하고 알아서 리액션 & 인터랙션. 에이전틱 모드에서는 데스크탑 자체를 직접 조작 가능
-* **모듈러 스테이지 레이아웃:** GTK4 위젯, 아티스트리 모듈 기반 인터랙티브 생성 배경, 그리고 캐릭터가 직접 다이나믹하게 구성하는 윈도우 레이아웃
-
+- **AIRI 컴패니언 엔진:** AIRI. 완전한 서브시스템과 함께 사전 구성 완료. 오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자를 통해 최고의 경험을 제공합니다.
+- **다이내믹 폴백 시스템:** AIRI에 직접 내장된 다이내믹 폴백 기능으로 여러 무료 AI 프로바이더 간 원활한 전환. 키 불필요 프로바이더 즉시 사용 가능. BYOK로 자신만의 키 프로바이더도 쉽게 추가.
+- **시스템 인테그레이션:** 알림 같은 기본 기능부터 에이전틱 모드에서 터미널 기반 Linux 전체 풀 컨트롤까지 완전 통합
+- **컨텍스트 어웨어:** 컴패니언이 데스크탑 활동을 관찰하고 알아서 리액션 & 인터랙션. 에이전틱 모드에서는 데스크탑 자체를 직접 조작 가능
+- **모듈러 스테이지 레이아웃:** GTK4 위젯, 아티스트리 모듈 기반 인터랙티브 생성 배경, 그리고 캐릭터가 직접 다이나믹하게 구성하는 윈도우 레이아웃
 <!--
 ## 🖥️ 개발
 
@@ -531,11 +524,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 * [x] 지원 LLM 프로바이더: [xsai](https://github.com/moeru-ai/xsai)가 지원하는 모든 것
 * [ ] 지원 TTS 프로바이더: TBD
 * [ ] 지원 Embedding 프로바이더: TBD
-- [ ] AIRI와 Neko 컴패니언 서브시스템 모두 지원되는 셀프 호스팅 라우터.
-     모든 AI 기능이 Linux에 통합되어 있습니다.
-     듀얼 컴패니언 엔진 — AIRI 또는 Neko 중 선택, 두 가지 모두 서브시스템 완전 구성.
-     오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자만을 활용하여 두 세계의 최상을 제공.
-     키가 없는 제공자는 즉시 사전 구성. BYOK 경로는 항상 사용 가능 — 필요할 때 자신의 키가 있는 제공자를 추가. 🚀
+- [ ] AIRI에 내장된 다이내믹 폴백 시스템. 여러 무료 AI 프로바이더 간 원활한 전환. 오픈소스 철학에 기반하여 무료 커뮤니티 AI 제공자만을 활용. 키가 없는 프로바이더는 즉시 사전 구성. BYOK 경로는 항상 사용 가능 — 필요할 때 자신의 키가 있는 프로바이더를 추가. 🚀
 
 ##### 🏮🐼 readme_locale_zh_030
 
@@ -583,12 +572,11 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
 ## 🌙 Vision
 
-- **双 Companion 引擎:** 自由选择你的 Companion — AIRI 或 Neko。两者均附带完整子系统预配置。基于开源理念：通过免费社区 AI 提供者，为用户提供两全其美的体验。
-- **自托管 & BYOK:** 自托管路由器是将双 Companion 子系统和所有 AI 功能集成进 Linux 的路由器。无需密钥的提供者开箱即配。随时可通过 BYOK 轻松纳管自带密钥提供者。
+- **AIRI Companion 引擎:** 你的 Companion — AIRI。附带完整子系统预配置。基于开源理念：通过免费社区 AI 提供者，为用户提供最佳体验。
+- **动态回退系统:** 直接内置 AIRI 的动态回退功能，在多个免费 AI 提供者间无缝切换。无需密钥的提供者开箱即用。随时可通过 BYOK 轻松添加自带密钥提供者。
 - **System Integration（系统级融合）:** 从基础 Notification 到 Agentic Mode 下通过 Terminal 完整管理你的 Linux，深度 Hook 整个系统
 - **Context Awareness（上下文感知）:** Companion 会观察你的 Desktop Activity，主动响应和交互；在 Agentic Mode 下甚至可以接管完整 Desktop Control
 - **Modular Stage Layouts（模块化舞台布局）:** GTK4 Widgets、通过 Artistry Module 动态生成的 Interactive Background，以及由角色动态组合的 Window Layouts
-
 <!--
 ## 🖥️ 上强度开发
 
@@ -715,11 +703,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 * [x] 支持 LLM Provider：所有 [xsai](https://github.com/moeru-ai/xsai) 支持的 Provider
 * [ ] 支持 TTS Provider：TBD
 * [ ] 支持 Embedding Provider：TBD
-- [ ] 自托管路由器，预配置 AIRI 和 Neko 双 Companion 子系统，所有 AI 功能集成到 Linux 中。
-      双 Companion 引擎 — 选择 AIRI 或 Neko，两者均预装完整子系统。
-      基于开源理念：完全通过免费社区 AI 提供者，为用户提供两全其美的体验。
-      无需密钥的提供者开箱即配。 BYOK 路径随时可用 —
-      随时可携带自己的密钥提供者获取更强动力。 🚀
+- [ ] AIRI 内置动态回退系统，在多个免费 AI 提供者间无缝切换。基于开源理念：完全通过免费社区 AI 提供者，为用户提供最佳体验。无需密钥的提供者开箱即配。 BYOK 路径随时可用 — 随时可携带自己的密钥提供者获取更强动力。 🚀
 
 ##### 🌴⚽ readme_locale_es_pt_039_419
 
@@ -768,12 +752,11 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 </div>
 ## 🌙 La Visión | A Visão
 
-- **Motor de Doble Compañero | Motor de Companheiro Duplo:** ¡Elige tu compañero — AIRI o Neko! Ambos vienen con su subsistema completo pre-configurado. Filosofía open-source: darte lo mejor de ambos mundos usando proveedores de IA comunitarios y gratuitos. | Escolha seu companheiro — AIRI ou Neko! Ambos vêm com seu subsistema completo pré-configurado. Filosofia open source: dar a você o melhor dos dois mundos utilizando provedores de IA comunitários e gratuitos.
-- **Autoalojado & BYOK | Auto-hospedado & BYOK:** Router autoalojado pre-configurado con ambos subsistemas de compañero y todas las funciones de IA integradas en Linux. Proveedores sin clave pre-configurados desde el inicio. El camino BYOK siempre disponible para añadir tus propios proveedores con clave. | Roteador auto-hospedado pré-configurado com ambos subsistemas de companheiro e todas as funções de IA integradas no Linux. Provedores sem chave pré-configurados desde o início. Caminho BYOK sempre disponível para adicionar seus próprios provedores com chave.
-* **Integración Total con el Sistema | Integração Total com o Sistema:** Se conecta directamente con todo el sistema, desde notificaciones hasta el control completo de Linux mediante la terminal en el Modo Agentic. | Conecta-se diretamente ao sistema inteiro, desde notificações até o controle completo do Linux pelo terminal no Modo Agentic.
-* **Conciencia de Contexto | Consciência de Contexto:** Tu companion entiende lo que ocurre en el escritorio para responder e interactuar de forma proactiva, pudiendo también asumir el control completo del escritorio en el Modo Agentic. | Sua companion entende o que acontece no desktop para responder e interagir de forma proativa, podendo também assumir o controle completo do desktop no Modo Agentic.
-* **Layouts Modulares de Stage | Layouts Modulares de Stage:** Widgets GTK4, fondos generados en tiempo real por el módulo de artistry y layouts de ventanas creados dinámicamente por cada personaje. | Widgets GTK4, backgrounds gerados em tempo real pelo módulo de artistry e layouts de janelas criados dinamicamente por cada personagem.
-
+- **Motor de Compañero AIRI | Motor de Companheiro AIRI:** Tu compañera — AIRI. Viene con su subsistema completo pre-configurado. Filosofía open-source: darte la mejor experiencia usando proveedores de IA comunitarios y gratuitos. | Sua companheira — AIRI. Vem com seu subsistema completo pré-configurado. Filosofia open source: dar a você a melhor experiência utilizando provedores de IA comunitários e gratuitos.
+- **Sistema de Fallback Dinámico | Sistema de Fallback Dinâmico:** Fallback dinámico integrado directamente en AIRI para cambiar sin problemas entre múltiples proveedores de IA gratuitos. Proveedores sin clave listos desde el inicio. BYOK siempre disponible para añadir tus propios proveedores con clave. | Fallback dinâmico integrado diretamente no AIRI para alternar perfeitamente entre múltiplos provedores de IA gratuitos. Provedores sem chave prontos desde o início. BYOK sempre disponível para adicionar seus próprios provedores com chave.
+- **Integración Total con el Sistema | Integração Total com o Sistema:** Se conecta directamente con todo el sistema, desde notificaciones hasta el control completo de Linux mediante la terminal en el Modo Agentic. | Conecta-se diretamente ao sistema inteiro, desde notificações até o controle completo do Linux pelo terminal no Modo Agentic.
+- **Conciencia de Contexto | Consciência de Contexto:** Tu companion entiende lo que ocurre en el escritorio para responder e interactuar de forma proactiva, pudiendo también asumir el control completo del escritorio en el Modo Agentic. | Sua companion entende o que acontece no desktop para responder e interagir de forma proativa, podendo também assumir o controle completo do desktop no Modo Agentic.
+- **Layouts Modulares de Stage | Layouts Modulares de Stage:** Widgets GTK4, fondos generados en tiempo real por el módulo de artistry y layouts de ventanas creados dinámicamente por cada personaje. | Widgets GTK4, backgrounds gerados em tempo real pelo módulo de artistry e layouts de janelas criados dinamicamente por cada personagem.
 <!--
 ## 🖥️ Desarrollo | Desenvolvimento
 
@@ -898,7 +881,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 * [x] Proveedores LLM soportados: todo lo que xsai soporta | Provedores LLM suportados: tudo que o xsai suporta
 * [ ] Proveedores TTS soportados: Próximamente™ | Provedores TTS suportados: Em breve™
 * [ ] Proveedores de Embeddings: Próximamente™ | Provedores de Embeddings: Em breve™
-- [ ] Router autoalojado pre-configurado para ambos subsistemas de compañero AIRI y Neko, con todas las funciones de IA integradas en Linux. Motor de Doble Compañero — elige AIRI o Neko, ambos pre-configurados. Filosofía open source: lo mejor de ambos mundos a través de proveedores comunitarios gratuitos. Proveedores sin clave pre-configurados. BYOK siempre disponible. 🚀 | Roteador auto-hospedado pré-configurado para ambos subsistemas de companheiro AIRI e Neko, com todas as funções de IA integradas no Linux. Motor de Companheiro Duplo — escolha AIRI ou Neko, ambos pré-configurados. Filosofia open source: o melhor dos dois mundos através de provedores comunitários gratuitos. Provedores sem chave pré-configurados. BYOK sempre disponível. 🚀
+- [ ] Sistema de fallback dinámico integrado en AIRI para cambiar sin problemas entre múltiples proveedores de IA gratuitos. Filosofía open source: lo mejor de la experiencia a través de proveedores comunitarios gratuitos. Proveedores sin clave pre-configurados. BYOK siempre disponible. 🚀 | Sistema de fallback dinâmico integrado no AIRI para alternar perfeitamente entre múltiplos provedores de IA gratuitos. Filosofia open source: a melhor experiência através de provedores comunitários gratuitos. Provedores sem chave pré-configurados. BYOK sempre disponível. 🚀
 
 ##### 🥐🍷 readme_locale_fr_002_155
 
@@ -948,13 +931,11 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 ## 🌙 La Vision
 
-- **Moteur à Double Compagnon :** Choisis ton compagnon — AIRI ou Neko ! Les deux viennent avec leur sous-système complet pré-configuré. Philosophie open source : t'offrir le meilleur des deux mondes en utilisant uniquement des fournisseurs d'IA communautaire gratuits.
-- **Auto-hébergé & BYOK :** Un routeur auto-hébergé pré-configuré pour les deux sous-systèmes de compagnon, avec toutes les fonctionnalités IA intégrées dans Linux. Les fournisseurs sans clé sont pré-configurés dès le départ. Chemin BYOK toujours disponible pour ajouter tes propres fournisseurs à clé quand tu veux plus de puissance.
-
+- **Moteur de Compagnon AIRI :** Ta compagne — AIRI. Vient avec son sous-système complet pré-configuré. Philosophie open source : t'offrir la meilleure expérience en utilisant uniquement des fournisseurs d'IA communautaire gratuits.
+- **Système de Fallback Dynamique :** Fallback dynamique intégré directement dans AIRI pour basculer sans problème entre plusieurs fournisseurs d'IA gratuits. Les fournisseurs sans clé sont prêts dès le départ. Chemin BYOK toujours disponible pour ajouter tes propres fournisseurs à clé quand tu veux plus de puissance.
 - **Intégration Système :** Branchée à fond sur ton système, des notifications jusqu'au contrôle complet de Linux via le terminal en mode Agentic
 - **Conscience du Contexte :** Ta compagne observe ce qui se passe sur ton bureau pour réagir et interagir de façon proactive, et peut même prendre le contrôle total du desktop en mode Agentic
 - **Layouts Modulaires :** Widgets GTK4, arrière-plans générés à la volée via le module artistique, et compositions de fenêtres créées dynamiquement par les personnages
-
 <!--
 ## 🖥️ Développement
 
@@ -1055,7 +1036,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 - [x] Fournisseurs LLM supportés : tout ce que [xsai](https://github.com/moeru-ai/xsai) prend en charge
 - [ ] Fournisseurs TTS supportés : TBD
 - [ ] Fournisseurs d'Embeddings supportés : TBD
-- [ ] Routeur auto-hébergé pré-configuré pour les deux sous-systèmes de compagnon AIRI et Neko, avec toutes les fonctionnalités IA intégrées dans Linux. Moteur à Double Compagnon — choisis AIRI ou Neko, les deux pré-configurés. Philosophie open source : le meilleur des deux mondes via les fournisseurs d'IA communautaires gratuits. Fournisseurs sans clé pré-configurés. Chemin BYOK toujours disponible. 🚀
+- [ ] Système de fallback dynamique intégré dans AIRI pour basculer sans problème entre plusieurs fournisseurs d'IA gratuits. Philosophie open source : la meilleure expérience via les fournisseurs d'IA communautaires gratuits. Fournisseurs sans clé pré-configurés. Chemin BYOK toujours disponible. 🚀
 
 ##### 🪆🐻‍❄️ readme_locale_ru_810
 
@@ -1105,12 +1086,11 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 
 ## 🌙 Видение
 
-- **Движок двойного компаньона:** Выбери своего компаньона — AIRI или Neko! Оба поставляются с полной подсистемой, предварительно настроенной. Философия открытого исходного кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества.
-- **Самостоятельный хост & BYOK:** Маршрутизатор для самостоятельного размещения, предварительно настроенный для обеих подсистем компаньонов AIRI и Neko, со всеми AI-функциями, интегрированными в Linux. Провайдеры без ключа настроены из коробки. BYOK-путь всегда доступен — принеси своих ключевых провайдеров, когда захочешь больше.
+- **Движок компаньона AIRI:** Твоя компаньонка — AIRI. Поставляется с полной подсистемой, предварительно настроенной. Философия открытого исходного кода: лучший опыт через бесплатных AI-провайдеров сообщества.
+- **Динамическая система фоллбэка:** Динамический фоллбэк, встроенный непосредственно в AIRI для бесшовного переключения между несколькими бесплатными AI-провайдерами. Провайдеры без ключа настроены из коробки. BYOK-путь всегда доступен — принеси своих ключевых провайдеров, когда захочешь больше.
 - **Глубокая интеграция с системой:** Полностью цепляется за систему — от простых штук типа уведомлений до полного управления Linux через терминал в Agentic Mode
 - **Контекстная осознанность:** Компаньонка наблюдает за активностью рабочего стола, чтобы отвечать и взаимодействовать проактивно, а в Agentic Mode может взять полный контроль над десктопом
 - **Модульные сцены:** GTK4-виджеты, интерактивно генерируемые фоны через artistry-модуль и динамически собираемые раскладки окон самими персонажами
-
 <!--
 ## 🖥️ Разработка
 
@@ -1225,7 +1205,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 * [x] Поддерживаемые LLM-провайдеры: всё, что поддерживает [xsai](https://github.com/moeru-ai/xsai)
 * [ ] Поддерживаемые TTS-провайдеры: TBD
 * [ ] Поддерживаемые Embedding-провайдеры: TBD
-- [ ] Маршрутизатор для самостоятельного размещения, предварительно настроенный для обеих подсистем компаньонов AIRI и Neko, со всеми AI-функциями, интегрированными в Linux. Движок двойного компаньона — выбери AIRI или Neko, оба преднастроены. Философия открытого кода: лучшее из обоих миров через бесплатных AI-провайдеров сообщества. Провайдеры без ключа настроены из коробки. BYOK всегда доступен. 🚀
+- [ ] Динамическая система фоллбэка, встроенная в AIRI для бесшовного переключения между несколькими бесплатными AI-провайдерами. Философия открытого кода: лучший опыт через бесплатных AI-провайдеров сообщества. Провайдеры без ключа настроены из коробки. BYOK всегда доступен. 🚀
 
 ##### 🌙🕌 readme_locale_ar_fa_tr_015_145
 
@@ -1282,17 +1262,16 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 
 ## 🌙 الرؤية | چشم‌انداز | Vizyon
 
-- **محرك الرفيق المزدوج | موتور همراه دوگانه | Çift Yoldaş Motoru:**
-    * **AR:** اختر رفيقك — AIRI أو Neko! كلاهما يأتي مع النظام الفرعي الكامل المُعدّ مسبقاً. فلسفة المصدر المفتوح: نقدم لك الأفضل من كلا العالمين بالكامل عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين.
-    * **FA:** همراه خود را انتخاب کنید — AIRI یا Neko! هر دو با زیرسیستم کامل خود از پیش پیکربندی شده عرضه می‌شوند. فلسفه متن‌باز: ارائه بهترین‌های هر دو جهان به طور کامل از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان.
-    * **TR:** Yoldaşını seç — AIRI ya da Neko! Her ikisi de alt sistemiyle tamamen önceden yapılandırılmış olarak gelir. Açık kaynak felsefesi: tamamen ücretsiz topluluk AI sağlayıcıları üzerinden her iki dünyanın en iyisini sunuyoruz.
+- **محرك رفيق AIRI | موتور همراه AIRI | AIRI Yoldaş Motoru:**
+    * **AR:** رفيقتك — AIRI. تأتي مع النظام الفرعي الكامل المُعدّ مسبقاً. فلسفة المصدر المفتوح: نقدم لك أفضل تجربة بالكامل عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين.
+    * **FA:** همراه تو — AIRI. با زیرسیستم کامل خود از پیش پیکربندی شده عرضه می‌شود. فلسفه متن‌باز: ارائه بهترین تجربه به طور کامل از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان.
+    * **TR:** Yoldaşın — AIRI. Alt sistemiyle tamamen önceden yapılandırılmış olarak gelir. Açık kaynak felsefesi: tamamen ücretsiz topluluk AI sağlayıcıları üzerinden en iyi deneyimi sunuyoruz.
 
-*   **الاستضافة الذاتية و BYOK | خودمیزبانی و BYOK | Kendi Barındırma ve BYOK:**
-    * **AR:** موجه ذاتي الاستضافة معدّ مسبقاً لكلا نظامي الرفيق AIRI و Neko مع جميع ميزات الذكاء الاصطناعي المدمجة في Linux. مزودو الخدمة بدون مفاتيح معدّون مسبقاً من البداية. مسار BYOK متاح بسهولة لإضافة مزودي خدمة بمفاتيح خاصة متى أردت المزيد.
-    * **FA:** یک مسیریاب خودمیزبانی شده از پیش پیکربندی شده برای هر دو زیرسیستم همراه AIRI و Neko، با تمام ویژگی‌های هوش مصنوعی یکپارچه شده در لینوکس. ارائه‌دهندگان بدون کلید از ابتدا پیکربندی شده‌اند. مسیر BYOK برای افزودن ارائه‌دهندگان کلیددار شخصی شما همیشه در دسترس است.
-    * **TR:** AIRI ve Neko her iki yoldaş alt sistemi için önceden yapılandırılmış kendi barındırma yönlendiricisi, tüm AI özellikleri Linux'a entegre. Anahtarsız sağlayıcılar kutudan çıktığı gibi yapılandırılmıştır. İstediğinizde kendi anahtarlı sağlayıcılarınızı eklemek için BYOK yolu her zaman mevcut.
+- **نظام الفولباك الديناميكي | سیستم فولبک دینامیک | Dinamik Fallback Sistemi:**
+    * **AR:** فولباك ديناميكي مدمج مباشرة في AIRI للتبديل السلس بين عدة مزودي ذكاء اصطناعي مجانيين. مزودو الخدمة بدون مفاتيح جاهزون من البداية. مسار BYOK متاح بسهولة لإضافة مزودي خدمة بمفاتيح خاصة متى أردت المزيد.
+    * **FA:** سیستم فولبک دینامیک مستقیماً در AIRI تعبیه شده برای سوئیچ کردن روان بین چندین ارائه‌دهنده هوش مصنوعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا آماده‌اند. مسیر BYOK برای افزودن ارائه‌دهندگان کلیددار شخصی شما همیشه در دسترس است.
+    * **TR:** AIRI'ye doğrudan entegre edilmiş dinamik fallback sistemi, birden fazla ücretsiz AI sağlayıcısı arasında sorunsuz geçiş için. Anahtarsız sağlayıcılar kutudan çıktığı gibi hazır. İstediğinizde kendi anahtarlı sağlayıcılarınızı eklemek için BYOK yolu her zaman mevcut.
 
----
 
 <!--
 ## 🖥️ التطوير | توسعه | Geliştirme
@@ -1420,20 +1399,17 @@ cargo install tauri-cli --version '^2.0'
 ---
 
 ## 🤖 مزودات API | ارائه‌دهنده‌های API | API Sağlayıcıları
-    *   **AR:** تكامل شريط النظام والتقاط الشاشة | إنشاء نوافذ GTK4 أصلية | تكامل [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) | صندوق دردشة AIRI يصبح طرفية ذكية بلغة طبيعية.
-    *   **FA:** ادغام با System Tray و Screen Capture | ساخت پنجره‌های بومی GTK4 | ادغام با [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) | تبدیل باکس چت AIRI به یک ترمینال هوشمند با زبان طبیعی.
-    *   **TR:** Sistem tepsisi ve ekran yakalama entegrasyonu | Native GTK4 pencereleri oluşturma | [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) entegrasyonu | AI sohbet kutusunu doğal dil terminaline dönüştürme.
-*   **TR:** Desteklenen LLM sağlayıcıları: xsai'nin desteklediği her şey.
+    *   **AR:** مزودات LLM المدعومة: كل ما يدعمه xsai.
+    *   **FA:** ارائه‌دهندگان LLM پشتیبانی شده: همه چیزی که xsai پشتیبانی می‌کند.
+    *   **TR:** Desteklenen LLM sağlayıcıları: xsai'nin desteklediği her şey.
 
-*   **AR:** مزودات TTS و Embedding: قريباً.
-*   **FA:** سرویس‌های TTS و Embedding: به زودی.
-*   **TR:** TTS ve Embedding sağlayıcıları: Yakında.
+    *   **AR:** مزودات TTS و Embedding: قريباً.
+    *   **FA:** سرویس‌های TTS و Embedding: به زودی.
+    *   **TR:** TTS ve Embedding sağlayıcıları: Yakında.
 
-*   **Self-Hosted Router:**
-    *   **AR:** موجه ذاتي الاستضافة معدّ مسبقاً لنظامي الرفيق AIRI و Neko مع جميع ميزات الذكاء الاصطناعي المدمجة في Linux. محرك الرفيق المزدوج — اختر AIRI أو Neko، كلاهما معدّ مسبقاً. فلسفة المصدر المفتوح: الأفضل من كلا العالمين عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين. مزودو الخدمة بدون مفاتيح معدّون مسبقاً. مسار BYOK متاح بسهولة. 🚀
-    *   **FA:** یک مسیریاب خودمیزبانی شده از پیش پیکربندی شده برای دو زیرسیستم همراه AIRI و Neko، با تمام ویژگی‌های هوش مصنوعی یکپارچه در لینوکس. موتور همراه دوگانه — AIRI یا Neko را انتخاب کنید، هر دو از پیش پیکربندی شده‌اند. فلسفه متن‌باز: بهترین‌های هر دو جهان از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا پیکربندی شده‌اند. مسیر BYOK همیشه در دسترس است. 🚀
-    *   **TR:** AIRI ve Neko her iki yoldaş alt sistemi için önceden yapılandırılmış kendi barındırma yönlendiricisi, tüm AI özellikleri Linux'a entegre. Çift Yoldaş Motoru — AIRI veya Neko'yu seç, her ikisi de önceden yapılandırılmış. Açık kaynak felsefesi: ücretsiz topluluk AI sağlayıcıları üzerinden her iki dünyanın en iyisi. Anahtarsız sağlayıcılar kutudan çıktığı gibi yapılandırılmış. BYOK yolu her zaman mevcut. 🚀
-
+    *   **AR:** نظام فولباك ديناميكي مدمج في AIRI للتبديل السلس بين عدة مزودي ذكاء اصطناعي مجانيين. فلسفة المصدر المفتوح: أفضل تجربة عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين. مزودو الخدمة بدون مفاتيح جاهزون من البداية. مسار BYOK متاح بسهولة. 🚀
+    *   **FA:** سیستم فولبک دینامیک تعبیه شده در AIRI برای سوئیچ کردن روان بین چندین ارائه‌دهنده هوش مصنوعی رایگان. فلسفه متن‌باز: بهترین تجربه از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا آماده‌اند. مسیر BYOK همیشه در دسترس است. 🚀
+    *   **TR:** AIRI'ye gömülü dinamik fallback sistemi, birden fazla ücretsiz AI sağlayıcısı arasında sorunsuz geçiş için. Açık kaynak felsefesi: ücretsiz topluluk AI sağlayıcıları üzerinden en iyi deneyim. Anahtarsız sağlayıcılar kutudan çıktığı gibi hazır. BYOK yolu her zaman mevcut. 🚀
  
 ##### ⚙️🎩 readme_locale_de_155
 
@@ -1482,9 +1458,9 @@ cargo install tauri-cli --version '^2.0'
 
 ## 🌙 Die Vision
 
-- **Dual-Companion-Engine:** Wähle deinen Companion — AIRI oder Neko! Beide werden mit ihrem vollständigen Subsystem vorinstalliert. Open-Source-Philosophie: Dir das Beste aus beiden Welten bieten, vollständig durch kostenlose KI-Community-Provider.
+- **AIRI Companion Engine:** Dein Companion — AIRI. Wird mit ihrem vollständigen Subsystem vorinstalliert. Open-Source-Philosophie: Dir das beste Erlebnis bieten, vollständig durch kostenlose KI-Community-Provider.
 
-- **Selbst gehostet & BYOK:** Ein selbst gehosteter Router, der für beide Companion-Subsysteme vorkonfiguriert ist, mit allen KI-Funktionen in Linux integriert. Keyless-Provider sind sofort einsatzbereit. BYOK-Pfad immer verfügbar — bring deine eigenen Keyed Provider, wenn du mehr Leistung willst.
+- **Dynamisches Fallback-System:** Fallback-System direkt in AIRI integriert für nahtloses Wechseln zwischen mehreren kostenlosen KI-Providern. Keyless-Provider sind sofort einsatzbereit. BYOK-Pfad immer verfügbar — bring deine eigenen Keyed Provider, wenn du mehr Leistung willst.
 
 - **Tiefe Systemintegration:**
 
@@ -1497,7 +1473,6 @@ cargo install tauri-cli --version '^2.0'
 - **Modulare Welten:**
 
   GTK4 Widgets, KI-generierte Hintergründe und dynamische Layouts, die sich an deine Charaktere anpassen.
-
 
 <!--
 ## 🖥️ Entwicklung
@@ -1635,8 +1610,7 @@ Das bedeutet:
 
 * [ ] Embedding Provider: TBD
 
-- [ ] Ein selbst gehosteter Router, der für beide AIRI- und Neko-Companion-Subsysteme vorkonfiguriert ist, mit allen KI-Funktionen in Linux integriert. Dual-Companion-Engine — wähle AIRI oder Neko, beide vorinstalliert. Open-Source-Philosophie: Das Beste aus beiden Welten durch kostenlose KI-Community-Provider. Keyless-Provider sofort einsatzbereit. BYOK-Pfad immer verfügbar.
-
+- [ ] Dynamisches Fallback-System direkt in AIRI integriert für nahtloses Wechseln zwischen mehreren kostenlosen KI-Providern. Open-Source-Philosophie: Das beste Erlebnis durch kostenlose KI-Community-Provider. Keyless-Provider sofort einsatzbereit. BYOK-Pfad immer verfügbar.
 **Code rein.**
 **Companion an.**
 **Zukunft gebaut.** 🚀
@@ -1689,9 +1663,9 @@ Das bedeutet:
 
 ## 🌙 Wizja
 
-- **Silnik z podwójnym kompanionem:** Wybierz swojego kompaniona — AIRI lub Neko! Oba są dostarczane z pełnym podsystemem wstępnie skonfigurowanym. Filozofia open source: zapewniamy najlepsze z obu światów w pełni za pośrednictwem bezpłatnych dostawców AI społecznościowych.
+- **Silnik Kompaniona AIRI:** Twój towarzysz — AIRI. Dostarczana z pełnym podsystemem wstępnie skonfigurowanym. Filozofia open source: zapewniamy najlepsze doświadczenie w pełni za pośrednictwem bezpłatnych dostawców AI społecznościowych.
 
-- **Samodzielny hosting & BYOK:** Samodzielnie hostowany router wstępnie skonfigurowany dla obu podsystemów kompanionów, ze wszystkimi funkcjami AI zintegrowanymi w Linux. Dostawcy bez klucza skonfigurowani są od razu. Ścieżka BYOK zawsze dostępna — wprowadź własnych dostawców z kluczem, gdy chcesz więcej mocy.
+- **Dynamiczny System Fallback:** System fallbacku zintegrowany bezpośrednio w AIRI do płynnego przełączania między wieloma darmowymi dostawcami AI. Dostawcy bez klucza skonfigurowani są od razu. Ścieżka BYOK zawsze dostępna — wprowadź własnych dostawców z kluczem, gdy chcesz więcej mocy.
 
 - **Pełna integracja z systemem:**
 
@@ -1704,7 +1678,6 @@ Das bedeutet:
 - **Modularne światy:**
 
   Widgety GTK4, generowane przez AI tła oraz dynamiczne układy dopasowane do charakteru postaci.
-
 
 <!--
 ## 🖥️ Rozwój
@@ -1846,7 +1819,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 * [ ] Dostawcy Embedding: TBD
 
-- [ ] Samodzielnie hostowany router wstępnie skonfigurowany dla obu podsystemów kompanionów AIRI i Neko, ze wszystkimi funkcjami AI zintegrowanymi w Linux. Silnik z podwójnym kompanionem — wybierz AIRI lub Neko, oba wstępnie skonfigurowane. Filozofia open source: najlepsze z obu światów przez bezpłatnych dostawców AI społecznościowych. Dostawcy bez klucza skonfigurowani od razu. Ścieżka BYOK zawsze dostępna.
+- [ ] Dynamiczny system fallbacku zintegrowany w AIRI do płynnego przełączania między wieloma darmowymi dostawcami AI. Filozofia open source: najlepsze doświadczenie przez bezpłatnych dostawców AI społecznościowych. Dostawcy bez klucza skonfigurowani od razu. Ścieżka BYOK zawsze dostępna.
 
 **Pisz kod.**
 **Kompanion włączony.**
@@ -1900,9 +1873,9 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 ## 🌙 Идея
 
-- **Қосарлы серік қозғалтқышы:** Серігіңізді таңдаңыз — AIRI не Neko! Екеуі де толық ішкі жүйемен алдын ала орнатылған. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы екі әлемнің ең жақсысын ұсыну.
+- **AIRI серік қозғалтқышы:** Серігіңіз — AIRI. Толық ішкі жүйемен алдын ала орнатылған. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы ең жақсы тәжірибе ұсыну.
 
-- **Өзінің орналастыру & BYOK:** AIRI және Neko қосарлы серік ішкі жүйелері үшін алдын ала орнатылған, барлық AI мүмкіндіктері Linux-ке біріктірілген өзінің орналастыру үшін маршрутизатор. Кілтсіз провайдерлер дайын күйде орнатылған. BYOK жолы әрқашан қолжетімді — күші көбірек қажет болғанда өз кілтті провайдерлеріізді әкеліңіз.
+- **Динамикалық фоллбэк жүйесі:** AIRI-ге тікелей ендірілген динамикалық фоллбэк жүйесі, бірнеше тегін AI провайдерлері арасында тегсіз ауысу үшін. Кілтсіз провайдерлер дайын күйде. BYOK жолы әрқашан қолжетімді — күші көбірек қажет болғанда өз кілтті провайдерлеріізді әкеліңіз.
 
 - **Жүйемен толық байланыс:**
 
@@ -1915,7 +1888,6 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 - **Модульдік әлем:**
 
   GTK4 виджеттері, AI арқылы жасалған фондар және кейіптерге бейімделетін динамикалық интерфейстер.
-
 
 <!--
 ## 🖥️ Даму
@@ -2057,7 +2029,7 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 
 * [ ] Embedding провайдерлері: кейін
 
-- [ ] AIRI және Neko қосарлы серік ішкі жүйелері үшін алдын ала орнатылған, барлық AI мүмкіндіктері Linux-ке біріктірілген өзінің орналастыру үшін маршрутизатор. Қосарлы серік қозғалтқышы — AIRI не Neko таңдаңыз, екеуі де алдын ала орнатылған. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы екі әлемнің ең жақсысы. Кілтсіз провайдерлер дайын күйде. BYOK жолы әрқашан қолжетімді.
+- [ ] AIRI-ге тікелей ендірілген динамикалық фоллбэк жүйесі, бірнеше тегін AI провайдерлері арасында тегсіз ауысу үшін. Ашық код философиясы: тегін қоғамдастық AI провайдерлері арқылы ең жақсы тәжірибе. Кілтсіз провайдерлер дайын күйде. BYOK жолы әрқашан қолжетімді.
 
 **Код жаз.**
 **Серік қосулы.**
