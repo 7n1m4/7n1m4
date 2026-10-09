@@ -51,7 +51,7 @@
 ## 🌙 The Vision
 
 - **AIRI Companion Engine:** Your companion — AIRI. Ships fully pre-configured with her subsystem. Built on open-source philosophy: we deliver the best experience entirely through free community AI providers.
-- **Self-Hosted & BYOK:** Our self-hosted router comes pre-configured for AIRI companion subsystem and all AI features integrated into Linux. Keyless providers come pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
+- **Dynamic Fallback System & BYOK:** Dynamic fallback system built directly into AIRI for seamless switching between free community AI providers. Keyless providers are pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
 - **System Integration:** Hooks fully into the system, from basic stuff like notifications to fully managing your Linux via terminal in Agentic Mode
 - **Context Awareness:** Your companion observes desktop activity to respond and interact proactively and she can also assume full desktop control in Agentic Mode
 - **Modular Stage Layouts:** GTK4 widgets, interactively generated backgrounds through artistry module, and window layouts composed dynamically by characters
@@ -157,7 +157,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [x] Supported LLM providers: everything [xsai](https://github.com/moeru-ai/xsai) supports
 - [ ] Supported TTS providers: TBD
 - [ ] Supported Embedding providers: TBD
-- [ ] Self-hosted router pre-configured for AIRI companion subsystem, with all AI features integrated into Linux. AIRI Companion Engine — AIRI ships fully pre-configured. Built on open-source philosophy: best experience entirely through free community AI providers. Keyless providers pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more power. 🚀
+ - [ ] Dynamic fallback system built into AIRI for seamless switching between free community AI providers. Keyless providers pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more power. 🚀
 
 ##### 🌸⛩️ readme_locale_ja_030
 
@@ -1265,6 +1265,18 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
     * **AR:** فولباك ديناميكي مدمج مباشرة في AIRI للتبديل السلس بين عدة مزودي ذكاء اصطناعي مجانيين. مزودو الخدمة بدون مفاتيح جاهزون من البداية. مسار BYOK متاح بسهولة لإضافة مزودي خدمة بمفاتيح خاصة متى أردت المزيد.
     * **FA:** سیستم فولبک دینامیک مستقیماً در AIRI تعبیه شده برای سوئیچ کردن روان بین چندین ارائه‌دهنده هوش مصنوعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا آماده‌اند. مسیر BYOK برای افزودن ارائه‌دهندگان کلیددار شخصی شما همیشه در دسترس است.
     * **TR:** AIRI'ye doğrudan entegre edilmiş dinamik fallback sistemi, birden fazla ücretsiz AI sağlayıcısı arasında sorunsuz geçiş için. Anahtarsız sağlayıcılar kutudan çıktığı gibi hazır. İstediğinizde kendi anahtarlı sağlayıcılarınızı eklemek için BYOK yolu her zaman mevcut.
+**نظام التكامل الكامل | سیستم یکپارچه‌سازی کامل | Tam Sistem Entegrasyonu:**
+    * **AR:** تكامل عميق مع النظام بأكمله، من الإشعارات الأساسية إلى التحكم الكامل في Linux عبر الطرفية في وضع Agentic Mode.
+    * **FA:** یکپارچه‌سازی عمیق با کل سیستم، از اعلان‌های پایه تا کنترل کامل لینوکس از طریق ترمینال در حالت Agentic Mode.
+    * **TR:** Bildirimlerden Linux'e Agentic Mode'da terminal yoluyla tam kontrole kadar tüm sistemle derin entegrasyon.
+**وعي السياق | آگاهی زمینه | Bağlam Farkındalığı:**
+    * **AR:** الرفيق يراقب نشاط سطح المكتب للاستجابة والتفاعل الاستباقي، ويمكنه في وضع Agentic Mode التحكم الكامل في سطح المكتب.
+    * **FA:** رفیق فعالیت دسکتاپ را برای پاسخ‌دهی و تعامل پیشگیرانه نظارت می‌کند و می‌تواند در حالت Agentic Mode کنترل کامل دسکتاپ را بگیرد.
+    * **TR:** Yoldaş masaüstü aktivitesini izleyerek proaktif yanıt ve etkileşim sağlar; Agentic Modda masaüstünü tamamen kontrol edebilir.
+**تصميمات المرحلة المعيارية | طراحی‌های صحنه ماژولار | Modüler Sahne Düzenleri:**
+    * **AR:** عناصر GTK4، خلفيات توليدية تفاعلية عبر وحدة الفن، وتخطيطات نوافذ مكونة ديناميكياً بواسطة الشخصيات.
+    * **FA:** ویجت‌های GTK4، پس‌زمینه‌های تعاملی مولد شده از طریق ماژول هنری، و چیدمان پنجره‌های ساخته شده پویا توسط شخصیت‌ها.
+    * **TR:** GTK4 widget'ları, artistry modülü üzerinden interaktif üretilen arka planlar ve karakterler tarafından dinamik oluşturulan pencere düzenleri.
 
 
 <!--
@@ -1360,54 +1372,97 @@ cargo install tauri-cli --version '^2.0'
 
 ## 🚙 خارطة الطريق | نقشه راه | Yol Haritası
 
-*   **🧠 العقل / مغز / Beyin**
-    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* built-in AIRI memory system (ذاكرة خاصة لكل شخصية).
-    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* built-in AIRI memory system (حافظه اختصاصی برای هر کاراکتر).
-    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* built-in AIRI memory system (Her karakter için özel hafıza).
+*   **[x] 🧠 العقل / مغز / Beyin**
+    *   **AR:** [x] *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI)
+    *   **FA:** [x] *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI)
+    *   **TR:** [x] *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI)
+    *   **AR:** [ ] *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية (heartbeats)
+    *   **FA:** [ ] *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند (heartbeats)
+    *   **TR:** [ ] *Proaktiflik:* Otonom AI etkileşimleri için tetikleyiciler (heartbeats)
+    *   **AR:** [ ] *ذاكرة متعددة المستويات:* built-in AIRI memory system
+    *   **FA:** [ ] *حافظه چندسطحی:* built-in AIRI memory system
+    *   **TR:** [ ] *Çok katmanlı hafıza:* built-in AIRI memory system
+      *   **AR:** [ ] *ذاكرة خاصة لكل شخصية مع دعم witness:* ذاكرة شخصية مع دعم نظام الشهود (عدة شخصيات تشارك الشاشة)
+      *   **FA:** [ ] *حافظه اختصاصی برای هر کاراکتر با پشتیبانی witness:* حافظه شخصی با پشتیبانی سیستم شاهد (چندین شخصیت در یک صفحه)
+      *   **TR:** [ ] *Her karakter için özel hafıza, witness desteğiyle:* Her karakter için özel hafıza, witness sistemi desteğiyle (birden fazla karakter ekran paylaşır)
 
-*   **👂 الأذن / گوش / Kulak**
-    *   **AR:** التعرف على الصوت وكشف الكلام من الجهاز.
-    *   **FA:** تشخیص صدا و گفتار روی دستگاه.
-    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* built-in AIRI memory system (ذاكرة خاصة لكل شخصية).
-    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* built-in AIRI memory system (حافظه اختصاصی برای هر کاراکتر).
-    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* built-in AIRI memory system (Her karakter için özel hafıza).
-    *   **AR:** مزودات صوت متوافقة مع OpenAI.
-    *   **FA:** پشتیبانی از سرویس‌های صوتی سازگار با OpenAI.
-    *   **TR:** OpenAI uyumlu ses sağlayıcıları.
+*   **[x] 👂 الأذن / گوش / Kulak**
+    *   **AR:** [x] التعرف على الصوت وكشف الكلام من الجهاز.
+    *   **FA:** [x] تشخیص صدا و گفتار روی دستگاه.
+    *   **TR:** [x] Cihaz içi ses tanıma ve konuşma tespiti.
 
-*   **🤖 الجسد / بدن / Beden**
-    *   **AR:** دعم VRM (تحكم تعابير مدعوم بالـ LLM، مشاعر وحركات تلقائية) ودعم Live2D.
-    *   **FA:** پشتیبانی از VRM (کنترل حالات چهره با LLM، انیمیشن‌های خودکار احساسات و حرکات) و پشتیبانی از Live2D.
-    *   **TR:** VRM desteği (LLM destekli mimikler, otomatik duygu ve idle animasyonları) ve Live2D desteği.
+*   **[x] 👄 الفم / دهان / Ağız (Mouth)**
+    *   **AR:** [x] مزودات صوت متوافقة مع OpenAI مع اكتشاف الأصوات.
+    *   **FA:** [x] ارائه‌دهندگان صوتی سازگار با OpenAI با کشف صداها.
+    *   **TR:** [x] OpenAI uyumlu ses sağlayıcıları, ses keşfi ile.
 
-*   **🖥️ مرحلة سطح المكتب / صحنه دسکتاپ / Masaüstü Sahnesi**
-    *   **AR:** عدة شخصيات على نفس الشاشة وإدارة المشاهد والخلفيات.
-    *   **FA:** نمایش چند شخصیت روی یک صفحه و مدیریت صحنه و بک‌گراند.
-    *   **TR:** Aynı ekranda birden fazla karakter ve karakter bazlı sahne/arka plan yönetimi.
+*   **[x] 🤖 الجسد / بدن / Beden**
+    *   **AR:** [x] دعم VRM
+      *   **AR:** [ ] *تحكم تعابير مدعوم بالـ LLM:* التحكم بالتعبيرات، الرمش التلقائي، والنظر التلقائي
+      *   **FA:** [ ] *کنترل حالات چهره با LLM:* کنترل تعابیر، بلک خودکار، و نگاه خودکار
+      *   **TR:** [ ] *LLM destekli mimik kontrolü:* ifade kontrolü, otomatik göz kırpma, otomatik bakış
+      *   **AR:** [ ] *مشاعر وحركات تلقائية مدعومة بالـ LLM:* المشاعر والحلقات الخاملة
+      *   **FA:** [ ] *انیمیشن‌های خودکار احساسات و حرکات با LLM:* احساسات و حلقه‌های idle
+      *   **TR:** [ ] *LLM destekli duygu ve idle animasyonları:* duygular ve idle döngüleri
+    *   **AR:** [x] دعم Live2D
+      *   **AR:** [ ] *تحكم تعابير مدعوم بالـ LLM لـ Live2D*
+      *   **FA:** [ ] *کنترل حالات چهره با LLM برای Live2D*
+      *   **TR:** [ ] *Live2D için LLM destekli ifade kontrolü*
 
-*   **⚡ AnimAIOS (قيد التطوير / در حال توسعه / Yapım Aşamasında)**
-    *   **AR:** تكامل شريط النظام والتقاط الشاشة | إنشاء نوافذ GTK4 أصلية | تكامل [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) | صندوق دردشة AIRI يصبح طرفية ذكية بلغة طبيعية.
-    *   **FA:** ادغام با System Tray و Screen Capture | ساخت پنجره‌های بومی GTK4 | ادغام با [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) | تبدیل باکس چت AIRI به یک ترمینال هوشمند با زبان طبیعی.
-    *   **TR:** Sistem tepsisi ve ekran yakalama entegrasyonu | Native GTK4 pencereleri oluşturma | [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) entegrasyonu | AI sohbet kutusunu doğal dil terminaline dönüştürme.
+*   **[x] 🖥️ مرحلة سطح المكتب / صحنه دسکتاپ / Masaüstü Sahnesi**
+    *   **AR:** [ ] عدة شخصيات على نفس الشاشة (KISS: نافذة واحدة لكل شخصية)
+    *   **FA:** [ ] نمایش چند شخصیت روی یک صفحه (KISS: یک پنجره برای هر شخصیت)
+    *   **TR:** [ ] Aynı ekranda birden fazla karakter (KISS: 1 pencere per karakter)
+    *   **AR:** [ ] إدارة المشاهد والخلفيات لكل شخصية
+    *   **FA:** [ ] مدیریت صحنه و بک‌گراند برای هر شخصیت
+    *   **TR:** [ ] Karakter bazlı sahne/arka plan yönetimi
+
+*   **[ ] ⚡ AnimAIOS (قيد التطوير / در حال توسعه / Yapım Aşamasında)**
+    *   **AR:** [x] تكامل شريط النظام والتقاط الشاشة
+    *   **FA:** [x] ادغام با System Tray و Screen Capture
+    *   **TR:** [x] Sistem tepsisi ve ekran yakalama entegrasyonu
+    *   **AR:** [ ] إنشاء نوافذ GTK4 أصلية بدلاً من ويب ويدجتس
+    *   **FA:** [x] ساخت پنجره‌های بومی GTK4 به جای ویجت‌های وب
+    *   **TR:** [x] Native GTK4 pencereleri oluşturma, web widget'ların yerine
+    *   **AR:** [ ] تكامل [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) العميق
+      *   **AR:** [ ] إرسال لقطة سياق حديثة مع كل نبضة قلب AIRI
+      *   **FA:** [ ] ارسال اسنپ‌شات محتوای اخیر با هر ضربه قلب AIRI
+      *   **TR:** [ ] Her AIRI heartbeat'inde güncel context snapshot'i gönderme
+    *   **AR:** [ ] صندوق دردشة AIRI يصبح طرفية ذكية بلغة طبيعية (مشابه Warp)
+    *   **FA:** [ ] باکس چت AIRI تبدیل می‌شود به یک ترمینال هوشمند با زبان طبیعی (شبیه Warp)
+    *   **TR:** [ ] AIRI sohbet kutusu, doğal dil termineline dönüşür (Warp benzeri)
+
+*   **[ ] 📦 متفرقات / متفرقه / Diğer (Misc)**
+    *   **AR:** [ ] إضافة mcp/skills عبر مطالب باللغة الطبيعية
+    *   **FA:** [ ] اضافه کردن mcp/skills از طریق پرامپت‌های زبان طبیعی
+    *   **TR:** [ ] Doğal dil prompt'ları ile mcp/skills ekleme
+    *   **AR:** [ ] دعم Wayland أصلي باستخدام أعلام منصة Ozone
+    *   **FA:** [ ] پشتیبانی بومی Wayland با استفاده از فلگ‌های پلتفرم Ozone
+    *   **TR:** [ ] Ozone platform flag'ları ile native Wayland desteği
 
 ---
 
 ## 🤖 مزودات API | ارائه‌دهنده‌های API | API Sağlayıcıları
-    *   **AR:** مزودات LLM المدعومة: كل ما يدعمه xsai.
-    *   **FA:** ارائه‌دهندگان LLM پشتیبانی شده: همه چیزی که xsai پشتیبانی می‌کند.
-    *   **TR:** Desteklenen LLM sağlayıcıları: xsai'nin desteklediği her şey.
 
-    *   **AR:** مزودات TTS و Embedding: قريباً.
-    *   **FA:** سرویس‌های TTS و Embedding: به زودی.
-    *   **TR:** TTS ve Embedding sağlayıcıları: Yakında.
+*   **[x] AR:** مزودات LLM المدعومة: كل ما يدعمه [xsai](https://github.com/moeru-ai/xsai).
+*   **[x] FA:** ارائه‌دهندگان LLM پشتیبانی شده: همه چیزی که [xsai](https://github.com/moeru-ai/xsai) پشتیبانی می‌کند.
+*   **[x] TR:** Desteklenen LLM sağlayıcıları: [xsai](https://github.com/moeru-ai/xsai)'nin desteklediği her şey.
 
-    *   **AR:** نظام فولباك ديناميكي مدمج في AIRI للتبديل السلس بين عدة مزودي ذكاء اصطناعي مجانيين. فلسفة المصدر المفتوح: أفضل تجربة عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين. مزودو الخدمة بدون مفاتيح جاهزون من البداية. مسار BYOK متاح بسهولة. 🚀
-    *   **FA:** سیستم فولبک دینامیک تعبیه شده در AIRI برای سوئیچ کردن روان بین چندین ارائه‌دهنده هوش مصنوعی رایگان. فلسفه متن‌باز: بهترین تجربه از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا آماده‌اند. مسیر BYOK همیشه در دسترس است. 🚀
-    *   **TR:** AIRI'ye gömülü dinamik fallback sistemi, birden fazla ücretsiz AI sağlayıcısı arasında sorunsuz geçiş için. Açık kaynak felsefesi: ücretsiz topluluk AI sağlayıcıları üzerinden en iyi deneyim. Anahtarsız sağlayıcılar kutudan çıktığı gibi hazır. BYOK yolu her zaman mevcut. 🚀
+*   **[ ] AR:** مزودات TTS المدعومة: TBD
+*   **[ ] FA:** ارائه‌دهندگان TTS پشتیبانی شده: TBD
+*   **[ ] TR:** Desteklenen TTS sağlayıcıları: TBD
+
+*   **[ ] AR:** مزودات Embedding المدعومة: TBD
+*   **[ ] FA:** ارائه‌دهندگان Embedding پشتیبانی شده: TBD
+*   **[ ] TR:** Desteklenen Embedding sağlayıcıları: TBD
+
+*   **[ ] AR:** نظام فولباك ديناميكي مدمج في AIRI للتبديل السلس بين عدة مزودي ذكاء اصطناعي مجانيين. فلسفة المصدر المفتوح: أفضل تجربة عبر مزودي الذكاء الاصطناعي المجتمعيين المجانيين. مزودو الخدمة بدون مفاتيح جاهزون من البداية. مسار BYOK متاح بسهولة. 🚀
+*   **[ ] FA:** سیستم فولبک دینامیک تعبیه شده در AIRI برای سوئیچ کردن روان بین چندین ارائه‌دهنده هوش مصنوعی رایگان. فلسفه متن‌باز: بهترین تجربه از طریق ارائه‌دهندگان هوش مصنوعی اجتماعی رایگان. ارائه‌دهندگان بدون کلید از ابتدا آماده‌اند. مسیر BYOK همیشه در دسترس است. 🚀
+*   **[ ] TR:** AIRI'ye gömülü dinamik fallback sistemi, birden fazla ücretsiz AI sağlayıcısı arasında sorunsuz geçiş için. Açık kaynak felsefesi: ücretsiz topluluk AI sağlayıcıları üzerinden en iyi deneyim. Anahtarsız sağlayıcılar kutudan çıktığı gibi hazır. BYOK yolu her zaman mevcut. 🚀
  
 ##### ⚙️🎩 readme_locale_de_155
 
-╭─[anima@net]─[~/ios] <br>
+╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Willkommen beim AnimAIOS Projekt! Wähle deine Sprache:
 
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -1565,35 +1620,42 @@ Das bedeutet:
 
 * [x] **Gehirn 🧠**
 
-  * [x] *Artistry:* Native KI-Bildgenerierung
+  * [x] *Artistry:* Native KI-Bildgenerierung (Replicate, ComfyUI)
   * [ ] *Proaktivität:* Autonome Companion-Interaktionen
   * [ ] *Mehrstufiges Gedächtnis:* built-in AIRI memory system
+      ↳ [ ] Per-character memory scoping that works with witnesses (multiple-character sharing the screen)
 * [x] **Ohren 👂**
 
   * [x] Lokale Spracherkennung und Sprecherkennung
 
 * [x] **Mund 🗣️**
 
-  * [x] OpenAI-kompatible Sprachprovider
+  * [x] OpenAI-kompatible Sprachprovider mit Spracherkennung
 
 * [x] **Körper 🤖**
 
   * [x] VRM Support
-  * [ ] LLM-gesteuerte Ausdrücke
+  * [ ] LLM-gesteuerte Ausdrücke, auto-blink und auto-look-at
   * [ ] Emotionen und Idle-Loops
   * [x] Live2D Support
+      ↳ [ ] LLM-gesteuerte Ausdrücke
 
 * [x] **Desktop Bühne 🖥️**
 
-  * [ ] Mehrere Charaktere auf einem Bildschirm
+  * [ ] Mehrere Charaktere auf einem Bildschirm (KISS 1 Fenster pro Charakter)
   * [ ] Szenen- und Hintergrundverwaltung
 
 * [ ] **AnimAIOS ⚡**
 
   * [x] System Tray & Screen Capture Integration
-  * [ ] Native GTK4 Fenster
+  * [ ] Native GTK4 Fenster statt Web-Widgets generieren
   * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) Integration
+      ↳ [ ] Send recent context snapshot with each AIRI heartbeat
   * [ ] AIRI Chatbox als natürlicher KI-Terminal
+
+- [ ] Misc
+  - [ ] Add mcp/skills via natural language prompts
+  - [ ] Native Wayland Support using Ozone platform flags
 
 ## 🤖 API Provider
 
@@ -1775,34 +1837,42 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
 * [x] **Mózg 🧠**
 
-  * [x] *Artistry:* natywne pipeline'y generowania obrazów AI
+  * [x] *Artistry:* natywne pipeline'y generowania obrazów AI (Replicate, ComfyUI)
   * [ ] *Proaktywność:* autonomiczne interakcje companionów
 
   * [ ] *Pamięć wielopoziomowa:* built-in AIRI memory system
-  * [x] Rozpoznawanie mowy po stronie klienta
+      ↳ [ ] Pamięć na poziomie postaci z obsługą witness-ów (wielu postaci na jednym ekranie)
+
+* [x] **Usi 👂**
+  * [x] Rozpoznawanie mowy po stronie klienta i wykrywanie rozmowy
 
 * [x] **Usta 🗣️**
-
-  * [x] Dostawcy głosu kompatybilni z OpenAI
+  * [x] Dostawcy głosu kompatybilni z OpenAI z odkrywaniem głosów
 
 * [x] **Ciało 🤖**
 
   * [x] Obsługa VRM
-  * [ ] Sterowanie ekspresją przez LLM
-  * [ ] Emocje i animacje idle
+    ↳ [ ] Sterowanie ekspresją przez LLM, auto-blink i auto-look-at
+    ↳ [ ] Emocje i animacje idle
   * [x] Obsługa Live2D
+      ↳ [ ] Sterowanie ekspresją przez LLM
 
 * [x] **Scena Desktop 🖥️**
 
-  * [ ] Wiele postaci na jednym ekranie
+  * [ ] Wiele postaci na jednym ekranie (KISS 1 okno na postać)
   * [ ] Zarządzanie scenami i tłami
 
 * [ ] **AnimAIOS ⚡**
 
   * [x] Integracja System Tray i przechwytywania ekranu
-  * [ ] Natywne okna GTK4
+  * [ ] Generuj natywne okna GTK4 zamiast widgetów web
   * [ ] Integracja [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
+      ↳ [ ] Wysyłanie aktualnego snapshotu kontekstu przy każdym AIRI heartbeat
   * [ ] AIRI Chat jako terminal sterowany naturalnym językiem
+
+* [ ] **Inne**
+  * [ ] Dodawanie mcp/skills przez prompty w języku naturalnym
+  * [ ] Natywne wsparcie Wayland przy użyciu flag platformy Ozone
 
 ## 🤖 Dostawcy API
 
@@ -1985,34 +2055,43 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 
 * [x] **Ми 🧠**
 
-  * [x] *Artistry:* AI сурет генерациясы
+  * [x] *Artistry:* AI сурет генерациясы (Replicate, ComfyUI)
   * [ ] *Проактивтілік:* автономды AI әрекеттері
   * [ ] *Көп деңгейлі жады:* built-in AIRI memory system
+      ↳ [ ] Атаулы жады персонаж деңгейінде witness-пен жұмыс істейді (бір экранда бірнеше кейіпкер)
 * [x] **Құлақ 👂**
 
   * [x] Құрылғы ішіндегі дауыс тану
 
 * [x] **Ауыз 🗣️**
 
-  * [x] OpenAI үйлесімді дауыс жүйелері
+  * [x] OpenAI үйлесімді дауыс жүйелері дыңдау анықтауымен
 
 * [x] **Дене 🤖**
 
   * [x] VRM қолдауы
-  * [ ] LLM арқылы эмоция және қозғалыс басқару
+  * [ ] LLM арқылы көз қыпару және қарау басқару
+  * [ ] LLM арқылы эмоциялар және idle-анимациялар
   * [x] Live2D қолдауы
+      ↳ [ ] LLM арқылы көз қыпару басқару
 
 * [x] **Desktop сахна 🖥️**
 
-  * [ ] Бір экрандағы бірнеше кейіпкер
+  * [ ] Бір экрандағы бірнеше кейіпкер (KISS 1 терезе = 1 кейіпкер)
   * [ ] Сахна және фон басқару
 
 * [ ] **AnimAIOS ⚡**
 
   * [x] System Tray және Screen Capture
-  * [ ] Native GTK4 терезелері
+  * [ ] Web-Widget-дердің орнына нативті GTK4 терезелерін генерациялау
   * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) интеграциясы
+      ↳ [ ] Әрбір AIRI heartbeat-те жаңа контекст snapshot жіберу
   * [ ] AIRI Chat-ті AI терминалға айналдыру
+
+* [ ] **Арнайы**
+
+  * [ ] MCP/skills қосу натурал тіл арқылы
+  * [ ] Ozone платформа флагтарымен нативті Wayland қолдау
 
 ## 🤖 API провайдерлері
 
