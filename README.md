@@ -127,7 +127,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [x] **Brain**
   - [x] _Artistry:_ Native image generation pipelines (Replicate, ComfyUI)
   - [ ] _Proactivity:_ Define triggers for autonomous companion interactions (heartbeats)
-  - [ ] _Multi-tier memory:_ [anima/vault](https://github.com/7n1m4/vault)
+  - [ ] _Multi-tier memory:_ built-in AIRI memory system
     - [ ] _Per-character memory scoping_ that works with witnesses (multiple-character sharing the screen)
 - [x] **Ears**
   - [x] Client-side speech recognition & talking detection
@@ -293,7 +293,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
   * [x] *アーティストリー:* ネイティブ画像生成パイプライン (Replicate, ComfyUI)
   * [ ] *プロアクティビティ:* 自律型コンパニオンインタラクション用トリガー定義 (ハートビート)
-  * [ ] *マルチティア・メモリー:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *マルチティア・メモリー:* built-in AIRI memory system
 
     * [ ] ウィットネス対応キャラクター別メモリースコープ (複数キャラクターによるスクリーン共有)
 
@@ -472,7 +472,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
   * [x] *아티스트리:* 네이티브 이미지 생성 파이프라인 (Replicate, ComfyUI)
   * [ ] *프로액티비티:* 자율 컴패니언 인터랙션 트리거 정의 (하트비트)
-  * [ ] *멀티 티어 메모리:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *멀티 티어 메모리:* built-in AIRI memory system
 
     * [ ] 캐릭터별 메모리 스코프 + 위트니스 지원 (여러 캐릭터 화면 공유)
 
@@ -651,7 +651,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 
   * [x] *Artistry:* Native Image Generation Pipeline（Replicate, ComfyUI）
   * [ ] *Proactivity:* 定义 Companion 自主交互 Trigger（Heartbeat）
-  * [ ] *Multi-tier Memory:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *Multi-tier Memory:* built-in AIRI memory system
 
     * [ ] *Per-character Memory Scoping:* 支持 Witness 场景下的角色独立记忆（多角色共享屏幕）
 
@@ -822,7 +822,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 * [ ] *Proactividad:* Definir gatillos para interacciones autónomas de la companion (heartbeats) | *Proatividade:* Definir gatilhos para interações autônomas da companion (heartbeats)
 
-* [ ] *Memoria en múltiples capas:* anima/vault | *Memória em múltiplas camadas:* anima/vault
+* [ ] *Memoria en múltiples capas:* built-in AIRI memory system | *Memória em múltiplas camadas:* built-in AIRI memory system
 
 * [ ] *Alcance de memoria por personaje* funcionando con witnesses (varios personajes compartiendo la pantalla) | *Escopo de memória por personagem* funcionando com witnesses (várias personagens compartilhando a tela)
 
@@ -1001,7 +1001,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 - [x] **Cerveau**
   - [x] _Artistry :_ Pipelines natifs de génération d'images (Replicate, ComfyUI)
   - [ ] _Proactivité :_ Définir les déclencheurs des interactions autonomes du compagnon (heartbeats)
-  - [ ] _Mémoire multi-niveaux :_ [anima/vault](https://github.com/7n1m4/vault)
+  - [ ] _Mémoire multi-niveaux :_ built-in AIRI memory system
     - [ ] _Mémoire isolée par personnage_ compatible avec les témoins (plusieurs personnages sur le même écran)
 - [x] **Oreilles**
   - [x] Reconnaissance vocale côté client & détection de parole
@@ -1159,7 +1159,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 
   * [x] *Artistry:* Нативные пайплайны генерации изображений (Replicate, ComfyUI)
   * [ ] *Проактивность:* Настройка триггеров для автономных взаимодействий компаньона (heartbeats)
-  * [ ] *Многоуровневая память:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *Многоуровневая память:* built-in AIRI memory system
 
     * [ ] *Память на уровне персонажа* с поддержкой witness-системы (несколько персонажей шарят один экран)
 * [x] **Уши**
@@ -1361,16 +1361,16 @@ cargo install tauri-cli --version '^2.0'
 ## 🚙 خارطة الطريق | نقشه راه | Yol Haritası
 
 *   **🧠 العقل / مغز / Beyin**
-    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* anima/vault (ذاكرة خاصة لكل شخصية).
-    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* anima/vault (حافظه اختصاصی برای هر کاراکتر).
-    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* anima/vault (Her karakter için özel hafıza).
+    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* built-in AIRI memory system (ذاكرة خاصة لكل شخصية).
+    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* built-in AIRI memory system (حافظه اختصاصی برای هر کاراکتر).
+    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* built-in AIRI memory system (Her karakter için özel hafıza).
 
 *   **👂 الأذن / گوش / Kulak**
     *   **AR:** التعرف على الصوت وكشف الكلام من الجهاز.
     *   **FA:** تشخیص صدا و گفتار روی دستگاه.
-    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* [anima/vault](https://github.com/7n1m4/vault) (ذاكرة خاصة لكل شخصية).
-    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* [anima/vault](https://github.com/7n1m4/vault) (حافظه اختصاصی برای هر کاراکتر).
-    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* [anima/vault](https://github.com/7n1m4/vault) (Her karakter için özel hafıza).
+    *   **AR:** *الفن:* أنظمة توليد الصور الأصلية (Replicate, ComfyUI) | *الاستباقية:* تعريف محفزات تفاعل الرفيقة الذكية | *ذاكرة متعددة المستويات:* built-in AIRI memory system (ذاكرة خاصة لكل شخصية).
+    *   **FA:** *هنر:* سیستم‌های تولید تصویر بومی (Replicate, ComfyUI) | *پیش‌دستی:* تعریف محرک‌های تعاملی همراه هوشمند | *حافظه چندسطحی:* built-in AIRI memory system (حافظه اختصاصی برای هر کاراکتر).
+    *   **TR:** *Artistry:* Yerel AI görsel üretim sistemleri (Replicate, ComfyUI) | *Proaktiflik:* Otonom AI etkileşimleri | *Çok katmanlı hafıza:* built-in AIRI memory system (Her karakter için özel hafıza).
     *   **AR:** مزودات صوت متوافقة مع OpenAI.
     *   **FA:** پشتیبانی از سرویس‌های صوتی سازگار با OpenAI.
     *   **TR:** OpenAI uyumlu ses sağlayıcıları.
@@ -1567,7 +1567,7 @@ Das bedeutet:
 
   * [x] *Artistry:* Native KI-Bildgenerierung
   * [ ] *Proaktivität:* Autonome Companion-Interaktionen
-  * [ ] *Mehrstufiges Gedächtnis:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *Mehrstufiges Gedächtnis:* built-in AIRI memory system
 * [x] **Ohren 👂**
 
   * [x] Lokale Spracherkennung und Sprecherkennung
@@ -1778,7 +1778,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
   * [x] *Artistry:* natywne pipeline'y generowania obrazów AI
   * [ ] *Proaktywność:* autonomiczne interakcje companionów
 
-  * [ ] *Pamięć wielopoziomowa:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *Pamięć wielopoziomowa:* built-in AIRI memory system
   * [x] Rozpoznawanie mowy po stronie klienta
 
 * [x] **Usta 🗣️**
@@ -1987,7 +1987,7 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 
   * [x] *Artistry:* AI сурет генерациясы
   * [ ] *Проактивтілік:* автономды AI әрекеттері
-  * [ ] *Көп деңгейлі жады:* [anima/vault](https://github.com/7n1m4/vault)
+  * [ ] *Көп деңгейлі жады:* built-in AIRI memory system
 * [x] **Құлақ 👂**
 
   * [x] Құрылғы ішіндегі дауыс тану
