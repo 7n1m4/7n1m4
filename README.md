@@ -145,7 +145,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [ ] **AnimAIOS (WIP)**
   - [x] System tray & screen capture integration
   - [ ] Generate native GTK4 windows instead of web widgets
-  - [ ] [anima/use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) deep integration
+  - [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) deep integration
     - [ ] Send recent context snapshot with each AIRI heartbeat
   - [ ] AIRI chatbox doubles as a system terminal with natural language detection (similar to Warp terminal)
 - [ ] **Misc**
@@ -324,7 +324,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 
   * [x] システムトレイ＆スクリーンキャプチャインテグレーション
   * [ ] Web ウィジェットではなくネイティブ GTK4 ウィンドウ生成
-  * [ ] [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) ディープインテグレーション
+  * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) ディープインテグレーション
 
     * [ ] AIRI ハートビートごとに最新コンテキストスナップショット送信
   * [ ] AIRI チャットボックスを自然言語検出対応システムターミナル化 (Warp ターミナル風)
@@ -503,7 +503,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 
   * [x] 시스템 트레이 & 스크린 캡처 인테그레이션
   * [ ] 웹 위젯 말고 네이티브 GTK4 윈도우 생성
-  * [ ] [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) 딥 인테그레이션
+  * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) 딥 인테그레이션
 
     * [ ] AIRI 하트비트마다 최신 컨텍스트 스냅샷 전송
   * [ ] AIRI 채팅박스를 자연어 감지 가능한 시스템 터미널로 변환 (Warp 터미널 느낌)
@@ -682,7 +682,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 
   * [x] System Tray & Screen Capture Integration
   * [ ] 不再使用 Web Widget，直接生成 Native GTK4 Window
-  * [ ] [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) 深度 Integration
+  * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) 深度 Integration
 
     * [ ] 每次 AIRI Heartbeat 携带最新 Context Snapshot
   * [ ] AIRI Chatbox 变身 System Terminal，支持 Natural Language Detection（类似 Warp Terminal）
@@ -858,7 +858,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 * [ ] Generar ventanas GTK4 nativas en lugar de widgets web | Gerar janelas GTK4 nativas em vez de widgets web
 
-* [ ] Integración profunda con anima-use-desktop | Integração profunda com anima-use-desktop
+* [ ] Integración profunda con [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) | Integração profunda com [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
 
 * [ ] Enviar una instantánea del contexto reciente a cada heartbeat de AIRI | Enviar um snapshot do contexto recente a cada heartbeat da AIRI
 
@@ -1019,7 +1019,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 - [ ] **AnimAIOS (WIP)**
   - [x] Intégration de la zone de notification et capture d'écran
   - [ ] Générer des fenêtres GTK4 natives au lieu de widgets web
-  - [ ] Intégration poussée de [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
+  - [ ] Intégration poussée de [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
     - [ ] Envoyer un snapshot récent du contexte à chaque heartbeat d'AIRI
 - [ ] **Divers**
   - [ ] Ajouter des MCP/skills via des prompts en langage naturel
@@ -1185,7 +1185,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 
   * [x] System tray и интеграция screen capture
   * [ ] Генерация нативных GTK4 окон вместо web widgets
-  * [ ] Глубокая интеграция с [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
+  * [ ] Глубокая интеграция с [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
 
     * [ ] Отправка свежего snapshot контекста с каждым AIRI heartbeat
   * [ ] AIRI chatbox превращается в системный терминал с распознаванием естественного языка (как Warp terminal)
@@ -1386,9 +1386,9 @@ cargo install tauri-cli --version '^2.0'
     *   **TR:** Aynı ekranda birden fazla karakter ve karakter bazlı sahne/arka plan yönetimi.
 
 *   **⚡ AnimAIOS (قيد التطوير / در حال توسعه / Yapım Aşamasında)**
-    *   **AR:** تكامل شريط النظام والتقاط الشاشة | إنشاء نوافذ GTK4 أصلية | تكامل anima-use-desktop | صندوق دردشة AIRI يصبح طرفية ذكية بلغة طبيعية.
-    *   **FA:** ادغام با System Tray و Screen Capture | ساخت پنجره‌های بومی GTK4 | ادغام با anima-use-desktop | تبدیل باکس چت AIRI به یک ترمینال هوشمند با زبان طبیعی.
-    *   **TR:** Sistem tepsisi ve ekran yakalama entegrasyonu | Native GTK4 pencereleri oluşturma | anima-use-desktop entegrasyonu | AI sohbet kutusunu doğal dil terminaline dönüştürme.
+    *   **AR:** تكامل شريط النظام والتقاط الشاشة | إنشاء نوافذ GTK4 أصلية | تكامل [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) | صندوق دردشة AIRI يصبح طرفية ذكية بلغة طبيعية.
+    *   **FA:** ادغام با System Tray و Screen Capture | ساخت پنجره‌های بومی GTK4 | ادغام با [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) | تبدیل باکس چت AIRI به یک ترمینال هوشمند با زبان طبیعی.
+    *   **TR:** Sistem tepsisi ve ekran yakalama entegrasyonu | Native GTK4 pencereleri oluşturma | [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) entegrasyonu | AI sohbet kutusunu doğal dil terminaline dönüştürme.
 
 ---
 
@@ -1592,7 +1592,7 @@ Das bedeutet:
 
   * [x] System Tray & Screen Capture Integration
   * [ ] Native GTK4 Fenster
-  * [ ] [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) Integration
+  * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) Integration
   * [ ] AIRI Chatbox als natürlicher KI-Terminal
 
 ## 🤖 API Provider
@@ -1801,7 +1801,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 
   * [x] Integracja System Tray i przechwytywania ekranu
   * [ ] Natywne okna GTK4
-  * [ ] Integracja [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080)
+  * [ ] Integracja [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
   * [ ] AIRI Chat jako terminal sterowany naturalnym językiem
 
 ## 🤖 Dostawcy API
@@ -2011,7 +2011,7 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 
   * [x] System Tray және Screen Capture
   * [ ] Native GTK4 терезелері
-  * [ ] [anima-use-desktop](http://p2xm27nhhably3alsz7n4pcjqn3gbt2jzdf2aenzty5c3eti6rfa.b32.i2p:8080) интеграциясы
+  * [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) интеграциясы
   * [ ] AIRI Chat-ті AI терминалға айналдыру
 
 ## 🤖 API провайдерлері
