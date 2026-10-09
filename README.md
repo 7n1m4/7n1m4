@@ -3,12 +3,6 @@
 </a>
 <img width="1122" height="1402" alt="anima-banner-v7" src="https://github.com/user-attachments/assets/0a518f8b-7f16-4976-b82b-ee6600b52545" />
 
-<!--TODO add 034 region locales -->
-<!--TODO add 035 region locales -->
-<!--TODO expand 030 region with mn/337 locale (try vertical layout) -->
-<!--TODO expand 143 region with uz locale -->
-<!--TODO expand 151 region with sr and cz/sk locales --> 
-
 ##### 🗽🦅 readme_locale_en_021
 ╭─[7n1m4@n3t]─[~/github] <br>
 ╰─➜ Welcome to AnimAIOS Project! Please choose your language:
@@ -2040,15 +2034,5 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
 <a href="https://ipfs.orbitor.dev/ipfs/bafybeic2pxdpgdfc43bkvpbt3jtjushebfszp4yvjn3lwqb264hvogr5me">
   <img src="https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fvi70x3%2Fairi&label=%F0%9F%92%93%20my%20little%20clicks%20counter&countColor=%23263759&style=flat" alt=":3" />
 </a>
-<!--
-<a href="https://github.com/orgs/anlma/repositories">
-  <img src="https://raw.githubusercontent.com/anlma/ios/refs/heads/main/docs/content/public/assets/corp-heatmap.svg" alt="Corp Heatmap">
-</a>
-<a href="https://github.com/orgs/animaios/repositories">
-  <img src="https://raw.githubusercontent.com/anlma/ios/refs/heads/main/docs/content/public/assets/org-heatmap.svg" alt="Org Heatmap">
-</a>
--->
-<img width="1383" height="1137" alt="she never asked for this v2" src="https://github.com/user-attachments/assets/77a915c5-646c-4628-997a-3b4a1d7c11db" />
-<img width="1387" height="1134" alt="she never asked for this v1" src="https://github.com/user-attachments/assets/9e33a8ed-9999-418b-b15c-bf47767dff4e" />
 
 ##### readme_codebase
