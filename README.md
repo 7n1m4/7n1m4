@@ -50,7 +50,7 @@
 
 ## 🌙 The Vision
 
-- **AIRI Companion Engine:** Your companion — AIRI. Ships fully pre-configured with her subsystem. Built on open-source philosophy: we deliver the best experience entirely through free community AI providers.
+- **AIRI Companion Engine:** Your local-first AI companion. Ships fully pre-configured with her subsystem. Built on open-source philosophy: we deliver the best experience entirely through free community AI providers.
 - **Dynamic Fallback System & BYOK:** Dynamic fallback system built directly into AIRI for seamless switching between free community AI providers. Keyless providers are pre-configured out of the box. Easy BYOK path to add your own keyed providers whenever you want more.
 - **System Integration:** Hooks fully into the system, from basic stuff like notifications to fully managing your Linux via terminal in Agentic Mode
 - **Context Awareness:** Your companion observes desktop activity to respond and interact proactively and she can also assume full desktop control in Agentic Mode
