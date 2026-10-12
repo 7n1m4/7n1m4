@@ -5,7 +5,7 @@
 
 ##### 🗽🦅 readme_locale_en_021
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Welcome to AnimAIOS Project! Please choose your language:
+╰─➜ Welcome to AnimaOS Project! Please choose your language:
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
   <img src="https://img.shields.io/badge/read%20me-English%20-1e3a8a" alt="English README">
@@ -41,7 +41,7 @@
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
   <sub>
-  <h2>AnimAIOS — an <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>-based distro coming this fall for Linux Desktop, DroidDesk (Termux:X11), DroidDeck (Linux + Proton), Steam Deck (SteamOS), CyberDeck (Raspberry Pi), and Wearable (Concept).</h2>
+  <h2>AnimaOS — an <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>-based distro coming this fall for Linux Desktop, DroidDesk (Termux:X11), DroidDeck (Linux + Proton), Steam Deck (SteamOS), CyberDeck (Raspberry Pi), and Wearable (Concept).</h2>
     <p>Comes with software pre-optimized for your CPU using <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> repositories and <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
     </p>
 </sub>
@@ -142,7 +142,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 - [x] **Desktop Stage**
   - [ ] Multiple characters sharing the screen (KISS 1 window per character)
   - [ ] Scene/background management per character
-- [ ] **AnimAIOS (WIP)**
+- [ ] **AnimaOS (WIP)**
   - [x] System tray & screen capture integration
   - [ ] Generate native GTK4 windows instead of web widgets
   - [ ] [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) deep integration
@@ -162,7 +162,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 ##### 🌸⛩️ readme_locale_ja_030
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ AnimAIOS プロジェクトへようこそ！言語を選択してください:
+╰─➜ AnimaOS プロジェクトへようこそ！言語を選択してください:
 
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -200,7 +200,7 @@ _(An optional PKGBUILD is located in `apps/stage-tamagotchi` to repackage the `.
 </a>
   <sub>
   <p>
-    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> ベースの AnimAIOS ディストリビューション。 この秋、あなたの Linux デスクトップ / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / サイバーデッキ (Raspberry Pi) / ウェアラブルへ (概念)。</h2>
+    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> ベースの AnimaOS ディストリビューション。 この秋、あなたの Linux デスクトップ / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / サイバーデッキ (Raspberry Pi) / ウェアラブルへ (概念)。</h2>
     <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> リポジトリと <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> による CPU 最適化済みソフトウェアをプリインストール。</p>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-ja-v9 4" src="https://github.com/user-attachments/assets/9f9fd731-582e-4897-8cff-0060d9076437" />  
@@ -320,7 +320,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
   * [ ] 複数キャラクターによるスクリーン共有 (KISS: 1 キャラクター = 1 ウィンドウ)
   * [ ] キャラクター別シーン / バックグラウンドマネージメント
 
-* [ ] **AnimAIOS (WIP)**
+* [ ] **AnimaOS (WIP)**
 
   * [x] システムトレイ＆スクリーンキャプチャインテグレーション
   * [ ] Web ウィジェットではなくネイティブ GTK4 ウィンドウ生成
@@ -344,7 +344,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 ##### 🎤👘 readme_locale_ko_030
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ AnimAIOS 프로젝트에 오신 걸 환영합니다! 언어를 선택해 주세요:
+╰─➜ AnimaOS 프로젝트에 오신 걸 환영합니다! 언어를 선택해 주세요:
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
   <img src="https://img.shields.io/badge/read%20me-English%20-1e3a8a" alt="English README">
@@ -381,7 +381,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS 用に `.deb` を `.zst` へリパッケージ
 </a>
   <sub>
   <p>
-    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 기반 AnimAIOS 디스트로. 이번 가을, 너의 Linux 데스크탑 / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / 사이버덱 / 웨어러블로 ㄱㄱ.</h2>
+    <h2><a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 기반 AnimaOS 디스트로. 이번 가을, 너의 Linux 데스크탑 / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / 사이버덱 / 웨어러블로 ㄱㄱ.</h2>
     <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> 리포와 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 기반 CPU 최적화 소프트웨어 기본 탑재.</p>
 </sub>
 <img width="1195" height="1316" alt="anima-logo-ko-v7 1" src="https://github.com/user-attachments/assets/21c2b883-8f67-4ed2-90dd-3eb170313c5a" />  
@@ -499,7 +499,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
   * [ ] 멀티 캐릭터 화면 공유 (KISS: 캐릭터 하나 = 윈도우 하나)
   * [ ] 캐릭터별 씬 / 배경 관리
 
-* [ ] **AnimAIOS (WIP)**
+* [ ] **AnimaOS (WIP)**
 
   * [x] 시스템 트레이 & 스크린 캡처 인테그레이션
   * [ ] 웹 위젯 말고 네이티브 GTK4 윈도우 생성
@@ -523,7 +523,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 ##### 🏮🐼 readme_locale_zh_030
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ 欢迎来到 AnimAIOS 项目！先选个语言开冲：
+╰─➜ 欢迎来到 AnimaOS 项目！先选个语言开冲：
 
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -559,7 +559,7 @@ _(Arch/Manjaro/CachyOS/EndeavorOS용 `.deb` → `.zst` 리패키징 옵션 PKGBU
 <a href="https://github.com/7n1m4#-readme_locale_kk_143">
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
-    <h2>基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimAIOS 发行版， 今秋登陆你的 Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept)。</h2>
+    <h2>基于 <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> 的 AnimaOS 发行版， 今秋登陆你的 Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept)。</h2>
     <p><a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> Repo 和 <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> 针对 CPU 深度优化的软件生态。</p>
 <img width="1218" height="1292" alt="anima-logo-zh-v9 2" src="https://github.com/user-attachments/assets/77ad419a-9d19-4e23-9af6-a6246b650305" />  
 </div>
@@ -678,7 +678,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
   * [ ] 多角色共享屏幕（KISS：一个角色一个窗口）
   * [ ] 每个角色独立 Scene / Background Management
 
-* [ ] **AnimAIOS (WIP)**
+* [ ] **AnimaOS (WIP)**
 
   * [x] System Tray & Screen Capture Integration
   * [ ] 不再使用 Web Widget，直接生成 Native GTK4 Window
@@ -702,7 +702,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 ##### 🌴⚽ readme_locale_es_pt_039_419
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Bem-vindo ao projeto AnimAIOS! Escolha seu idioma:
+╰─➜ Bem-vindo ao projeto AnimaOS! Escolha seu idioma:
 
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -740,7 +740,7 @@ _(可选 PKGBUILD 位于 `apps/stage-tamagotchi`，用于将 `.deb` Repackage �
 </a>
   <sub>
     <p>
-    <h2>A distro AnimAIOS baseada no <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pro seu Desktop Linux / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept), chegando neste outono.</h2>
+    <h2>A distro AnimaOS baseada no <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pro seu Desktop Linux / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept), chegando neste outono.</h2>
     <p>Já vem com os pacotes pré-otimizados pro seu CPU usando os repositórios do <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> e <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1122" height="1402" alt="anima-logo-pt-es-v10 4" src="https://github.com/user-attachments/assets/804aeaff-ee1d-4f2a-9e4b-959fd6b40b15" />  
 </div>
@@ -852,7 +852,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 
 * [ ] Gestión de escena/fondo por personaje | Gerenciamento de cena/background por personagem
 
-* [ ] **AnimAIOS (WIP)**
+* [ ] **AnimaOS (WIP)**
 
 * [x] Integración con bandeja del sistema y captura de pantalla | Integração com bandeja do sistema e captura de tela
 
@@ -880,7 +880,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 ##### 🥐🍷 readme_locale_fr_002_155
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Bienvenue sur le projet AnimAIOS ! Choisissez votre langue :
+╰─➜ Bienvenue sur le projet AnimaOS ! Choisissez votre langue :
 
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -918,7 +918,7 @@ Esta migración también es el primer paso para builds nativos de AIRI en Androi
 </a>
   <sub>
     <p>
-    <h2>Distribution AnimAIOS basée sur <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pour ton Desktop Linux / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept), cet automne.</h2>
+    <h2>Distribution AnimaOS basée sur <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, pour ton Desktop Linux / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept), cet automne.</h2>
     <p>Livrée avec des logiciels déjà optimisés pour ton CPU grâce aux dépôts <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> et <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>.</p>
 <img width="1200" height="1311" alt="anima-logo-fr-v7 4" src="https://github.com/user-attachments/assets/85a8ea15-b959-4798-a15d-8e0c9122632c" />  
 </div>
@@ -1016,7 +1016,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 - [x] **Scène Desktop**
   - [ ] Plusieurs personnages partageant le même écran (KISS : 1 fenêtre par personnage)
   - [ ] Gestion des scènes/arrière-plans par personnage
-- [ ] **AnimAIOS (WIP)**
+- [ ] **AnimaOS (WIP)**
   - [x] Intégration de la zone de notification et capture d'écran
   - [ ] Générer des fenêtres GTK4 natives au lieu de widgets web
   - [ ] Intégration poussée de [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux)
@@ -1035,7 +1035,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
 ##### 🪆🐻‍❄️ readme_locale_ru_810
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Добро пожаловать в проект AnimAIOS! Выберите язык:
+╰─➜ Добро пожаловать в проект AnimaOS! Выберите язык:
 
 <div align=center>
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -1072,7 +1072,7 @@ _(Un PKGBUILD optionnel est disponible dans `apps/stage-tamagotchi` pour recondi
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
   <sub>
-    <h2>Дистрибутив AnimAIOS на базе <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept) уже этой осенью.</h2>
+    <h2>Дистрибутив AnimaOS на базе <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>, залетает на твой Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept) уже этой осенью.</h2>
     <h3>В комплекте софт, заранее затюненный под твой CPU через <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> репозитории и <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, обеспечивая вирус-фри Arch опыт.</h3>
 </sub>
 <img width="1205" height="1305" alt="anima-logo-ru-v11 1" src="https://github.com/user-attachments/assets/9d730026-1681-4b13-b356-34653d32560d" />
@@ -1181,7 +1181,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 
   * [ ] Несколько персонажей на одном экране (KISS: одно окно на персонажа)
   * [ ] Управление сценами/фонами для каждого персонажа
-* [ ] **AnimAIOS (WIP)**
+* [ ] **AnimaOS (WIP)**
 
   * [x] System tray и интеграция screen capture
   * [ ] Генерация нативных GTK4 окон вместо web widgets
@@ -1204,7 +1204,7 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
 ##### 🌙🕌 readme_locale_ar_fa_tr_015_145
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ أهلاً بك في مشروع AnimAIOS! اختر لغتك:
+╰─➜ أهلاً بك في مشروع AnimaOS! اختر لغتك:
 
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -1241,9 +1241,9 @@ _(Опциональный PKGBUILD лежит в `apps/stage-tamagotchi` и п�
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
 <sub>
-    <h2><b>AnimAIOS</b> مبنية على <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / الأجهزة القابلة للارتداء.</h2>
-    <h2>توزيعۀ <b>AnimAIOS</b> ساخته شده بر پایه‌ی <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS)، CyberDeck (Raspberry Pi) و دستگاه‌های پوشیدنی.</h2>
-    <h2><b>AnimAIOS</b>, <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi.</h2>
+    <h2><b>AnimaOS</b> مبنية على <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>، لجهاز Linux المكتبي / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / الأجهزة القابلة للارتداء.</h2>
+    <h2>توزيعۀ <b>AnimaOS</b> ساخته شده بر پایه‌ی <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> برای دسکتاپ لینوکس، DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS)، CyberDeck (Raspberry Pi) و دستگاه‌های پوشیدنی.</h2>
+    <h2><b>AnimaOS</b>, <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> tabanlı, yapay zeka destekli yeni nesil masaüstü işletim sistemi.</h2>
     <p>تأتي مع برامج محسّنة مسبقاً لمعالجك باستخدام مستودعات <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، لتجربة Arch خالية من الفيروسات.</p>
     <p>با نرم‌افزارهایی که برای CPU شما بهینه شده‌اند، با استفاده از مخازن <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> و <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>، برای تجربه‌ی Arch بدون ویروس.</p>
     <p>CPU'n için optimize edilmiş yazılımlar <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> ve <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> depoları ile geliyor, virüsüz Arch deneyimi sunuyor.</p>
@@ -1417,7 +1417,7 @@ cargo install tauri-cli --version '^2.0'
     *   **FA:** [ ] مدیریت صحنه و بک‌گراند برای هر شخصیت
     *   **TR:** [ ] Karakter bazlı sahne/arka plan yönetimi
 
-*   **[ ] ⚡ AnimAIOS (قيد التطوير / در حال توسعه / Yapım Aşamasında)**
+*   **[ ] ⚡ AnimaOS (قيد التطوير / در حال توسعه / Yapım Aşamasında)**
     *   **AR:** [x] تكامل شريط النظام والتقاط الشاشة
     *   **FA:** [x] ادغام با System Tray و Screen Capture
     *   **TR:** [x] Sistem tepsisi ve ekran yakalama entegrasyonu
@@ -1463,7 +1463,7 @@ cargo install tauri-cli --version '^2.0'
 ##### ⚙️🎩 readme_locale_de_155
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Willkommen beim AnimAIOS Projekt! Wähle deine Sprache:
+╰─➜ Willkommen beim AnimaOS Projekt! Wähle deine Sprache:
 
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
   <img src="https://img.shields.io/badge/read%20me-English%20-1e3a8a" alt="English README">
@@ -1499,7 +1499,7 @@ cargo install tauri-cli --version '^2.0'
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
 <sub>
-    <h2><b>AnimAIOS</b> ist eine KI-native Distribution auf Basis von <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Dein persönlicher KI-Begleiter für Linux Desktop, DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS), CyberDeck (Raspberry Pi)s und Wearable (Concept)s.</h2>
+    <h2><b>AnimaOS</b> ist eine KI-native Distribution auf Basis von <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Dein persönlicher KI-Begleiter für Linux Desktop, DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS), CyberDeck (Raspberry Pi)s und Wearable (Concept)s.</h2>
     <h3>Mit voroptimierter Software für deine CPU durch <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> und <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, für ein virenfreies Arch-Erlebnis.</h3>
 </sub>
 <img width="1122" height="1402" alt="anima-logo-de-v5 4" src="https://github.com/user-attachments/assets/0bdbfbf5-4269-4e05-8a97-c1be29b4cfed" />
@@ -1645,7 +1645,7 @@ Das bedeutet:
   * [ ] Mehrere Charaktere auf einem Bildschirm (KISS 1 Fenster pro Charakter)
   * [ ] Szenen- und Hintergrundverwaltung
 
-* [ ] **AnimAIOS ⚡**
+* [ ] **AnimaOS ⚡**
 
   * [x] System Tray & Screen Capture Integration
   * [ ] Native GTK4 Fenster statt Web-Widgets generieren
@@ -1674,7 +1674,7 @@ Das bedeutet:
 ##### ⚡🐺 readme_locale_pl_151
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ Witaj w projekcie AnimAIOS! Wybierz swój język:
+╰─➜ Witaj w projekcie AnimaOS! Wybierz swój język:
 
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -1711,7 +1711,7 @@ Das bedeutet:
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
 <sub>
-    <h2><b>AnimAIOS</b> — dystrybucja nowej generacji oparta na <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Twój osobisty towarzysz AI dla Linux Desktop, DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS), CyberDeck (Raspberry Pi)ów i urządzeń przyszłości.</h2>
+    <h2><b>AnimaOS</b> — dystrybucja nowej generacji oparta na <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a>. Twój osobisty towarzysz AI dla Linux Desktop, DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS), CyberDeck (Raspberry Pi)ów i urządzeń przyszłości.</h2>
     <h3>Oprogramowanie zoptymalizowane pod Twój CPU dzięki repozytoriom <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> i <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a>, zapewniając doświadczenie Arch bez wirusów.</h3>
 </sub>
 <img width="1206" height="1305" alt="anima-logo-pl-v8 1" src="https://github.com/user-attachments/assets/81f62662-90fc-4818-9080-0f90a8f6d6ae" />
@@ -1862,7 +1862,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
   * [ ] Wiele postaci na jednym ekranie (KISS 1 okno na postać)
   * [ ] Zarządzanie scenami i tłami
 
-* [ ] **AnimAIOS ⚡**
+* [ ] **AnimaOS ⚡**
 
   * [x] Integracja System Tray i przechwytywania ekranu
   * [ ] Generuj natywne okna GTK4 zamiast widgetów web
@@ -1892,7 +1892,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
 ##### 🌌🐆 readme_locale_kk_143
 
 ╭─[7n1m4@n3t]─[~/github] <br>
-╰─➜ AnimAIOS жобасына қош келдің! Тіліңді таңда:
+╰─➜ AnimaOS жобасына қош келдің! Тіліңді таңда:
 
 <div align="center">
 <a href="https://github.com/7n1m4#-readme_locale_en_021">
@@ -1929,7 +1929,7 @@ Ta migracja otwiera drogę do przyszłych wersji AIRI dla Androida i iOS.
   <img src="https://img.shields.io/badge/оқы-Қазақша%20-00A86B" alt="Қазақша README">
 </a>
 <sub>
-    <h2><b>AnimAIOS</b> — <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы. Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept) құрылғыларында өзіңнің AI серігіңді іске қос.</h2>
+    <h2><b>AnimaOS</b> — <a href="https://endeavouros.com/" target="_blank">EndeavourOS</a> негізіндегі жаңа буын AI операциялық ортасы. Linux Desktop / DroidDesk (Termux:X11) · DroidDeck (Linux/Proton) · Steam Deck (SteamOS) / CyberDeck (Raspberry Pi) / Wearable (Concept) құрылғыларында өзіңнің AI серігіңді іске қос.</h2>
     <h3>CPU-ға арнайы оңтайландырылған бағдарламалар <a href="https://packages.cachyos.org/" target="_blank">CachyOS</a> және <a href="https://aur.chaotic.cx/" target="_blank">Chaotic-AUR</a> арқылы келеді, вируссыз Arch тәжірибесін қамтамасыз етеді.</h3>
 </sub>
 <img width="1200" height="1311" alt="anima-logo-143-v5 2" src="https://github.com/user-attachments/assets/4e60c020-dbdb-4bac-b493-a8fee2a3a076" />
@@ -2080,7 +2080,7 @@ Tauri бізге Vue 3 интерфейсін және AIRI тәжірибесі
   * [ ] Бір экрандағы бірнеше кейіпкер (KISS 1 терезе = 1 кейіпкер)
   * [ ] Сахна және фон басқару
 
-* [ ] **AnimAIOS ⚡**
+* [ ] **AnimaOS ⚡**
 
   * [x] System Tray және Screen Capture
   * [ ] Web-Widget-дердің орнына нативті GTK4 терезелерін генерациялау
