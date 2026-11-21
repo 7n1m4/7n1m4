@@ -381,6 +381,16 @@ impl CoreService {
         guard.core.as_ref().map(|c| c.chat.clone())
     }
 
+    /// Raw provider rows (configuration may include secrets) for daemon-owned
+    /// chat sending. Callers must never serve these over RPC.
+    pub fn provider_rows(&self) -> Result<Vec<anima_store::StoredProvider>, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        core.provider_repo()
+            .list()
+            .map_err(|_| "provider list failed".to_string())
+    }
+
     /// Request cancellation of an in-flight generation.
     pub fn chat_stop(&self, session_id: &str) -> Result<bool, String> {
         let svc = self.chat_service().ok_or_else(|| "store unavailable".to_string())?;

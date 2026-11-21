@@ -45,7 +45,6 @@
 
 use crate::core::CoreService;
 use crate::events::EventPublisher;
-use anima_llm::ProviderConfig;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -596,6 +595,9 @@ impl Gateway {
                                 content: value.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                             }
                         });
+                    if req.content.is_empty() {
+                        return Err("empty content".to_string());
+                    }
                     let session_id = if req.session_id.is_empty() {
                         anima_channel::uuid::uuid_v4()
                     } else {
@@ -606,19 +608,38 @@ impl Gateway {
                     let Some(svc) = svc else {
                         return Err("core unavailable".to_string());
                     };
-                    // persist user turn via single writer
-                    let _ = core.chat_send(&session_id, &content);
+                    // Persist the user turn via the daemon single writer; an
+                    // unavailable store fails the request honestly instead of
+                    // streaming a turn that will never be recorded.
+                    core.chat_send(&session_id, &content)?;
                     let cancel_flag = core.chat_cancel_flag(&session_id);
                     cancel_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                     let pub_clone = publisher.clone();
+                    let err_pub = publisher.clone();
                     let sid = session_id.clone();
                     let content_clone = content.clone();
+                    let rows = core.provider_rows().unwrap_or_default();
                     std::thread::spawn(move || {
                         let rt = match tokio::runtime::Runtime::new() {
                             Ok(r) => r,
                             Err(_) => return,
                         };
                         rt.block_on(async move {
+                            let resolution = anima_core::providers::resolve_provider(
+                                |k| std::env::var(k).ok(),
+                                &rows,
+                            );
+                            let Some(resolution) = resolution else {
+                                let _ = pub_clone.token_delta(
+                                    sid.clone(),
+                                    String::new(),
+                                    String::new(),
+                                    0,
+                                    true,
+                                    None,
+                                );
+                                return;
+                            };
                             let mut rx = svc.subscribe();
                             let pump = tokio::spawn(async move {
                                 while let Ok(ev) = rx.recv().await {
@@ -636,9 +657,39 @@ impl Gateway {
                                     }
                                 }
                             });
-                            let _ = svc.send_message(None, "mock", ProviderConfig::default(), "mock-model", &content_clone).await;
-                            let _ = sid;
+                            let result = svc
+                                .send_message(
+                                    None,
+                                    &resolution.id,
+                                    resolution.config,
+                                    &resolution.model,
+                                    &content_clone,
+                                )
+                                .await;
                             pump.abort();
+                            match result {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    let _ = err;
+                                    let _ = err_pub.token_delta(
+                                        sid.clone(),
+                                        String::new(),
+                                        String::new(),
+                                        0,
+                                        true,
+                                        None,
+                                    );
+                                }
+                            }
+                        // Disconnect behavior: this handler returns the chat.send ack before the
+                        // stream completes, and the pump runs in a background thread that is not
+                        // tied to the WebSocket connection lifetime. If a client disconnects
+                        // mid-stream, deltas continue to be published on the event bus; with no
+                        // subscriber they are dropped by the bus, and the persisted user turn
+                        // remains honest. The supported way to stop an in-flight turn is
+                        // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
+                        // stops the generation; late events do not resurrect a cancelled turn.
+                        let _ = sid;
                         });
                     });
                     let reply = anima_channel::wire::ChatSendReply {
@@ -931,6 +982,15 @@ mod tests {
         let h = handlers.get("chat.send").expect("chat.send registered");
         let reply = h("chat.send", &serde_json::json!({"session_id":"s1","content":"hi"})).expect("ok");
         assert_eq!(reply["accepted"], true);
+    }
+
+    #[test]
+    fn chat_send_rejects_empty_content() {
+        let (gateway, _tmp) = fresh_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let h = handlers.get("chat.send").expect("chat.send registered");
+        let err = h("chat.send", &serde_json::json!({"session_id":"s1","content":""})).expect_err("empty content must fail");
+        assert!(!err.is_empty());
     }
 
     #[test]
@@ -1315,5 +1375,68 @@ mod tests {
         assert!(!obj.contains_key("config"));
         assert!(!obj.contains_key("keys"));
         assert!(!obj.contains_key("ciphertext"));
+    }
+
+    #[test]
+    fn chat_send_stop_end_to_end() {
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::Arc;
+
+        /// Provider that never yields a delta (pends forever) — exercises
+        /// cancellation via the poll ticker rather than stream completion.
+        struct PendingMock;
+        #[async_trait]
+        impl anima_llm::ChatProvider for PendingMock {
+            fn id(&self) -> &str {
+                "e2e-stop"
+            }
+            async fn models(
+                &self,
+            ) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                _req: ChatRequest,
+            ) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::pending::<Result<ChatChunk, anima_llm::LlmError>>()))
+            }
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("server-channel");
+        let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
+
+        // Register the never-yielding provider on the daemon-owned ChatService.
+        let svc = gateway.core.chat_service().expect("chat service");
+        svc.providers
+            .lock()
+            .unwrap()
+            .insert("e2e-stop".to_string(), Arc::new(PendingMock));
+
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
+
+        // Start the stream (pends forever).
+        let send = handlers.get("chat.send").expect("chat.send registered");
+        let reply = send(
+            "chat.send",
+            &serde_json::json!({"session_id":"stop-session","content":"stop me"}),
+        )
+        .expect("chat.send Ok");
+        assert_eq!(reply["accepted"], true);
+
+        // Give the pump a moment to register its cancel flag.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Cancel -> pump breaks on cancel flag, ChatService::stop halts generation.
+        let cancel = handlers.get("chat.cancel").expect("chat.cancel registered");
+        let creply = cancel(
+            "chat.cancel",
+            &serde_json::json!({"session_id":"stop-session"}),
+        )
+        .expect("chat.cancel Ok");
+        assert_eq!(creply["cancelled"], true);
     }
 }
