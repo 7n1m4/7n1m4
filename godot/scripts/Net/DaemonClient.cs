@@ -178,6 +178,27 @@ public sealed class DaemonClient : IDisposable
     }
 
     /// <summary>
+    /// Static convenience: connect to [uri] with [token] and return an
+    /// authenticated client. Mirrors the Rust <c>daemon_connect(uri, token)</c>
+    /// and Dart <c>DaemonClient.fromUri(uri, token)</c> helpers. C# permits a
+    /// static method sharing the name with the instance <see cref="ConnectAsync(CancellationToken)"/>
+    /// because the signatures differ.
+    /// </summary>
+    public static async Task<DaemonClient> ConnectAsync(
+        string uri,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+            throw new ArgumentException("uri is required", nameof(uri));
+        if (string.IsNullOrWhiteSpace(token))
+            throw new ArgumentException("token is required", nameof(token));
+        var client = new DaemonClient(authToken: token, endpoint: uri);
+        await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        return client;
+    }
+
+    /// <summary>
     /// Opt in to <paramref name="topics"/> via the <c>event.subscribe</c> RPC.
     /// Default is <see cref="DaemonConnectionState.Authenticated"/> (no events);
     /// this moves it to <see cref="DaemonConnectionState.Subscribed"/>. The

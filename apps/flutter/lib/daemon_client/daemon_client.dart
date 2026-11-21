@@ -149,6 +149,38 @@ class DaemonClient {
     _attempt = 0;
     await _open();
   }
+  /// Instance variant: parse [uri] into [ConnectionSettings] and delegate to
+  /// [connect]. Named to avoid the Dart static/instance name collision on
+  /// `connect`.
+  Future<void> connectUri(String uri, String token) async {
+    await connect(_settingsFromUri(uri, token));
+  }
+
+  /// Static convenience factory: connect to [uri] with [token] and return an
+  /// authenticated client. Dart forbids a static `connect` sharing a name
+  /// with the instance `connect(ConnectionSettings)`, so this is named
+  /// `fromUri` (see docs/daemon-client-connection.md).
+  static Future<DaemonClient> fromUri(String uri, String token) async {
+    final client = DaemonClient();
+    await client.connectUri(uri, token);
+    return client;
+  }
+
+  static ConnectionSettings _settingsFromUri(String uri, String token) {
+    final parsed = Uri.parse(uri);
+    final scheme = parsed.scheme.isEmpty ? ConnectionSettings.defaultScheme : parsed.scheme;
+    final host = parsed.host.isEmpty ? ConnectionSettings.defaultHost : parsed.host;
+    final port = parsed.hasPort ? parsed.port : ConnectionSettings.defaultPort;
+    final path = parsed.path.isEmpty ? ConnectionSettings.defaultPath : parsed.path;
+    return ConnectionSettings(
+      host: host,
+      port: port,
+      scheme: scheme,
+      path: path,
+      authToken: token,
+    );
+  }
+
 
   Future<void> _open() async {
     final settings = _settings;

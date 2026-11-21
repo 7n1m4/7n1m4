@@ -259,6 +259,64 @@ pub struct VaultStatusReply {
     pub stats: Option<VaultStatsData>,
 }
 
+/// Request payload for `chat.send`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSendRequest {
+    /// Session id (created on demand when empty/unknown).
+    pub session_id: String,
+    /// User message content.
+    pub content: String,
+}
+
+/// Reply payload for `chat.send` (initial ack; deltas stream as events).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSendReply {
+    /// Effective session id.
+    pub session_id: String,
+    /// Assistant message id for the turn.
+    pub message_id: String,
+    /// Whether the turn was accepted.
+    pub accepted: bool,
+}
+
+/// A streamed chat delta (transport-level, distinct from token.delta event).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDelta {
+    /// Session id.
+    pub session_id: String,
+    /// Assistant message id.
+    pub message_id: String,
+    /// Delta text.
+    pub delta: String,
+    /// Zero-based token index.
+    #[specta(type = specta_typescript::Number)]
+    pub index: u64,
+    /// True on final.
+    #[serde(rename = "final")]
+    pub final_: bool,
+}
+
+/// Request payload for `chat.cancel`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCancelRequest {
+    /// Session id.
+    pub session_id: String,
+    /// Request/turn id (optional correlation).
+    pub request_id: Option<String>,
+}
+
+/// Reply payload for `chat.cancel`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCancelReply {
+    /// Whether a generation was cancelled.
+    pub cancelled: bool,
+}
+
 /// Vault statistics data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]

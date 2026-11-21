@@ -45,6 +45,7 @@
 
 use crate::core::CoreService;
 use crate::events::EventPublisher;
+use anima_llm::ProviderConfig;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -482,10 +483,10 @@ impl Gateway {
         core: &CoreService,
         publisher: &EventPublisher,
     ) -> anima_channel::RendererHandlers {
-        let publisher = publisher.clone();
         let mut m = std::collections::HashMap::new();
         {
             let core = core.clone();
+            let publisher = publisher.clone();
             m.insert(
                 "core.status".to_string(),
                 Box::new(move |_method: &str, _value: &serde_json::Value| {
@@ -573,6 +574,98 @@ impl Gateway {
                 "vault.status".to_string(),
                 Box::new(move |_method: &str, _value: &serde_json::Value| {
                     let reply = core.vault_status()?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                })
+                    as Box<
+                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
+                            + Send
+                            + Sync,
+                    >,
+            );
+        }
+        {
+            let core = core.clone();
+            let publisher = publisher.clone();
+            m.insert(
+                "chat.send".to_string(),
+                Box::new(move |_method: &str, value: &serde_json::Value| {
+                    let req: anima_channel::wire::ChatSendRequest =
+                        serde_json::from_value(value.clone()).unwrap_or_else(|_| {
+                            anima_channel::wire::ChatSendRequest {
+                                session_id: value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                content: value.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            }
+                        });
+                    let session_id = if req.session_id.is_empty() {
+                        anima_channel::uuid::uuid_v4()
+                    } else {
+                        req.session_id.clone()
+                    };
+                    let content = req.content.clone();
+                    let svc = core.chat_service();
+                    let Some(svc) = svc else {
+                        return Err("core unavailable".to_string());
+                    };
+                    // persist user turn via single writer
+                    let _ = core.chat_send(&session_id, &content);
+                    let cancel_flag = core.chat_cancel_flag(&session_id);
+                    let pub_clone = publisher.clone();
+                    let sid = session_id.clone();
+                    let content_clone = content.clone();
+                    std::thread::spawn(move || {
+                        let rt = match tokio::runtime::Runtime::new() {
+                            Ok(r) => r,
+                            Err(_) => return,
+                        };
+                        rt.block_on(async move {
+                            let mut rx = svc.subscribe();
+                            let pump = tokio::spawn(async move {
+                                while let Ok(ev) = rx.recv().await {
+                                    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                                        break;
+                                    }
+                                    match ev {
+                                        anima_core::chat::ChatEvent::Delta { session, message, delta } => {
+                                            pub_clone.token_delta(session, message, delta, 0, false, None);
+                                        }
+                                        anima_core::chat::ChatEvent::MessageDone { session, message } => {
+                                            pub_clone.token_delta(session, message, String::new(), 0, true, None);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            });
+                            let _ = svc.send_message(None, "mock", ProviderConfig::default(), "mock-model", &content_clone).await;
+                            let _ = sid;
+                            pump.abort();
+                        });
+                    });
+                    let reply = anima_channel::wire::ChatSendReply {
+                        session_id: session_id.clone(),
+                        message_id: String::new(),
+                        accepted: true,
+                    };
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                })
+                    as Box<
+                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
+                            + Send
+                            + Sync,
+                    >,
+            );
+        }
+        {
+            let core = core.clone();
+            let publisher = publisher.clone();
+            m.insert(
+                "chat.cancel".to_string(),
+                Box::new(move |_method: &str, value: &serde_json::Value| {
+                    let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let cancelled = core.chat_cancel(&session_id);
+                    if cancelled {
+                        publisher.token_delta(session_id.clone(), String::new(), String::new(), 0, true, None);
+                    }
+                    let reply = anima_channel::wire::ChatCancelReply { cancelled };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 })
                     as Box<
@@ -828,6 +921,24 @@ mod tests {
 
     fn get_json(gateway: &Gateway) -> serde_json::Value {
         serde_json::from_str(&gateway.handle(&GatewayRequest::Get)).unwrap()
+    }
+
+    #[test]
+    fn chat_send_over_ws_returns_deltas() {
+        let (gateway, _tmp) = fresh_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let h = handlers.get("chat.send").expect("chat.send registered");
+        let reply = h("chat.send", &serde_json::json!({"session_id":"s1","content":"hi"})).expect("ok");
+        assert_eq!(reply["accepted"], true);
+    }
+
+    #[test]
+    fn chat_cancel_stops_stream() {
+        let (gateway, _tmp) = fresh_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let h = handlers.get("chat.cancel").expect("chat.cancel registered");
+        let reply = h("chat.cancel", &serde_json::json!({"session_id":"s1"})).expect("ok");
+        assert!(reply.get("cancelled").is_some());
     }
 
     #[test]

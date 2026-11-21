@@ -8,6 +8,7 @@ use anima_daemon::core::CoreService;
 use anima_slint::daemon_mode::{DaemonMode, SelectedMode, select_mode};
 use anima_store::Database;
 use anima_store::SessionRepo;
+use anima_store::MessageRepo;
 use tempfile::tempdir;
 
 fn store_path(profile: &std::path::Path) -> PathBuf {
@@ -162,4 +163,48 @@ fn mode_selection_controls_store_ownership() {
     let profile = tempdir().unwrap();
     assert_eq!(select_mode(DaemonMode::Required, || false), SelectedMode::Unavailable);
     assert!(!store_path(profile.path()).exists());
+}
+
+
+#[test]
+fn chat_send_daemon_single_writer() {
+    let daemon_profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
+    assert!(svc.available());
+    assert!(store_path(daemon_profile.path()).exists());
+
+    let message = svc.chat_send("session-1", "hello").unwrap();
+    assert_eq!(message.role, "user");
+    assert_eq!(message.content, "hello");
+    assert_eq!(message.session_id, "session-1");
+
+    let db = Database::open(&store_path(daemon_profile.path())).unwrap();
+    let messages = MessageRepo::new(db).list("session-1").unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].content, "hello");
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
+}
+
+#[test]
+fn chat_stream_replays_sessions() {
+    let daemon_profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
+    assert!(svc.available());
+
+    svc.chat_send("session-a", "first").unwrap();
+    svc.chat_send("session-a", "second").unwrap();
+    svc.chat_send("session-b", "other").unwrap();
+
+    let replay = svc.chat_stream("session-a").unwrap();
+    assert_eq!(replay.len(), 2);
+    assert_eq!(replay[0].content, "first");
+    assert_eq!(replay[1].content, "second");
+
+    let replay_b = svc.chat_stream("session-b").unwrap();
+    assert_eq!(replay_b.len(), 1);
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
 }

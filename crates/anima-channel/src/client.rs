@@ -711,3 +711,42 @@ fn close_error(payload: &[u8], fallback: &str) -> GatewayClientError {
     };
     GatewayClientError::Closed { code, reason }
 }
+
+/// Connect to a daemon gateway and complete the auth handshake in one step.
+///
+/// Convenience wrapper around [`GatewayClient::connect`] and
+/// [`GatewayClient::authenticate`] for the common loopback `ws://` case (no CA
+/// required). For `wss://`, supply a CA PEM via [`GatewayClient::connect`]
+/// (or [`daemon_connect_with_ca`]) before authenticating.
+pub fn daemon_connect(uri: &str, token: &str) -> Result<GatewayClient, GatewayClientError> {
+    let mut client = GatewayClient::connect(uri, None)?;
+    client.authenticate(token)?;
+    Ok(client)
+}
+
+/// Like [`daemon_connect`] but accepts a CA PEM for `wss://` connections.
+pub fn daemon_connect_with_ca(
+    uri: &str,
+    token: &str,
+    ca_cert_pem: &[u8],
+) -> Result<GatewayClient, GatewayClientError> {
+    let mut client = GatewayClient::connect(uri, Some(ca_cert_pem))?;
+    client.authenticate(token)?;
+    Ok(client)
+}
+
+impl GatewayClient {
+    /// Convenience constructor mirroring the free [`daemon_connect`] helper.
+    pub fn daemon_connect(uri: &str, token: &str) -> Result<Self, GatewayClientError> {
+        crate::client::daemon_connect(uri, token)
+    }
+
+    /// Convenience constructor mirroring [`daemon_connect_with_ca`].
+    pub fn daemon_connect_with_ca(
+        uri: &str,
+        token: &str,
+        ca_cert_pem: &[u8],
+    ) -> Result<Self, GatewayClientError> {
+        crate::client::daemon_connect_with_ca(uri, token, ca_cert_pem)
+    }
+}

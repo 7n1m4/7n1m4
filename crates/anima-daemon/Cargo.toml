@@ -22,8 +22,11 @@ serde_json = { workspace = true }
 anima-a11y = { path = "../anima-a11y" }
 anima-channel = { path = "../anima-channel" }
 anima-core = { path = "../anima-core", default-features = false }
+anima-llm = { path = "../anima-llm" }
 anima-store = { path = "../anima-store" }
+tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 anima-slint = { path = "../anima-slint" }
+tokio = { workspace = true, features = ["macros","rt-multi-thread","time"] }

@@ -5,8 +5,10 @@
 //! This is the ONLY place the daemon touches core state. It opens the
 //! application store using the same profile/identity rules Slint uses today
 //! and fails closed on open error: no empty/temp/fallback database.
-
 use std::path::PathBuf;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use anima_core::AppCore;
@@ -29,7 +31,8 @@ pub struct CoreSnapshot {
 /// snapshot without holding a lock across `.await`.
 #[derive(Clone)]
 pub struct CoreService {
-    inner: std::sync::Arc<Mutex<CoreInner>>,
+    inner: Arc<Mutex<CoreInner>>,
+    cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 struct CoreInner {
@@ -60,13 +63,14 @@ impl CoreService {
                 let messages = anima_store::MessageRepo::new(db.clone()).list_all().map(|v| v.len() as u64).unwrap_or(0);
                 let core = AppCore::new(db);
                 Self {
-                    inner: std::sync::Arc::new(Mutex::new(CoreInner {
+                    inner: Arc::new(Mutex::new(CoreInner {
                         core: Some(core),
                         available: true,
                         reason: None,
                         session_count: sessions,
                         message_count: messages,
                     })),
+                    cancels: Arc::new(Mutex::new(HashMap::new())),
                 }
             }
             Err(_) => Self::unavailable("store open failed".to_string()),
@@ -75,13 +79,14 @@ impl CoreService {
 
     fn unavailable(reason: String) -> Self {
         Self {
-            inner: std::sync::Arc::new(Mutex::new(CoreInner {
+            inner: Arc::new(Mutex::new(CoreInner {
                 core: None,
                 available: false,
                 reason: Some(reason),
                 session_count: 0,
                 message_count: 0,
             })),
+            cancels: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -274,13 +279,12 @@ impl CoreService {
         };
         let stats = anima_core::vault::stats(&core.db, &[])
             .map_err(|_| "vault stats failed".to_string())?;
-        
-        // Convert Vec<DomainStats> into typed stats
-        let mut chats = (0u64, 0u64, 0u64); // (sessions, messages, bytes)
-        let mut memory = (0u64, 0u64, 0u64); // (summaries, journal, bytes)
-        let mut providers = (0u64, 0u64); // (count, bytes)
-        let mut characters = (0u64, 0u64); // (count, bytes)
-        
+
+        let mut chats = (0u64, 0u64, 0u64);
+        let mut memory = (0u64, 0u64, 0u64);
+        let mut providers = (0u64, 0u64);
+        let mut characters = (0u64, 0u64);
+
         for domain in &stats.domains {
             match domain.id.as_str() {
                 "chats" => {
@@ -292,7 +296,7 @@ impl CoreService {
                 }
                 "memory" => {
                     memory.2 = domain.bytes;
-                    memory.0 = domain.count; // summaries count
+                    memory.0 = domain.count;
                 }
                 "journal_entries" => {
                     memory.1 = domain.count;
@@ -308,7 +312,7 @@ impl CoreService {
                 _ => {}
             }
         }
-        
+
         let stats_data = anima_channel::wire::VaultStatsData {
             chats: anima_channel::wire::DomainStatsData {
                 sessions: chats.0 as u32,
@@ -333,6 +337,80 @@ impl CoreService {
             available: true,
             stats: Some(stats_data),
         })
+    }
+
+    /// Persist a user turn into a session through the daemon-owned store
+    /// (single writer). Creates the session on demand.
+    pub fn chat_send(
+        &self,
+        session_id: &str,
+        content: &str,
+    ) -> Result<anima_store::StoredMessage, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let sessions = anima_store::SessionRepo::new(core.db.clone());
+        if sessions
+            .get(session_id)
+            .map_err(|_| "session query failed".to_string())?
+            .is_none()
+        {
+            sessions
+                .create(session_id, session_id)
+                .map_err(|_| "session create failed".to_string())?;
+        }
+        core.append_message(session_id, "user", content)
+            .map_err(|_| "message append failed".to_string())
+    }
+
+    /// Replay the persisted messages of a session from the daemon-owned store.
+    pub fn chat_stream(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<anima_store::StoredMessage>, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let messages = anima_store::MessageRepo::new(core.db.clone());
+        messages
+            .list(session_id)
+            .map_err(|_| "message list failed".to_string())
+    }
+
+    /// Clone the daemon-owned chat service (single writer), if available.
+    pub fn chat_service(&self) -> Option<anima_core::ChatService> {
+        let guard = self.inner.lock().ok()?;
+        guard.core.as_ref().map(|c| c.chat.clone())
+    }
+
+    /// Request cancellation of an in-flight generation.
+    pub fn chat_stop(&self, session_id: &str) -> Result<bool, String> {
+        let svc = self.chat_service().ok_or_else(|| "store unavailable".to_string())?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+        rt.block_on(svc.stop(session_id.to_string()))
+            .map_err(|e| e.to_string())
+    }
+
+    /// Borrow (or create) the cancel flag for `session_id` so a streaming
+    /// pump can honour cancellation cooperatively.
+    pub fn chat_cancel_flag(&self, session_id: &str) -> Arc<AtomicBool> {
+        let mut map = self.cancels.lock().expect("cancel mutex poisoned");
+        map.entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone()
+    }
+
+    /// Cancel an in-flight generation for `session_id`.
+    ///
+    /// Sets the shared cancel flag and forwards to the daemon-owned
+    /// `ChatService`. Returns `true` when a generation was in flight.
+    pub fn chat_cancel(&self, session_id: &str) -> bool {
+        let had_flag = {
+            let map = self.cancels.lock().expect("cancel mutex poisoned");
+            map.contains_key(session_id)
+        };
+        let flag = self.chat_cancel_flag(session_id);
+        flag.store(true, Ordering::SeqCst);
+        let svc_cancelled = self.chat_stop(session_id).unwrap_or(false);
+        svc_cancelled || had_flag
     }
 }
 #[cfg(test)]

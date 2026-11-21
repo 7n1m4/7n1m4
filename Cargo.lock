@@ -336,6 +336,7 @@ dependencies = [
  "anima-a11y",
  "anima-channel",
  "anima-core",
+ "anima-llm",
  "anima-slint",
  "anima-store",
  "dbus",
@@ -343,6 +344,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
