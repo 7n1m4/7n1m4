@@ -695,6 +695,8 @@ impl Gateway {
                     let err_pub = publisher.clone();
                     let sid = session_id.clone();
                     let content_clone = content.clone();
+                    let assistant_message_id = anima_channel::uuid::uuid_v4();
+                    let assistant_message_id_for_reply = assistant_message_id.clone();
                     let rows = core.provider_rows().unwrap_or_default();
                     let core_for_send = core.clone();
                     std::thread::spawn(move || {
@@ -758,12 +760,13 @@ impl Gateway {
                                 }
                             });
                             let result = svc
-                                .send_message(
+                                .send_message_with_assistant_id(
                                     Some(&sid),
                                     &resolution.id,
                                     resolution.config,
                                     &resolution.model,
                                     &content_clone,
+                                    Some(&assistant_message_id),
                                 )
                                 .await;
                             pump.abort();
@@ -794,7 +797,7 @@ impl Gateway {
                     });
                     let reply = anima_channel::wire::ChatSendReply {
                         session_id: session_id.clone(),
-                        message_id: String::new(),
+                        message_id: assistant_message_id_for_reply,
                         accepted: true,
                     };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
@@ -861,10 +864,14 @@ impl Gateway {
             m.insert(
                 "stmm.rebuild".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
-                    if let Some(svc) = core.stmm_service() {
-                        let _ = svc.prune();
-                    }
-                    Ok(serde_json::json!({ "ok": true }))
+                    // `summarize_day` needs a day key, session bucket, and a
+                    // provider/model, none of which this verb carries, so
+                    // 'rebuild' is scoped to pruning stale blocks here.
+                    let pruned = core
+                        .stmm_service()
+                        .and_then(|svc| svc.prune().ok())
+                        .unwrap_or(0);
+                    Ok(serde_json::json!({ "ok": true, "pruned": pruned }))
                 }),
             );
         }
@@ -955,6 +962,14 @@ impl Gateway {
             );
         }
         {
+            m.insert(
+                "providers.models".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    Err("providers.models is not implemented by the daemon: provider model discovery is out of scope for the daemon port".to_string())
+                }),
+            );
+        }
+        {
             let core = core.clone();
             m.insert(
                 "sessions.list".to_string(),
@@ -981,7 +996,351 @@ impl Gateway {
             m.insert(
                 "sessions.auto_title".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
-                    Ok(serde_json::json!({ "ok": true }))
+                    Err("sessions.auto_title is not implemented by the daemon: auto-titling runs automatically after the first assistant reply".to_string())
+                }),
+            );
+        }
+        // --- MCP bridge (daemon-RPC; see docs/decision-bridge-scope.md) ---
+        {
+            m.insert(
+                "mcp.list_servers".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let base_url = value
+                        .get("base_url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(anima_mcp::DEFAULT_REGISTRY_BASE_URL);
+                    let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                    let limit = rpc_limit(value, 50);
+                    let entries = anima_mcp::list_registry_servers(base_url, query, limit)
+                        .map_err(|e| e.to_string())?;
+                    let servers: Vec<serde_json::Value> = entries
+                        .into_iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "name": e.name,
+                                "description": e.description,
+                                "url": e.url,
+                                "version": e.version,
+                            })
+                        })
+                        .collect();
+                    Ok(serde_json::json!({ "servers": servers }))
+                }),
+            );
+        }
+        {
+            m.insert(
+                "mcp.tools_list".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let transport = value
+                        .get("transport")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("stdio");
+                    let mut client = build_mcp_client(value, transport)?;
+                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
+                        client.set_timeout(std::time::Duration::from_secs(t));
+                    }
+                    client.initialize()?;
+                    let tools = client.tools_list()?;
+                    let tools: Vec<serde_json::Value> = tools
+                        .into_iter()
+                        .map(|t| {
+                            serde_json::json!({
+                                "name": t.name,
+                                "description": t.description,
+                                "inputSchema": t.input_schema,
+                            })
+                        })
+                        .collect();
+                    client.close();
+                    Ok(serde_json::json!({ "tools": tools }))
+                }),
+            );
+        }
+        {
+            m.insert(
+                "mcp.tools_call".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let transport = value
+                        .get("transport")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("stdio");
+                    let tool_name = value
+                        .get("tool")
+                        .or_else(|| value.get("name"))
+                        .or_else(|| value.get("tool_name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if tool_name.is_empty() {
+                        return Err("missing tool name (tool/name/tool_name)".to_string());
+                    }
+                    let arguments = value
+                        .get("arguments")
+                        .or_else(|| value.get("args"))
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let mut client = build_mcp_client(value, transport)?;
+                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
+                        client.set_timeout(std::time::Duration::from_secs(t));
+                    }
+                    client.initialize()?;
+                    let result = client.tools_call(tool_name, arguments)?;
+                    let text = result.text();
+                    let content: Vec<serde_json::Value> = result
+                        .content
+                        .into_iter()
+                        .map(|c| match c {
+                            anima_mcp::McpToolContent::Text(t) => {
+                                serde_json::json!({ "type": "text", "text": t })
+                            }
+                            anima_mcp::McpToolContent::Other { content_type, raw } => {
+                                serde_json::json!({ "type": content_type, "raw": raw })
+                            }
+                        })
+                        .collect();
+                    client.close();
+                    Ok(serde_json::json!({
+                        "text": text,
+                        "content": content,
+                        "structuredContent": result.structured_content.unwrap_or(serde_json::Value::Null),
+                        "isError": result.is_error,
+                    }))
+                }),
+            );
+        }
+        {
+            m.insert(
+                "mcp.call_tool".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let transport = value
+                        .get("transport")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("stdio");
+                    let tool_name = value
+                        .get("tool")
+                        .or_else(|| value.get("name"))
+                        .or_else(|| value.get("tool_name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if tool_name.is_empty() {
+                        return Err("missing tool name (tool/name/tool_name)".to_string());
+                    }
+                    let arguments = value
+                        .get("arguments")
+                        .or_else(|| value.get("args"))
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let mut client = build_mcp_client(value, transport)?;
+                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
+                        client.set_timeout(std::time::Duration::from_secs(t));
+                    }
+                    client.initialize()?;
+                    let result = client.tools_call(tool_name, arguments)?;
+                    let text = result.text();
+                    let content: Vec<serde_json::Value> = result
+                        .content
+                        .into_iter()
+                        .map(|c| match c {
+                            anima_mcp::McpToolContent::Text(t) => {
+                                serde_json::json!({ "type": "text", "text": t })
+                            }
+                            anima_mcp::McpToolContent::Other { content_type, raw } => {
+                                serde_json::json!({ "type": content_type, "raw": raw })
+                            }
+                        })
+                        .collect();
+                    client.close();
+                    Ok(serde_json::json!({
+                        "text": text,
+                        "content": content,
+                        "structuredContent": result.structured_content.unwrap_or(serde_json::Value::Null),
+                        "isError": result.is_error,
+                    }))
+                }),
+            );
+        }
+        // --- ACP bridge (daemon-RPC) ---
+        {
+            m.insert(
+                "acp.run".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let command = value
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if command.is_empty() {
+                        return Err("missing command".to_string());
+                    }
+                    let args: Vec<String> = value
+                        .get("args")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    let env = parse_env(value);
+                    let policy_str = value
+                        .get("permission_policy")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("auto-all");
+                    let policy = match policy_str {
+                        "auto-read" => anima_acp::PermissionPolicy::AutoRead,
+                        _ => anima_acp::PermissionPolicy::AutoAll,
+                    };
+                    let prompt_text = value
+                        .get("prompt")
+                        .or_else(|| value.get("text"))
+                        .or_else(|| value.get("content"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if prompt_text.is_empty() {
+                        return Err("missing prompt/text/content".to_string());
+                    }
+                    let cwd_path = value
+                        .get("cwd")
+                        .and_then(|v| v.as_str())
+                        .map(std::path::PathBuf::from);
+
+                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                        .map_err(|e| e.to_string())?;
+                    client.set_permission_policy(policy);
+                    let init = client.initialize().map_err(|e| e.to_string())?;
+                    let session_id = client
+                        .new_session(cwd_path.as_deref())
+                        .map_err(|e| e.to_string())?;
+                    let result = client.prompt(&session_id, prompt_text).map_err(|e| e.to_string())?;
+                    client.close();
+                    let updates: Vec<serde_json::Value> = result
+                        .updates
+                        .iter()
+                        .map(|u| {
+                            serde_json::json!({
+                                "kind": u.update_kind(),
+                                "text": u.agent_text(),
+                            })
+                        })
+                        .collect();
+                    Ok(serde_json::json!({
+                        "protocolVersion": init.protocol_version,
+                        "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
+                        "sessionId": result.session_id,
+                        "stopReason": result.stop_reason.as_str(),
+                        "finalText": result.final_text,
+                        "updateCount": result.updates.len(),
+                        "updates": updates,
+                    }))
+                }),
+            );
+        }
+        {
+            m.insert(
+                "acp.prompt".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    if command.is_empty() {
+                        return Err("missing command".to_string());
+                    }
+                    let args: Vec<String> = value
+                        .get("args")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    let env = parse_env(value);
+                    let policy = match value
+                        .get("permission_policy")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("auto-all")
+                    {
+                        "auto-read" => anima_acp::PermissionPolicy::AutoRead,
+                        _ => anima_acp::PermissionPolicy::AutoAll,
+                    };
+                    let prompt_text = value
+                        .get("prompt")
+                        .or_else(|| value.get("text"))
+                        .or_else(|| value.get("content"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if prompt_text.is_empty() {
+                        return Err("missing prompt/text/content".to_string());
+                    }
+                    let cwd_path = value
+                        .get("cwd")
+                        .and_then(|v| v.as_str())
+                        .map(std::path::PathBuf::from);
+                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                        .map_err(|e| e.to_string())?;
+                    client.set_permission_policy(policy);
+                    let init = client.initialize().map_err(|e| e.to_string())?;
+                    let session_id = client
+                        .new_session(cwd_path.as_deref())
+                        .map_err(|e| e.to_string())?;
+                    let result = client
+                        .prompt(&session_id, prompt_text)
+                        .map_err(|e| e.to_string())?;
+                    client.close();
+                    Ok(serde_json::json!({
+                        "protocolVersion": init.protocol_version,
+                        "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
+                        "sessionId": result.session_id,
+                        "stopReason": result.stop_reason.as_str(),
+                        "finalText": result.final_text,
+                        "updateCount": result.updates.len(),
+                    }))
+                }),
+            );
+        }
+        {
+            m.insert(
+                "acp.list_agents".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    Err("acp.list_agents is not implemented by the daemon: there is no persistent agent registry (acp.json) wired yet; use acp.run with an explicit command".to_string())
+                }),
+            );
+        }
+        {
+            m.insert(
+                "acp.list_sessions".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    if command.is_empty() {
+                        return Err("missing command".to_string());
+                    }
+                    let args: Vec<String> = value
+                        .get("args")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    let env = parse_env(value);
+                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                        .map_err(|e| e.to_string())?;
+                    client.initialize().map_err(|e| e.to_string())?;
+                    let sessions = client.list_sessions().map_err(|e| e.to_string())?;
+                    client.close();
+                    let sessions: Vec<serde_json::Value> = sessions
+                        .into_iter()
+                        .map(|s| {
+                            serde_json::json!({
+                                "sessionId": s.session_id,
+                                "cwd": s.cwd,
+                                "title": s.title,
+                                "updatedAt": s.updated_at,
+                            })
+                        })
+                        .collect();
+                    Ok(serde_json::json!({ "sessions": sessions }))
                 }),
             );
         }
@@ -1126,6 +1485,143 @@ fn port_from_env() -> Option<u16> {
 
 /// Clamp a client-supplied `limit` so one RPC cannot request an unbounded
 /// table scan. Missing/garbage limits fall back to `default`.
+
+/// One-shot MCP client handle used by the daemon RPC handlers. Wraps either
+/// transport behind a uniform, string-error surface.
+enum McpClient {
+    Stdio(anima_mcp::McpStdioClient),
+    Http(anima_mcp::McpHttpClient),
+}
+
+impl McpClient {
+    fn initialize(&mut self) -> Result<(), String> {
+        match self {
+            McpClient::Stdio(c) => c.initialize().map(|_| ()).map_err(|e| e.to_string()),
+            McpClient::Http(c) => c.initialize().map(|_| ()).map_err(|e| e.to_string()),
+        }
+    }
+
+    fn tools_list(&self) -> Result<Vec<anima_mcp::McpToolDescriptor>, String> {
+        match self {
+            McpClient::Stdio(c) => c.tools_list().map_err(|e| e.to_string()),
+            McpClient::Http(c) => c.tools_list().map_err(|e| e.to_string()),
+        }
+    }
+
+    fn tools_call(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> Result<anima_mcp::McpToolResult, String> {
+        match self {
+            McpClient::Stdio(c) => c.tools_call(name, arguments).map_err(|e| e.to_string()),
+            McpClient::Http(c) => c.tools_call(name, arguments).map_err(|e| e.to_string()),
+        }
+    }
+
+    fn set_timeout(&mut self, timeout: std::time::Duration) {
+        match self {
+            McpClient::Stdio(c) => c.set_timeout(timeout),
+            McpClient::Http(c) => c.set_timeout(timeout),
+        }
+    }
+
+    fn close(self) {
+        match self {
+            McpClient::Stdio(mut c) => c.close(),
+            McpClient::Http(c) => c.close(),
+        }
+    }
+}
+
+fn build_mcp_client(value: &serde_json::Value, transport: &str) -> Result<McpClient, String> {
+    match transport {
+        "http" | "https" | "streamable-http" | "streamable_http" | "remote" => {
+            let url = value
+                .get("url")
+                .or_else(|| value.get("endpoint"))
+                .or_else(|| value.get("server_url"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if url.is_empty() {
+                return Err("missing url (url/endpoint/server_url)".to_string());
+            }
+            let token = value
+                .get("bearer_token")
+                .or_else(|| value.get("token"))
+                .or_else(|| value.get("auth_token"))
+                .and_then(|v| v.as_str());
+            let client = anima_mcp::McpHttpClient::connect_with_auth(url, token)
+                .map_err(|e| e.to_string())?;
+            Ok(McpClient::Http(client))
+        }
+        _ => {
+            let command = value
+                .get("command")
+                .or_else(|| value.get("cmd"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if command.is_empty() {
+                return Err("missing command (command/cmd)".to_string());
+            }
+            let args: Vec<String> = value
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            let env = parse_env(value);
+            let client = anima_mcp::McpStdioClient::spawn(command, &args_refs, env.as_deref())
+                .map_err(|e| e.to_string())?;
+            Ok(McpClient::Stdio(client))
+        }
+    }
+}
+
+fn parse_env(value: &serde_json::Value) -> Option<Vec<(String, String)>> {
+    if let Some(obj) = value.get("env").and_then(|v| v.as_object()) {
+        let mut out = Vec::new();
+        for (k, val) in obj {
+            if let Some(s) = val.as_str() {
+                out.push((k.clone(), s.to_string()));
+            }
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    } else if let Some(arr) = value.get("env").and_then(|v| v.as_array()) {
+        let mut out = Vec::new();
+        for item in arr {
+            if let Some(pair) = item.as_array() {
+                if pair.len() == 2 {
+                    if let (Some(k), Some(val)) = (pair[0].as_str(), pair[1].as_str()) {
+                        out.push((k.to_string(), val.to_string()));
+                    }
+                }
+            } else if let Some(obj) = item.as_object() {
+                for (k, val) in obj {
+                    if let Some(s) = val.as_str() {
+                        out.push((k.clone(), s.to_string()));
+                    }
+                }
+            }
+        }
+        if out.is_empty() {
+            None
+        } else {
+            Some(out)
+        }
+    } else {
+        None
+    }
+}
+
 fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
     value
         .get("limit")

@@ -2,7 +2,9 @@
 
 Generated from `apps/stage-tamagotchi/src/shared/eventa.ts`.
 
-Exported eventa constants: **102**; unique channel string literals containing `:`: **89**
+ Exported eventa constants: **102**; unique channel string literals containing `:`: **89**
+
+ > **Count reconciliation:** this file reports 102 exports from `shared/eventa.ts` alone. `design-electrobun-port.md:72-76` reports **227** total channels across `shared/eventa.ts` ∪ `packages/electron-eventa/src` ∪ `packages/stage-shared/src`. The 227 figure includes channels from the other two packages; the 102 figure is the subset defined in the one file this manifest was generated from. Both numbers are correct within their stated scope.
 
 Raw channel literals:
 

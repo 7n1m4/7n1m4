@@ -72,3 +72,30 @@ jobs:
       - name: Run C# conformance tests
         working-directory: crates/anima-channel/conformance-tests
         run: dotnet test
+
+  flutter-conformance:
+    name: 'Flutter: Full Test Suite'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+      - name: Install Flutter dependencies
+        working-directory: apps/flutter
+        run: flutter pub get
+      - name: Run full Flutter test suite
+        working-directory: apps/flutter
+        run: flutter test
+
+  csharp-conformance-full:
+    name: 'C#: Full Test Suite'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Run full C# test suite
+        working-directory: godot/tests
+        run: dotnet test

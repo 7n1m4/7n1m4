@@ -20,9 +20,11 @@ dirs = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
 anima-a11y = { path = "../anima-a11y" }
+anima-acp = { path = "../anima-acp" }
 anima-channel = { path = "../anima-channel" }
 anima-core = { path = "../anima-core", default-features = false }
 anima-llm = { path = "../anima-llm" }
+anima-mcp = { path = "../anima-mcp" }
 anima-store = { path = "../anima-store" }
 tokio = { workspace = true }
 

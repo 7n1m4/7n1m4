@@ -244,6 +244,22 @@ impl ChatService {
         model: &str,
         text: &str,
     ) -> Result<StreamOutcome> {
+        self.send_message_with_assistant_id(session_id, provider_id, config, model, text, None)
+            .await
+    }
+
+    /// Like [`Self::send_message`] but lets the caller supply a pre-minted
+    /// assistant message id (used by the daemon so the ack's `message_id`
+    /// matches the deltas and persisted row). `None` mints one internally.
+    pub async fn send_message_with_assistant_id(
+        &self,
+        session_id: Option<&str>,
+        provider_id: &str,
+        config: ProviderConfig,
+        model: &str,
+        text: &str,
+        assistant_message_id: Option<&str>,
+    ) -> Result<StreamOutcome> {
         let session_id = self.ensure_session(session_id.unwrap_or(""), text)?;
         let user_message = StoredMessage {
             id: new_id(),
@@ -259,6 +275,7 @@ impl ChatService {
         let messages: Vec<ChatMessage> = history.into_iter().filter_map(to_chat_message).collect();
         self.run_stream(
             session_id,
+            assistant_message_id.map(str::to_string),
             provider_id,
             config,
             ChatRequest {
@@ -290,6 +307,7 @@ impl ChatService {
         let session_id = self.ensure_session(&session, "New chat")?;
         self.run_stream(
             session_id,
+            None,
             &provider_id,
             config,
             ChatRequest {
@@ -347,11 +365,12 @@ impl ChatService {
     async fn run_stream(
         &self,
         session_id: String,
+        assistant_message_id: Option<String>,
         provider_id: &str,
         config: ProviderConfig,
         request: ChatRequest,
     ) -> Result<StreamOutcome> {
-        let assistant_message_id = new_id();
+        let assistant_message_id = assistant_message_id.unwrap_or_else(new_id);
         self.set_status(&session_id, ChatStatus::Streaming);
         let cancel = Arc::new(AtomicBool::new(false));
         self.cancels

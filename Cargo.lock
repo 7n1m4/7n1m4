@@ -151,9 +151,11 @@ name = "anima-daemon"
 version = "0.1.0"
 dependencies = [
  "anima-a11y",
+ "anima-acp",
  "anima-channel",
  "anima-core",
  "anima-llm",
+ "anima-mcp",
  "anima-store",
  "async-trait",
  "dbus",

@@ -60,7 +60,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 | Concept | Path | Notes |
 | :--- | :--- | :--- |
 | `CoreService` (daemon-owned core) | `crates/anima-daemon/src/core.rs` | Clone, Arc<Mutex<CoreInner>>; ONLY place daemon touches core state. `open(profile)` fails closed; `snapshot()`; `status_reply()`. |
-| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core, &self.publisher)` registers 18 `renderer.*` RPC handlers (`core.status`, chat, settings, providers, vault, cards, sessions, STMM, journal, retrieval). |
+| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core, &self.publisher)` registers **21** `renderer.*` RPC handlers (`core.status`, `providers.list`/`.save`/`.delete`, `settings.get`/`.set`, `vault.status`, `chat.send`/`.cancel`/`.history`, `stmm.list`/`.rebuild`, `journal.append`/`.search`, `retrieval.status`, `cards.list`/`.get`/`.import` (stubs), `sessions.list`/`.export`/`.auto_title`). |
 | `CoreStatusReply` (wire DTO) | `crates/anima-channel/src/wire.rs` | additive, read-only, no secrets. |
 | `core.status` (RPC action) | `crates/anima-channel/src/dispatch.rs` | resolves via renderer-handler registry by exact action name. |
 | `GatewayClient::core_status` | `crates/anima-channel/src/client.rs` | mirrors `runtime_status`. |

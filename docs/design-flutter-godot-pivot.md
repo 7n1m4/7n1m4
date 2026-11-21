@@ -252,9 +252,9 @@ daemon-owned. Verified line by line:
 | "~30-60 Hz" lip-sync RMS | In-tree tap emits ~15-40 Hz sample-aligned windows (`anima-speech/src/types.rs:118-120`); existing live lip-sync is a TS BroadcastChannel (`beat-sync/eventa.ts:21-31`); VRM smoothing exists (`lipsync.rs:3-7`) | **Number not verified** — the rate belongs to the client-side TTS playback path, not a daemon event rate; do not copy 30-60 Hz |
 | MessagePack over local WS | Gateway speaks JSON text frames (`wire.rs:3-10`, `session.rs`); no codec abstraction for a second format | **Net-new, unjustified** — parked (decision 9) |
 | Unix Domain Sockets | Already evaluated and parked for browser/CEF + mobile incompatibility and dual-transport cost (`design-daemon-gateway.md:110-157`) | **Parked, not adopted** |
-| Flutter control/chat client | No `flutter*` path in-tree (glob verified) | **Net-new** |
-| Godot 4 pet renderer | No `godot*` path in-tree (glob verified) | **Net-new** |
-| Tray-driven lifecycle | No tray implementation in the daemon | **Net-new** |
+| Flutter control/chat client | Thin client shipped (`apps/flutter/lib/daemon_client/`, `apps/flutter/test/` golden-fixtures suite; `flutter test` green). Holds view state only; no core state. | **Shipped** — see `docs/README.md` row "Flutter control/chat surface". |
+| Godot 4 pet renderer | Thin WS client shipped (`godot/scripts/Net/`, `godot/tests/` xUnit suite). Live2D/VRM backends are generic placeholders (stub/planned); `dotnet test` green. | **Shipped scaffold** — real backends pending addon vendoring. |
+| Tray-driven lifecycle | No tray implementation exists in `crates/anima-daemon`; planned per `design-flutter-godot-pivot.md` §3 diagram ("Tray / launcher — NET-NEW"). | **Net-new** — tray remains unimplemented; process lifecycle still manual. |
 
 The proposal is a useful *target shape*, not a description of current code. Only the first row
 is already true.
@@ -268,125 +268,52 @@ tokens. Lip-sync RMS is generated locally by each client from its own TTS playba
 as a daemon event (`decision-bridge-scope.md`). Waves 3 and 4 may run in parallel after Wave 2, now
 that decision A is resolved (2026-11-21: both Live2D and 3D, plugin-selected per card).
 
-### Wave 0 — Additive server→client event lane and event vocabulary
+### Wave 0 — Additive server→client event lane and event vocabulary — **SHIPPED**
 
-**Scope**
+> **Status (2026-11-21): Wave 0 is complete.** The event frame (`GatewayServerFrame::Event`, `crates/anima-channel/src/wire.rs:920`), all four event topics (`emotion.tag`, `token.delta`, `presence.changed`, `status.changed`), `event.subscribe` / `event.unsubscribe` RPC actions, the bounded per-connection event bus (`anima-channel/src/event_bus.rs`), and the daemon-side `EventPublisher` (`crates/anima-daemon/src/events.rs`) are all shipped and tested. Golden JSON fixtures are exported by `crates/anima-channel/examples/export-golden-fixtures.rs` and consumed by `apps/flutter/test/golden_fixtures_test.dart` and the Godot C# test suite. The original scope bullets below are retained for provenance.
 
-- Add a new server→client frame variant in `crates/anima-channel/src/wire.rs` (e.g.
-  `GatewayServerFrame::Event { … }`) with a typed envelope: event kind, subject (character/actor
-  id), monotonic sequence, source timestamp, and a JSON payload. Keep `type`-tagged JSON and
-  protocol version 1; never change existing `auth`/`rpc` semantics
-  (`design-daemon-client.md:17-19`).
-- Define the initial **event vocabulary** (payloads are additive structs, specta-registered):
-  - `emotion.tag` — `{ actor_id, tag, intensity, seq, ts_ms }`;
-  - `token.delta` — `{ session_id, message_id, delta, index, final, seq, ts_ms }`;
-  - `presence.changed` — `{ subject, state, seq, ts_ms }`;
-  - `status.changed` — coarse, secret-free health (mirror the `CoreStatusReply` discipline at
-    `wire.rs:120-150`: no tokens, keys, prompts or paths).
+### Wave 1 — Daemon absorbs Slint state and configuration — **SHIPPED (Slint deleted; cards out-of-scope)**
 
-  `lip_sync.rms` is deliberately absent: clients generate it locally from their own TTS playback
-  and the daemon does not publish it (`decision-bridge-scope.md`).
-- Add a subscribe/unsubscribe RPC so clients opt in per subject; default to no events for
-  unsubscribed sessions so existing Vue/Electrobun clients are unaffected.
-- Add a shared, bounded event bus in the daemon and fan-out from the gateway's connection
-  threads. Define backpressure explicitly: high-rate events (`token.delta`)
-  are **drop-oldest / coalescing**; control events (`presence`, `status`) are queued.
-  `anima-channel` has no tokio and is thread-per-connection (`server.rs:5`), so the bus must not
-  block a reader thread.
-- Bindings (D5 ratified 2026-11-21 — see decision 11 in §2, row D in §5, and accepted ADR
-  [`decision-client-bindings.md`](./decision-client-bindings.md)): regenerate the TS file and keep
-  `pnpm check:wire-types` (`package.json:20`) green — this serves the Vue reference client and stays
-  the canonical artifact. Add a Rust `export-wire-fixtures` example that emits **golden JSON
-  fixtures** from the same specta `type_collection()` (one canonical example per client frame, RPC
-  reply and event topic), guarded by a `--check` flag like `export-wire-types.rs`. Dart (Flutter)
-  and C# (Godot) write **thin hand-written codecs** from the TS reference plus typed event payloads;
-  they consume the fixtures in `flutter test` / `dotnet test`. **No Dart/C# generator and no neutral
-  schema.** Generated C# (`specta-csharp`) is deferred but reversible behind the same fixtures.
-  Ownership: Rust/`anima-channel` owns TS + golden fixtures; Flutter owner owns the Dart codec +
-  `flutter test`; Godot owner owns the C# codec + `dotnet test`. Tracked in `airi-wxp.2.8`.
-
-**Exit criteria**
-
-- A unit/integration test proves the server emits an event with **no preceding client frame**,
-  and that an unsubscribed session receives none.
-- `pnpm check:wire-types` and `cargo test --workspace --locked` pass.
-- Generated TS bindings consumed by a tiny Vue-side probe; golden JSON fixtures generated from
-  `anima-channel` and checked in with a working `--check` drift guard (`airi-wxp.2.8`); the
-  Dart/`flutter test` and C#/`dotnet test` conformance jobs consume them. No Dart/C# generator is
-  introduced.
-- A wire change merges only when the Rust drift check **AND all three conformance jobs** (TS drift,
-  Dart `flutter test`, C# `dotnet test`) are green in the same PR.
-- Event vocabulary table and backpressure policy documented here (this section) match code.
-
-### Wave 1 — Daemon absorbs Slint state and configuration
-
-**Scope:** port §4.1 store roots/bootstrap and settings/providers/cards/memory/session
+**Scope:** port §4.1 store roots/bootstrap and settings/providers/memory/session
 services; register read/write RPC verbs with sanitized replies; keep the D-Bus control plane
 for privileged verbs; adopt the existing config path rather than minting a second one.
 
-**Exit criteria:** daemon starts headless with no GUI attached; settings/providers/cards/session
-RPC round-trips green; no Slint code is needed to read or write core state; `core.status`
-still passes its no-secrets test (`gateway.rs:908-914`).
+**Deviation (2026-11-21):** card management (`cards.*`) was explicitly declared **out-of-scope** for the daemon; the three card RPC verbs (`cards.list`, `cards.get`, `cards.import`) return "not implemented" and are not registered handlers in the ordinary sense — `crates/anima-daemon/src/gateway.rs:935-956`. The Slint GUI was deleted big-bang (decision 6, §2).
 
-### Wave 2 — Daemon-owned realtime pipeline (audio portions superseded)
+**Exit criteria:** daemon starts headless with no GUI attached; settings/providers/session RPC round-trips green; no Slint code is needed to read or write core state; `core.status` still passes its no-secrets test (`gateway.rs:908-914`). All met.
 
-> **Superseded for audio by [`decision-bridge-scope.md`](./decision-bridge-scope.md) (ratified
-> 2026-11-21):** speech and hearing (mic capture, VAD, STT, TTS playback, `SpeechEvent` amplitude,
-> barge-in, `lip_sync.rms`) are **client-local** — the daemon host has no audio hardware. Only the
-> daemon-side **LLM stage** below remains in scope; do not implement a daemon-owned
-> capture → VAD → STT → TTS path.
+### Wave 2 — Daemon-owned realtime pipeline — **SHIPPED (LLM stage; audio client-local)**
 
-**Scope (LLM stage only):** link `anima-llm` into `anima-daemon` (currently absent from
-`anima-daemon/Cargo.toml`); stream LLM tokens from the daemon; emit Wave-0 token-delta, emotion-tag
-and presence events. `anima-stt`/`anima-speech` are not linked into the daemon for audio capture or
-playback; those stay on the client per the note above.
+> **Superseded for audio by [`decision-bridge-scope.md`](./decision-bridge-scope.md) (ratified 2026-11-21):** speech and hearing (mic capture, VAD, STT, TTS playback, `SpeechEvent` amplitude, barge-in, `lip_sync.rms`) are **client-local** — the daemon host has no audio hardware. Only the daemon-side **LLM stage** below remains in scope; do not implement a daemon-owned capture → VAD → STT → TTS path.
 
-**Exit criteria:** with **no GUI running**, the daemon produces a coherent token/emotion event
-stream for a scripted turn verified by a WS probe; replaying the same turn is deterministic enough
-for a test. Speech-amplitude/RMS and barge-in criteria are client-local and out of scope for the
-daemon.
-
-### Wave 3 — Flutter control/chat client
+**Scope (LLM stage only):** `anima-llm` is now linked into `anima-daemon` (`crates/anima-daemon/Cargo.toml:21`); `chat.send` streams LLM tokens via the daemon and emits Wave-0 `token.delta` / `emotion.tag` events through `EventPublisher` (`crates/anima-daemon/src/gateway.rs:659-813`). `anima-stt`/`anima-speech` are correctly absent from the daemon for audio capture/playback; those stay on the client per the note above.
+### Wave 3 — Flutter control/chat client — **SHIPPED (cards stub; tray pending)**
 
 **Scope:** thin WS client with a **hand-written Dart codec + typed payloads validated against the
 Rust-generated golden JSON fixtures** (D5 ratified 2026-11-21, no generator); chat streaming UI,
-settings, providers, cards; subscribe to the event vocabulary; tray/launcher can start the pet
-process; client holds view state only.
+settings, providers list; card management marked out-of-scope (daemon returns "not implemented");
+subscribe to the event vocabulary (`token.delta` per connection); client holds view state only.
+Tray/launcher to start the pet process is NET-NEW (not yet implemented).
 
 **Exit criteria:** end-to-end chat against the daemon works; closing and relaunching Flutter
 loses no core state; stopping Flutter leaves the daemon and (if running) the pet alive;
 `flutter test` conformance against the golden fixtures is green.
 
-### Wave 4 — Godot 4 on-demand pet renderer
+### Wave 4 — Godot 4 on-demand pet renderer — **SCAFFOLDED (renderers are stubs; Live2D/VRM pending addon vendoring)**
 
 **Scope:** Godot client with a **hand-written C# codec + typed payloads validated against the
-Rust-generated golden JSON fixtures** (D5 ratified 2026-11-21, no `specta-csharp` dependency now);
-generate `lip_sync.rms` locally from the pet's own TTS playback and consume daemon `emotion.tag`;
-implement expression/pose mapping (reproduce `lipsync.rs` smoothing if using a
-morph-target avatar); window lifecycle so the pet can stay while Flutter is closed; plugin
-boundary wired per **resolved decision A (2026-11-21): both Live2D via GDCubism AND 3D
-(VRM/MMD), plugin-selected per card**. The specific Godot plugin/toolchain approach is still to
-be worked out. No GDCubism/VRM/MMD-in-Godot code exists in-tree yet. Whether to import the
-upstream Godot sidecar (`docs/UPSTREAM_RADAR.md`,
-`docs/project-selective-upstream-sync-shortlist.md`) remains a separate open sub-question and is
-not resolved by this wave.
+Rust-generated golden JSON fixtures** (D5 ratified 2026-11-21, no `specta-csharp` dependency now).
+C# thin client shipped: `godot/scripts/Net/` (DaemonClient, DaemonEvents, DaemonRpc, EventPayloadDecoder)
+and xUnit suite in `godot/tests/` green. Renderer layer is scaffolded: `Live2dRenderer.cs` and
+`VrmRenderer.cs` extend `GenericPetRenderer` with scale/tint only — no VRM addon or Cubism GDExtension
+is vendored; these are **stub/planned** backends. `LipSyncSmoother.cs` reproduces the `lipsync.rs`
+smoothing algorithm (fast attack, ~120 ms decay). Window lifecycle (pet survives Flutter close) and
+on-demand launch remain NET-NEW (no tray yet). Plugin boundary per **resolved decision A (2026-11-21):
+both Live2D via GDCubism AND 3D (VRM/MMD), plugin-selected per card**. Whether to import the upstream
+Godot sidecar (`docs/UPSTREAM_RADAR.md`, `docs/project-selective-upstream-sync-shortlist.md`) is a
+separate open sub-question not resolved by this wave.
 
-**Shipping posture (resolved 2026-11-21, user):** **ship 3D (VRM/MMD) first.** Both backends stay
-in scope behind the plugin boundary, but Live2D (GDCubism) is gated: no Live2D-backed build ships
-before legal review (MIT wrapper only; Live2D Open Software License components; SDK Release License
-review required before commercial release — `docs/research-godot-renderer-spike.md:30-40`) and
-before each user fetches Cubism Core from Live2D after accepting the terms. The proprietary Cubism
-Core binary **must never be committed** to this repo (`docs/research-godot-renderer-spike.md:36`);
-this finding is unchanged.
-
-**Exit criteria:** pet animates lip-sync from locally generated RMS (client-side TTS playback, not
-a daemon event — `decision-bridge-scope.md`) and emotion from daemon events; survives Flutter
-closure; can be started/stopped on demand; both avatar backends and per-card plugin selection
-recorded in this document (decision A, 2026-11-21) before implementation begins; 3D (VRM/MMD)
-ships first with `dotnet test` conformance against the golden fixtures green; Live2D stays gated
-behind legal review + user-fetched Cubism Core and is not in the first shipping release.
-
-### Wave 5 — Vue reference reconciliation
+### Wave 5 — Vue reference reconciliation — **IN PROGRESS (TS-core-remaining; not yet complete)**
 
 **Scope:** consume Wave-0 events in the Vue **web** reference client; publish the full
 UI-behaviour parity ledger against Vue; update `rosetta-stone.md` and the port manifest with the
@@ -398,26 +325,12 @@ Flutter app — gated on the parity checklist (`airi-wxp.6.4`) and explicit appr
 wave. Track per-capability parity against both live references; the shim-retirement work
 (airi-vxt) is delivered but its shims must keep working while the app lives.
 
-**Exit criteria:** every user-visible behaviour has exactly one owning daemon service and a
-documented reference in Vue web / the live Electrobun fallback; no feature implemented twice in
-Dart/GDScript and TS; stage-tamagotchi still builds, runs and is not deleted from the tree; the
-parity checklist exists and records which of the two retirement gates are still open.
+**Status (2026-11-21):** Still in progress. Auth/OAuth (`stores/auth.ts`), character likes/bookmarks
+(`stores/characters.ts`), chat session remote sync (`stores/chat/session-store.ts:139`), and
+sync-engine manifests (`stores/sync-engine.ts`) remain TypeScript-only. The Vue app still runs its
+own in-app channel server via `channel-server/index.ts` when the daemon is not detected.
 
-### Wave 6 — Slint big-bang deletion and doc convergence
-
-**Scope:** **big-bang deletion after domain migration — no surviving Slint fallback** (Slint
-cutover decision resolved 2026-11-21, unchanged). Only after the §4.1 ports and Wave 1 domain
-migration land, delete §4.3 in one cutover; remove `crates/anima-slint` from the workspace;
-update AGENTS.md, `docs/README.md`, `rosetta-stone.md` and `design-daemon-gateway.md` so Slint
-is described as retired rather than live. Preserve audit archives (no deletion path). Do not
-delete the Electrobun desktop app here: stage-tamagotchi stays alive and working as the live
-fallback until BOTH parity gates are met (all business logic in Rust AND frontend in Flutter),
-per decision C refined 2026-11-21.
-
-**Exit criteria:** `cargo test --workspace --locked` green with Slint gone; no Slint fallback
-path survives; no doc still names Slint as a shipping GUI; archive files untouched;
-stage-tamagotchi/Electrobun still present and working as the live fallback pending its
-parity-gated retirement wave.
+### Wave 6 — Slint big-bang deletion and doc convergence — **DONE (crates/anima-slint deleted; docs updated)**
 
 ### Wave 7 — Packaging, tray, mobile, Electrobun retirement (follow-up)
 
