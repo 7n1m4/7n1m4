@@ -29,7 +29,7 @@ class _NavigationShellState extends State<NavigationShell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(client: widget.client),
-      const ChatScreen(),
+      ChatScreen(client: widget.client),
       SettingsScreen(client: widget.client, onOpenConnections: () => setState(() => _index = 3)),
       ConnectionsScreen(client: widget.client),
       const AboutScreen(),

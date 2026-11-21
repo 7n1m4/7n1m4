@@ -10,6 +10,14 @@ export type AuthenticatedData = {
 	authenticated: boolean,
 };
 
+/**  A minimal character-card reference surfaced to thin clients. */
+export type CardInfo = {
+	/**  Card id. */
+	id: string,
+	/**  Card name. */
+	name: string,
+};
+
 /**  The persisted channel-server configuration. */
 export type ChannelConfig = {
 	/**
@@ -33,6 +41,22 @@ export type CharacterStatsData = {
 	count: number,
 	/**  Total bytes. */
 	bytes: number,
+};
+
+/**  A stored chat message surfaced to thin clients. */
+export type ChatMessage = {
+	/**  Message id. */
+	id: string,
+	/**  Session id. */
+	session_id: string,
+	/**  Role. */
+	role: string,
+	/**  Content. */
+	content: string,
+	/**  Created timestamp (ms). */
+	created_at: number,
+	/**  Metadata JSON. */
+	metadata: unknown,
 };
 
 /**
@@ -348,6 +372,22 @@ export type HeartbeatKind =
 /**  Server reply to a `ping` heartbeat. */
 "pong";
 
+/**  A stored journal entry surfaced to thin clients. */
+export type JournalEntry = {
+	/**  Entry id. */
+	id: string,
+	/**  Entry kind. */
+	kind: string,
+	/**  Entry body. */
+	content: string,
+	/**  Embedding. */
+	embedding: (number | null)[] | null,
+	/**  Created timestamp. */
+	created_at: number,
+	/**  Updated timestamp. */
+	updated_at: number,
+};
+
 /**  Payload of a `lip_sync.rms` event: one amplitude sample in `[0, 1]`. */
 export type LipSyncRmsData = {
 	/**  Character/actor id the sample belongs to. */
@@ -468,6 +508,26 @@ export type RuntimeStatusReply = {
 	protocol: string,
 };
 
+/**  Reply payload for `sessions.export`. */
+export type SessionExportReply = {
+	/**  JSONL export. */
+	jsonl: string,
+};
+
+/**  A stored chat session surfaced to thin clients. */
+export type SessionInfo = {
+	/**  Session id. */
+	id: string,
+	/**  Title. */
+	title: string,
+	/**  Created timestamp. */
+	created_at: number,
+	/**  Updated timestamp. */
+	updated_at: number,
+	/**  Metadata JSON. */
+	metadata: unknown,
+};
+
 /**  `data` payload of a `settings.get` reply. */
 export type SettingsGetReply = {
 	/**  Settings section name. */
@@ -500,6 +560,22 @@ export type StatusChangedData = {
 	seq: number,
 	/**  Producer timestamp, unix epoch milliseconds (stamped by the bus). */
 	ts_ms: number,
+};
+
+/**  A short-term-memory daily summary surfaced to thin clients. */
+export type StmmSummary = {
+	/**  Summary id. */
+	id: string,
+	/**  Day key. */
+	day: string,
+	/**  Body. */
+	content: string,
+	/**  Source session ids. */
+	source_session_ids: string[],
+	/**  Token estimate. */
+	token_estimate: number,
+	/**  Created timestamp. */
+	created_at: number,
 };
 
 /**  Payload of a `token.delta` event: one streamed LLM token. */

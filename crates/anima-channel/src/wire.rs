@@ -317,6 +317,97 @@ pub struct ChatCancelReply {
     pub cancelled: bool,
 }
 
+/// A stored chat message surfaced to thin clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ChatMessage {
+    /// Message id.
+    pub id: String,
+    /// Session id.
+    pub session_id: String,
+    /// Role.
+    pub role: String,
+    /// Content.
+    pub content: String,
+    /// Created timestamp (ms).
+    #[specta(type = specta_typescript::Number)]
+    pub created_at: i64,
+    #[specta(type = specta_typescript::Unknown)]
+    /// Metadata JSON.
+    pub metadata: Value,
+}
+
+/// A short-term-memory daily summary surfaced to thin clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct StmmSummary {
+    /// Summary id.
+    pub id: String,
+    /// Day key.
+    pub day: String,
+    /// Body.
+    pub content: String,
+    /// Source session ids.
+    pub source_session_ids: Vec<String>,
+    /// Token estimate.
+    #[specta(type = specta_typescript::Number)]
+    pub token_estimate: i64,
+    /// Created timestamp.
+    #[specta(type = specta_typescript::Number)]
+    pub created_at: i64,
+}
+
+/// A stored journal entry surfaced to thin clients.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct JournalEntry {
+    /// Entry id.
+    pub id: String,
+    /// Entry kind.
+    pub kind: String,
+    /// Entry body.
+    pub content: String,
+    /// Embedding.
+    pub embedding: Option<Vec<f32>>,
+    /// Created timestamp.
+    #[specta(type = specta_typescript::Number)]
+    pub created_at: i64,
+    /// Updated timestamp.
+    #[specta(type = specta_typescript::Number)]
+    pub updated_at: i64,
+}
+
+/// A stored chat session surfaced to thin clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SessionInfo {
+    /// Session id.
+    pub id: String,
+    /// Title.
+    pub title: String,
+    /// Created timestamp.
+    #[specta(type = specta_typescript::Number)]
+    pub created_at: i64,
+    /// Updated timestamp.
+    #[specta(type = specta_typescript::Number)]
+    pub updated_at: i64,
+    #[specta(type = specta_typescript::Unknown)]
+    /// Metadata JSON.
+    pub metadata: Value,
+}
+
+/// A minimal character-card reference surfaced to thin clients.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardInfo {
+    /// Card id.
+    pub id: String,
+    /// Card name.
+    pub name: String,
+}
+
+/// Reply payload for `sessions.export`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SessionExportReply {
+    /// JSONL export.
+    pub jsonl: String,
+}
+
 /// Vault statistics data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -862,6 +953,12 @@ pub fn type_collection() -> specta::Types {
         .register::<SettingsGetReply>()
         .register::<SettingsSetReply>()
         .register::<VaultStatusReply>()
+        .register::<ChatMessage>()
+        .register::<StmmSummary>()
+        .register::<JournalEntry>()
+        .register::<SessionInfo>()
+        .register::<CardInfo>()
+        .register::<SessionExportReply>()
         .register::<VaultStatsData>()
         .register::<DomainStatsData>()
         .register::<MemoryStatsData>()

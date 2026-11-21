@@ -95,11 +95,12 @@ pub use client::{daemon_connect, daemon_connect_with_ca};
 pub use server::{ChannelServer, ServerHandle};
 pub use session::{CloseInfo, Session, SessionOutcome, SessionState, CLOSE_POLICY_VIOLATION};
 pub use wire::{
-    AuthenticatedData, CoreStatusReply, CueKind, EmotionTagData, EventPayload,
+    AuthenticatedData, CardInfo, ChatMessage, CoreStatusReply, CueKind, EmotionTagData, EventPayload,
     EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayClientFrame, GatewayConfigReply,
-    GatewayEvent, GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData, ModuleAuthData,
-    PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, StatusChangedData,
-    TokenDeltaData, CANONICAL_EMOTION_KEYS,
+    GatewayEvent, GatewayServerFrame, HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData,
+    ModuleAuthData, PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
+    SessionExportReply, SessionInfo, StmmSummary, StatusChangedData, TokenDeltaData,
+    CANONICAL_EMOTION_KEYS,
 };
 pub use ws::{accept_key, encode_frame, Frame, FrameDecoder, OP_CLOSE, OP_PING, OP_PONG, OP_TEXT};
 

@@ -19,7 +19,8 @@ namespace AnimaPet;
 /// The daemon is the single owner of state. This scene holds view state only:
 /// it forwards <c>lip_sync.rms</c> → <see cref="IPetRenderer.SetLipSync"/> and
 /// <c>emotion.tag</c> → <see cref="IPetRenderer.SetEmotion"/>; it does not
-/// persist or reinterpret those events.
+/// persist or reinterpret those events. Connection status and the latest chat
+/// delta are reflected in the scene's labels for the pet window.
 /// </para>
 /// </summary>
 public partial class Main : Node2D
@@ -27,12 +28,21 @@ public partial class Main : Node2D
     private IPetRenderer? _renderer;
     private DaemonClient? _daemon;
     private CancellationTokenSource? _pumpCts;
+    private Label? _statusLabel;
+    private Label? _expressionLabel;
+    private EventHandler<DaemonConnectionState>? _stateHandler;
+    private EventHandler<DaemonEventArgs>? _eventHandler;
 
     public override void _Ready()
     {
         // Window appearance is configured declaratively in project.godot
         // (borderless, per-pixel transparency, always-on-top). No runtime
         // DisplayServer calls are needed for the spike.
+        _statusLabel = GetNodeOrNull<Label>("StatusLabel");
+        _expressionLabel = GetNodeOrNull<Label>("ExpressionLabel");
+        if (_statusLabel is not null)
+            _statusLabel.Text = "Disconnected";
+
         GD.Print($"[AnimaPet] renderer spike ready; daemon endpoint: {DaemonClient.DefaultEndpoint}");
 
         // Start the daemon connection. The auth token is read from the
@@ -47,14 +57,27 @@ public partial class Main : Node2D
         try
         {
             _daemon = new DaemonClient();
-            _daemon.EventReceived += OnDaemonEvent;
+            _stateHandler = (_, state) => UpdateStatus(state.ToString());
+            _eventHandler = OnDaemonEvent;
+            _daemon.StateChanged += _stateHandler;
+            _daemon.EventReceived += _eventHandler;
             await _daemon.ConnectAsync().ConfigureAwait(true);
-            await _daemon.SubscribeAsync(EventTopics.PetTopics).ConfigureAwait(true);
-            GD.Print($"[AnimaPet] daemon connected; subscribed to {string.Join(", ", EventTopics.PetTopics)}");
 
-            // Pump events on Godot's main thread. Godot object access from
-            // background threads is unsafe; the pump yields back to the main
-            // loop via ConfigureAwait(true).
+            // Pet topics plus chat deltas so the pet can react to streamed text.
+            var topics = new[]
+            {
+                EventTopics.LipSyncRms,
+                EventTopics.EmotionTag,
+                EventTopics.TokenDelta,
+                EventTopics.PresenceChanged,
+                EventTopics.StatusChanged,
+            };
+            await _daemon.SubscribeAsync(topics).ConfigureAwait(true);
+            UpdateStatus(_daemon.State.ToString());
+            GD.Print($"[AnimaPet] daemon connected; subscribed to {string.Join(", ", topics)}");
+
+            // Pump events. Godot object access from background threads is
+            // unsafe; UI updates are marshalled via CallDeferred below.
             _pumpCts = new CancellationTokenSource();
             _ = _daemon.PumpAsync(_pumpCts.Token);
         }
@@ -63,27 +86,58 @@ public partial class Main : Node2D
             // The daemon may not be running yet; log and keep the window alive
             // so the user sees the pet even before the core is up.
             GD.PrintErr($"[AnimaPet] daemon connection failed: {ex.Message}");
+            UpdateStatus($"Failed: {ex.Message}");
         }
     }
 
     private void OnDaemonEvent(object? sender, DaemonEventArgs e)
     {
-        // Renderer calls must stay on the main thread. The pump's
-        // ConfigureAwait(true) ensures this handler runs there.
-        if (_renderer is null)
-            return;
+        // The pump may raise this off the Godot main thread, so marshal all
+        // renderer + UI work (including Godot node access) onto the main loop.
+        var data = e.Data;
+        Callable.From(() => HandleEvent(data)).CallDeferred();
+    }
 
-        switch (e.Data)
+    private void HandleEvent(object? data)
+    {
+        if (data is LipSyncRmsData lip)
         {
-            case LipSyncRmsData lip:
-                _renderer.SetLipSync(lip.Level);
-                break;
-            case EmotionTagData emotion when emotion.Kind == CueKind.Emotion:
-                _renderer.SetEmotion(emotion.Tag, emotion.Intensity);
-                break;
-            // presence.changed and status.changed are informational for the
-            // pet; a future card-switch or offline slouch could react here.
+            _renderer?.SetLipSync(lip.Level);
+            return;
         }
+
+        if (data is EmotionTagData emotion && emotion.Kind == CueKind.Emotion)
+        {
+            _renderer?.SetEmotion(emotion.Tag, emotion.Intensity);
+            if (_expressionLabel is not null)
+                _expressionLabel.Text = $"{emotion.Tag} ({emotion.Intensity:0.00})";
+            return;
+        }
+
+        if (data is TokenDeltaData token)
+        {
+            // Chat deltas drive the pet's expression/text surface.
+            if (_expressionLabel is not null)
+                _expressionLabel.Text = token.Delta;
+            return;
+        }
+
+        if (data is StatusChangedData status)
+        {
+            UpdateStatus(status.CoreAvailable ? "Connected" : "Core unavailable");
+            return;
+        }
+    }
+
+    private void UpdateStatus(string text)
+    {
+        Callable.From(() => DoUpdateStatus(text)).CallDeferred();
+    }
+
+    private void DoUpdateStatus(string text)
+    {
+        if (_statusLabel is not null)
+            _statusLabel.Text = text;
     }
 
     /// <summary>Swap the active plugin when a card's backend choice changes.</summary>
@@ -104,7 +158,8 @@ public partial class Main : Node2D
         _pumpCts?.Cancel();
         if (_daemon is not null)
         {
-            _daemon.EventReceived -= OnDaemonEvent;
+            if (_stateHandler is not null) _daemon.StateChanged -= _stateHandler;
+            if (_eventHandler is not null) _daemon.EventReceived -= _eventHandler;
             _ = _daemon.DisconnectAsync();
             _daemon.Dispose();
             _daemon = null;
