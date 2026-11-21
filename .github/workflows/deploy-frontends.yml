@@ -38,22 +38,14 @@ jobs:
 
       - run: pnpm run build:packages
 
-      - name: Build docs
-        run: pnpm -F @proj-anima/docs run build
-        env:
-          BASE_URL: /airi/
-
       - name: Build stage-web
         run: pnpm -F @proj-anima/stage-web run build
         env:
           BASE_URL: /airi/web-stage/
 
-      - name: Bundle stage-web into docs distribution
-        run: cp -r apps/stage-web/dist docs/.vitepress/dist/web-stage
-
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./docs/.vitepress/dist
+          path: ./apps/stage-web/dist
 
   deploy:
     environment:

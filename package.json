@@ -114,7 +114,6 @@
     "plugins/**",
     "services/**",
     "examples/**",
-    "docs/**",
     "apps/**"
   ],
   "nano-staged": {

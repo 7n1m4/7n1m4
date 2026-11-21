@@ -75,7 +75,7 @@ jobs:
       matrix:
         include:
           - app_name: stage-web
-            command: pnpm -F @proj-anima/stage-web run build && pnpm -F @proj-anima/docs run build:base && mv ./docs/.vitepress/dist ./apps/stage-web/dist/docs && pnpm -F @proj-anima/stage-ui run story:build && mv ./packages/stage-ui/.histoire/dist ./apps/stage-web/dist/ui
+            command: pnpm -F @proj-anima/stage-web run build && pnpm -F @proj-anima/stage-ui run story:build && mv ./packages/stage-ui/.histoire/dist ./apps/stage-web/dist/ui
 
           - app_name: stage-tamagotchi
             command: pnpm -F @proj-anima/stage-tamagotchi run build
