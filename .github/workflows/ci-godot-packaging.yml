@@ -96,7 +96,7 @@ jobs:
       # Build the C# project so the export includes compiled assemblies.
       - name: Build C# project
         working-directory: godot
-        run: dotnet build AnimaPet.Tests.csproj -c Release
+        run: dotnet build AnimaPet.csproj -c Release
 
       # Headless export for Linux/X11.
       - name: Export Godot project
