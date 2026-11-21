@@ -1,10 +1,9 @@
-name: 'Deploy: Frontends (Docs & Web Stage)'
+name: 'Deploy: Web Stage (GitHub Pages)'
 
 on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
       - 'apps/stage-web/**'
       - 'packages/**'
       - '.github/workflows/deploy-frontends.yml'
