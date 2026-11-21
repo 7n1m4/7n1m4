@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../daemon_client/daemon_client.dart';
+import '../l10n/app_localizations.dart';
 import '../features/about/about_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/connections/connections_screen.dart';
@@ -29,7 +30,7 @@ class _NavigationShellState extends State<NavigationShell> {
     final pages = <Widget>[
       HomeScreen(client: widget.client),
       const ChatScreen(),
-      SettingsScreen(onOpenConnections: () => setState(() => _index = 3)),
+      SettingsScreen(client: widget.client, onOpenConnections: () => setState(() => _index = 3)),
       ConnectionsScreen(client: widget.client),
       const AboutScreen(),
     ];
@@ -48,31 +49,31 @@ class _NavigationShellState extends State<NavigationShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
-        destinations: const <NavigationDestination>[
+        destinations: <NavigationDestination>[
           NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard),
-            label: 'Control',
+            icon: const Icon(Icons.space_dashboard_outlined),
+            selectedIcon: const Icon(Icons.space_dashboard),
+            label: AppLocalizations.of(context)!.navControl,
           ),
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chat',
+            icon: const Icon(Icons.chat_bubble_outline),
+            selectedIcon: const Icon(Icons.chat_bubble),
+            label: AppLocalizations.of(context)!.navChat,
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: AppLocalizations.of(context)!.navSettings,
           ),
           NavigationDestination(
-            icon: Icon(Icons.link_off),
-            selectedIcon: Icon(Icons.link),
-            label: 'Connections',
+            icon: const Icon(Icons.link_off),
+            selectedIcon: const Icon(Icons.link),
+            label: AppLocalizations.of(context)!.navConnections,
           ),
           NavigationDestination(
-            icon: Icon(Icons.info_outline),
-            selectedIcon: Icon(Icons.info),
-            label: 'About',
+            icon: const Icon(Icons.info_outline),
+            selectedIcon: const Icon(Icons.info),
+            label: AppLocalizations.of(context)!.navAbout,
           ),
         ],
       ),

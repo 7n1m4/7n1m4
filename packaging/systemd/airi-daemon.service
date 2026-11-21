@@ -49,6 +49,10 @@ RestrictRealtime=true
 # TLS + WebSocket + X.509 minting do not fit in 64 MiB.
 MemoryMax=256M
 CPUQuota=25%
+# Logging: journal only; operational logs subject to journald retention.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=anima-daemon
 
 [Install]
 WantedBy=graphical-session.target

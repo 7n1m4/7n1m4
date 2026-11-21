@@ -7,3 +7,5 @@ description = "AIRI supervisor: owns the system tray and launches/stops/restarts
 
 [dependencies]
 tray-item = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json"] }

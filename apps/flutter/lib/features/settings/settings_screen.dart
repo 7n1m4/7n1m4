@@ -2,12 +2,20 @@
 
 import 'package:flutter/material.dart';
 
-/// Placeholder settings surface. Real control surfaces (providers, memory,
-/// cards, sessions) are bead airi-wxp.3.2 and are owned by daemon RPC verbs —
-/// never by a local Dart store writer.
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key, required this.onOpenConnections});
+import '../../daemon_client/daemon_client.dart';
+import '../cards/cards_screen.dart';
+import '../memory/memory_screen.dart';
+import '../providers/providers_screen.dart';
+import '../sessions/sessions_screen.dart';
 
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({
+    super.key,
+    required this.client,
+    required this.onOpenConnections,
+  });
+
+  final DaemonClient client;
   final VoidCallback onOpenConnections;
 
   @override
@@ -22,29 +30,37 @@ class SettingsScreen extends StatelessWidget {
           onTap: onOpenConnections,
         ),
         const Divider(),
-        const ListTile(
-          leading: Icon(Icons.extension_outlined),
-          title: Text('Providers'),
-          subtitle: Text('Deferred · airi-wxp.3.2'),
-          enabled: false,
+        ListTile(
+          leading: const Icon(Icons.extension_outlined),
+          title: const Text('Providers'),
+          subtitle: const Text('LLM providers via daemon RPC'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => ProvidersScreen(client: client)),
+          ),
         ),
-        const ListTile(
-          leading: Icon(Icons.psychology_outlined),
-          title: Text('Memory'),
-          subtitle: Text('Deferred · airi-wxp.3.2'),
-          enabled: false,
+        ListTile(
+          leading: const Icon(Icons.psychology_outlined),
+          title: const Text('Memory'),
+          subtitle: const Text('Memory stats via daemon RPC'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => MemoryScreen(client: client)),
+          ),
         ),
-        const ListTile(
-          leading: Icon(Icons.person_outline),
-          title: Text('Cards'),
-          subtitle: Text('Deferred · airi-wxp.3.2'),
-          enabled: false,
+        ListTile(
+          leading: const Icon(Icons.person_outline),
+          title: const Text('Cards'),
+          subtitle: const Text('Cards settings via daemon RPC'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => CardsScreen(client: client)),
+          ),
         ),
-        const ListTile(
-          leading: Icon(Icons.forum_outlined),
-          title: Text('Sessions'),
-          subtitle: Text('Deferred · airi-wxp.3.2'),
-          enabled: false,
+        ListTile(
+          leading: const Icon(Icons.forum_outlined),
+          title: const Text('Sessions'),
+          subtitle: const Text('Session/message counts via daemon RPC'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => SessionsScreen(client: client)),
+          ),
         ),
       ],
     );

@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# AIRI supervisor — owns the system tray and the client (Flutter/Godot)
+# process lifecycle. Never binds port 6121 (daemon owns it) and never
+# starts/stops/restarts the daemon (systemd owns it).
+[Unit]
+Description=AIRI supervisor (tray + client lifecycle)
+Documentation=https://github.com/anlmalabs/airi
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/anima-supervisor
+Restart=on-failure
+RestartSec=2
+# No socket, no cert, no token, no audit handling here.
+StandardOutput=journal
+StandardError=journal
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+MemoryMax=128M
+CPUQuota=10%
+
+[Install]
+WantedBy=graphical-session.target

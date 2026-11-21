@@ -34,6 +34,10 @@ is invented here:
   optional `data`/`error`, and echo the client-supplied `id`.
 - Protocol identifier is the **literal carve-out `airi-channel/1`** — do not
   rename it to `anima-*` (wire version 1 stays additive).
+- **Keepalive**: once authenticated, the client sends `{"type":"ping"}` every
+  30 s (`DaemonClient.heartbeatInterval`). The daemon closes a peer that sends
+  no frame for `DEAD_PEER_TTL` (75 s), so this is what keeps an idle session
+  alive; it stops on disconnect/reconnect and never runs pre-auth.
 
 `ConnectionSettings` mirrors the derivation rules of the Vue reference
 `resolveWebSocketUrl` (`packages/stage-ui/src/stores/mods/api/channel-server.ts`)
@@ -99,3 +103,17 @@ flutter pub get
   work (`airi-wxp.3.6`, `airi-wxp.3.7`).
 - The Vue web app is kept as the full-UI **behaviour reference** only; do not
   fork its business logic into Dart to "catch up". Extend the daemon instead.
+
+
+## Remote-client transport (libp2p / Cloudflare Tunnel)
+
+Flutter is a thin client: it never embeds core or runs a local daemon. It
+reaches the desktop daemon (or a Termux-hosted daemon) over the same WebSocket
+gateway, whether directly (LAN `ws://`/`wss://`), through a libp2p relay, or
+through a Cloudflare Tunnel URL. The connection settings `host`/`port`/`scheme`/
+`path`/`authToken` describe the reachable endpoint; `reconnect_policy.dart`
+governs backoff. Trust boundaries follow `docs/design-daemon-gateway.md`: the
+auth token is the shared secret, non-loopback plaintext is fail-closed to
+`wss://`, and remote endpoints must present a valid TLS certificate. Wrong-peer
+or tunnel rejection surfaces as a terminal `failed` connection state with a
+clear reason; no credentials are persisted beyond memory.

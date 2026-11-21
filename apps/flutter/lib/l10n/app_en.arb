@@ -1,0 +1,17 @@
+{
+  "@@locale": "en",
+  "navControl": "Control",
+  "navChat": "Chat",
+  "navSettings": "Settings",
+  "navConnections": "Connections",
+  "navAbout": "About",
+  "statusGatewayHost": "Gateway host",
+  "statusAttempt": "Attempt",
+  "connectionHost": "Host",
+  "connectionPort": "Port",
+  "connectionToken": "Token",
+  "connectionConnect": "Connect",
+  "connectionDisconnect": "Disconnect",
+  "chatInputHint": "Chat input — deferred",
+  "sendDeferred": "Send — deferred"
+}

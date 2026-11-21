@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
   # WebSocket transport only. No flutter_rust_bridge / embedded core: mobile is
   # a REMOTE thin client of the daemon (design-flutter-godot-pivot.md, decision B).
   web_socket_channel: ^3.0.0
@@ -20,3 +23,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true

@@ -11,7 +11,11 @@
 3. **Do not import the upstream Godot sidecar as a unit.** Its stated fork stance is "paused"/`ignore` (shortlist, `docs/project-selective-upstream-sync-shortlist.md:20,57-69,209-245`) and the newer Kirie migration is explicitly `Auto-Reject / Do Not Port` (`docs/UPSTREAM_RADAR.md:1843`). Reuse it as *reading material* only. A neutral recommendation with reasoning is in §3; this does not resolve the still-OPEN sub-question in the pivot doc (`docs/design-flutter-godot-pivot.md:67,327-330`).
 4. The `crates/anima-render/src/vrm/lipsync.rs:3-7,24-38` smoothing (fast attack, ~120 ms exponential decay, `[0,1]` clamp) is the reference math to reproduce on the Godot side. It is a small, pure algorithm and should be ported to C# when a real morph-target backend lands — not moved into the daemon.
 5. **C# export is a desktop-first bet.** Windows/Linux/macOS are fully supported; Android/iOS are experimental (Godot 4.2+); web is unsupported for C# in Godot 4. This matches the pivot's "desktop first, mobile TBD" posture (decision B and the still-open mobile composition question, `docs/design-flutter-godot-pivot.md:73,207-209`).
-6. The E4-T2 scaffold is **source-only and protocol-agnostic**. No event frame shape is guessed: every protocol-dependent method is a documented `TODO(Wave 0)` stub pending the event-lane types owned by another agent.
+6. **Shipping order and open sub-decisions (recorded, not resolved):**
+   - **Upstream Godot sidecar import remains an OPEN, UNAUTHORIZED sub-decision.** Do not fetch/merge/rebase/push; the recommendation in §3 ("do not import as a unit; build fresh, read it") is neutral and does not resolve it. Revisit only after Wave 0 event-lane bindings exist, with explicit authorization.
+   - **3D ships first.** The first shipping release is the VRM/MMD backend only. Live2D (GDCubism) is gated and is NOT required for the first release.
+   - **Live2D legal gate (two parts, both mandatory before any GDCubism-backed build ships):** (a) legal review of the SDK Release License, and (b) each end user fetches the proprietary Cubism Core from Live2D after accepting the terms. The Cubism Core binary MUST NEVER be committed to this repo.
+7. The E4-T2 scaffold is **source-only and protocol-agnostic**. No event frame shape is guessed: every protocol-dependent method is a documented `TODO(Wave 0)` stub pending the event-lane types owned by another agent.
 
 ## 1. Live2D in Godot 4 — GDCubism
 

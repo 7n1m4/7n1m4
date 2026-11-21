@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'daemon_client/daemon_client.dart';
+import 'l10n/app_localizations.dart';
 import 'navigation/navigation_shell.dart';
 import 'theme/app_theme.dart';
 
@@ -17,6 +19,13 @@ class AnimaApp extends StatelessWidget {
       title: 'Anima',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const <Locale>[Locale('en')],
       home: NavigationShell(client: client),
     );
   }

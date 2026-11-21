@@ -195,7 +195,6 @@ class DaemonClient {
     if (settings == null || !_wantsConnection) return;
 
     _authenticated = false;
-    _stopHeartbeat();
     _emit(state: DaemonConnectionState.connecting, clearCore: true, clearError: true, attempt: 0);
     await _teardownTransport();
 
@@ -364,7 +363,6 @@ class DaemonClient {
 
     _failAllPending(failure);
     _authenticated = false;
-    _stopHeartbeat();
     if (!_wantsConnection) {
       _emit(state: DaemonConnectionState.disconnected, clearError: true);
       return;
@@ -444,7 +442,6 @@ class DaemonClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _authenticated = false;
-    _stopHeartbeat();
     _failAuth(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
     _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
     await _teardownTransport();
@@ -453,6 +450,7 @@ class DaemonClient {
   }
 
   Future<void> _teardownTransport() async {
+    _stopHeartbeat();
     await _messageSub?.cancel();
     _messageSub = null;
     await _errorSub?.cancel();
@@ -464,7 +462,6 @@ class DaemonClient {
 
   void dispose() {
     _wantsConnection = false;
-    _stopHeartbeat();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Client disposed.'));

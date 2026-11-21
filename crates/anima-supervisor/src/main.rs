@@ -8,6 +8,8 @@
 //!     systemd remains the single restart authority.
 //!   * Launch/stop/restart applies to client processes only (Flutter, Godot).
 
+mod logging;
+
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -117,7 +119,11 @@ fn quit() {
 }
 
 fn main() {
-    eprintln!("anima-supervisor: starting (tray owner; daemon owns port 6121)");
+    logging::init();
+    tracing::info!("anima-supervisor starting (tray owner; daemon owns port 6121)");
+    // Audit retention: supervisor never handles audit data; anima-daemon owns the
+    // audit log and its .cleared-* archive retention (forever; no GUI deletion).
+    // See docs/decision-audit-archive-retention.md.
     let icon = tray_item::IconSource::Resource("system-run");
     let mut tray = match TrayItem::new("AIRI", icon) {
         Ok(t) => t,

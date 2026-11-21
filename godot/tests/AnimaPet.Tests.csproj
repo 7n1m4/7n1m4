@@ -17,13 +17,19 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
-  <!-- Compile the decoder + wire types directly into the test assembly.
+  <!-- Compile the decoder + wire types + renderer boundary directly into the test assembly.
        The Godot.NET.Sdk project cannot be referenced from a plain dotnet
-       test project, and the decoder is pure C# with no Godot deps. -->
+       test project, and these are pure C# with no Godot deps. -->
   <ItemGroup>
     <Compile Include="../scripts/Net/DaemonEvents.cs" Link="Net/DaemonEvents.cs" />
     <Compile Include="../scripts/Net/EventPayloadDecoder.cs" Link="Net/EventPayloadDecoder.cs" />
+    <Compile Include="../scripts/Renderers/IPetRenderer.cs" Link="Renderers/IPetRenderer.cs" />
+    <Compile Include="../scripts/Renderers/CardRenderConfig.cs" Link="Renderers/CardRenderConfig.cs" />
+    <Compile Include="../scripts/Renderers/PetRendererFactory.cs" Link="Renderers/PetRendererFactory.cs" />
+    <Compile Include="../scripts/Renderers/Live2dRenderer.cs" Link="Renderers/Live2dRenderer.cs" />
+    <Compile Include="../scripts/Renderers/VrmRenderer.cs" Link="Renderers/VrmRenderer.cs" />
     <Compile Include="../scripts/Renderers/LipSyncSmoother.cs" Link="Renderers/LipSyncSmoother.cs" />
+    <Compile Include="../scripts/Net/DaemonClient.cs" Link="Net/DaemonClient.cs" />
   </ItemGroup>
 
   <ItemGroup>
