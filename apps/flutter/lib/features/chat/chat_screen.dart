@@ -40,10 +40,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onEvent(GatewayEventFrame event) {
-    if (event.topic != 'token.delta') return;
+    if (event.topic != EventTopic.tokenDelta) return;
     final data = event.data;
     final sid = data['session_id'] as String? ?? '';
     if (_sessionId != null && sid.isNotEmpty && sid != _sessionId) return;
+    // The chat.send ack can arrive after the first delta; remember the session
+    // from the stream so a Stop press cancels the right turn.
+    if (_sessionId == null && sid.isNotEmpty) _sessionId = sid;
     final mid = data['message_id'] as String? ?? '';
     final delta = data['delta'] as String? ?? '';
     final isFinal = data['final'] == true;
@@ -106,6 +109,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Stop the in-flight turn via the daemon's `chat.cancel` verb.
+  Future<void> _cancel() async {
+    setState(() => _error = null);
+    try {
+      final cancelled = await widget.client.cancelChat(_sessionId ?? '');
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _activeMessageId = null;
+        _deltaBuffer.clear();
+        if (!cancelled) _error = 'No active turn to cancel.';
+      });
+    } on DaemonClientException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -153,14 +174,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: _sending ? null : _send,
+                  onPressed: _sending ? _cancel : _send,
                   icon: _sending
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const Icon(Icons.stop)
                       : const Icon(Icons.send),
-                  tooltip: 'Send',
+                  tooltip: _sending ? 'Stop' : 'Send',
                 ),
               ],
             ),

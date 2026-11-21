@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Hand-written for the small, stable auth/rpc subset ONLY. Typed event payloads
-// are deliberately NOT modelled here: they arrive with the Wave 0 event lane and
-// the binding decision (beads airi-wxp.2.2 / airi-wxp.10, still OPEN). Shapes
-// below are copied from crates/anima-channel/src/wire.rs; do not invent new ones.
+// Hand-written for the small, stable auth/rpc subset ONLY. Event topics are
+// decoded into the typed `EventTopic` enum in protocol.dart; event *payloads*
+// stay as plain maps and are interpreted by callers (chat reads token.delta).
+// Shapes below are copied from crates/anima-channel/src/wire.rs; do not invent
+// new ones.
 
 import 'dart:convert';
 

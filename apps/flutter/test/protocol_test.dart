@@ -25,14 +25,29 @@ void main() {
     expect(frame.error?.code, 'invalid_token');
   });
 
-  test('parses Wave 0 event frames as a generic envelope only', () {
+  test('parses event frames into a typed topic', () {
     final frame = ServerFrame.parse(
       '{"type":"event","topic":"status.changed","data":{"core_available":true},"id":"turn-1"}',
     );
     expect(frame.kind, ServerFrameKind.event);
-    expect(frame.event?.topic, 'status.changed');
+    expect(frame.event?.topic, EventTopic.statusChanged);
+    expect(frame.event?.rawTopic, 'status.changed');
     expect(frame.event?.data['core_available'], isTrue);
     expect(frame.event?.id, 'turn-1');
+  });
+
+  test('unknown or missing topics decode to unknown without throwing', () {
+    final unknown = ServerFrame.parse(
+      '{"type":"event","topic":"future.topic","data":{}}',
+    );
+    expect(unknown.kind, ServerFrameKind.event);
+    expect(unknown.event?.topic, EventTopic.unknown);
+    expect(unknown.event?.rawTopic, 'future.topic');
+
+    final missing = ServerFrame.parse('{"type":"event","data":{}}');
+    expect(missing.kind, ServerFrameKind.event);
+    expect(missing.event?.topic, EventTopic.unknown);
+    expect(missing.event?.rawTopic, '');
   });
 
   test('malformed and unknown frames never throw', () {

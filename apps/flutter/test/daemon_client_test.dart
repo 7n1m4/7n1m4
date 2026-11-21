@@ -164,7 +164,7 @@ void main() {
     );
   });
 
-  test('event frames reach the hook but no subscription is sent', () async {
+  test('event frames reach the hook with a typed topic; client sends no subscription', () async {
     final fake = FakeTransport();
     final client = DaemonClient(
       transportFactory: () => fake,
@@ -195,7 +195,7 @@ void main() {
     );
     await _pump();
 
-    expect(seen?.topic, 'status.changed');
+    expect(seen?.topic, EventTopic.statusChanged);
     expect(fake.sent.any((frame) => frame.contains('event.subscribe')), isFalse);
   });
 
@@ -254,5 +254,141 @@ void main() {
 
     fake.receive('{"type":"error","error":{"code":"invalid_token","message":"no"}}');
     await connecting;
+  });
+
+  // --- Verb wrappers (chat.cancel + completeness rows) ---------------------
+
+  Future<(DaemonClient, FakeTransport)> connectedClient() async {
+    final fake = FakeTransport();
+    final client = DaemonClient(
+      transportFactory: () => fake,
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
+    await _pump();
+    fake.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(fake.sent[1]) as Map<String, dynamic>;
+    fake.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': probe['id'],
+    }));
+    await connecting;
+    return (client, fake);
+  }
+
+  Map<String, dynamic> lastRequest(FakeTransport fake) =>
+      jsonDecode(fake.sent.last) as Map<String, dynamic>;
+
+  void reply(
+    FakeTransport fake,
+    Map<String, dynamic> request,
+    Object? data, {
+    bool ok = true,
+  }) {
+    fake.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': request['action'],
+      'ok': ok,
+      if (data != null) 'data': data,
+      if (!ok)
+        'error': <String, dynamic>{'code': 'rpc_error', 'message': 'verb failed'},
+      'id': request['id'],
+    }));
+  }
+
+  test('cancelChat sends chat.cancel with session_id and reads cancelled', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final pending = client.cancelChat('s1');
+    final request = lastRequest(fake);
+    expect(request['action'], 'chat.cancel');
+    expect(request['payload'], <String, dynamic>{'session_id': 's1'});
+
+    reply(fake, request, <String, dynamic>{'cancelled': true});
+    expect(await pending, isTrue);
+  });
+
+  test('cancelChat surfaces a failed rpc reply as DaemonClientException', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final pending = client.cancelChat('s1');
+    reply(fake, lastRequest(fake), null, ok: false);
+    await expectLater(
+      pending,
+      throwsA(isA<DaemonClientException>().having(
+        (e) => e.kind,
+        'kind',
+        DaemonFailureKind.rpc,
+      )),
+    );
+  });
+
+  test('list verbs decode their data arrays', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final cases = <(Future<List<Map<String, dynamic>>> Function(), String, String)>[
+      (() => client.stmmList(), 'stmm.list', 'summaries'),
+      (() => client.journalSearch(), 'journal.search', 'entries'),
+      (() => client.cardsList(), 'cards.list', 'cards'),
+      (() => client.sessionsList(), 'sessions.list', 'sessions'),
+    ];
+    for (final (invoke, action, key) in cases) {
+      final pending = invoke();
+      final request = lastRequest(fake);
+      expect(request['action'], action);
+      reply(fake, request, <String, dynamic>{
+        key: <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'x'}
+        ],
+      });
+      final rows = await pending;
+      expect(rows, hasLength(1));
+      expect(rows.first['id'], 'x');
+    }
+  });
+
+  test('scalar verbs decode their reply fields', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    Future<T> run<T>(String action, Future<T> Function() invoke, Object? data,
+        Object? expected) async {
+      final pending = invoke();
+      final request = lastRequest(fake);
+      expect(request['action'], action);
+      reply(fake, request, data);
+      final value = await pending;
+      expect(value, expected);
+      return value;
+    }
+
+    await run('journal.append', () => client.journalAppend('hi'),
+        <String, dynamic>{'id': 'e1'}, 'e1');
+    await run('retrieval.status', client.retrievalStatus,
+        <String, dynamic>{'available': true}, true);
+    await run('sessions.export', () => client.sessionsExport('s1'),
+        <String, dynamic>{'jsonl': '{}\n'}, '{}\n');
+    await run('cards.get', () => client.cardsGet('c1'),
+        <String, dynamic>{'card': <String, dynamic>{'id': 'c1'}, 'id': 'c1'},
+        <String, dynamic>{'id': 'c1'});
+
+    for (final (action, invoke) in <(String, Future<void> Function())>[
+      ('stmm.rebuild', client.stmmRebuild),
+      ('cards.import', () => client.cardsImport(<String, dynamic>{'id': 'c1'})),
+    ]) {
+      final pending = invoke();
+      final request = lastRequest(fake);
+      expect(request['action'], action);
+      reply(fake, request, <String, dynamic>{'ok': true});
+      await pending;
+    }
   });
 }

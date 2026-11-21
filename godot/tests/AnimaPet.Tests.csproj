@@ -29,7 +29,9 @@
     <Compile Include="../scripts/Renderers/Live2dRenderer.cs" Link="Renderers/Live2dRenderer.cs" />
     <Compile Include="../scripts/Renderers/VrmRenderer.cs" Link="Renderers/VrmRenderer.cs" />
     <Compile Include="../scripts/Renderers/LipSyncSmoother.cs" Link="Renderers/LipSyncSmoother.cs" />
+    <Compile Include="../scripts/Renderers/GenericPetRenderer.cs" Link="Renderers/GenericPetRenderer.cs" />
     <Compile Include="../scripts/Net/DaemonClient.cs" Link="Net/DaemonClient.cs" />
+    <Compile Include="../scripts/Net/DaemonRpc.cs" Link="Net/DaemonRpc.cs" />
   </ItemGroup>
 
   <ItemGroup>

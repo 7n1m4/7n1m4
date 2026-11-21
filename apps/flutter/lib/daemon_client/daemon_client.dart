@@ -16,6 +16,7 @@ import 'transport.dart';
 
 export 'protocol.dart'
     show
+        EventTopic,
         GatewayEventFrame,
         ServerFrame,
         ServerFrameKind,
@@ -121,8 +122,9 @@ class DaemonClient {
   DaemonStatus get snapshot => _snapshot;
   Stream<DaemonStatus> get statusStream => _status.stream;
 
-  /// Optional hook for Wave 0 event frames. No subscription is sent by this
-  /// scaffold; see [ServerFrame.event] / `protocol.dart` for the seam.
+  /// Hook for typed event frames. Subscriptions are caller-driven: the chat
+  /// surface calls `event.subscribe` for `token.delta` before sending a turn.
+  /// See [ServerFrame.event] / [GatewayEventFrame] for the decoded envelope.
   void Function(GatewayEventFrame event)? onEvent;
 
   void _emit({
@@ -306,9 +308,9 @@ class DaemonClient {
         _failAllPending(failure);
         break;
       case ServerFrameKind.event:
-        // TODO(airi-wxp.2.2): typed decode + event.subscribe land with Wave 0.
-        // No subscription is sent here; the generic envelope is exposed only
-        // through the optional `onEvent` hook. No event payloads are modelled.
+        // Topic is typed (EventTopic) and unknown topics decode to `unknown`
+        // rather than throwing. Callers subscribe through `event.subscribe`
+        // (chat_screen.dart) and consume payloads via the onEvent hook.
         final event = frame.event;
         if (event != null) onEvent?.call(event);
         break;
@@ -434,6 +436,121 @@ class DaemonClient {
       );
     }
     return CoreStatus.fromJson(data);
+  }
+
+  // --- Typed wrappers for the daemon's action verbs -------------------------
+  // Each maps 1:1 to a handler registered in crates/anima-daemon/src/gateway.rs.
+  // A failed rpc reply is promoted to a DaemonClientException so callers do not
+  // have to repeat error handling.
+
+  Future<RpcReply> _callOk(String action, {Map<String, dynamic>? payload}) async {
+    final reply = await call(action, payload: payload);
+    if (!reply.ok) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.rpc,
+        message: reply.error?.message ?? '$action failed.',
+        code: reply.error?.code,
+      );
+    }
+    return reply;
+  }
+
+  static List<Map<String, dynamic>> _objects(RpcReply reply, String key) {
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) return const <Map<String, dynamic>>[];
+    final raw = data[key];
+    if (raw is! List) return const <Map<String, dynamic>>[];
+    return raw.whereType<Map<String, dynamic>>().toList(growable: false);
+  }
+
+  /// Stop an in-flight chat turn (`chat.cancel`).
+  Future<bool> cancelChat(String sessionId) async {
+    final reply = await _callOk('chat.cancel', payload: <String, dynamic>{
+      'session_id': sessionId,
+    });
+    final data = reply.data;
+    return data is Map<String, dynamic> && data['cancelled'] == true;
+  }
+
+  /// Recent short-term-memory summaries (`stmm.list`).
+  Future<List<Map<String, dynamic>>> stmmList({int limit = 50}) async {
+    final reply = await _callOk('stmm.list', payload: <String, dynamic>{
+      'limit': limit,
+    });
+    return _objects(reply, 'summaries');
+  }
+
+  /// Prune/rebuild short-term memory (`stmm.rebuild`).
+  Future<void> stmmRebuild() async {
+    await _callOk('stmm.rebuild');
+  }
+
+  /// Append a long-term journal entry (`journal.append`).
+  Future<String> journalAppend(String content, {String kind = 'note'}) async {
+    final reply = await _callOk('journal.append', payload: <String, dynamic>{
+      'content': content,
+      'kind': kind,
+    });
+    final data = reply.data;
+    return (data is Map<String, dynamic> ? data['id'] : null)?.toString() ?? '';
+  }
+
+  /// Search the long-term journal (`journal.search`).
+  Future<List<Map<String, dynamic>>> journalSearch({
+    String query = '',
+    int limit = 50,
+  }) async {
+    final reply = await _callOk('journal.search', payload: <String, dynamic>{
+      'query': query,
+      'limit': limit,
+    });
+    return _objects(reply, 'entries');
+  }
+
+  /// Whether retrieval/augmented memory is available (`retrieval.status`).
+  Future<bool> retrievalStatus() async {
+    final reply = await _callOk('retrieval.status');
+    final data = reply.data;
+    return data is Map<String, dynamic> && data['available'] == true;
+  }
+
+  /// All character cards (`cards.list`).
+  Future<List<Map<String, dynamic>>> cardsList() async {
+    final reply = await _callOk('cards.list');
+    return _objects(reply, 'cards');
+  }
+
+  /// One character card, or `null` when the daemon has no such card (`cards.get`).
+  Future<Map<String, dynamic>?> cardsGet(String id) async {
+    final reply = await _callOk('cards.get', payload: <String, dynamic>{
+      'id': id,
+    });
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) return null;
+    final card = data['card'];
+    return card is Map<String, dynamic> ? card : null;
+  }
+
+  /// Import a character card (`cards.import`).
+  Future<void> cardsImport(Map<String, dynamic> card) async {
+    await _callOk('cards.import', payload: <String, dynamic>{
+      'card': card,
+    });
+  }
+
+  /// All chat sessions (`sessions.list`).
+  Future<List<Map<String, dynamic>>> sessionsList() async {
+    final reply = await _callOk('sessions.list');
+    return _objects(reply, 'sessions');
+  }
+
+  /// JSONL export of one chat session (`sessions.export`).
+  Future<String> sessionsExport(String sessionId) async {
+    final reply = await _callOk('sessions.export', payload: <String, dynamic>{
+      'session_id': sessionId,
+    });
+    final data = reply.data;
+    return (data is Map<String, dynamic> ? data['jsonl'] : null)?.toString() ?? '';
   }
 
   /// Explicit shutdown: no reconnect is scheduled.

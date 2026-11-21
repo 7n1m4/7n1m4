@@ -14,10 +14,21 @@
 //! stale events and stops `core.status` RPCs from echoing an unchanged health
 //! snapshot as a fresh "change".
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anima_channel::{ChannelServer, EventBus, EventPayload, EventTopic, GatewayEvent};
+use anima_channel::{
+    ChannelServer, EventBus, EventPayload, EventTopic, GatewayEvent, CANONICAL_EMOTION_KEYS,
+};
 use serde_json::Value;
+
+/// Neutral actor used when a cue arrives without an explicit `actor=` field.
+/// The daemon has no card/actor registry on this path yet; renderers treat the
+/// id as an opaque routing key, never as a morph name or DSL command.
+const DEFAULT_ACTOR_ID: &str = "default";
+/// Bound the incremental marker buffer so an unterminated model marker cannot
+/// grow publisher state without limit. Markers longer than this are dropped.
+const MAX_PENDING_CUE_LEN: usize = 256;
 
 /// Broad class of an `emotion.tag` cue, mirrored from the channel wire
 /// vocabulary so a future audio/expression service never imports
@@ -56,6 +67,148 @@ type StatusKey = (bool, bool, String);
 pub struct EventPublisher {
     bus: EventBus,
     last_status: Arc<Mutex<Option<StatusKey>>>,
+    /// Incremental ACT-marker state shared by all clones, keyed by session so
+    /// concurrent turns cannot interleave a split `<|ACT:…|>` marker. Entries
+    /// are removed on the terminal delta.
+    cue_parsers: Arc<Mutex<HashMap<String, CueParser>>>,
+}
+
+/// One renderer-neutral acting cue extracted from a streamed ACT marker.
+#[derive(Debug, Clone, PartialEq)]
+struct ActCue {
+    actor_id: String,
+    kind: DaemonCueKind,
+    tag: String,
+    intensity: f32,
+    duration_ms: Option<u64>,
+}
+
+/// Carries an incomplete `<|ACT:…|>` tail across token deltas.
+#[derive(Debug, Default)]
+struct CueParser {
+    pending: String,
+}
+
+impl CueParser {
+    fn feed(&mut self, delta: &str, final_: bool) -> Vec<ActCue> {
+        let mut buf = std::mem::take(&mut self.pending);
+        buf.push_str(delta);
+        let mut cues = Vec::new();
+        let mut cursor = 0;
+
+        while let Some(rel) = buf[cursor..].find("<|ACT:") {
+            let start = cursor + rel;
+            let body_start = start + "<|ACT:".len();
+            match buf[body_start..].find("|>") {
+                Some(end_rel) => {
+                    let end = body_start + end_rel;
+                    cues.extend(parse_act_body(&buf[body_start..end]));
+                    cursor = end + 2;
+                }
+                None => {
+                    // Unterminated marker: keep the tail only while the stream
+                    // continues and the text stays within the bounded buffer.
+                    if !final_ {
+                        let tail = &buf[start..];
+                        if tail.len() <= MAX_PENDING_CUE_LEN {
+                            self.pending = tail.to_string();
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        cues
+    }
+}
+
+/// Parse the official short ACT form: `<|ACT:emotion="happy",intensity="0.8",duration="3"|>`.
+/// The JSON-chaining form is intentionally out of scope; it is skipped rather
+/// than guessed at. Only bounded, identifier-shaped tags become events.
+fn parse_act_body(body: &str) -> Vec<ActCue> {
+    let mut kind_and_tag: Vec<(DaemonCueKind, String)> = Vec::new();
+    let mut actor_id = DEFAULT_ACTOR_ID.to_string();
+    let mut intensity = 0.7_f32;
+    let mut duration_ms = None;
+
+    for field in body.split(',') {
+        let Some((key, raw_value)) = field.split_once('=') else {
+            continue;
+        };
+        let value = raw_value.trim().trim_matches(['"', '\'']).trim();
+        match key.trim().to_ascii_lowercase().as_str() {
+            "emotion" | "motion" | "vfx" => {
+                let kind = match key.trim().to_ascii_lowercase().as_str() {
+                    "motion" => DaemonCueKind::Motion,
+                    "vfx" => DaemonCueKind::Vfx,
+                    _ => DaemonCueKind::Emotion,
+                };
+                if let Some(tag) = normalize_cue_tag(value, kind) {
+                    kind_and_tag.push((kind, tag));
+                }
+            }
+            "actor" => {
+                if is_safe_tag(value) {
+                    actor_id = value.to_ascii_lowercase();
+                }
+            }
+            "intensity" => {
+                if let Ok(parsed) = value.parse::<f32>() {
+                    if parsed.is_finite() {
+                        intensity = parsed.clamp(0.0, 1.0);
+                    }
+                }
+            }
+            // Short-form `duration="3"` is seconds per the ACT spec; the wire
+            // field is milliseconds. `duration_ms` is accepted as an explicit
+            // millisecond override.
+            "duration" => {
+                if let Ok(seconds) = value.parse::<f32>() {
+                    if seconds.is_finite() && (0.0..=60.0).contains(&seconds) {
+                        duration_ms = Some((seconds * 1000.0).round() as u64);
+                    }
+                }
+            }
+            "duration_ms" => {
+                if let Ok(ms) = value.parse::<u64>() {
+                    duration_ms = Some(ms.min(60_000));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    kind_and_tag
+        .into_iter()
+        .map(|(kind, tag)| ActCue {
+            actor_id: actor_id.clone(),
+            kind,
+            tag,
+            intensity,
+            duration_ms,
+        })
+        .collect()
+}
+
+fn is_safe_tag(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 32
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn normalize_cue_tag(value: &str, kind: DaemonCueKind) -> Option<String> {
+    if !is_safe_tag(value) {
+        return None;
+    }
+    let lower = value.to_ascii_lowercase();
+    if kind == DaemonCueKind::Emotion {
+        if let Some(canonical) = CANONICAL_EMOTION_KEYS.iter().find(|key| **key == lower) {
+            return Some((*canonical).to_string());
+        }
+    }
+    Some(lower)
 }
 
 impl std::fmt::Debug for EventPublisher {
@@ -73,6 +226,7 @@ impl EventPublisher {
         Self {
             bus,
             last_status: Arc::new(Mutex::new(None)),
+            cue_parsers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -159,8 +313,15 @@ impl EventPublisher {
         );
     }
 
-    /// Publish one streamed chat token. No daemon chat service exists yet;
-    /// this wrapper is the integration seam for a future async pump.
+    /// Publish one streamed chat token and any renderer-neutral ACT cues that
+    /// the token completes. The gateway's `chat.send` pump already calls this
+    /// on every real LLM delta, so ACT markers in production model output
+    /// become `emotion.tag` events without the gateway importing wire types.
+    ///
+    /// The raw token is still published verbatim; only the derived cue is
+    /// normalized, bounded and secret-free (identifier-shaped tag, no text,
+    /// no provider data). A marker split across deltas is buffered until its
+    /// `|>` terminator arrives; an unterminated marker is dropped at `final_`.
     pub fn token_delta(
         &self,
         session_id: impl Into<String>,
@@ -170,19 +331,47 @@ impl EventPublisher {
         final_: bool,
         id: Option<Value>,
     ) {
+        let session_id = session_id.into();
+        let message_id = message_id.into();
+        let delta = delta.into();
         self.publish(
             EventTopic::TokenDelta,
             EventPayload::TokenDelta(anima_channel::TokenDeltaData {
-                session_id: session_id.into(),
-                message_id: message_id.into(),
-                delta: delta.into(),
+                session_id: session_id.clone(),
+                message_id: message_id.clone(),
+                delta: delta.clone(),
                 index,
                 final_,
                 seq: 0,
                 ts_ms: 0,
             }),
-            id,
+            id.clone(),
         );
+
+        let cues = {
+            let mut parsers = self
+                .cue_parsers
+                .lock()
+                .expect("event publisher cue parser lock poisoned");
+            let cues = parsers
+                .entry(session_id.clone())
+                .or_default()
+                .feed(&delta, final_);
+            if final_ {
+                parsers.remove(&session_id);
+            }
+            cues
+        };
+        for cue in cues {
+            self.emotion_tag(
+                cue.actor_id,
+                cue.tag,
+                cue.kind,
+                cue.intensity,
+                cue.duration_ms,
+                id.clone(),
+            );
+        }
     }
 
     /// Publish one discrete expression cue for an actor.
@@ -373,6 +562,37 @@ mod tests {
             assert_eq!(seq, i as u64);
             assert!(ts_ms > 0);
         }
+    }
+
+    #[test]
+    fn act_cues_route_by_kind_and_unterminated_markers_are_dropped() {
+        let (publisher, lane) = subscribed_publisher();
+        publisher.token_delta(
+            "s1",
+            "m1",
+            "<|ACT:motion=\"wave\",duration=\"2\"|>",
+            0,
+            false,
+            None,
+        );
+        publisher.token_delta("s1", "m1", "<|ACT:vfx=\"fire\"|>", 1, false, None);
+        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"angry\"", 0, false, None);
+        publisher.token_delta("s2", "m2", "", 1, true, None);
+
+        let drained = lane.drain();
+        let cues: Vec<_> = drained
+            .iter()
+            .filter_map(|event| match &event.data {
+                EventPayload::EmotionTag(data) => Some(data),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cues.len(), 2, "unterminated marker must not emit a cue");
+        assert_eq!(cues[0].tag, "wave");
+        assert_eq!(cues[0].kind, anima_channel::CueKind::Motion);
+        assert_eq!(cues[0].duration_ms, Some(2000));
+        assert_eq!(cues[1].tag, "fire");
+        assert_eq!(cues[1].kind, anima_channel::CueKind::Vfx);
     }
 
     #[test]

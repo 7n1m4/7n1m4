@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
@@ -28,6 +29,7 @@ public partial class Main : Node2D
     private IPetRenderer? _renderer;
     private DaemonClient? _daemon;
     private CancellationTokenSource? _pumpCts;
+    private CancellationTokenSource? _heartbeatCts;
     private Label? _statusLabel;
     private Label? _expressionLabel;
     private EventHandler<DaemonConnectionState>? _stateHandler;
@@ -80,6 +82,12 @@ public partial class Main : Node2D
             // unsafe; UI updates are marshalled via CallDeferred below.
             _pumpCts = new CancellationTokenSource();
             _ = _daemon.PumpAsync(_pumpCts.Token);
+
+            // One real caller per capability group so the client's RPC claim is
+            // exercised at runtime, not just asserted in the parity table.
+            _heartbeatCts = new CancellationTokenSource();
+            await ProbeCapabilitiesAsync(_heartbeatCts.Token).ConfigureAwait(true);
+            _ = _daemon.RunHeartbeatAsync(_heartbeatCts.Token);
         }
         catch (Exception ex)
         {
@@ -129,6 +137,53 @@ public partial class Main : Node2D
         }
     }
 
+    /// <summary>
+    /// Fire one RPC per capability group so chat/settings/providers/vault/etc.
+    /// are genuinely wired to the daemon, not just marked "implemented" in the
+    /// parity table. A failing probe is logged and skipped; it never blocks
+    /// startup or the heartbeat that follows. The chat probe deliberately uses
+    /// a short debug message so the stream path is exercised too.
+    /// </summary>
+    private async Task ProbeCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        if (_daemon is null)
+            return;
+
+        var probes = new (string Label, Func<DaemonClient, CancellationToken, Task<JsonElement>>)[]
+        {
+            ("core.status", (d, ct) => d.CoreStatusAsync(ct)),
+            ("chat.send", (d, ct) => d.ChatSendAsync("debug", "[AnimaPet] capability probe", ct)),
+            ("chat.cancel", (d, ct) => d.ChatCancelAsync("debug", ct)),
+            ("providers.list", (d, ct) => d.ProvidersListAsync(ct)),
+            ("settings.get", (d, ct) => d.SettingsGetAsync("core", ct)),
+            ("vault.status", (d, ct) => d.VaultStatusAsync(ct)),
+            ("stmm.list", (d, ct) => d.StmmListAsync(50, ct)),
+            ("journal.search", (d, ct) => d.JournalSearchAsync("AnimaPet", 50, ct)),
+            ("retrieval.status", (d, ct) => d.RetrievalStatusAsync(ct)),
+            ("cards.list", (d, ct) => d.CardsListAsync(ct)),
+            ("sessions.list", (d, ct) => d.SessionsListAsync(ct)),
+        };
+
+        foreach (var (label, call) in probes)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return;
+            try
+            {
+                var reply = await call(_daemon, cancellationToken).ConfigureAwait(true);
+                GD.Print($"[AnimaPet] {label}: {reply.ValueKind}");
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[AnimaPet] {label} probe failed: {ex.Message}");
+            }
+        }
+    }
+
     private void UpdateStatus(string text)
     {
         Callable.From(() => DoUpdateStatus(text)).CallDeferred();
@@ -156,6 +211,7 @@ public partial class Main : Node2D
     public override void _ExitTree()
     {
         _pumpCts?.Cancel();
+        _heartbeatCts?.Cancel();
         if (_daemon is not null)
         {
             if (_stateHandler is not null) _daemon.StateChanged -= _stateHandler;

@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Low-level JSON frame codec for the protocol spoken by anima-channel.
-// Shapes are reused from crates/anima-channel/src/wire.rs; protocol id remains
-// the literal carve-out `airi-channel/1` (do not rename to `anima-*`).
+// Shapes are hand-written from crates/anima-channel/src/wire.rs and kept in
+// sync with the Rust golden fixtures (test/golden_fixtures_test.dart); the
+// protocol id remains the literal carve-out `airi-channel/1` (do not rename
+// to `anima-*`). Event topics are decoded into [EventTopic]; subscriptions are
+// issued by callers (the chat surface subscribes to `token.delta`).
 
 import 'dart:convert';
 
@@ -38,33 +41,62 @@ enum ServerFrameKind {
   heartbeat,
   rpc,
   error,
-  event, // Wave 0 server-initiated lane; post-auth only.
+  event, // Server-initiated event lane; post-auth only.
   unknown,
 }
 
-/// Generic view of a Wave 0 `event` frame.
+/// Stable `event` topic name from `EventTopic` in
+/// crates/anima-channel/src/wire.rs. The version-1 vocabulary is fixed;
+/// [unknown] absorbs anything newer so frame decoding stays total.
+enum EventTopic {
+  lipSyncRms('lip_sync.rms'),
+  emotionTag('emotion.tag'),
+  tokenDelta('token.delta'),
+  presenceChanged('presence.changed'),
+  statusChanged('status.changed'),
+  unknown('');
+
+  const EventTopic(this.wireName);
+
+  /// Canonical dotted wire name (`unknown` carries an empty string).
+  final String wireName;
+
+  /// Decode a wire topic without throwing. Unexpected values become [unknown].
+  static EventTopic fromWire(String value) {
+    for (final topic in values) {
+      if (topic != unknown && topic.wireName == value) return topic;
+    }
+    return unknown;
+  }
+}
+
+/// Typed envelope of a server-initiated `event` frame.
 ///
-/// TODO(airi-wxp.2.2 / airi-wxp.10): once the event lane and the binding
-/// strategy land, replace this with typed payloads (generated bindings OR
-/// hand-written typed models checked against Rust golden fixtures — decision
-/// airi-wxp.10 is still open). This scaffold sends NO `event.subscribe` RPC and
-/// models NO event payload shapes — it only exposes the topic/data/id envelope
-/// to a caller-provided hook.
+/// [topic] is the validated [EventTopic]; [rawTopic] preserves the unmodified
+/// wire string (identical to `topic.wireName` for known topics). [data] stays a
+/// plain map: payload shapes are selected by topic and are intentionally left
+/// to callers, but the topic itself is now typed. Chat subscribes to
+/// `token.delta` via `event.subscribe` (see chat_screen.dart).
 class GatewayEventFrame {
   const GatewayEventFrame({
     required this.topic,
+    required this.rawTopic,
     required this.data,
     this.id,
   });
 
-  final String topic;
+  final EventTopic topic;
+  final String rawTopic;
   final Map<String, dynamic> data;
   final Object? id;
 
   factory GatewayEventFrame.fromJson(Map<String, dynamic> json) {
     final rawData = json['data'];
+    final rawTopicValue = json['topic'];
+    final rawTopic = rawTopicValue is String ? rawTopicValue : '';
     return GatewayEventFrame(
-      topic: json['topic'] as String? ?? '',
+      topic: EventTopic.fromWire(rawTopic),
+      rawTopic: rawTopic,
       data: rawData is Map<String, dynamic> ? rawData : const <String, dynamic>{},
       id: json['id'],
     );

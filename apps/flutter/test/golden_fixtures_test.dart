@@ -9,9 +9,9 @@
 // CoreStatus, RpcError) parse them without throwing and extract the
 // expected envelope fields.
 //
-// This test intentionally does NOT require typed event payload models
-// yet (decision airi-wxp.2.2 / airi-wxp.10 is still open). It checks
-// the envelope-level contract: topic string, data object, id passthrough.
+// Event topics are decoded into the typed `EventTopic` enum; payloads remain
+// plain maps interpreted by callers. This test checks the envelope-level
+// contract: typed topic + preserved wire string, data object, id passthrough.
 
 import 'dart:convert';
 import 'dart:io';
@@ -73,7 +73,8 @@ void main() {
         expect(frame.kind, ServerFrameKind.event,
             reason: '$fixtureName should parse as event');
         expect(frame.event, isNotNull);
-        expect(frame.event!.topic, expectedTopic);
+        expect(frame.event!.topic, EventTopic.fromWire(expectedTopic));
+        expect(frame.event!.rawTopic, expectedTopic);
         expect(frame.event!.data, isA<Map<String, dynamic>>());
         expect(frame.event!.data, isNotEmpty);
         // No correlation id in these fixtures.

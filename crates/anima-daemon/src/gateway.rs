@@ -482,13 +482,28 @@ impl Gateway {
         core: &CoreService,
         publisher: &EventPublisher,
     ) -> anima_channel::RendererHandlers {
+        // Single coercion point from a concrete `move` closure to the boxed RPC
+        // handler type. Captures and handler behavior are defined entirely by
+        // the closure; this only removes the repeated `as Box<dyn Fn…>` casts.
+        fn handler<F>(f: F) -> Box<
+            dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync,
+        >
+        where
+            F: Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
+                + Send
+                + Sync
+                + 'static,
+        {
+            Box::new(f)
+        }
+
         let mut m = std::collections::HashMap::new();
         {
             let core = core.clone();
             let publisher = publisher.clone();
             m.insert(
                 "core.status".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     if !core.available() {
                         let snap = core.snapshot();
                         let reason = snap.reason.unwrap_or_else(|| "unavailable".to_string());
@@ -502,53 +517,38 @@ impl Gateway {
                         None,
                     );
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "providers.list".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     let reply = core.providers_list()?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "settings.get".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let section = value
                         .get("section")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| "missing section".to_string())?;
                     let reply = core.settings_get(section)?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "settings.set".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let section = value
                         .get("section")
                         .and_then(|v| v.as_str())
@@ -559,27 +559,17 @@ impl Gateway {
                         .ok_or_else(|| "missing settings".to_string())?;
                     let reply = core.settings_set(section, settings)?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "vault.status".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     let reply = core.vault_status()?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
@@ -587,7 +577,7 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.send".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let req: anima_channel::wire::ChatSendRequest =
                         serde_json::from_value(value.clone()).unwrap_or_else(|_| {
                             anima_channel::wire::ChatSendRequest {
@@ -698,12 +688,7 @@ impl Gateway {
                         accepted: true,
                     };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
@@ -711,7 +696,7 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.cancel".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let cancelled = core.chat_cancel(&session_id);
                     if cancelled {
@@ -719,12 +704,7 @@ impl Gateway {
                     }
                     let reply = anima_channel::wire::ChatCancelReply { cancelled };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         // --- new handlers ---
@@ -732,42 +712,32 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "stmm.list".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let limit = value.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::SummaryRepo::new(db);
                     let summaries = repo.list_recent(limit).map_err(|e| e.to_string())?;
                     Ok(serde_json::json!({ "summaries": summaries }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "stmm.rebuild".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     if let Some(svc) = core.stmm_service() {
                         let _ = svc.prune();
                     }
                     Ok(serde_json::json!({ "ok": true }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "journal.append".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let content = value.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     if content.is_empty() {
                         return Err("empty content".to_string());
@@ -781,19 +751,14 @@ impl Gateway {
                     }
                     .map_err(|e| e.to_string())?;
                     Ok(serde_json::json!({ "id": id }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "journal.search".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let limit = value.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
@@ -806,112 +771,72 @@ impl Gateway {
                         .take(limit)
                         .collect();
                     Ok(serde_json::json!({ "entries": filtered }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "retrieval.status".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     Ok(serde_json::json!({ "available": core.available() }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             m.insert(
                 "cards.list".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     Ok(serde_json::json!({ "cards": [] }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             m.insert(
                 "cards.get".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     Ok(serde_json::json!({ "card": null, "id": id }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             m.insert(
                 "cards.import".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     Ok(serde_json::json!({ "ok": true }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "sessions.list".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::SessionRepo::new(db);
                     let sessions = repo.list().map_err(|e| e.to_string())?;
                     Ok(serde_json::json!({ "sessions": sessions }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "sessions.export".to_string(),
-                Box::new(move |_method: &str, value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let jsonl = core.session_export(&session_id).map_err(|e| e.to_string())?;
                     Ok(serde_json::json!({ "jsonl": jsonl }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         {
             m.insert(
                 "sessions.auto_title".to_string(),
-                Box::new(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, _value: &serde_json::Value| {
                     Ok(serde_json::json!({ "ok": true }))
-                })
-                    as Box<
-                        dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
-                            + Send
-                            + Sync,
-                    >,
+                }),
             );
         }
         m

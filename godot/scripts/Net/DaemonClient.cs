@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.WebSockets;
 using System.Text;
@@ -69,10 +70,20 @@ public sealed class DaemonClient : IDisposable
         PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>Default application-level heartbeat cadence (transport ping/pong).</summary>
+    public static readonly TimeSpan DefaultHeartbeatInterval = TimeSpan.FromSeconds(30);
+
     private readonly string _endpoint;
     private readonly string _authToken;
     private readonly Lazy<ClientWebSocket> _socket;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+
+    // One reader at a time on a ClientWebSocket. Frames meant for the other
+    // flow (events for the pump, replies for RPC/ping) are parked here until
+    // their owner reads them.
+    private readonly SemaphoreSlim _receiveLock = new(1, 1);
+    private readonly List<JsonElement> _deferredFrames = new();
+    private long _rpcId;
 
     /// <summary>Current connection state. View state only; never persisted.</summary>
     public DaemonConnectionState State { get; private set; } =
@@ -83,6 +94,12 @@ public sealed class DaemonClient : IDisposable
     /// credentials; safe to log.
     /// </summary>
     public string? LastError { get; private set; }
+
+    /// <summary>Application-level heartbeat cadence. Defaults to <see cref="DefaultHeartbeatInterval"/>.</summary>
+    public TimeSpan HeartbeatInterval { get; set; } = DefaultHeartbeatInterval;
+
+    /// <summary>UTC time of the last observed pong, or null before the first heartbeat.</summary>
+    public DateTimeOffset? LastPongAtUtc { get; private set; }
 
     /// <summary>
     /// Daemon-resolved endpoint. Default <see cref="DefaultEndpoint"/>; override
@@ -244,7 +261,7 @@ public sealed class DaemonClient : IDisposable
     /// </summary>
     public async Task<bool> ReceiveOneAsync(CancellationToken cancellationToken = default)
     {
-        var frame = await ReceiveJsonAsync(cancellationToken).ConfigureAwait(false);
+        var frame = await ReceiveJsonAsync(cancellationToken, forEvents: true).ConfigureAwait(false);
         if (frame.ValueKind != JsonValueKind.Object)
             return true; // non-object frame; ignore
 
@@ -311,6 +328,167 @@ public sealed class DaemonClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Application-level heartbeat: send <c>{"type":"ping"}</c> on the existing
+    /// WS and record <see cref="LastPongAtUtc"/> when the daemon answers
+    /// <c>{"type":"pong"}</c>. No separate transport or client-to-client path.
+    /// </summary>
+    public async Task PingAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureConnected();
+        await SendJsonAsync(DaemonRpc.PingFrame(), cancellationToken).ConfigureAwait(false);
+        var reply = await ReceiveJsonAsync(cancellationToken).ConfigureAwait(false);
+        if (DaemonRpc.IsError(reply))
+        {
+            var reason = TryGetErrorMessage(reply) ?? "ping rejected";
+            LastError = reason;
+            SetState(DaemonConnectionState.Failed);
+            throw new InvalidOperationException($"ping failed: {reason}");
+        }
+        if (DaemonRpc.IsPong(reply))
+            LastPongAtUtc = DateTimeOffset.UtcNow;
+        // Non-pong control frames are tolerated: a missed pong is reported by
+        // LastPongAtUtc, never by tearing down the pet's window.
+    }
+
+    /// <summary>
+    /// Periodically call <see cref="PingAsync"/> until cancelled or the socket
+    /// disconnects. Fire-and-forget from the scene; the first delay happens
+    /// before the first ping so connect/subscribe is never raced.
+    /// </summary>
+    public async Task RunHeartbeatAsync(CancellationToken cancellationToken)
+    {
+        var interval = HeartbeatInterval > TimeSpan.Zero
+            ? HeartbeatInterval
+            : DefaultHeartbeatInterval;
+        while (!cancellationToken.IsCancellationRequested && IsConnected)
+        {
+            try
+            {
+                await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                await PingAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+                LastError = ex.Message;
+                SetState(DaemonConnectionState.Disconnected);
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generic RPC caller for any daemon action in <see cref="DaemonRpc.AllActions"/>.
+    /// Returns the reply's <c>data</c> object (or <c>undefined</c> when absent).
+    /// Subscribe/unsubscribe keep their existing dedicated path.
+    /// </summary>
+    public async Task<JsonElement> SendRpc(
+        string method,
+        object? payload = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(method))
+            throw new ArgumentException("RPC method is required", nameof(method));
+        EnsureConnected();
+
+        var id = Interlocked.Increment(ref _rpcId);
+        await SendJsonAsync(DaemonRpc.Frame(method, payload, id), cancellationToken)
+            .ConfigureAwait(false);
+        var reply = await ReceiveJsonAsync(cancellationToken).ConfigureAwait(false);
+        if (DaemonRpc.IsError(reply) || DaemonRpc.IsFailedReply(reply))
+        {
+            var reason = TryGetErrorMessage(reply) ?? "rpc error";
+            LastError = reason;
+            if (DaemonRpc.IsError(reply))
+                SetState(DaemonConnectionState.Failed);
+            throw new InvalidOperationException($"{method} failed: {reason}");
+        }
+        return DaemonRpc.Data(reply);
+    }
+
+    /// <summary>chat.send</summary>
+    public Task<JsonElement> ChatSendAsync(string sessionId, string content, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.ChatSend, DaemonRpc.ChatSendPayload(sessionId, content), cancellationToken);
+
+    /// <summary>chat.cancel</summary>
+    public Task<JsonElement> ChatCancelAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.ChatCancel, DaemonRpc.SessionPayload(sessionId), cancellationToken);
+
+    /// <summary>core.status</summary>
+    public Task<JsonElement> CoreStatusAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CoreStatus, null, cancellationToken);
+
+    /// <summary>providers.list</summary>
+    public Task<JsonElement> ProvidersListAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.ProvidersList, null, cancellationToken);
+
+    /// <summary>settings.get</summary>
+    public Task<JsonElement> SettingsGetAsync(string section, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.SettingsGet, DaemonRpc.SectionPayload(section), cancellationToken);
+
+    /// <summary>settings.set</summary>
+    public Task<JsonElement> SettingsSetAsync(string section, object settings, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.SettingsSet, DaemonRpc.SettingsSetPayload(section, settings), cancellationToken);
+
+    /// <summary>vault.status</summary>
+    public Task<JsonElement> VaultStatusAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.VaultStatus, null, cancellationToken);
+
+    /// <summary>stmm.list</summary>
+    public Task<JsonElement> StmmListAsync(int limit = 50, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.StmmList, DaemonRpc.LimitPayload(limit), cancellationToken);
+
+    /// <summary>stmm.rebuild</summary>
+    public Task<JsonElement> StmmRebuildAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.StmmRebuild, null, cancellationToken);
+
+    /// <summary>journal.append</summary>
+    public Task<JsonElement> JournalAppendAsync(string content, string kind = "note", CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.JournalAppend, DaemonRpc.JournalAppendPayload(content, kind), cancellationToken);
+
+    /// <summary>journal.search</summary>
+    public Task<JsonElement> JournalSearchAsync(string query, int limit = 50, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.JournalSearch, DaemonRpc.JournalSearchPayload(query, limit), cancellationToken);
+
+    /// <summary>retrieval.status</summary>
+    public Task<JsonElement> RetrievalStatusAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.RetrievalStatus, null, cancellationToken);
+
+    /// <summary>cards.list</summary>
+    public Task<JsonElement> CardsListAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CardsList, null, cancellationToken);
+
+    /// <summary>cards.get</summary>
+    public Task<JsonElement> CardsGetAsync(string id, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CardsGet, DaemonRpc.CardGetPayload(id), cancellationToken);
+
+    /// <summary>cards.import</summary>
+    public Task<JsonElement> CardsImportAsync(object card, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CardsImport, DaemonRpc.CardsImportPayload(card), cancellationToken);
+
+    /// <summary>sessions.list</summary>
+    public Task<JsonElement> SessionsListAsync(CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.SessionsList, null, cancellationToken);
+
+    /// <summary>sessions.export</summary>
+    public Task<JsonElement> SessionsExportAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.SessionsExport, DaemonRpc.SessionPayload(sessionId), cancellationToken);
+
+    private bool IsConnected =>
+        State is DaemonConnectionState.Authenticated or DaemonConnectionState.Subscribed;
+
+    private void EnsureConnected()
+    {
+        if (!IsConnected)
+            throw new InvalidOperationException("not connected; call ConnectAsync first");
+    }
+
     private async Task SendRpcAsync(
         string action,
         object? payload,
@@ -359,7 +537,53 @@ public sealed class DaemonClient : IDisposable
         }
     }
 
-    private async Task<JsonElement> ReceiveJsonAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Read one frame of the requested kind. The pump wants events; auth,
+    /// subscribe, RPC and ping want replies. Frames for the other flow are
+    /// parked so a concurrent read can pick them up without two callers ever
+    /// issuing ReceiveAsync on the same socket.
+    /// </summary>
+    private async Task<JsonElement> ReceiveJsonAsync(
+        CancellationToken cancellationToken,
+        bool forEvents = false)
+    {
+        await _receiveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            while (true)
+            {
+                var parked = _deferredFrames.FindIndex(f => Matches(f, forEvents));
+                if (parked >= 0)
+                {
+                    var frame = _deferredFrames[parked];
+                    _deferredFrames.RemoveAt(parked);
+                    return frame;
+                }
+
+                var incoming = await ReceiveRawAsync(cancellationToken).ConfigureAwait(false);
+                if (incoming.ValueKind == JsonValueKind.Undefined)
+                    return incoming; // socket closed
+                if (Matches(incoming, forEvents))
+                    return incoming;
+                _deferredFrames.Add(incoming);
+            }
+        }
+        finally
+        {
+            _receiveLock.Release();
+        }
+    }
+
+    private static bool Matches(JsonElement frame, bool forEvents)
+    {
+        if (frame.ValueKind != JsonValueKind.Object
+            || !frame.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String)
+            return !forEvents; // non-event/empty frames are control traffic
+        return (type.GetString() == EventType) == forEvents;
+    }
+
+    private async Task<JsonElement> ReceiveRawAsync(CancellationToken cancellationToken)
     {
         // Daemon frames are small (human-cadence, KBs); a single buffer
         // suffices. If a frame ever exceeds it, drain the remainder.
@@ -463,6 +687,8 @@ public sealed class DaemonClient : IDisposable
     public void Dispose()
     {
         _sendLock.Dispose();
+        _receiveLock.Dispose();
+        _deferredFrames.Clear();
         if (_socket.IsValueCreated)
             Socket.Dispose();
     }

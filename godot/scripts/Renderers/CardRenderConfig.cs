@@ -3,10 +3,10 @@ namespace AnimaPet.Renderers;
 /// <summary>Per-card renderer backend selection.</summary>
 public enum PetRenderBackend
 {
-    /// <summary>Live2D, rendered by the GDCubism GDExtension.</summary>
+    /// <summary>Live2D card slot (generic placeholder until GDCubism is vendored).</summary>
     Live2d,
 
-    /// <summary>VRM 3D avatar, rendered with the godot-vrm + MToon addons.</summary>
+    /// <summary>VRM card slot (generic placeholder until godot-vrm/MToon is vendored).</summary>
     Vrm,
 }
 

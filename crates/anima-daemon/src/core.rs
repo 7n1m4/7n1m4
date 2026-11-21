@@ -12,7 +12,76 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use anima_core::AppCore;
-use anima_store::Database;
+use anima_store::{Database, StoredProvider};
+
+type SettingsLoadFn = fn(&anima_core::settings::SettingsStore) -> Result<serde_json::Value, String>;
+type SettingsSaveFn = fn(&anima_core::settings::SettingsStore, serde_json::Value) -> Result<(), String>;
+
+/// Resolve a settings-section name to its typed load/save operations.
+///
+/// Single source of truth for the supported sections: `settings_get` and
+/// `settings_set` both route through here, so registering a section is one edit.
+fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
+    fn load<S: anima_core::settings::SettingsSection>(
+        store: &anima_core::settings::SettingsStore,
+    ) -> Result<serde_json::Value, String> {
+        serde_json::to_value(store.load_section::<S>().map_err(|_| "load failed".to_string())?)
+            .map_err(|_| "serialize failed".to_string())
+    }
+
+    fn save<S: anima_core::settings::SettingsSection>(
+        store: &anima_core::settings::SettingsStore,
+        value: serde_json::Value,
+    ) -> Result<(), String> {
+        let parsed: S = serde_json::from_value(value).map_err(|_| "invalid settings shape".to_string())?;
+        store.save_section(&parsed).map_err(|_| "save failed".to_string())
+    }
+
+    Some(match section {
+        "general" => (load::<anima_core::settings::GeneralSettings>, save::<anima_core::settings::GeneralSettings>),
+        "chat" => (load::<anima_core::settings::ChatSettings>, save::<anima_core::settings::ChatSettings>),
+        "theme" => (load::<anima_core::settings::ThemeSettings>, save::<anima_core::settings::ThemeSettings>),
+        "control-strip" => (load::<anima_core::settings::ControlStripSettings>, save::<anima_core::settings::ControlStripSettings>),
+        "cards" => (load::<anima_core::settings::CardsSettings>, save::<anima_core::settings::CardsSettings>),
+        "stage-model" => (load::<anima_core::settings::StageModelSettings>, save::<anima_core::settings::StageModelSettings>),
+        "captions" => (load::<anima_core::settings::CaptionsSettings>, save::<anima_core::settings::CaptionsSettings>),
+        "stage-window" => (load::<anima_core::settings::StageWindowSettings>, save::<anima_core::settings::StageWindowSettings>),
+        "positioning" => (load::<anima_core::settings::PositioningSettings>, save::<anima_core::settings::PositioningSettings>),
+        "spine" => (load::<anima_core::settings::SpineSettings>, save::<anima_core::settings::SpineSettings>),
+        "mmd" => (load::<anima_core::settings::MmdSettings>, save::<anima_core::settings::MmdSettings>),
+        "live2d" => (load::<anima_core::settings::Live2dSettings>, save::<anima_core::settings::Live2dSettings>),
+        "audio-device" => (load::<anima_core::settings::AudioDeviceSettings>, save::<anima_core::settings::AudioDeviceSettings>),
+        "user-profile" => (load::<anima_core::settings::UserProfileSettings>, save::<anima_core::settings::UserProfileSettings>),
+        "local-llm" => (load::<anima_core::settings::LocalLlmSettings>, save::<anima_core::settings::LocalLlmSettings>),
+        _ => return None,
+    })
+}
+
+/// Project a stored provider into the secret-free wire DTO.
+fn provider_info(p: &StoredProvider) -> anima_channel::wire::ProviderInfo {
+    let config = &p.config;
+    anima_channel::wire::ProviderInfo {
+        id: p.id.clone(),
+        kind: serde_json::to_string(&p.kind)
+            .unwrap_or_else(|_| "\"unknown\"".to_string())
+            .trim_matches('"')
+            .to_string(),
+        model: config
+            .as_object()
+            .and_then(|o| o.get("model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        base_url: config
+            .as_object()
+            .and_then(|o| o.get("baseUrl"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        enabled: p.enabled,
+        updated_at: p.updated_at as i32,
+    }
+}
 
 /// Coarse, secret-free snapshot of core/store availability.
 #[derive(Debug, Clone)]
@@ -130,33 +199,7 @@ impl CoreService {
         };
         let repo = core.provider_repo();
         let providers = repo.list().map_err(|_| "store query failed".to_string())?;
-        let infos = providers
-            .into_iter()
-            .map(|p| {
-                let config = &p.config;
-                anima_channel::wire::ProviderInfo {
-                    id: p.id,
-                    kind: serde_json::to_string(&p.kind)
-                        .unwrap_or_else(|_| "\"unknown\"".to_string())
-                        .trim_matches('"')
-                        .to_string(),
-                    model: config
-                        .as_object()
-                        .and_then(|o| o.get("model"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    base_url: config
-                        .as_object()
-                        .and_then(|o| o.get("baseUrl"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    enabled: p.enabled,
-                    updated_at: p.updated_at as i32,
-                }
-            })
-            .collect();
+        let infos = providers.into_iter().map(|p| provider_info(&p)).collect();
         Ok(anima_channel::wire::ProvidersListReply { providers: infos })
     }
 
@@ -168,24 +211,9 @@ impl CoreService {
             return Err("store unavailable".to_string());
         };
         let store = core.settings();
-        let value = match section {
-            "general" => serde_json::to_value(store.load_section::<anima_core::settings::GeneralSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "chat" => serde_json::to_value(store.load_section::<anima_core::settings::ChatSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "theme" => serde_json::to_value(store.load_section::<anima_core::settings::ThemeSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "control-strip" => serde_json::to_value(store.load_section::<anima_core::settings::ControlStripSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "cards" => serde_json::to_value(store.load_section::<anima_core::settings::CardsSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "stage-model" => serde_json::to_value(store.load_section::<anima_core::settings::StageModelSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "captions" => serde_json::to_value(store.load_section::<anima_core::settings::CaptionsSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "stage-window" => serde_json::to_value(store.load_section::<anima_core::settings::StageWindowSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "positioning" => serde_json::to_value(store.load_section::<anima_core::settings::PositioningSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "spine" => serde_json::to_value(store.load_section::<anima_core::settings::SpineSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "mmd" => serde_json::to_value(store.load_section::<anima_core::settings::MmdSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "live2d" => serde_json::to_value(store.load_section::<anima_core::settings::Live2dSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "audio-device" => serde_json::to_value(store.load_section::<anima_core::settings::AudioDeviceSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "user-profile" => serde_json::to_value(store.load_section::<anima_core::settings::UserProfileSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            "local-llm" => serde_json::to_value(store.load_section::<anima_core::settings::LocalLlmSettings>().map_err(|_| "load failed".to_string())?).map_err(|_| "serialize failed".to_string())?,
-            _ => return Err(format!("unknown settings section: {section}")),
-        };
+        let (load, _) = settings_section(section)
+            .ok_or_else(|| format!("unknown settings section: {section}"))?;
+        let value = load(&store)?;
         let value_str = serde_json::to_string(&value).map_err(|_| "serialize failed".to_string())?;
         Ok(anima_channel::wire::SettingsGetReply {
             section: section.to_string(),
@@ -201,69 +229,9 @@ impl CoreService {
             return Err("store unavailable".to_string());
         };
         let store = core.settings();
-        match section {
-            "general" => {
-                let s: anima_core::settings::GeneralSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "chat" => {
-                let s: anima_core::settings::ChatSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "theme" => {
-                let s: anima_core::settings::ThemeSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "control-strip" => {
-                let s: anima_core::settings::ControlStripSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "cards" => {
-                let s: anima_core::settings::CardsSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "stage-model" => {
-                let s: anima_core::settings::StageModelSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "captions" => {
-                let s: anima_core::settings::CaptionsSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "stage-window" => {
-                let s: anima_core::settings::StageWindowSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "positioning" => {
-                let s: anima_core::settings::PositioningSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "spine" => {
-                let s: anima_core::settings::SpineSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "mmd" => {
-                let s: anima_core::settings::MmdSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "live2d" => {
-                let s: anima_core::settings::Live2dSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "audio-device" => {
-                let s: anima_core::settings::AudioDeviceSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "user-profile" => {
-                let s: anima_core::settings::UserProfileSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            "local-llm" => {
-                let s: anima_core::settings::LocalLlmSettings = serde_json::from_value(settings).map_err(|_| "invalid settings shape".to_string())?;
-                store.save_section(&s).map_err(|_| "save failed".to_string())?;
-            }
-            _ => return Err(format!("unknown settings section: {section}")),
-        }
+        let (_, save) = settings_section(section)
+            .ok_or_else(|| format!("unknown settings section: {section}"))?;
+        save(&store, settings)?;
         Ok(anima_channel::wire::SettingsSetReply { ok: true })
     }
 
@@ -434,21 +402,11 @@ impl CoreService {
         ))
     }
 
-    /// Alias for [`Self::stmm_service`].
-    pub fn short_term_memory_service(&self) -> Option<anima_core::memory::ShortTermMemoryService> {
-        self.stmm_service()
-    }
-
     /// Daemon-owned text journal service. Single writer.
     pub fn journal_service(&self) -> Option<anima_core::memory::TextJournalService> {
         let guard = self.inner.lock().ok()?;
         let core = guard.core.as_ref()?;
         Some(anima_core::memory::TextJournalService::new(core.db.clone()))
-    }
-
-    /// Alias for [`Self::journal_service`].
-    pub fn text_journal_service(&self) -> Option<anima_core::memory::TextJournalService> {
-        self.journal_service()
     }
 
     /// Daemon-owned retrieval service bound to the supplied embedder.
@@ -464,14 +422,6 @@ impl CoreService {
         ))
     }
 
-    /// Alias for [`Self::retrieval_service`].
-    pub fn memory_retrieval(
-        &self,
-        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
-    ) -> Option<anima_core::memory::retrieval::MemoryRetrieval> {
-        self.retrieval_service(embedder)
-    }
-
     /// Daemon-owned memory indexer bound to the supplied embedder.
     pub fn memory_indexer(
         &self,
@@ -485,24 +435,10 @@ impl CoreService {
         ))
     }
 
-    /// Alias for [`Self::memory_indexer`].
-    pub fn indexer(
-        &self,
-        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
-    ) -> Option<anima_core::memory::retrieval::MemoryIndexer> {
-        self.memory_indexer(embedder)
-    }
-
-
     /// Daemon-owned database handle (single writer).
     pub fn db(&self) -> Option<anima_store::Database> {
         let guard = self.inner.lock().ok()?;
         guard.core.as_ref().map(|c| c.db.clone())
-    }
-
-    /// Alias for [`Self::db`].
-    pub fn database(&self) -> Option<anima_store::Database> {
-        self.db()
     }
 
     /// Alias for [`Self::db`].
@@ -516,11 +452,6 @@ impl CoreService {
         let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
         anima_core::sessions::export_jsonl(&core.db, session_id)
             .map_err(|e| e.to_string())
-    }
-
-    /// Alias for [`Self::session_export_jsonl`].
-    pub fn export_session_jsonl(&self, session_id: &str) -> Result<String, String> {
-        self.session_export_jsonl(session_id)
     }
 
     /// Alias for [`Self::session_export_jsonl`].
