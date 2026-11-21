@@ -51,12 +51,14 @@ only owner of business logic and replacing the Slint GUI with two purpose-built 
   (decision C, refined by user correction 2026-11-21; gate tracked in `airi-wxp.6.4`). This
   supersedes the earlier "retire it in a future wave" wording. The Slint cutover is unchanged.
 
-The hard constraint that shapes every wave: **today the gateway cannot push events**. Every
-post-auth server frame is a reply to a client frame
-(`SessionOutcome::replies_only`, `crates/anima-channel/src/session.rs:95-101`), and the only
-registered daemon handler is `core.status`
-(`crates/anima-daemon/src/gateway.rs:444-453`). Lip-sync, emotion and token streaming therefore
-cannot be built as a GUI feature first — the protocol lane must land first.
+The hard constraint at the pivot's 2026-11-21 baseline: **the gateway could not push events**.
+Every post-auth server frame was a reply to a client frame
+(`SessionOutcome::replies_only`, `crates/anima-channel/src/session.rs:95-101`), with a single
+registered daemon handler (`core.status`, `crates/anima-daemon/src/gateway.rs:444-453`); the daemon
+has since grown a full RPC handler set and a daemon-published token/emotion event stream. Emotion
+and token streaming therefore could not be built as a GUI feature first — the protocol lane had to
+land first. Lip-sync RMS is exempt: it is generated client-locally and never crosses the wire
+([`decision-bridge-scope.md`](./decision-bridge-scope.md)).
 
 ---
 
@@ -67,10 +69,10 @@ cannot be built as a GUI feature first — the protocol lane must land first.
 | 1 | Rust core & gateway | **Reuse `anima-daemon` + `anima-channel` (WS :6121). Do not replace them.** | Verified: authenticated WS gateway with loopback `ws://` / forced `wss://` + locally minted CA, first-message auth (close 1008), 0600 config + UUID token, D-Bus control plane `org.moeru.airi.Daemon1`, and a Rust-canonical specta wire schema drift-checked by `pnpm check:wire-types` (`package.json:20`, generated `packages/server-shared/src/types/generated/anima-channel.ts`). Replacing it would duplicate security, config adoption and TS bindings for no measured gain. |
 | 2 | Wire protocol evolution | **Additive server→client event frame + event vocabulary in `crates/anima-channel/src/wire.rs`. Keep protocol version 1.** | Verified gap: `GatewayServerFrame` (`wire.rs:220-275`) has only Auth/Authenticated/Pong/Heartbeat/Rpc/Error; all replies flow through `SessionOutcome::replies_only` (`session.rs:95-101`). `design-daemon-client.md:17-19` (decision 3) already records that a new event lane is required before its Slice C. This is that lane. |
 | 3 | Control surface | **Flutter** control/chat app, independent WS client, no local store writer. | Net-new. Must obey decision 1 of `design-daemon-client.md`: the daemon is the single owner of core state; the client holds view state only. |
-| 4 | Pet renderer | **Godot 4 + plugins**, on demand, independent WS client; pet window outlives the Flutter window. **Both backends: Live2D via GDCubism AND 3D (VRM/MMD), plugin-selected per card. Ship 3D (VRM/MMD) FIRST; Live2D gated behind legal review + user-fetched Cubism Core before any release.** | Net-new. Rendering/asset expertise already in-tree is `crates/anima-render` (spine/vrm); the Slint-specific `spine_render.rs`/`spine_rt.rs` adapters are **not** the reusable core. Decision A resolved 2026-11-21: both backends chosen (plugin per card). The specific Godot plugin/toolchain approach is still to be worked out. No GDCubism/VRM/MMD-in-Godot code exists in-tree yet. On desktop, Godot's own scene/animation system means the TypeScript avatar-driving glue (ACT token parsing, expression dispatch, Stage UI context bridge, BroadcastChannel expression relays) does **not** need porting — the daemon emits high-level events (lip-sync RMS, emotion tags, acting cues) that Godot maps into its animation state; this removes bridge boilerplate, not the event→animation mapping. Food for thought (user, 2026-11-21, `airi-wxp.4.8`): the TypeScript glue is still worth *reading* as a reference — not to port, but to learn how existing models' emotion/expression mappings work and re-express that mapping knowledge in Godot's animation state, mapping them to LLM-driven emotion keys for richer expression; "don't port the glue" ≠ "ignore the knowledge in it". Whether to import the upstream Godot sidecar (`docs/UPSTREAM_RADAR.md`, `docs/project-selective-upstream-sync-shortlist.md`) remains a separate open sub-question. Shipping posture resolved 2026-11-21: 3D first; Live2D legal gate per decision A below and `docs/research-godot-renderer-spike.md:30-40` — the proprietary Cubism Core binary MUST NEVER be committed. |
+| 4 | Pet renderer | **Godot 4 + plugins**, on demand, independent WS client; pet window outlives the Flutter window. **Both backends: Live2D via GDCubism AND 3D (VRM/MMD), plugin-selected per card. Ship 3D (VRM/MMD) FIRST; Live2D gated behind legal review + user-fetched Cubism Core before any release.** | Net-new. Rendering/asset expertise already in-tree is `crates/anima-render` (spine/vrm); the Slint-specific `spine_render.rs`/`spine_rt.rs` adapters are **not** the reusable core. Decision A resolved 2026-11-21: both backends chosen (plugin per card). The specific Godot plugin/toolchain approach is still to be worked out. No GDCubism/VRM/MMD-in-Godot code exists in-tree yet. On desktop, Godot's own scene/animation system means the TypeScript avatar-driving glue (ACT token parsing, expression dispatch, Stage UI context bridge, BroadcastChannel expression relays) does **not** need porting — the daemon emits high-level emotion/acting-cue events derived from its LLM token stream, while Godot generates lip-sync RMS locally from its own TTS playback; Godot maps both into its animation state (decision-bridge-scope.md). This removes bridge boilerplate, not the event→animation mapping. Food for thought (user, 2026-11-21, `airi-wxp.4.8`): the TypeScript glue is still worth *reading* as a reference — not to port, but to learn how existing models' emotion/expression mappings work and re-express that mapping knowledge in Godot's animation state, mapping them to LLM-driven emotion keys for richer expression; "don't port the glue" ≠ "ignore the knowledge in it". Whether to import the upstream Godot sidecar (`docs/UPSTREAM_RADAR.md`, `docs/project-selective-upstream-sync-shortlist.md`) remains a separate open sub-question. Shipping posture resolved 2026-11-21: 3D first; Live2D legal gate per decision A below and `docs/research-godot-renderer-spike.md:30-40` — the proprietary Cubism Core binary MUST NEVER be committed. |
 | 5 | Web app / desktop app | **Vue web app remains the full-UI behaviour reference; the Electrobun/Vue desktop app (apps/stage-tamagotchi) is KEPT ALIVE until parity, then retired.** Both are live references/fallbacks; retirement needs BOTH gates: all business logic ported to Rust (anima-daemon) AND frontend ported to Flutter. Vue is a reference WS client. | Verified: the Vue renderer is the daily-driver surface (`design-electrobun-port.md`); its full behaviour is the parity ledger. The kept reference is specifically `apps/stage-web` (Vue **web**), retained **out of respect to the original AIRI project** (user, 2026-11-21), not merely as a parity target. Decision C resolved 2026-11-21 and **refined by user correction 2026-11-21**: `apps/stage-tamagotchi` MUST STAY ALIVE and working as the live fallback and working full-UI reference until ALL of its business logic is ported to Rust and its frontend to Flutter; only then may it be retired, gated on the parity checklist (`airi-wxp.6.4`) and explicit approval. This supersedes the earlier "retire the Electrobun desktop app / future wave" wording — it is the working reference/fallback during migration. The Slint cutover is a separate, unchanged big-bang deletion after domain migration (row 6). The shim-retirement work (airi-vxt) is delivered, but its shims must keep working while the app lives. Do not fork business logic into Dart or GDScript to "catch up" — extend the daemon and rebind all clients. |
 | 6 | Slint cutover | **Big-bang deletion of the Slint GUI after domain migration — no surviving fallback.** Move only its business logic into `anima-daemon`. | Net-new deletion; cutover decision resolved 2026-11-21. Once the §4 ports land, delete Slint in one cutover; no Slint fallback path survives. 1,728 lines of `.slint` markup, `run_ui()` (`crates/anima-slint/src/main.rs:100-241`) and Slint-only render adapters go; the bridge logic in §4 is ported, not thrown away. |
-| 7 | Realtime pipeline ownership | **The daemon owns VAD/STT → LLM → TTS and emits events.** | **Net-new integration.** The Rust crates exist (`anima-stt`, `anima-llm`, `anima-speech`, `anima-render/src/vrm/lipsync.rs`) but `anima-daemon/Cargo.toml:17-29` links **none** of them. Slint's hearing/speech bridges are intent-only ("nothing pumps audio into the pipeline yet" — `bridges/hearing.rs:22-23`; "in-app playback is not wired" — `bridges/speech.rs:44`). Live lip-sync today is a TS BroadcastChannel (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`). |
+| 7 | Realtime pipeline ownership | **Only the LLM stage may be daemon-owned; mic capture/VAD/STT and TTS playback are client-local.** ⚠️ **Superseded for audio by [`decision-bridge-scope.md`](./decision-bridge-scope.md) (ratified 2026-11-21).** | **Net-new integration (original row, kept for history).** The Rust crates exist (`anima-stt`, `anima-llm`, `anima-speech`, `anima-render/src/vrm/lipsync.rs`) but `anima-daemon/Cargo.toml:17-29` links **none** of them. Slint's hearing/speech bridges are intent-only ("nothing pumps audio into the pipeline yet" — `bridges/hearing.rs:22-23`; "in-app playback is not wired" — `bridges/speech.rs:44`). Live lip-sync today is a TS BroadcastChannel (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`). **Superseded for audio by `decision-bridge-scope.md`:** the daemon host has no mic/speaker hardware, so no daemon-owned VAD→STT→TTS pipeline exists; only LLM staging may remain daemon-owned. |
 | 8 | Control plane & process lifecycle | **D-Bus stays for privileged verbs; tray/GUI drives Flutter/Godot process lifecycle.** | D-Bus methods verified in `crates/anima-daemon/src/control.rs:39,218-231`. Tray-driven launch/stop of GUI processes is net-new and must not become a new privileged data path: the daemon owns state, GUIs are clients. |
 | 9 | Serialization strategy | **Keep JSON text frames over the existing WS. MessagePack and UDS are parked, not adopted.** | The external proposal suggests MessagePack and local UDS; neither is justified here. UDS was already evaluated and parked in `design-daemon-gateway.md:110-157` (browser/CEF and mobile clients cannot use it; two transports means two auth stories). MessagePack would need a new codec, new generated bindings for three languages, and a reason — no profiling has supplied one. Revisit only with measurements. |
 | 10 | Mobile runtime shape | **Mobile is a REMOTE client of the desktop `anima-daemon` over libp2p, or Cloudflare Tunnel, or tunnel+libp2p. No embedded `flutter_rust_bridge` core; no separate local mobile daemon.** | Decision B resolved 2026-11-21: the user explicitly rejected both original options (embedded `flutter_rust_bridge` core; separate daemon process). Preserves the "one long-lived core" invariant — mobile is a thin client. Requires the security/trust model to cover libp2p peer identity and tunnel trust, not only `wss://` + local CA (see §8). `design-daemon-gateway.md` threat model needs a future update for libp2p/tunnel — do not edit that doc as part of this pivot. |
@@ -98,8 +100,8 @@ flowchart TB
   subgraph daemon["anima-daemon — Rust, long-lived (the only state owner)"]
     GW["anima-channel gateway :6121<br/>auth handshake · TLS · typed frames<br/>+ NEW server→client event lane<br/>+ libp2p / tunnel transport for remote mobile"]
     CORE["anima-core services<br/>settings · chat · cards · memory<br/>(Slint bridge logic moves here)"]
-    PIPE["Realtime pipeline — NET-NEW wiring<br/>anima-stt VAD/STT → anima-llm → anima-speech TTS<br/>RMS tap · emotion tags · token stream"]
-    BUS["Event fan-out bus — NET-NEW<br/>RMS · emotion · token · presence · status"]
+    PIPE["LLM stage — NET-NEW wiring (audio superseded)<br/>anima-llm token stream · emotion tags<br/>VAD/STT + TTS playback are client-local<br/>(decision-bridge-scope.md)"]
+    BUS["Event fan-out bus — NET-NEW<br/>emotion · token · presence · status<br/>(lip_sync.rms is client-generated, not daemon-published)"]
     AWARE["Awareness / audit / plugins<br/>(already daemon-side)"]
     GW --> CORE
     GW --> BUS
@@ -118,7 +120,7 @@ flowchart TB
   GODOT -->|"ws://127.0.0.1:6121<br/>auth + subscribe"| GW
   VUE -->|"ws://127.0.0.1:6121<br/>reference client only"| GW
   MOBILE -->|"libp2p / Cloudflare Tunnel / tunnel+libp2p<br/>remote thin client → daemon"| GW
-  GW -->|"event frames<br/>RMS / emotion / token / presence"| FLUTTER
+  GW -->|"event frames<br/>emotion / token / presence / status<br/>(lip-sync RMS is client-local)"| FLUTTER
   GW -->|"event frames"| GODOT
   GW -->|"event frames"| MOBILE
   DBUS -->|"config / token / lifecycle verbs"| daemon
@@ -137,8 +139,10 @@ Invariants implied by the diagram:
 3. **Events flow one way.** The event lane is daemon→clients. Client→daemon remains the
    existing `rpc` request/reply family; a client wanting more/different events uses an
    explicit subscribe RPC, never a reverse event.
-4. **Pet rendering is a client concern.** Expression/pose mapping from RMS/emotion events into
-   the avatar lives in Godot plugins. `crates/anima-render/src/vrm/lipsync.rs` is the proven
+4. **Pet rendering is a client concern.** Lip-sync RMS is generated locally from the client's own
+   TTS playback; only emotion/acting-cue events arrive from the daemon. Expression/pose mapping
+   from that RMS and those events into the avatar lives in Godot plugins.
+   `crates/anima-render/src/vrm/lipsync.rs` is the proven
    smoothing algorithm (fast attack, ~120 ms exponential decay, `[0,1]` clamp) to reproduce
    on the Godot side, not a daemon responsibility. Both Live2D (GDCubism) and 3D (VRM/MMD)
    backends are supported, selected per card by plugin (decision A, 2026-11-21). Shipping posture
@@ -168,7 +172,7 @@ exact Rust module layout is a Wave-1 implementation detail.
 | `crates/anima-slint/src/main.rs:54-75` | Profile resolution, `Database::open`, `SettingsStore`, `ProviderRepo`, Tokio runtime handle bootstrap | Daemon bootstrap | The daemon already runs as a session service; add these stores once, not per GUI process. |
 | `crates/anima-slint/src/bridges/chat.rs` | Streaming chat state, sessions, transcript messages, broadcast→unbounded-channel drain | `anima-core`/daemon chat service + Wave-0 token events | Known limit to carry forward: switching away mid-stream loses the un-persisted assistant delta (persisted at stream end) — `chat.rs:25-27`. |
 | `crates/anima-slint/src/bridges/daemon.rs` (incl. audit hooks) | Audit archive entry point `clear_audit()` | Daemon audit service | Path contract `crates/anima-channel/src/audit.rs:14-27`; retention policy is fixed by `decision-audit-archive-retention.md` — **no GUI deletion path, archives retained forever**. |
-| `bridges/capture.rs`, `bridges/hearing.rs`, `bridges/speech.rs` | Audio/voice **intent and settings only** | Daemon realtime pipeline | Net-new: wire `anima-stt` (16 kHz mono capture, 32 ms chunks, RMS meter, Silero VAD v5 ONNX, STT clients), `anima-llm` (streaming), `anima-speech` (TTS + `SpeechEvent::Amplitude` RMS tap at ~15-40 Hz, barge-in). |
+| `bridges/capture.rs`, `bridges/hearing.rs`, `bridges/speech.rs` | Audio/voice **intent and settings only** | Client-local (Flutter/Godot) for speech/hearing; daemon LLM stage only | **Superseded for audio by `decision-bridge-scope.md`:** mic capture, VAD, STT and TTS playback stay on the client — the daemon has no audio hardware. Only the LLM stage moves into the daemon; settings/voice-selection state may become daemon RPC state, not a daemon audio pipeline. |
 | `bridges/providers.rs`, `settings_chat.rs`, `settings_general.rs`, `settings_sections.rs`, `settings_stage.rs` | Provider + settings domain | Daemon settings/provider services | Settings shape stays in `anima-store` sections (single source of truth per `docs/README.md`). |
 | `bridges/cards.rs`, `data.rs`, `memory.rs` | Cards, data vault, memory journal | Daemon card/data/memory services | Reuse existing `anima-core`/`anima-store` implementations; do not create a second writer. |
 | `bridges/mcp.rs`, `acp.rs`, `discord.rs`, `discord_gateway.rs`, `sync.rs` | External integrations | Daemon services + protocol equivalents | Today reached through eventa channels; see the triage below. |
@@ -186,8 +190,8 @@ those channels split three ways:
 | Class | Examples | Action |
 |---|---|---|
 | Desktop-main-only | window chrome, splash choreography, dialogs, toasts, devtools trace | **Drop** with Slint now; drop from Electrobun only at its parity-gated retirement — stage-tamagotchi stays alive meanwhile. No protocol equivalent. |
-| Daemon-worthy | gateway config, plugins, MCP, ACP, Discord, beat-sync, i18n/startup state | **Port** to gateway `rpc` verbs / Wave-0 event vocabulary. |
-| Renderer-internal | `BroadcastChannel('airi::beat-sync')` (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`) | **Not IPC.** Keep inside a single client or replace with daemon events for cross-client sync. |
+| Daemon-worthy | gateway config, plugins, MCP, ACP, i18n/startup state | **Port** to gateway `rpc` verbs / Wave-0 event vocabulary. Discord is **client-local** per `decision-bridge-scope.md` (bot token stays on the client device). |
+| Renderer-internal / client-local audio | `BroadcastChannel('airi::beat-sync')` (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`) | **Not IPC.** Keep inside a single client; lip-sync RMS is generated locally from that client's TTS playback and is **not** daemon-published (`decision-bridge-scope.md`). |
 
 ### 4.3 Delete with Slint
 
@@ -233,17 +237,19 @@ question — desktop's separate-window model does not apply (bead `airi-wxp.4.7`
 
 The external proposal described "headless/tray Rust daemon + Flutter control/chat + on-demand
 Godot pet, with Rust owning VAD/STT/LLM/TTS and broadcasting lip-sync RMS (~30-60 Hz), emotion
-tags and token streams; MessagePack over local WS/UDS; tray-driven process lifecycle." Its
-shape agrees with the user's pivot, but most of its mechanics are not present today. Verified
-line by line:
+tags and token streams; MessagePack over local WS/UDS; tray-driven process lifecycle" *(proposal
+wording — the audio-ownership part is superseded below)*. Its
+shape agrees with the user's pivot, but most of its mechanics are not present today, and its
+audio-ownership wording is superseded by `decision-bridge-scope.md`: only the LLM stage may be
+daemon-owned. Verified line by line:
 
 | Gemini claim | In-tree reality (verified) | Verdict |
 |---|---|---|
 | Rust daemon exists | `crates/anima-daemon` with WS gateway (`gateway.rs`), D-Bus control plane (`control.rs:39`), core status handler (`gateway.rs:444-453`), systemd activation | **Reused** (already shipped) |
 | Headless / tray operation | Daemon is headless and D-Bus-activated; **no tray process-lifecycle implementation exists** | **Partly real / net-new tray** |
-| Rust owns VAD/STT/LLM/TTS | Crates exist: `anima-stt` (Silero VAD v5, 16 kHz mono capture, RMS), `anima-llm` (streaming), `anima-speech` (`SpeechEvent`, barge-in, RMS tap), `anima-render/src/vrm/lipsync.rs`. But `anima-daemon/Cargo.toml:17-29` links **none** of them; Slint bridges are intent-only (`hearing.rs:22-23`, `speech.rs:44`) | **Net-new integration** |
-| Server broadcasts RMS / emotion / token streams | `GatewayServerFrame` has **no event frame** (`wire.rs:220-275`); all server frames are replies (`session.rs:95-101`); only 4 built-in RPC actions (`dispatch.rs:255-258`) and 1 daemon handler (`core.status`) | **Net-new** — Wave 0 blocks everything |
-| "~30-60 Hz" lip-sync RMS | In-tree tap emits ~15-40 Hz sample-aligned windows (`anima-speech/src/types.rs:118-120`); existing live lip-sync is a TS BroadcastChannel (`beat-sync/eventa.ts:21-31`); VRM smoothing exists (`lipsync.rs:3-7`) | **Number not verified** — pick a rate in Wave 0/2; do not copy 30-60 Hz |
+| Rust owns VAD/STT/LLM/TTS *(proposal claim; audio superseded)* | Crates exist: `anima-stt` (Silero VAD v5, 16 kHz mono capture, RMS), `anima-llm` (streaming), `anima-speech` (`SpeechEvent`, barge-in, RMS tap), `anima-render/src/vrm/lipsync.rs`. But `anima-daemon/Cargo.toml:17-29` links **none** of them; Slint bridges are intent-only (`hearing.rs:22-23`, `speech.rs:44`) | **Net-new integration — audio scope superseded:** only the LLM stage may be daemon-owned; VAD/STT/TTS stay client-local (`decision-bridge-scope.md`) |
+| Server broadcasts RMS / emotion / token streams *(proposal claim; RMS superseded)* | **Historical (2026-11-21 baseline):** `GatewayServerFrame` had **no event frame** (`wire.rs:220-275`); all server frames were replies (`session.rs:95-101`); 4 built-in RPC actions (`dispatch.rs:255-258`) and 1 daemon handler (`core.status`). The daemon has since gained a full RPC handler set plus a daemon-published token/emotion stream. | **Net-new for emotion/token; `lip_sync.rms` is client-generated, not daemon-published** (`decision-bridge-scope.md`) — Wave 0 blocks everything |
+| "~30-60 Hz" lip-sync RMS | In-tree tap emits ~15-40 Hz sample-aligned windows (`anima-speech/src/types.rs:118-120`); existing live lip-sync is a TS BroadcastChannel (`beat-sync/eventa.ts:21-31`); VRM smoothing exists (`lipsync.rs:3-7`) | **Number not verified** — the rate belongs to the client-side TTS playback path, not a daemon event rate; do not copy 30-60 Hz |
 | MessagePack over local WS | Gateway speaks JSON text frames (`wire.rs:3-10`, `session.rs`); no codec abstraction for a second format | **Net-new, unjustified** — parked (decision 9) |
 | Unix Domain Sockets | Already evaluated and parked for browser/CEF + mobile incompatibility and dual-transport cost (`design-daemon-gateway.md:110-157`) | **Parked, not adopted** |
 | Flutter control/chat client | No `flutter*` path in-tree (glob verified) | **Net-new** |
@@ -257,9 +263,10 @@ is already true.
 
 ## 7. Waves (dependency-ordered)
 
-Wave 0 is the foundation: without a server-initiated event lane, no GUI can show live lip-sync,
-emotion or tokens. Waves 3 and 4 may run in parallel after Wave 2, now that decision A is
-resolved (2026-11-21: both Live2D and 3D, plugin-selected per card).
+Wave 0 is the foundation: without a server-initiated event lane, no GUI can show live emotion or
+tokens. Lip-sync RMS is generated locally by each client from its own TTS playback, not delivered
+as a daemon event (`decision-bridge-scope.md`). Waves 3 and 4 may run in parallel after Wave 2, now
+that decision A is resolved (2026-11-21: both Live2D and 3D, plugin-selected per card).
 
 ### Wave 0 — Additive server→client event lane and event vocabulary
 
@@ -271,17 +278,18 @@ resolved (2026-11-21: both Live2D and 3D, plugin-selected per card).
   protocol version 1; never change existing `auth`/`rpc` semantics
   (`design-daemon-client.md:17-19`).
 - Define the initial **event vocabulary** (payloads are additive structs, specta-registered):
-  - `lip_sync.rms` — `{ actor_id, level: f32, seq, ts_ms }` (rate TBD in Wave 2; not assumed
-    30-60 Hz);
   - `emotion.tag` — `{ actor_id, tag, intensity, seq, ts_ms }`;
   - `token.delta` — `{ session_id, message_id, delta, index, final, seq, ts_ms }`;
   - `presence.changed` — `{ subject, state, seq, ts_ms }`;
   - `status.changed` — coarse, secret-free health (mirror the `CoreStatusReply` discipline at
     `wire.rs:120-150`: no tokens, keys, prompts or paths).
+
+  `lip_sync.rms` is deliberately absent: clients generate it locally from their own TTS playback
+  and the daemon does not publish it (`decision-bridge-scope.md`).
 - Add a subscribe/unsubscribe RPC so clients opt in per subject; default to no events for
   unsubscribed sessions so existing Vue/Electrobun clients are unaffected.
 - Add a shared, bounded event bus in the daemon and fan-out from the gateway's connection
-  threads. Define backpressure explicitly: high-rate events (`lip_sync.rms`, `token.delta`)
+  threads. Define backpressure explicitly: high-rate events (`token.delta`)
   are **drop-oldest / coalescing**; control events (`presence`, `status`) are queued.
   `anima-channel` has no tokio and is thread-per-connection (`server.rs:5`), so the bus must not
   block a reader thread.
@@ -320,17 +328,23 @@ for privileged verbs; adopt the existing config path rather than minting a secon
 RPC round-trips green; no Slint code is needed to read or write core state; `core.status`
 still passes its no-secrets test (`gateway.rs:908-914`).
 
-### Wave 2 — Daemon-owned realtime pipeline
+### Wave 2 — Daemon-owned realtime pipeline (audio portions superseded)
 
-**Scope:** link `anima-stt`, `anima-llm`, `anima-speech` into `anima-daemon` (currently absent from
-`anima-daemon/Cargo.toml`); drive capture → VAD → STT → LLM stream → TTS; emit Wave-0 events for
-token deltas, `SpeechEvent::Started/Amplitude/Done/Aborted/Error`, emotion tags and presence;
-implement barge-in; choose and document the actual RMS rate (verify against the ~15-40 Hz
-in-tree tap before promising anything).
+> **Superseded for audio by [`decision-bridge-scope.md`](./decision-bridge-scope.md) (ratified
+> 2026-11-21):** speech and hearing (mic capture, VAD, STT, TTS playback, `SpeechEvent` amplitude,
+> barge-in, `lip_sync.rms`) are **client-local** — the daemon host has no audio hardware. Only the
+> daemon-side **LLM stage** below remains in scope; do not implement a daemon-owned
+> capture → VAD → STT → TTS path.
 
-**Exit criteria:** with **no GUI running**, the daemon produces a coherent event stream for a
-scripted turn (tokens → speech amplitude → done) verified by a WS probe; replaying the same
-turn is deterministic enough for a test; no audio work remains in any Slint bridge.
+**Scope (LLM stage only):** link `anima-llm` into `anima-daemon` (currently absent from
+`anima-daemon/Cargo.toml`); stream LLM tokens from the daemon; emit Wave-0 token-delta, emotion-tag
+and presence events. `anima-stt`/`anima-speech` are not linked into the daemon for audio capture or
+playback; those stay on the client per the note above.
+
+**Exit criteria:** with **no GUI running**, the daemon produces a coherent token/emotion event
+stream for a scripted turn verified by a WS probe; replaying the same turn is deterministic enough
+for a test. Speech-amplitude/RMS and barge-in criteria are client-local and out of scope for the
+daemon.
 
 ### Wave 3 — Flutter control/chat client
 
@@ -347,7 +361,8 @@ loses no core state; stopping Flutter leaves the daemon and (if running) the pet
 
 **Scope:** Godot client with a **hand-written C# codec + typed payloads validated against the
 Rust-generated golden JSON fixtures** (D5 ratified 2026-11-21, no `specta-csharp` dependency now);
-consume `lip_sync.rms` and `emotion.tag`; implement expression/pose mapping (reproduce `lipsync.rs` smoothing if using a
+generate `lip_sync.rms` locally from the pet's own TTS playback and consume daemon `emotion.tag`;
+implement expression/pose mapping (reproduce `lipsync.rs` smoothing if using a
 morph-target avatar); window lifecycle so the pet can stay while Flutter is closed; plugin
 boundary wired per **resolved decision A (2026-11-21): both Live2D via GDCubism AND 3D
 (VRM/MMD), plugin-selected per card**. The specific Godot plugin/toolchain approach is still to
@@ -364,7 +379,8 @@ before each user fetches Cubism Core from Live2D after accepting the terms. The 
 Core binary **must never be committed** to this repo (`docs/research-godot-renderer-spike.md:36`);
 this finding is unchanged.
 
-**Exit criteria:** pet animates lip-sync and emotion from daemon events; survives Flutter
+**Exit criteria:** pet animates lip-sync from locally generated RMS (client-side TTS playback, not
+a daemon event — `decision-bridge-scope.md`) and emotion from daemon events; survives Flutter
 closure; can be started/stopped on demand; both avatar backends and per-card plugin selection
 recorded in this document (decision A, 2026-11-21) before implementation begins; 3D (VRM/MMD)
 ships first with `dotnet test` conformance against the golden fixtures green; Live2D stays gated
@@ -433,7 +449,8 @@ as a follow-up; Electrobun retirement scheduled behind BOTH parity gates, not si
   (`server.rs:5`). A high-rate event stream multiplied by several clients needs the Wave-0
   bounded bus and drop policy; without it, a slow client or a noisy producer can stall reader
   threads. (The Gemini proposal assumed 30-60 Hz, but the verified in-tree `SpeechEvent::Amplitude`
-  tap emits ~15-40 Hz — see §6; do not copy 30-60 Hz.) Large payloads (base64 images) must be
+  tap emits ~15-40 Hz — see §6; lip-sync rate is a client-side TTS-playback concern, not a daemon
+  event rate, so do not copy 30-60 Hz.) Large payloads (base64 images) must be
   chunked out-of-band, not pushed as events.
 - **Thread-per-connection, no async in `anima-channel`.** Fan-out must not call blocking writes
   from the pipeline. Treat the event bus as the only crossing point; profile before adding any

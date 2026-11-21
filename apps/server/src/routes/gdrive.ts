@@ -4,7 +4,8 @@ import type { HonoEnv } from '../types/hono'
 import { Hono } from 'hono'
 
 import { authGuard } from '../middlewares/auth'
-import { createBadRequestError } from '../utils/error'
+import { ApiError, createBadRequestError } from '../utils/error'
+import { readJsonBody } from '../utils/json'
 
 export function createGoogleDriveRoutes(gdriveService: GoogleDriveService) {
   return new Hono<HonoEnv>()
@@ -31,7 +32,7 @@ export function createGoogleDriveRoutes(gdriveService: GoogleDriveService) {
     .post('/manifest', async (c) => {
       const user = c.get('user')!
       try {
-        const body = await c.req.json()
+        const body = await readJsonBody(c.req)
         if (!body || typeof body !== 'object') {
           throw createBadRequestError('Invalid manifest content')
         }
@@ -40,6 +41,8 @@ export function createGoogleDriveRoutes(gdriveService: GoogleDriveService) {
         return c.json({ success: true })
       }
       catch (err: any) {
+        if (err instanceof ApiError)
+          throw err
         console.error('[GDrive Route] Failed to save manifest:', err)
         return c.json({ error: err.message || 'Failed to save manifest' }, 500)
       }

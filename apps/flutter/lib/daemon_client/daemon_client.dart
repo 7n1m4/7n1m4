@@ -6,6 +6,7 @@
 // docs/design-flutter-godot-pivot.md invariant 1.
 
 import 'dart:async';
+import 'dart:convert';
 
 import '../connection/connection_settings.dart';
 import 'direct_websocket_transport.dart';
@@ -122,10 +123,19 @@ class DaemonClient {
   DaemonStatus get snapshot => _snapshot;
   Stream<DaemonStatus> get statusStream => _status.stream;
 
-  /// Hook for typed event frames. Subscriptions are caller-driven: the chat
-  /// surface calls `event.subscribe` for `token.delta` before sending a turn.
-  /// See [ServerFrame.event] / [GatewayEventFrame] for the decoded envelope.
-  void Function(GatewayEventFrame event)? onEvent;
+  /// Typed event listeners. The client owns the `token.delta` subscription and
+  /// re-establishes it after every authenticated socket, so a daemon reconnect
+  /// does not leave the chat surface deaf. Multiple screens may listen at once;
+  /// callers must invoke the returned handle in `dispose` so a disposed screen
+  /// does not consume events (the old single slot was silently overwritten).
+  final Set<void Function(GatewayEventFrame event)> _eventSubscribers =
+      <void Function(GatewayEventFrame event)>{};
+
+  /// Registers [listener] and returns its unsubscribe handle.
+  void Function() onEvent(void Function(GatewayEventFrame event) listener) {
+    _eventSubscribers.add(listener);
+    return () => _eventSubscribers.remove(listener);
+  }
 
   void _emit({
     DaemonConnectionState? state,
@@ -258,6 +268,30 @@ class DaemonClient {
     } on DaemonClientException catch (e) {
       if (_wantsConnection) _emit(error: e);
     }
+
+    // Subscriptions are per-socket: a reconnect lands on a fresh peer with no
+    // topics, so re-opt in to token.delta on every authenticated connection.
+    unawaited(_subscribeTokenDeltas());
+  }
+
+  /// Best-effort re-subscription after auth (initial connect or reconnect).
+  /// A daemon without event support degrades to an error on the status stream;
+  /// chat itself remains usable.
+  Future<void> _subscribeTokenDeltas() async {
+    try {
+      final reply = await call('event.subscribe', payload: <String, dynamic>{
+        'topics': <String>['token.delta'],
+      });
+      if (!reply.ok && _wantsConnection) {
+        _emit(error: DaemonClientException(
+          kind: DaemonFailureKind.rpc,
+          message: reply.error?.message ?? 'event.subscribe failed.',
+          code: reply.error?.code,
+        ));
+      }
+    } on DaemonClientException catch (e) {
+      if (_wantsConnection) _emit(error: e);
+    }
   }
 
   /// Pings the gateway on [heartbeatInterval] while authenticated. The daemon
@@ -310,9 +344,14 @@ class DaemonClient {
       case ServerFrameKind.event:
         // Topic is typed (EventTopic) and unknown topics decode to `unknown`
         // rather than throwing. Callers subscribe through `event.subscribe`
-        // (chat_screen.dart) and consume payloads via the onEvent hook.
+        // (chat_screen.dart) and consume payloads via onEvent listeners.
         final event = frame.event;
-        if (event != null) onEvent?.call(event);
+        if (event != null) {
+          // Snapshot: a listener may unsubscribe while we dispatch.
+          for (final listener in _eventSubscribers.toList()) {
+            listener(event);
+          }
+        }
         break;
       case ServerFrameKind.pong:
       case ServerFrameKind.heartbeat:
@@ -359,7 +398,16 @@ class DaemonClient {
 
     if (!_authenticated) {
       _failAuth(failure);
-      if (_wantsConnection) _emit(state: DaemonConnectionState.failed, error: failure);
+      if (!_wantsConnection) return;
+      // A transport failure before auth is still a transient socket problem:
+      // retry under the same bounded policy used after auth. A genuine auth
+      // rejection arrives as an error frame, not here, and stays terminal.
+      if (failure.kind == DaemonFailureKind.transport) {
+        _emit(state: DaemonConnectionState.reconnecting, error: failure);
+        _scheduleReconnect();
+        return;
+      }
+      _emit(state: DaemonConnectionState.failed, error: failure);
       return;
     }
 
@@ -472,6 +520,57 @@ class DaemonClient {
     return data is Map<String, dynamic> && data['cancelled'] == true;
   }
 
+  /// Prior persisted turns of a session (`chat.history`). An unregistered verb
+  /// is promoted to a DaemonClientException; an empty history yields [].
+  Future<List<Map<String, dynamic>>> chatHistory(String sessionId) async {
+    final reply = await _callOk('chat.history', payload: <String, dynamic>{
+      'session_id': sessionId,
+    });
+    final data = reply.data;
+    if (data is List) {
+      return data.whereType<Map<String, dynamic>>().toList(growable: false);
+    }
+    // Tolerate a wrapped `{ "messages": [...] }` reply as well as a bare array.
+    if (data is Map<String, dynamic> && data['messages'] is List) {
+      return (data['messages'] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList(growable: false);
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  /// Read a typed settings section (`settings.get`). The daemon carries the
+  /// section as a JSON string; decode it into a map for callers.
+  Future<Map<String, dynamic>> settingsGet(String section) async {
+    final reply = await _callOk('settings.get', payload: <String, dynamic>{
+      'section': section,
+    });
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) return const <String, dynamic>{};
+    final raw = data['settings'];
+    if (raw is String) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) return decoded;
+      } on FormatException {
+        return const <String, dynamic>{};
+      }
+    }
+    if (raw is Map<String, dynamic>) return raw;
+    return const <String, dynamic>{};
+  }
+
+  /// Write a whole typed settings section (`settings.set`). Returns the
+  /// daemon's `ok` flag; a failed write is promoted to an exception by _callOk.
+  Future<bool> settingsSet(String section, Map<String, dynamic> settings) async {
+    final reply = await _callOk('settings.set', payload: <String, dynamic>{
+      'section': section,
+      'settings': settings,
+    });
+    final data = reply.data;
+    return data is Map<String, dynamic> && data['ok'] == true;
+  }
+
   /// Recent short-term-memory summaries (`stmm.list`).
   Future<List<Map<String, dynamic>>> stmmList({int limit = 50}) async {
     final reply = await _callOk('stmm.list', payload: <String, dynamic>{
@@ -579,6 +678,7 @@ class DaemonClient {
 
   void dispose() {
     _wantsConnection = false;
+    _eventSubscribers.clear();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Client disposed.'));

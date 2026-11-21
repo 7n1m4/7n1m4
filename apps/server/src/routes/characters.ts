@@ -7,6 +7,7 @@ import { safeParse } from 'valibot'
 import { CreateCharacterSchema, UpdateCharacterSchema } from '../api/characters.schema'
 import { authGuard } from '../middlewares/auth'
 import { createBadRequestError, createForbiddenError, createNotFoundError } from '../utils/error'
+import { readJsonBody } from '../utils/json'
 
 export function createCharacterRoutes(characterService: CharacterService) {
   return new Hono<HonoEnv>()
@@ -35,7 +36,7 @@ export function createCharacterRoutes(characterService: CharacterService) {
     .post('/', async (c) => {
       const user = c.get('user')!
 
-      const body = await c.req.json()
+      const body = await readJsonBody(c.req)
       const result = safeParse(CreateCharacterSchema, body)
 
       if (!result.success) {
@@ -59,7 +60,7 @@ export function createCharacterRoutes(characterService: CharacterService) {
       const user = c.get('user')!
 
       const id = c.req.param('id')
-      const body = await c.req.json()
+      const body = await readJsonBody(c.req)
       const result = safeParse(UpdateCharacterSchema, body)
 
       if (!result.success) {

@@ -6,7 +6,9 @@ import { safeParse } from 'valibot'
 
 import { CreateProviderConfigSchema, UpdateProviderConfigSchema } from '../api/providers.schema'
 import { authGuard } from '../middlewares/auth'
+import { mergeConfigPreservingSecrets } from '../services/providers'
 import { createBadRequestError, createForbiddenError, createNotFoundError } from '../utils/error'
+import { readJsonBody } from '../utils/json'
 
 export function createProviderRoutes(providerService: ProviderService) {
   return new Hono<HonoEnv>()
@@ -30,7 +32,7 @@ export function createProviderRoutes(providerService: ProviderService) {
 
     .post('/', async (c) => {
       const user = c.get('user')!
-      const body = await c.req.json()
+      const body = await readJsonBody(c.req)
       const result = safeParse(CreateProviderConfigSchema, body)
 
       if (!result.success) {
@@ -48,7 +50,7 @@ export function createProviderRoutes(providerService: ProviderService) {
     .patch('/:id', async (c) => {
       const user = c.get('user')!
       const id = c.req.param('id')
-      const body = await c.req.json()
+      const body = await readJsonBody(c.req)
       const result = safeParse(UpdateProviderConfigSchema, body)
 
       if (!result.success) {
@@ -61,7 +63,13 @@ export function createProviderRoutes(providerService: ProviderService) {
       if (existing.ownerId !== user.id)
         throw createForbiddenError()
 
-      const updated = await providerService.updateUserConfig(id, result.output)
+      const { config, ...rest } = result.output
+      const updated = await providerService.updateUserConfig(id, {
+        ...rest,
+        ...(config !== undefined
+          ? { config: mergeConfigPreservingSecrets(existing.config as Record<string, unknown> | undefined, config) }
+          : {}),
+      })
       if (!updated)
         throw createNotFoundError()
       return c.json(updated)

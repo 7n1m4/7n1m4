@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Hand-rolled credential redactor. Applied to every detail string before it
-//! reaches the audit log (and nowhere else — the ring buffer stays unredacted
-//! in memory only; see the lane note).
+//! Hand-rolled credential redactor. Applied to every `event` and `detail`
+//! string before it reaches the audit log (and nowhere else — the ring buffer
+//! stays unredacted in memory only; see the lane note).
 //!
 //! Matching rules (spec §F rail 4, hand-rolled, no regex):
 //!   * patterns are matched case-insensitively (ASCII);
@@ -44,9 +44,12 @@ const PATTERNS: &[&str] = &[
     "\"token\": \"",
     "\"api_key\":\"",
     "\"api_key\": \"",
+    "\"apiKey\":\"",
+    "\"apiKey\": \"",
     "authtoken",
     "token=",
     "api_key",
+    "apiKey",
     "sk-",
     "ghp_",
     "gho_",
@@ -147,6 +150,11 @@ mod tests {
             ("{\"Token\": \"abc123\"}", "{***\"}"),
             ("{\"api_key\":\"abc123\"}", "{***\"}"),
             ("{\"API_KEY\": \"abc123\"}", "{***\"}"),
+            ("apiKey=abc123 rest", "*** rest"),
+            ("apiKey rest", "*** rest"),
+            ("{\"apiKey\":\"abc123\"}", "{***\"}"),
+            ("{\"apiKey\": \"abc123\"}", "{***\"}"),
+            ("{\"APIKEY\":\"abc123\"}", "{***\"}"),
             ("authtoken=abc123 end", "*** end"),
             ("authToken=abc123 end", "*** end"),
         ];
@@ -212,6 +220,8 @@ mod tests {
             "{\"token\": \"secret-value-2\"}",
             "{\"api_key\":\"secret-value-3\"}",
             "{\"api_key\": \"secret-value-3\"}",
+            "{\"apiKey\":\"secret-value-4\"}",
+            "{\"apiKey\": \"secret-value-4\"}",
         ];
         for input in cases {
             let out = redact(input);
@@ -220,6 +230,19 @@ mod tests {
                 "credential leaked: {input} -> {out}"
             );
         }
+    }
+
+    #[test]
+    fn sk_key_and_api_key_are_redacted() {
+        // Regression for F4: a sk- key and a bare apiKey value (no recognizable
+        // prefix) must both disappear, matching the api_key handling.
+        let input = "media: sk-ant-abc123 and apiKey=supersecretvalue123";
+        let out = redact(input);
+        assert!(!out.contains("sk-ant-abc123"), "sk key leaked: {out}");
+        assert!(
+            !out.contains("supersecretvalue123"),
+            "apiKey value leaked: {out}"
+        );
     }
 
     #[test]

@@ -30,8 +30,9 @@ godot/
   tests/
     AnimaPet.Tests.csproj        xUnit project (net10.0); compiles the decoder + smoother directly
     EventPayloadDecoderTests.cs  golden-fixture round-trip tests for every event topic
+    SendRpcCorrelationTests.cs   two-in-flight RPC correlation regression tests
     LipSyncSmootherTests.cs      port-mirror tests for the lip-sync smoother
-    fixtures/                    golden JSON fixtures (one per event topic + edge cases)
+    golden fixtures              read from crates/anima-channel/fixtures/golden/ (copied to test output)
 ```
 
 ## Window transparency and always-on-top

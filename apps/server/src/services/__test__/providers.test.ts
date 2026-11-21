@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { mockDB } from '../../libs/mock-db'
-import { createProviderService } from '../providers'
+import { createProviderService, stripCredentialKeys } from '../providers'
 
 import * as schema from '../../schemas'
 
@@ -88,5 +88,18 @@ describe('providerService', () => {
     await service.deleteUserConfig('prov-1')
     const prov = await service.findUserConfigById('prov-1')
     expect(prov).toBeUndefined()
+  })
+
+  it('stripCredentialKeys strips every secret but keeps maxTokens and tokenizer', () => {
+    const stripped = stripCredentialKeys({
+      apiKey: 'sk-1',
+      authHeader: 'Bearer 1',
+      accessToken: 't-1',
+      secretAccessKey: 'aws-1',
+      maxTokens: '4096',
+      tokenizer: 'cl100k',
+      baseUrl: 'https://example.com',
+    })
+    expect(stripped).toEqual({ maxTokens: '4096', tokenizer: 'cl100k', baseUrl: 'https://example.com' })
   })
 })

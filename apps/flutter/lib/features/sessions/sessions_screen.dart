@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
+import '../chat/chat_screen.dart';
 
 class SessionsScreen extends StatefulWidget {
   const SessionsScreen({super.key, required this.client});
@@ -102,6 +103,16 @@ class _SessionsScreenState extends State<SessionsScreen> {
                       ListTile(
                         title: Text((s['title'] as String?) ?? (s['id'] as String?) ?? ''),
                         subtitle: Text((s['id'] as String?) ?? ''),
+                        // Opening a session replays its persisted turns via
+                        // chat.history on the chat screen.
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ChatScreen(
+                              client: widget.client,
+                              initialSessionId: (s['id'] as String?) ?? '',
+                            ),
+                          ),
+                        ),
                         trailing: IconButton(
                           icon: const Icon(Icons.download),
                           tooltip: 'Export session as JSONL',

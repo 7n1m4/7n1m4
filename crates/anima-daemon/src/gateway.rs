@@ -60,6 +60,41 @@ use anima_channel::{
 /// still holds the port).
 const RETRY_INTERVAL: Duration = Duration::from_secs(15);
 
+/// Hard ceiling for client-supplied `limit` in list/search RPCs. Without it a
+/// single RPC can ask the store for `usize::MAX` rows (the store converts with
+/// `i64::try_from(limit).unwrap_or(i64::MAX)`), i.e. an unbounded table scan.
+const RPC_MAX_LIMIT: usize = 500;
+/// Hard ceiling on rows the in-daemon journal search is willing to scan.
+/// `JournalRepo` has no query pushdown yet; see the store-side follow-up.
+const JOURNAL_SEARCH_SCAN_CAP: usize = 100_000;
+
+/// Receive the next chat event, transparently recovering from a lagged
+/// broadcast receiver. `Lagged` means the bounded bus dropped events while we
+/// were behind — not that the stream ended. Only `Closed` terminates it.
+async fn recv_chat_event(
+    rx: &mut tokio::sync::broadcast::Receiver<anima_core::chat::ChatEvent>,
+) -> Option<anima_core::chat::ChatEvent> {
+    loop {
+        match rx.recv().await {
+            Ok(ev) => return Some(ev),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+        }
+    }
+}
+
+/// Session id carried by a chat event. The `ChatService` bus is shared by
+/// every turn, so each pump must drop events that belong to another session.
+fn chat_event_session(ev: &anima_core::chat::ChatEvent) -> &str {
+    use anima_core::chat::ChatEvent;
+    match ev {
+        ChatEvent::Delta { session, .. }
+        | ChatEvent::MessageDone { session, .. }
+        | ChatEvent::StatusChanged { session, .. }
+        | ChatEvent::Error { session, .. } => session,
+    }
+}
+
 const SERVER_CHANNEL_DIR: &str = "server-channel";
 const CERTS_DIR: &str = "certs";
 const CONFIG_FILE: &str = "config.json";
@@ -386,8 +421,12 @@ impl Gateway {
             return serde_json::json!({ "ok": false, "error": message }).to_string();
         }
 
+        // Reply with the transport actually bound, not the persisted flag: a
+        // non-loopback hostname forces TLS on even when `tlsConfig` is unset,
+        // and clients must not be pointed at `ws://` in that case.
+        let bound_tls = inner.bound_tls;
         serde_json::json!({
-            "websocketTlsConfig": if tls { serde_json::json!({}) } else { serde_json::Value::Null },
+            "websocketTlsConfig": if bound_tls { serde_json::json!({}) } else { serde_json::Value::Null },
             "authToken": auth_token,
             "hostname": hostname,
         })
@@ -410,9 +449,19 @@ impl Gateway {
             self.set_error(message.clone());
             return serde_json::json!({ "ok": false, "error": message }).to_string();
         }
-        let token = config.auth_token.clone();
+        // `bind_once` stops the old listener before attempting the new bind.
+        // A failed rebind would otherwise leave a valid-looking token with
+        // nothing listening on the port — the same trap `apply` already avoids.
         self.bind_once(&config);
-        serde_json::json!({ "authToken": token }).to_string()
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if !inner.bound {
+            let message = inner
+                .last_error
+                .clone()
+                .unwrap_or_else(|| "gateway did not bind with the rotated token".to_string());
+            return serde_json::json!({ "ok": false, "error": message }).to_string();
+        }
+        serde_json::json!({ "authToken": config.auth_token }).to_string()
     }
 
     /// Clone of the process-wide gateway bus handle. Use
@@ -497,6 +546,13 @@ impl Gateway {
             Box::new(f)
         }
 
+        // NOTICE: the WS/RPC surface deliberately carries the thin clients'
+        // authorized user actions — chat.send/cancel, settings.set,
+        // journal.append, stmm.rebuild, providers.save/delete. The "mutating
+        // verbs stay on D-Bus" rule applies to *gateway control*
+        // (Get/Apply/RegenerateToken), not to user data. `allowActions` was an
+        // Electron-era GUI-dispatch opt-in that `ChannelConfig` never carried;
+        // gating these behind it would break every thin client by default.
         let mut m = std::collections::HashMap::new();
         {
             let core = core.clone();
@@ -527,6 +583,32 @@ impl Gateway {
                 handler(move |_method: &str, _value: &serde_json::Value| {
                     let reply = core.providers_list()?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "providers.save".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let id = core.providers_save(value).map_err(|e| e.to_string())?;
+                    // Secret-free: the apiKey is written through ProviderRepo
+                    // but never echoed back on the wire.
+                    Ok(serde_json::json!({ "ok": true, "id": id }))
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "providers.delete".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if id.is_empty() {
+                        return Err("missing id".to_string());
+                    }
+                    let deleted = core.providers_delete(id).map_err(|e| e.to_string())?;
+                    Ok(serde_json::json!({ "ok": true, "deleted": deleted }))
                 }),
             );
         }
@@ -598,17 +680,23 @@ impl Gateway {
                     let Some(svc) = svc else {
                         return Err("core unavailable".to_string());
                     };
-                    // Persist the user turn via the daemon single writer; an
-                    // unavailable store fails the request honestly instead of
-                    // streaming a turn that will never be recorded.
-                    core.chat_send(&session_id, &content)?;
+                    // Create the session row (no user-turn insert) so
+                    // `send_message(Some(&sid), …)` honours that exact id.
+                    // Previously the user turn was inserted here with a
+                    // *different* session id while the generator ran with
+                    // `None`, splitting the ack from the stream and making
+                    // `chat.cancel` flag a session with no generation.
+                    // `send_message` writes the single user turn itself.
+                    core.ensure_chat_session(&session_id)?;
+                    // A fresh flag per turn: a stale cancel from an earlier
+                    // turn in this session must not cancel this one.
                     let cancel_flag = core.chat_cancel_flag(&session_id);
-                    cancel_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                     let pub_clone = publisher.clone();
                     let err_pub = publisher.clone();
                     let sid = session_id.clone();
                     let content_clone = content.clone();
                     let rows = core.provider_rows().unwrap_or_default();
+                    let core_for_send = core.clone();
                     std::thread::spawn(move || {
                         let rt = match tokio::runtime::Runtime::new() {
                             Ok(r) => r,
@@ -620,6 +708,10 @@ impl Gateway {
                                 &rows,
                             );
                             let Some(resolution) = resolution else {
+                                // No provider configured: do not silently drop
+                                // the user's turn. Persist it so a reload can
+                                // show it, then end the stream honestly.
+                                let _ = core_for_send.chat_send(&sid, &content_clone);
                                 let _ = pub_clone.token_delta(
                                     sid.clone(),
                                     String::new(),
@@ -631,17 +723,35 @@ impl Gateway {
                                 return;
                             };
                             let mut rx = svc.subscribe();
+                            let pump_sid = sid.clone();
                             let pump = tokio::spawn(async move {
-                                while let Ok(ev) = rx.recv().await {
+                                // Real zero-based token index per assistant
+                                // message (wire: `token.delta.index`). A `0`
+                                // on every delta makes clients de-duplicate or
+                                // overwrite earlier tokens of the same turn.
+                                let mut indices: std::collections::HashMap<String, u64> =
+                                    std::collections::HashMap::new();
+                                while let Some(ev) = recv_chat_event(&mut rx).await {
                                     if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
                                         break;
                                     }
+                                    // The bus is shared by every in-flight turn;
+                                    // never relay another session's tokens.
+                                    if chat_event_session(&ev) != pump_sid.as_str() {
+                                        continue;
+                                    }
                                     match ev {
                                         anima_core::chat::ChatEvent::Delta { session, message, delta } => {
-                                            pub_clone.token_delta(session, message, delta, 0, false, None);
+                                            let slot = indices.entry(message.clone()).or_insert(0);
+                                            let index = *slot;
+                                            *slot += 1;
+                                            pub_clone.token_delta(session, message, delta, index, false, None);
                                         }
                                         anima_core::chat::ChatEvent::MessageDone { session, message } => {
-                                            pub_clone.token_delta(session, message, String::new(), 0, true, None);
+                                            // The terminal marker follows the
+                                            // last token; carry its next index.
+                                            let index = indices.remove(&message).unwrap_or(0);
+                                            pub_clone.token_delta(session, message, String::new(), index, true, None);
                                         }
                                         _ => {}
                                     }
@@ -649,7 +759,7 @@ impl Gateway {
                             });
                             let result = svc
                                 .send_message(
-                                    None,
+                                    Some(&sid),
                                     &resolution.id,
                                     resolution.config,
                                     &resolution.model,
@@ -707,13 +817,38 @@ impl Gateway {
                 }),
             );
         }
+        {
+            let core = core.clone();
+            m.insert(
+                "chat.history".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+                    if session_id.is_empty() {
+                        return Err("missing session_id".to_string());
+                    }
+                    let messages = core.chat_stream(session_id).map_err(|e| e.to_string())?;
+                    let messages: Vec<serde_json::Value> = messages
+                        .into_iter()
+                        .map(|m| serde_json::json!({
+                            "id": m.id,
+                            "sessionId": m.session_id,
+                            "role": m.role,
+                            "content": m.content,
+                            "createdAt": m.created_at,
+                            "metadata": m.metadata,
+                        }))
+                        .collect();
+                    Ok(serde_json::json!({ "sessionId": session_id, "messages": messages }))
+                }),
+            );
+        }
         // --- new handlers ---
         {
             let core = core.clone();
             m.insert(
                 "stmm.list".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
-                    let limit = value.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                    let limit = rpc_limit(value, 50);
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::SummaryRepo::new(db);
                     let summaries = repo.list_recent(limit).map_err(|e| e.to_string())?;
@@ -760,17 +895,26 @@ impl Gateway {
                 "journal.search".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
                     let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let limit = value.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                    let limit = rpc_limit(value, 50);
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::JournalRepo::new(db);
-                    let entries = repo.list_recent(1000).map_err(|e| e.to_string())?;
+                    // Scan the whole journal, not just the newest 1000 rows —
+                    // otherwise old matches silently disappear. The store has
+                    // no query-pushdown method yet, so this is a bounded scan
+                    // sized by the real row count, never by the client's limit.
+                    let total = repo.count().map_err(|e| e.to_string())? as usize;
+                    let scan = total.min(JOURNAL_SEARCH_SCAN_CAP);
+                    let entries = repo.list_recent(scan).map_err(|e| e.to_string())?;
                     let q = query.to_lowercase();
                     let filtered: Vec<_> = entries
                         .into_iter()
                         .filter(|e| q.is_empty() || e.content.to_lowercase().contains(&q))
                         .take(limit)
                         .collect();
-                    Ok(serde_json::json!({ "entries": filtered }))
+                    Ok(serde_json::json!({
+                        "entries": filtered,
+                        "truncated": total > JOURNAL_SEARCH_SCAN_CAP,
+                    }))
                 }),
             );
         }
@@ -783,20 +927,22 @@ impl Gateway {
                 }),
             );
         }
+        // Character cards are explicitly out of scope for the daemon port.
+        // Returning empty/null/`ok:true` here lied to thin clients: they had
+        // no way to tell "no cards yet" from "card management is unbuilt".
         {
             m.insert(
                 "cards.list".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
-                    Ok(serde_json::json!({ "cards": [] }))
+                    Err("cards.list is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
                 }),
             );
         }
         {
             m.insert(
                 "cards.get".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
-                    let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    Ok(serde_json::json!({ "card": null, "id": id }))
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    Err("cards.get is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
                 }),
             );
         }
@@ -804,7 +950,7 @@ impl Gateway {
             m.insert(
                 "cards.import".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
-                    Ok(serde_json::json!({ "ok": true }))
+                    Err("cards.import is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
                 }),
             );
         }
@@ -978,6 +1124,17 @@ fn port_from_env() -> Option<u16> {
         .and_then(|v| v.trim().parse::<u16>().ok())
 }
 
+/// Clamp a client-supplied `limit` so one RPC cannot request an unbounded
+/// table scan. Missing/garbage limits fall back to `default`.
+fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
+    value
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(default)
+        .clamp(1, RPC_MAX_LIMIT)
+}
+
 const DEFAULT_HOSTNAME_PLACEHOLDER: &str = "127.0.0.1";
 
 /// Copy `source` into the daemon-owned config path (atomic), preserving
@@ -1085,6 +1242,183 @@ mod tests {
 
     fn get_json(gateway: &Gateway) -> serde_json::Value {
         serde_json::from_str(&gateway.handle(&GatewayRequest::Get)).unwrap()
+    }
+
+    /// Gateway with an isolated on-disk core, for tests that write data.
+    fn isolated_gateway() -> (Gateway, tempfile::TempDir) {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("server-channel");
+        let gateway = Gateway {
+            config_path: dir.join(CONFIG_FILE),
+            cert_dir: dir.join(CERTS_DIR),
+            port_override: Some(0),
+            core: CoreService::open(Some(tmp.path().to_path_buf())),
+            publisher: EventPublisher::new(anima_channel::EventBus::with_defaults()),
+            inner: Mutex::new(Inner {
+                hostname: DEFAULT_HOSTNAME_PLACEHOLDER.to_string(),
+                auth_token: String::new(),
+                tls_flag: false,
+                bound_tls: false,
+                bound: false,
+                last_error: None,
+                adopted_from: None,
+                server: None,
+                last_attempt: Instant::now() - RETRY_INTERVAL,
+            }),
+        };
+        let config = ChannelConfig::healed();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            &gateway.config_path,
+            serde_json::to_string_pretty(&config).unwrap(),
+        )
+        .unwrap();
+        gateway.bind_once(&config);
+        (gateway, tmp)
+    }
+
+    #[tokio::test]
+    async fn recv_chat_event_recovers_from_lagged_receiver() {
+        // Capacity 2, six sends: a plain `recv().await` returns `Err(Lagged)`
+        // first. The pump must treat that as "missed events", not end-of-stream.
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<anima_core::chat::ChatEvent>(2);
+        for i in 0..6 {
+            let _ = tx.send(anima_core::chat::ChatEvent::Delta {
+                session: "s".into(),
+                message: format!("m{i}"),
+                delta: "x".into(),
+            });
+        }
+        let first = recv_chat_event(&mut rx)
+            .await
+            .expect("Lagged must not end the pump");
+        assert!(matches!(first, anima_core::chat::ChatEvent::Delta { .. }));
+        assert!(
+            recv_chat_event(&mut rx).await.is_some(),
+            "pump must keep draining after a Lagged error"
+        );
+    }
+
+    #[test]
+    fn chat_send_pumps_only_forward_their_own_session() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct GatedMock {
+            arrived: Arc<AtomicUsize>,
+        }
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for GatedMock {
+            fn id(&self) -> &str {
+                "pump-session-gate"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                _req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                self.arrived.fetch_add(1, Ordering::SeqCst);
+                // Hold both streams at the gate until both pumps have
+                // subscribed, so a cross-session leak is deterministic.
+                while self.arrived.load(Ordering::SeqCst) < 2 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                Ok(Box::pin(futures_util::stream::iter(vec![
+                    Ok(anima_llm::ChatChunk::text("X")),
+                    Ok(anima_llm::ChatChunk::finish("stop")),
+                ])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let arrived = Arc::new(AtomicUsize::new(0));
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "pump-session-gate".to_string(),
+            Arc::new(GatedMock {
+                arrived: arrived.clone(),
+            }),
+        );
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "pump-session-gate".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let lane = gateway.publisher().bus().new_lane();
+        lane.subscribe(anima_channel::EventTopic::ALL);
+        gateway.publisher().bus().register_lane(&lane);
+
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let send = handlers.get("chat.send").unwrap();
+        send("chat.send", &serde_json::json!({ "session_id": "A", "content": "a" })).unwrap();
+        send("chat.send", &serde_json::json!({ "session_id": "B", "content": "b" })).unwrap();
+
+        for _ in 0..200 {
+            if arrived.load(Ordering::SeqCst) >= 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(arrived.load(Ordering::SeqCst), 2, "both streams must start");
+
+        let mut a_deltas = 0usize;
+        let mut b_deltas = 0usize;
+        for _ in 0..100 {
+            for event in lane.drain() {
+                if let anima_channel::EventPayload::TokenDelta(d) = event.data {
+                    if !d.final_ && d.delta == "X" {
+                        if d.session_id == "A" {
+                            a_deltas += 1;
+                        }
+                        if d.session_id == "B" {
+                            b_deltas += 1;
+                        }
+                    }
+                }
+            }
+            if a_deltas == 1 && b_deltas == 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(a_deltas, 1, "A's pump must not relay B's delta");
+        assert_eq!(b_deltas, 1, "B's pump must not relay A's delta");
+    }
+
+    #[test]
+    fn chat_send_without_provider_persists_user_turn() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let send = handlers.get("chat.send").unwrap();
+        let reply = send(
+            "chat.send",
+            &serde_json::json!({ "session_id": "no-provider", "content": "remember me" }),
+        )
+        .unwrap();
+        assert_eq!(reply["accepted"], true);
+
+        let mut persisted = false;
+        for _ in 0..100 {
+            let history = gateway.core.chat_stream("no-provider").unwrap();
+            if history
+                .iter()
+                .any(|m| m.role == "user" && m.content == "remember me")
+            {
+                persisted = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(persisted, "no provider must not discard the user turn");
     }
 
     #[test]
@@ -1517,16 +1851,26 @@ mod tests {
             }
         }
 
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("server-channel");
-        let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
+        let (gateway, _tmp) = isolated_gateway();
 
-        // Register the never-yielding provider on the daemon-owned ChatService.
+        // Register the never-yielding provider on the daemon-owned ChatService
+        // and persist a row so `chat.send` actually starts a generation — a
+        // cancel is only honest when something is in flight.
         let svc = gateway.core.chat_service().expect("chat service");
         svc.providers
             .lock()
             .unwrap()
             .insert("e2e-stop".to_string(), Arc::new(PendingMock));
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "e2e-stop".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
 
         let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
 
@@ -1550,5 +1894,278 @@ mod tests {
         )
         .expect("chat.cancel Ok");
         assert_eq!(creply["cancelled"], true);
+    }
+
+    #[test]
+    fn apply_reply_reports_bound_tls_not_persisted_flag() {
+        anima_channel::install_default_crypto_provider();
+        let (gateway, _tmp) = fresh_gateway();
+        // Non-loopback forces TLS even though tlsConfig is unset: the reply
+        // must say `{}`, not `null`, or clients fall back to ws://.
+        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"hostname":"0.0.0.0"}"#.into()));
+        let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(v["websocketTlsConfig"], serde_json::json!({}));
+        assert_eq!(get_json(&gateway)["tlsEnabled"], true);
+        // Back to loopback: plaintext is restored and reported as null.
+        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"hostname":"127.0.0.1"}"#.into()));
+        let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        assert!(v["websocketTlsConfig"].is_null());
+        assert_eq!(get_json(&gateway)["tlsEnabled"], false);
+    }
+
+    #[test]
+    fn regenerate_token_reports_ok_false_when_rebind_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("server-channel");
+        // cert_dir is a *file*, so a TLS bind fails deterministically.
+        let cert_dir = tmp.path().join("certs-blocker");
+        fs::write(&cert_dir, "not a dir").unwrap();
+        let gateway = test_gateway(dir.clone(), cert_dir);
+        let mut config = ChannelConfig::healed();
+        config.tls_config = Some(serde_json::json!({}));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            &gateway.config_path,
+            serde_json::to_string_pretty(&config).unwrap(),
+        )
+        .unwrap();
+        gateway.bind_once(&config);
+        assert_eq!(get_json(&gateway)["bound"], false);
+
+        let reply = gateway.handle(&GatewayRequest::RegenerateToken);
+        let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(v["ok"], false, "unbound rotation must not look like success");
+        assert!(v["error"].as_str().is_some_and(|e| !e.is_empty()));
+        assert!(
+            v["authToken"].is_null(),
+            "never return a token that nothing is listening for"
+        );
+    }
+
+    #[test]
+    fn card_verbs_report_not_implemented() {
+        let (gateway, _tmp) = fresh_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        for method in ["cards.list", "cards.get", "cards.import"] {
+            let h = handlers
+                .get(method)
+                .unwrap_or_else(|| panic!("{method} must stay registered"));
+            let err = h(method, &serde_json::json!({ "id": "c1" }))
+                .expect_err("{method} must not claim success");
+            assert!(err.contains("not implemented"), "{method}: {err}");
+        }
+    }
+
+    #[test]
+    fn chat_history_replays_persisted_turns() {
+        let (gateway, _tmp) = isolated_gateway();
+        gateway.core.chat_send("h1", "first").unwrap();
+        gateway.core.chat_send("h1", "second").unwrap();
+        gateway.core.chat_send("h2", "other").unwrap();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let h = handlers.get("chat.history").expect("chat.history registered");
+        let reply = h("chat.history", &serde_json::json!({ "session_id": "h1" })).unwrap();
+        assert_eq!(reply["sessionId"], "h1");
+        let messages = reply["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["content"], "first");
+        assert_eq!(messages[1]["content"], "second");
+        assert_eq!(messages[0]["sessionId"], "h1");
+        h("chat.history", &serde_json::json!({ "session_id": "" }))
+            .expect_err("missing session_id must fail");
+    }
+
+    #[test]
+    fn providers_save_delete_roundtrip_without_secrets() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let save = handlers.get("providers.save").unwrap();
+        let reply = save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "p1",
+                "kind": "open-ai-compatible",
+                "model": "gpt-x",
+                "baseUrl": "https://example.test/v1",
+                "apiKey": "TOP-SECRET",
+                "enabled": true,
+            }),
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["id"], "p1");
+        assert!(!reply.to_string().contains("TOP-SECRET"), "reply must not echo the key");
+
+        let list = handlers.get("providers.list").unwrap();
+        let listed = list("providers.list", &serde_json::json!({})).unwrap();
+        assert_eq!(listed["providers"][0]["baseUrl"], "https://example.test/v1");
+        assert_eq!(listed["providers"][0]["model"], "gpt-x");
+        assert!(!listed.to_string().contains("TOP-SECRET"));
+
+        // A partial update must not drop the stored secret.
+        save(
+            "providers.save",
+            &serde_json::json!({ "id": "p1", "kind": "open-ai-compatible", "enabled": false }),
+        )
+        .unwrap();
+        let db = gateway.core.db().unwrap();
+        let stored = anima_store::ProviderRepo::new(db)
+            .get("p1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.config["api_key"], "TOP-SECRET");
+        assert!(!stored.enabled);
+
+        let delete = handlers.get("providers.delete").unwrap();
+        let reply = delete("providers.delete", &serde_json::json!({ "id": "p1" })).unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["deleted"], true);
+        let listed = list("providers.list", &serde_json::json!({})).unwrap();
+        assert_eq!(listed["providers"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn general_settings_roundtrip_via_rpc() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let set = handlers.get("settings.set").unwrap();
+        set(
+            "settings.set",
+            &serde_json::json!({
+                "section": "general",
+                "settings": { "language": "de", "disableTransitions": false },
+            }),
+        )
+        .unwrap();
+        let get = handlers.get("settings.get").unwrap();
+        let reply = get("settings.get", &serde_json::json!({ "section": "general" })).unwrap();
+        assert_eq!(reply["section"], "general");
+        let settings: serde_json::Value =
+            serde_json::from_str(reply["settings"].as_str().unwrap()).unwrap();
+        assert_eq!(settings["language"], "de");
+        assert_eq!(settings["disableTransitions"], false);
+    }
+
+    #[test]
+    fn chat_send_uses_requested_session_and_indexes_deltas() {
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::Arc;
+
+        struct MultiDeltaMock;
+        #[async_trait]
+        impl anima_llm::ChatProvider for MultiDeltaMock {
+            fn id(&self) -> &str {
+                "e2e-index"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::iter(vec![
+                    Ok(ChatChunk::text("a")),
+                    Ok(ChatChunk::text("b")),
+                    Ok(ChatChunk::text("c")),
+                ])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let lane = gateway.publisher().bus().new_lane();
+        lane.subscribe(anima_channel::EventTopic::ALL);
+        gateway.publisher().bus().register_lane(&lane);
+
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers
+            .lock()
+            .unwrap()
+            .insert("e2e-index".to_string(), Arc::new(MultiDeltaMock));
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "e2e-index".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test-model" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let send = handlers.get("chat.send").unwrap();
+        let reply = send(
+            "chat.send",
+            &serde_json::json!({ "session_id": "idx-session", "content": "hi" }),
+        )
+        .unwrap();
+        assert_eq!(reply["sessionId"], "idx-session");
+        assert_eq!(reply["accepted"], true);
+
+        let mut indices = Vec::new();
+        let mut final_index = None;
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            for event in lane.drain() {
+                if let anima_channel::EventPayload::TokenDelta(d) = event.data {
+                    if d.session_id == "idx-session" {
+                        if d.final_ {
+                            final_index = Some(d.index);
+                        } else {
+                            indices.push(d.index);
+                        }
+                    }
+                }
+            }
+            if final_index.is_some() {
+                break;
+            }
+        }
+        assert_eq!(indices, vec![0, 1, 2], "per-message token indices must advance");
+        assert_eq!(final_index, Some(3), "terminal marker follows the last token");
+
+        // F1: exactly one user turn, in the session id returned by the ack.
+        let history = gateway.core.chat_stream("idx-session").unwrap();
+        let user_turns: Vec<_> = history.iter().filter(|m| m.role == "user").collect();
+        assert_eq!(user_turns.len(), 1, "send_message persists the user turn once");
+        assert_eq!(user_turns[0].content, "hi");
+        let sessions = anima_store::SessionRepo::new(gateway.core.db().unwrap())
+            .list()
+            .unwrap();
+        assert_eq!(sessions.len(), 1, "no phantom second session");
+    }
+
+    #[test]
+    fn rpc_limit_is_clamped() {
+        assert_eq!(rpc_limit(&serde_json::json!({}), 50), 50);
+        assert_eq!(rpc_limit(&serde_json::json!({ "limit": 3 }), 50), 3);
+        assert_eq!(
+            rpc_limit(&serde_json::json!({ "limit": u64::MAX }), 50),
+            RPC_MAX_LIMIT
+        );
+        assert_eq!(rpc_limit(&serde_json::json!({ "limit": 0 }), 50), 1);
+        assert_eq!(rpc_limit(&serde_json::json!({ "limit": "x" }), 50), 50);
+    }
+
+    #[test]
+    fn journal_search_finds_matches_beyond_the_oldest_1000_rows() {
+        let (gateway, _tmp) = isolated_gateway();
+        let repo = anima_store::JournalRepo::new(gateway.core.db().unwrap());
+        // Needle is the *oldest* entry, far outside the old 1000-row window.
+        repo.append("note", "needle-in-the-oldest-entry", None).unwrap();
+        for i in 0..1005 {
+            repo.append("note", &format!("filler entry {i}"), None).unwrap();
+        }
+        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let search = handlers.get("journal.search").unwrap();
+        let reply = search(
+            "journal.search",
+            &serde_json::json!({ "query": "needle-in-the-oldest-entry", "limit": 5 }),
+        )
+        .unwrap();
+        let entries = reply["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1, "matches outside the newest 1000 must be found");
+        assert_eq!(entries[0]["content"], "needle-in-the-oldest-entry");
+        assert_eq!(reply["truncated"], false);
     }
 }

@@ -85,7 +85,7 @@ Communication between the Main and Renderer processes uses `@moeru/eventa` for s
 ### 4. Renderer Routing via Vite
 
 Renderer logic is located in `apps/stage-tamagotchi/src/renderer/`.
-- **Vite Config:** `apps/stage-tamagotchi/electron.vite.config.ts`
+- **Electrobun Config:** `apps/stage-tamagotchi/electrobun.config.ts`
 - **App Entry:** `App.vue`
 - **Routing:** Handled via standard Vue router with file-based definitions or manual routes in `router.ts`.
 
@@ -118,9 +118,9 @@ Hardware switches are configured in `apps/stage-tamagotchi/src/main/index.ts` be
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa/DI composition, §13 BroadcastChannel registry.
-- [docs/design-stage-ui-context-bridge-control-island.md](docs/design-stage-ui-context-bridge-control-island.md) — Control Island / Stage UI context bridge architecture.
-- [docs/project-navigation-routing-overhaul.md](docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa/DI composition, §13 BroadcastChannel registry.
+- [docs/design-stage-ui-context-bridge-control-island.md](../../../docs/design-stage-ui-context-bridge-control-island.md) — Control Island / Stage UI context bridge architecture.
+- [docs/project-navigation-routing-overhaul.md](../../../docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
 
 ## Related Skills & References
 

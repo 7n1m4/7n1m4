@@ -4,10 +4,18 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 
 import * as schema from '../schemas/providers'
 
-// Anything credential-shaped must not be readable by non-admin users of this
-// API, even if the system config row carries it — treat names as hints only,
-// keys are matched loosely by shape (apiKey, api_key, secret, token, ...).
-const CREDENTIAL_KEY = /(api[-_]?key|secret|token|password|credential|bearer|authorization)/i
+// Credential-shaped config keys must never be readable from pooled system rows
+// nor writable through the public PATCH endpoint. Match normalized names so real
+// secrets (apiKey, authHeader, secretAccessKey, ...) are covered without also
+// dropping legitimate settings such as maxTokens or tokenizer.
+const SECRET_KEY_SUBSTRINGS = ['apikey', 'authheader', 'authorization', 'secret', 'password', 'credential', 'bearer']
+const SECRET_KEY_SUFFIXES = ['token', 'key']
+
+export function isSecretConfigKey(key: string): boolean {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return SECRET_KEY_SUBSTRINGS.some(part => normalized.includes(part))
+    || SECRET_KEY_SUFFIXES.some(suffix => normalized.endsWith(suffix))
+}
 
 export function stripCredentialKeys(value: unknown): unknown {
   if (Array.isArray(value))
@@ -15,13 +23,26 @@ export function stripCredentialKeys(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      if (CREDENTIAL_KEY.test(key))
+      if (isSecretConfigKey(key))
         continue
       out[key] = stripCredentialKeys(val)
     }
     return out
   }
   return value
+}
+
+/**
+ * Merge a client-supplied config with the stored one, keeping the stored value
+ * of every credential-shaped key. A PATCH may rotate a non-secret setting, but
+ * must not be able to overwrite a managed secret by echoing its key.
+ */
+export function mergeConfigPreservingSecrets(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const protectedEntries = Object.entries(existing ?? {}).filter(([key]) => isSecretConfigKey(key))
+  return { ...(incoming ?? {}), ...Object.fromEntries(protectedEntries) }
 }
 
 const toSafeSystemRow = (row: any) => ({ ...row, config: stripCredentialKeys(row.config) as any })
@@ -138,48 +159,6 @@ export function createProviderService(db: Database) {
         .where(and(
           eq(schema.userProviderConfigs.id, id),
           isNull(schema.userProviderConfigs.deletedAt),
-        ))
-        .returning()
-    },
-
-    // System Provider Configs
-    async findSystemConfigs() {
-      return await db.query.systemProviderConfigs.findMany({
-        where: isNull(schema.systemProviderConfigs.deletedAt),
-      })
-    },
-
-    async findSystemConfigById(id: string) {
-      return await db.query.systemProviderConfigs.findFirst({
-        where: and(
-          eq(schema.systemProviderConfigs.id, id),
-          isNull(schema.systemProviderConfigs.deletedAt),
-        ),
-      })
-    },
-
-    async createSystemConfig(data: schema.NewSystemProviderConfig) {
-      const [inserted] = await db.insert(schema.systemProviderConfigs).values(data).returning()
-      return inserted
-    },
-
-    async updateSystemConfig(id: string, data: Partial<schema.NewSystemProviderConfig>) {
-      const [updated] = await db.update(schema.systemProviderConfigs)
-        .set({ ...data, updatedAt: new Date() })
-        .where(and(
-          eq(schema.systemProviderConfigs.id, id),
-          isNull(schema.systemProviderConfigs.deletedAt),
-        ))
-        .returning()
-      return updated
-    },
-
-    async deleteSystemConfig(id: string) {
-      return await db.update(schema.systemProviderConfigs)
-        .set({ deletedAt: new Date() })
-        .where(and(
-          eq(schema.systemProviderConfigs.id, id),
-          isNull(schema.systemProviderConfigs.deletedAt),
         ))
         .returning()
     },

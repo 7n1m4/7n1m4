@@ -168,7 +168,19 @@ export function createCharacterService(db: Database) {
       prompts?: Omit<schema.NewCharacterPrompt, 'characterId'>[]
     }) {
       return await db.transaction(async (tx: any) => {
-        const [inserted] = await tx.insert(schema.character).values(data.character).returning()
+        // Counters and lifecycle timestamps are server-owned; a POST body must not
+        // seed them (the schema defaults them to 0 / now).
+        const {
+          likesCount: _likesCount,
+          bookmarksCount: _bookmarksCount,
+          interactionsCount: _interactionsCount,
+          forksCount: _forksCount,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          deletedAt: _deletedAt,
+          ...characterValues
+        } = data.character
+        const [inserted] = await tx.insert(schema.character).values(characterValues).returning()
 
         if (data.cover) {
           await tx.insert(schema.characterCovers).values({

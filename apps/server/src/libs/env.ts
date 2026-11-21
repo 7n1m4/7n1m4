@@ -13,10 +13,12 @@ const EnvSchema = object({
 
   BETTER_AUTH_SECRET: pipe(string(), nonEmpty('BETTER_AUTH_SECRET is required'), minLength(32, 'BETTER_AUTH_SECRET must be at least 32 characters')),
 
-  AUTH_GOOGLE_CLIENT_ID: pipe(string(), nonEmpty('AUTH_GOOGLE_CLIENT_ID is required')),
-  AUTH_GOOGLE_CLIENT_SECRET: pipe(string(), nonEmpty('AUTH_GOOGLE_CLIENT_SECRET is required')),
-  AUTH_GITHUB_CLIENT_ID: pipe(string(), nonEmpty('AUTH_GITHUB_CLIENT_ID is required')),
-  AUTH_GITHUB_CLIENT_SECRET: pipe(string(), nonEmpty('AUTH_GITHUB_CLIENT_SECRET is required')),
+  // Social logins are optional: an email/password-only instance must boot without
+  // inventing OAuth apps. Each provider is registered only when its pair is set.
+  AUTH_GOOGLE_CLIENT_ID: optional(string()),
+  AUTH_GOOGLE_CLIENT_SECRET: optional(string()),
+  AUTH_GITHUB_CLIENT_ID: optional(string()),
+  AUTH_GITHUB_CLIENT_SECRET: optional(string()),
 
   // OpenTelemetry
   OTEL_SERVICE_NAMESPACE: optional(string(), 'airi'),

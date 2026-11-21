@@ -82,19 +82,19 @@ flutter pub get
 
 ## Intentionally deferred (with reasons)
 
-- **Event subscription + typed Dart event models.** Wave 0 is adding the
-  server→client event lane and `event.subscribe`/`event.unsubscribe` to
-  `crates/anima-channel`. No subscription RPC is sent here; received `event`
-  frames are exposed as a generic envelope through the optional `onEvent` hook,
-  and **no event payload shape is hand-written**. The binding strategy is still
-  an open decision (`airi-wxp.10`; see `docs/decision-client-bindings.md`, which
-  is *proposed*, not yet accepted) — whether this becomes generated bindings or
-  hand-written models plus Rust golden conformance fixtures is deliberately not
-  prejudged here.
-- **Chat streaming.** Needs the Wave-0 `token.delta` lane; owning bead
-  `airi-wxp.3.3`. The composer is visibly disabled.
-- **Real control surfaces** (settings/providers/memory/cards/sessions):
-  `airi-wxp.3.2`. They must be daemon RPC verbs, never a second Dart store writer.
+- **Event subscription + typed Dart event models.** The client owns the
+  `event.subscribe` RPC for `token.delta` and re-subscribes after every
+  reconnect. Received `event` frames are decoded into a typed envelope and
+  dispatched to every listener registered with `onEvent` (which returns an
+  unsubscribe handle callers must use in `dispose`). The long-term binding
+  strategy is still open (`airi-wxp.10`): generated bindings versus hand-written
+  models plus Rust golden conformance fixtures are not prejudged here.
+- **Chat streaming.** Working: `chat.send` returns an early ack, tokens arrive as
+  `token.delta` events, and the composer stays active until a final delta or a
+  `chat.cancel`. Cards remain out of scope and show an unavailable banner.
+- **Real control surfaces** (settings/providers/memory/sessions) are daemon RPC
+  verbs, never a second Dart store writer. Settings are read with `settings.get`
+  before any write so an empty section cannot reset unrelated keys.
 - **Secure token storage.** Token is memory-only this session; Keychain/Keystore
   persistence and the LAN CA-trust UX are `airi-u71.6`.
 - **Remote transports / pairing / trust**: `airi-wxp.3.5`, `airi-wxp.3.4`.

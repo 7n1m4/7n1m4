@@ -238,4 +238,29 @@ describe('characterRoutes', () => {
 
     expect(res.status).toBe(404)
   })
+
+  it('post / ignores client-supplied counters and derives them server-side', async () => {
+    const res = await app.fetch(new Request('http://localhost/', {
+      method: 'POST',
+      body: JSON.stringify({
+        character: {
+          version: '1',
+          coverUrl: 'url',
+          characterId: 'counter-test',
+          likesCount: 999,
+          bookmarksCount: 888,
+          interactionsCount: 777,
+          forksCount: 666,
+        },
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }), { user: testUser } as any)
+
+    expect(res.status).toBe(201)
+    const created = await characterService.findById(((await res.json()) as any).id)
+    expect(created.likesCount).toBe(0)
+    expect(created.bookmarksCount).toBe(0)
+    expect(created.interactionsCount).toBe(0)
+    expect(created.forksCount).toBe(0)
+  })
 })

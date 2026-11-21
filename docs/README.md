@@ -9,9 +9,9 @@ the code wins — and the doc gets fixed.
 AIRI is pivoting from "a desktop pet app" to **the agent runtime core of a personal
 agentic OS**. That pivot dictates the architecture:
 
-> **One long-lived Rust core owns state and business logic. Every UI — the polished web
-> app, the native Slint desktop shell, future surfaces — is a thin client over the same
-> contracts.**
+> **One long-lived Rust core owns state and business logic. Every surface — the Flutter
+> control/chat app, the on-demand Godot pet renderer, the Vue web/desktop app, future
+> surfaces — is a thin client over the same contracts.**
 
 Why this shape:
 
@@ -34,7 +34,8 @@ Why this shape:
 graph TB
   subgraph surfaces["UI surfaces (thin clients)"]
     web["TS web/desktop app<br/>apps/stage-tamagotchi<br/>(Vue renderer on Electrobun/CEF)"]
-    slint["Unified Rust native app<br/>crates/anima-slint<br/>(desktop + mobile)"]
+    flutter["Flutter control/chat surface<br/>apps/flutter"]
+    godot["Godot pet renderer (on demand)<br/>godot/"]
     future["future OS surfaces<br/>(agentic OS)"]
   end
   subgraph core["Rust core (the brain)"]
@@ -47,7 +48,8 @@ graph TB
     daemon["anima-daemon<br/>session awareness<br/>(D-Bus: logind, MPRIS,<br/>NetworkManager, UPower, AT-SPI)"]
   end
   web --> gw
-  slint --> gw
+  flutter --> gw
+  godot --> gw
   future --> gw
   gw --> ac
   ac --> st
@@ -64,8 +66,9 @@ Be honest about the gap; do not pretend the port is done.
 | Surface / component | State | Where its logic lives today |
 |---|---|---|
 | TS web/desktop app (`apps/stage-tamagotchi`) | Polished, daily-driver. Main process ported in place from Electron to **Electrobun 2** (`design-electrobun-port.md`). | **All business logic still in TypeScript** (`src/main/**` + `packages/*`). This is the strangler's starting point, not a finished client. |
-| Unified Rust native app (`crates/anima-slint`) | Booting profile/settings/store/provider repo, optional gateway, spine rendering. Desktop today; mobile is the same codebase, grown from this shell — the UI must be reactive to screen size so one build ships both. See `proposal-unified-rust-native-app.md`. | Rust, via `anima-core`; UI-feature parity with the TS app is partial. |
-| Mobile app (`apps/stage-pocket`, Capacitor) | **Purged 2026-11-13** — replaced by the unified Rust native app; UI must be reactive to screen size so one codebase ships desktop + mobile. | — |
+| Flutter control/chat surface (`apps/flutter`) | Thin daemon client; holds view state only and can be closed without stopping the agent. Android/iOS capable. Authoritative contract: `design-flutter-godot-pivot.md`. | Dart; no core logic — all state lives in `anima-daemon`. |
+| Godot pet renderer (`godot/`) | On-demand Godot 4 thin WS client of the daemon; owns no core state. Live2D/VRM backends are still stubs. See `design-flutter-godot-pivot.md`. | C#; thin codec/event pump only, no backend implementation yet. |
+| Mobile app (`apps/stage-pocket`, Capacitor) | **Purged 2026-11-13** — succeeded by the Flutter control surface (`apps/flutter`), a thin daemon client that ships to Android/iOS. | — |
 | Rust core (`anima-core`, `anima-store`, `anima-llm`, …) | Real foundation: typed settings sections, streaming chat pipeline with persistence, character cards (CCv2/v3 + `airi` ext), memory lanes. | Growing toward parity service by service. |
 | `anima-daemon` | Shipped: systemd `Type=dbus` unit + D-Bus activation (`packaging/`), six T0 awareness sources, opt-in AT-SPI, redacted audit JSONL. | Rust. The OS-integration anchor — awareness runs even with no UI open. |
 
@@ -73,14 +76,14 @@ Be honest about the gap; do not pretend the port is done.
 
 1. **Polish what ships.** The TS app on Electrobun remains the flagship; keep it working
    at every step. `docs/port-manifest/` is the feature/IPC/store inventory — treat it as
-   the parity ledger the Rust/Qt (Slint) strangler must satisfy, not an Electron→Electrobun
-   completion checklist.
+   the parity ledger the Rust core/daemon must satisfy before the Vue reference can be
+   retired, not an Electron→Electrobun completion checklist.
 2. **Move one service at a time** TS → Rust (`anima-core`), behind the existing eventa /
    gateway contracts, with the TS UI consuming the Rust service as soon as it reaches
    parity for that service. No feature may exist long-term in both stacks.
-3. **UIs become views.** The Vue renderer and the Slint shell both consume the core
-   through `anima-channel`'s gateway protocol (already implemented on both sides).
-   Renderer-side business logic shrinks to view-models.
+3. **UIs become views.** The Flutter control/chat surface, the Godot pet renderer, and
+   eventually the Vue renderer consume the core as thin clients of `anima-daemon` through
+   `anima-channel`'s gateway protocol. Client-side business logic shrinks to view-models.
 4. **The daemon is the OS seam.** Presence, awareness, and autonomous cycles (see
    `design-agentic-os.md`) belong to `anima-daemon`/`anima-core`, not to any window.
 
@@ -101,8 +104,8 @@ Be honest about the gap; do not pretend the port is done.
 - **Canonical, always current** (referenced by AGENTS.md, skills, scripts — do not move):
   `rosetta-stone.md` (TS internals map), `data-catalog.md` (persistence inventory),
   `settings-yaml.md`, `project-testing-parity.md`, `project-specialized-skills.md`,
-  `port-manifest/` (feature/IPC/store inventory for the Rust/Qt strangler — its ticks track
-  Slint parity, not Electron→Electrobun completion).
+  `port-manifest/` (feature/IPC/store inventory for the Rust core/daemon — its ticks track
+  core/daemon parity, not Electron→Electrobun completion).
 - **Architecture blueprints** — how things work today or the approved design for what
   lands next. Prefixes: `arch-*` (subsystem architecture), `design-*` (feature/system
   design; the authoritative ones), `research-*` / `analysis-*` / `blueprint-*`

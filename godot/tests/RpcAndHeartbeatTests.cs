@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using AnimaPet.Net;
@@ -135,6 +137,33 @@ public sealed class RpcAndHeartbeatTests
         using var client = new DaemonClient("token");
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendRpc("core.status"));
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.PingAsync());
+    }
+
+    [Fact]
+    public async Task PingAsync_PeerStopsAnswering_FailsTheConnection()
+    {
+        // Fake transport that never answers a ping: the read only unblocks on
+        // client shutdown, so the heartbeat's round timeout must be what fails
+        // the connection and raises StateChanged for the reconnect path.
+        async Task<JsonElement> Receive(CancellationToken ct)
+        {
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+            throw new OperationCanceledException(ct);
+        }
+
+        using var client = new DaemonClient((_, _) => Task.CompletedTask, Receive)
+        {
+            HeartbeatTimeout = TimeSpan.FromMilliseconds(80),
+        };
+        var states = new List<DaemonConnectionState>();
+        client.StateChanged += (_, state) => states.Add(state);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => client.PingAsync());
+
+        Assert.Contains("pong", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(DaemonConnectionState.Failed, client.State);
+        Assert.Contains(DaemonConnectionState.Failed, states);
+        Assert.NotNull(client.LastError);
     }
 
     [Fact]

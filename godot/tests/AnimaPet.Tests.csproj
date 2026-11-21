@@ -35,6 +35,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="fixtures/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Rust-canonical golden event frames are the single source of truth for
+         the decoder (D5). Copied read-only from crates/anima-channel/fixtures/golden. -->
+    <None Include="../../crates/anima-channel/fixtures/golden/event.*.json"
+          Link="golden/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

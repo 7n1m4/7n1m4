@@ -7,6 +7,7 @@ import { safeParse } from 'valibot'
 import { ChatSyncSchema } from '../api/chats.schema'
 import { authGuard } from '../middlewares/auth'
 import { createBadRequestError } from '../utils/error'
+import { readJsonBody } from '../utils/json'
 
 export function createChatRoutes(chatService: ChatService) {
   return new Hono<HonoEnv>()
@@ -14,7 +15,7 @@ export function createChatRoutes(chatService: ChatService) {
     .post('/sync', async (c) => {
       const user = c.get('user')!
 
-      const body = await c.req.json()
+      const body = await readJsonBody(c.req)
       const result = safeParse(ChatSyncSchema, body)
 
       if (!result.success)

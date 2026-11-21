@@ -10,9 +10,12 @@ import '../../theme/app_theme.dart';
 /// Minimal chat surface: sends `chat.send` RPCs and renders streamed
 /// `token.delta` events. View state only; the daemon owns sessions.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.client});
+  const ChatScreen({super.key, required this.client, this.initialSessionId});
 
   final DaemonClient client;
+
+  /// When opening a persisted session, its id is replayed via `chat.history`.
+  final String? initialSessionId;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -25,16 +28,46 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _activeMessageId;
   final StringBuffer _deltaBuffer = StringBuffer();
   bool _sending = false;
+  bool _assistantStreaming = false;
+  bool _historyUnavailable = false;
   String? _error;
+  StreamSubscription<DaemonStatus>? _statusSub;
+  void Function()? _unsubscribeEvent;
+  bool _wasConnected = false;
 
   @override
   void initState() {
     super.initState();
-    widget.client.onEvent = _onEvent;
+    _unsubscribeEvent = widget.client.onEvent(_onEvent);
+    _wasConnected = widget.client.snapshot.isConnected;
+    // A reconnect lands on a fresh socket with no in-flight turn from this
+    // screen's point of view: drop the stuck "sending" state instead of
+    // leaving the input disabled until a full app relaunch. The status stream
+    // also emits on core/error updates, so only a real transition counts.
+    _statusSub = widget.client.statusStream.listen((status) {
+      final connected = status.state == DaemonConnectionState.connected;
+      final regainedConnection = connected && !_wasConnected;
+      _wasConnected = connected;
+      if (regainedConnection && mounted) {
+        setState(() {
+          _sending = false;
+          _assistantStreaming = false;
+          _activeMessageId = null;
+          _deltaBuffer.clear();
+        });
+      }
+    });
+    final initial = widget.initialSessionId;
+    if (initial != null && initial.isNotEmpty) {
+      _sessionId = initial;
+      unawaited(_loadHistory());
+    }
   }
 
   @override
   void dispose() {
+    _statusSub?.cancel();
+    _unsubscribeEvent?.call();
     _input.dispose();
     super.dispose();
   }
@@ -52,12 +85,20 @@ class _ChatScreenState extends State<ChatScreen> {
     final isFinal = data['final'] == true;
     if (!mounted) return;
     setState(() {
-      if (_activeMessageId == null ||
-          (_activeMessageId != mid && mid.isNotEmpty)) {
-        _activeMessageId = mid.isNotEmpty ? mid : _activeMessageId;
+      // The daemon can stream a terminal delta with an empty message_id. Key
+      // the bubble on an explicit stream-active flag, not on message_id being
+      // non-empty, or every such token creates its own assistant bubble.
+      final newTurn =
+          !_assistantStreaming ||
+          (mid.isNotEmpty &&
+              _activeMessageId != null &&
+              _activeMessageId != mid);
+      if (newTurn) {
         _messages.add(_ChatMessage.assistant(''));
         _deltaBuffer.clear();
+        _assistantStreaming = true;
       }
+      if (mid.isNotEmpty) _activeMessageId = mid;
       if (delta.isNotEmpty) {
         _deltaBuffer.write(delta);
         final last = _messages.last;
@@ -65,6 +106,7 @@ class _ChatScreenState extends State<ChatScreen> {
             last.copyWith(text: _deltaBuffer.toString());
       }
       if (isFinal) {
+        _assistantStreaming = false;
         _activeMessageId = null;
         _deltaBuffer.clear();
         _sending = false;
@@ -86,26 +128,33 @@ class _ChatScreenState extends State<ChatScreen> {
       _input.clear();
     });
     try {
-      await widget.client.call('event.subscribe', payload: <String, dynamic>{
-        'topics': <String>['token.delta'],
-      });
       final reply = await widget.client.call('chat.send', payload: <String, dynamic>{
         'session_id': _sessionId ?? '',
         'content': text,
       });
+      if (!mounted) return;
       if (reply.ok && reply.data is Map<String, dynamic>) {
+        // ChatSendReply is serde camelCase on the wire (sessionId/messageId);
+        // snake_case here left the session unset so Stop cancelled nothing.
         final data = reply.data as Map<String, dynamic>;
-        final sid = data['session_id'] as String?;
+        final sid = data['sessionId'] as String?;
         if (sid != null && sid.isNotEmpty) _sessionId = sid;
-        final mid = data['message_id'] as String?;
+        final mid = data['messageId'] as String?;
         if (mid != null && mid.isNotEmpty) _activeMessageId = mid;
+        // The ack is early: the turn is still streaming. Leave _sending set so
+        // Stop stays live until a final delta, a cancel ack, or an error.
       } else if (!reply.ok) {
-        setState(() => _error = reply.error?.message ?? 'chat.send failed');
+        setState(() {
+          _error = reply.error?.message ?? 'chat.send failed';
+          _sending = false;
+        });
       }
     } on DaemonClientException catch (e) {
-      setState(() => _error = e.message);
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _sending = false;
+      });
     }
   }
 
@@ -117,6 +166,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() {
         _sending = false;
+        _assistantStreaming = false;
         _activeMessageId = null;
         _deltaBuffer.clear();
         if (!cancelled) _error = 'No active turn to cancel.';
@@ -125,6 +175,34 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() => _error = e.message);
     }
+  }
+
+  /// Replay prior turns when a session is opened. Missing history (empty
+  /// session) and an unregistered/failing `chat.history` are both non-fatal:
+  /// the user can still chat, the screen just starts empty.
+  Future<void> _loadHistory() async {
+    final sid = _sessionId;
+    if (sid == null || sid.isEmpty) return;
+    try {
+      final turns = await widget.client.chatHistory(sid);
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(turns.map(_messageFromHistory));
+        _historyUnavailable = false;
+      });
+    } on DaemonClientException {
+      if (!mounted) return;
+      setState(() => _historyUnavailable = true);
+    }
+  }
+
+  _ChatMessage _messageFromHistory(Map<String, dynamic> turn) {
+    final text = (turn['content'] as String?) ?? '';
+    return turn['role'] == 'user'
+        ? _ChatMessage.user(text)
+        : _ChatMessage.assistant(text);
   }
 
   @override
@@ -158,6 +236,11 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(_error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        if (_historyUnavailable)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('Chat history unavailable for this session.'),
           ),
         SafeArea(
           child: Padding(

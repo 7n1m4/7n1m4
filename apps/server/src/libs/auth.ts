@@ -11,6 +11,15 @@ import { deployedOrigin } from '../utils/origin'
 
 import * as authSchema from '../schemas/accounts'
 
+export function cookieAttributesFor(apiServerUrl: string) {
+  return {
+    // Lax covers the same-site API/webview traffic. Secure must follow the
+    // configured scheme: browsers drop a Secure cookie set over plain HTTP.
+    sameSite: 'Lax' as const,
+    secure: apiServerUrl.startsWith('https://'),
+  }
+}
+
 export function createAuth(db: Database, env: Env) {
   return betterAuth({
     database: drizzleAdapter(db, {
@@ -43,25 +52,30 @@ export function createAuth(db: Database, env: Env) {
       ? [deployedOrigin, 'http://localhost:*']
       : [deployedOrigin],
 
-    // To skip state-mismatch errors
-    // https://github.com/better-auth/better-auth/issues/4969#issuecomment-3397804378
     advanced: {
-      defaultCookieAttributes: {
-        sameSite: 'None', // this enables cross-site cookies
-        secure: true, // required for SameSite=None
-      },
+      // To skip state-mismatch errors
+      // https://github.com/better-auth/better-auth/issues/4969#issuecomment-3397804378
+      defaultCookieAttributes: cookieAttributesFor(env.API_SERVER_URL),
     },
 
     socialProviders: {
-      google: {
-        clientId: env.AUTH_GOOGLE_CLIENT_ID,
-        clientSecret: env.AUTH_GOOGLE_CLIENT_SECRET,
-        scope: ['openid', 'profile', 'email', 'https://www.googleapis.com/auth/drive.appdata'],
-      },
-      github: {
-        clientId: env.AUTH_GITHUB_CLIENT_ID,
-        clientSecret: env.AUTH_GITHUB_CLIENT_SECRET,
-      },
+      ...(env.AUTH_GOOGLE_CLIENT_ID && env.AUTH_GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: env.AUTH_GOOGLE_CLIENT_ID,
+              clientSecret: env.AUTH_GOOGLE_CLIENT_SECRET,
+              scope: ['openid', 'profile', 'email', 'https://www.googleapis.com/auth/drive.appdata'],
+            },
+          }
+        : {}),
+      ...(env.AUTH_GITHUB_CLIENT_ID && env.AUTH_GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: env.AUTH_GITHUB_CLIENT_ID,
+              clientSecret: env.AUTH_GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
     },
   })
 }

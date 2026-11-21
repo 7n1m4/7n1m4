@@ -20,7 +20,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// v2: lane ① (p7-memory-journal) — summaries/journal tables.
 /// v3: lane ② (p7-retrieval) — `memory_embeddings` retrieval index.
 /// v4: wave ④ (p9-data-vault) — `scrub_runs` optimization log.
-const SCHEMA_VERSION: i32 = 4;
+/// v5: drop day-keyed summary embeddings (collided across summaries per day).
+const SCHEMA_VERSION: i32 = 5;
 /// Application data directory name.
 const APP_DIR_NAME: &str = "airi-slint";
 /// Database file name.
@@ -166,6 +167,16 @@ impl Database {
                 "#,
             )?;
         }
+        if current < 5 {
+            // Old builds keyed summary embeddings by day; multiple summaries
+            // on one day collided. Drop them so backfill re-embeds under
+            // `summaries.id`, leaving no stale duplicates in retrieval.
+            tx.execute_batch(
+                "delete from memory_embeddings
+                 where kind = 'summary'
+                   and id in (select 'summary:' || day from summaries);",
+            )?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         Ok(())
@@ -244,21 +255,25 @@ impl SettingsRepo {
 
     /// Set a setting value.
     ///
-    /// The write is skipped when the stored row's `updated_at` is newer than
-    /// this call's timestamp (which a concurrent writer's clock may make look
-    /// "in the future"): two processes can hold the same `airi.sqlite` open and
-    /// the slower writer must not revert the other one's value. Same millisecond
-    /// is last-writer-wins.
+    /// A write older than the stored row's `updated_at` is rejected with an
+    /// error instead of being silently skipped: two processes can hold the
+    /// same `airi.sqlite` open and the slower writer must not revert the other
+    /// one's value, but the caller must learn that nothing was written.
+    /// Same millisecond is last-writer-wins.
     pub fn set<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         let json = serde_json::to_string(value)?;
         let ts = now_ms();
         let conn = self.db.conn.lock().expect("database mutex poisoned");
-        conn.execute(
+        let affected = conn.execute(
             "insert into settings (key, value, updated_at) values (?1, ?2, ?3)
              on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at
              where excluded.updated_at >= settings.updated_at",
             params![key, json, ts],
         )?;
+        anyhow::ensure!(
+            affected > 0,
+            "setting `{key}` was not written: a newer value already exists"
+        );
         Ok(())
     }
 
@@ -1051,12 +1066,17 @@ impl JournalRepo {
 }
 
 fn new_row_id() -> String {
-    // time+random-ish without adding uuid dep yet (same scheme as airi-core)
+    // Time + pid keeps ids roughly sortable; the atomic counter guarantees
+    // uniqueness even when two ids are minted within the same clock tick
+    // (same scheme as anima-core::new_id).
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    format!("{:x}{:x}", n, std::process::id())
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}{:x}-{:x}", n, std::process::id(), counter)
 }
 
 struct JournalRow {
@@ -1092,12 +1112,12 @@ fn row_to_journal_entry(row: JournalRow) -> Result<StoredJournalEntry> {
 /// A stored embedding row in `memory_embeddings`.
 ///
 /// `id` is the source row id: `journal_entries.id` for journal memories, or
-/// `'summary:' || summaries.day` for daily summaries. Vectors are stored as
+/// `'summary:' || summaries.id` for daily summaries. Vectors are stored as
 /// JSON arrays. Written by the retrieval lane (`airi-core::memory::retrieval`);
 /// lane ①'s `journal_entries.embedding` column is unrelated and untouched.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemoryEmbeddingRecord {
-    /// Source row id (`journal_entries.id` or `'summary:' || summaries.day`).
+    /// Source row id (`journal_entries.id` or `'summary:' || summaries.id`).
     pub id: String,
     /// `'journal'` | `'summary'`.
     pub kind: String,
@@ -1113,7 +1133,7 @@ pub struct MemoryEmbeddingRecord {
 /// [`MemoryEmbeddingRepo::list_missing_sources`] for backfill.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissingMemorySource {
-    /// Source row id (`'summary:' || day` for summaries).
+    /// Source row id (`'summary:' || summaries.id` for summaries).
     pub id: String,
     /// `'journal'` | `'summary'`.
     pub kind: String,
@@ -1240,10 +1260,10 @@ impl MemoryEmbeddingRepo {
             }
         }
         if tables.iter().any(|t| t == "summaries") {
-            ensure_columns(&conn, "summaries", &["day", "content"])?;
+            ensure_columns(&conn, "summaries", &["id", "content"])?;
             let mut stmt = conn.prepare(
-                "select 'summary:' || day, 'summary', content from summaries
-                 where 'summary:' || day not in (select id from memory_embeddings where kind = 'summary')",
+                "select 'summary:' || id, 'summary', content from summaries
+                 where 'summary:' || id not in (select id from memory_embeddings where kind = 'summary')",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(MissingMemorySource {
@@ -1331,7 +1351,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_set_refuses_older_write() {
+    fn settings_set_rejects_older_write_loudly() {
         let db = test_db();
         // Keep a handle for the raw connection; repos take ownership of their clone.
         let repo = SettingsRepo::new(db.clone());
@@ -1343,8 +1363,10 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        // The stored row is newer than this write, so it must survive untouched.
-        repo.set("theme", &"light").unwrap();
+        // The stored row is newer than this write: reject loudly instead of
+        // silently succeeding with nothing written.
+        let err = repo.set("theme", &"light").expect_err("older write rejected");
+        assert!(err.to_string().contains("theme"), "error: {err:#}");
         assert_eq!(
             repo.get::<String>("theme").unwrap().as_deref(),
             Some("dark")
@@ -1417,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_is_schema_v4_with_memory_and_scrub_tables() {
+    fn fresh_database_is_schema_v5_with_memory_and_scrub_tables() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("fresh.sqlite");
         let db = Database::open(&path).expect("open db");
@@ -1425,7 +1447,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         let summaries = SummaryRepo::new(db.clone());
         summaries
@@ -1473,7 +1495,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
 
         // v1 data survived the upgrade.
         let session = SessionRepo::new(db.clone());
@@ -1503,7 +1525,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let entries = JournalRepo::new(db).list_recent(10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "persisted");
@@ -1626,6 +1648,25 @@ mod tests {
     }
 
     #[test]
+    fn new_row_id_is_unique_in_a_tight_loop() {
+        // Regression: the old time+pid scheme collided within a single clock
+        // tick, causing INSERT to fail UNIQUE and lose the row.
+        use std::collections::HashSet;
+        let ids: HashSet<String> = (0..20_000).map(|_| new_row_id()).collect();
+        assert_eq!(ids.len(), 20_000, "new_row_id() produced duplicate ids");
+    }
+
+    #[test]
+    fn journal_append_many_in_tight_loop_persists_every_row() {
+        // End-to-end: rapid appends must not silently fail on a duplicate key.
+        let repo = JournalRepo::new(test_db());
+        for i in 0..500 {
+            repo.append("note", &format!("entry {i}"), None).unwrap();
+        }
+        assert_eq!(repo.count().unwrap(), 500);
+    }
+
+    #[test]
     fn session_search_case_insensitive_escaped_and_limited() {
         let db = test_db();
         let sessions = SessionRepo::new(db);
@@ -1668,7 +1709,7 @@ mod tests {
             let version: i32 = db
                 .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
                 .expect("read user_version");
-            assert_eq!(version, 4);
+            assert_eq!(version, 5);
             let table_count: i64 = db
                 .with_connection(|c| {
                     Ok(c.query_row(
@@ -1760,7 +1801,7 @@ mod tests {
         let missing = repo.list_missing_sources().expect("missing");
         let ids: Vec<&str> = missing.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&journal_id.as_str()), "missing: {ids:?}");
-        assert!(ids.contains(&"summary:2026-11-10"), "missing: {ids:?}");
+        assert!(ids.contains(&"summary:sum1"), "missing: {ids:?}");
         // Backfill both, then nothing is missing.
         for m in &missing {
             repo.upsert(&MemoryEmbeddingRecord {
@@ -1776,6 +1817,43 @@ mod tests {
             .list_missing_sources()
             .expect("missing again")
             .is_empty());
+    }
+
+    #[test]
+    fn list_missing_sources_keys_summaries_by_id_not_day() {
+        let db = test_db();
+        let summaries = SummaryRepo::new(db.clone());
+        for (id, content) in [
+            ("sum-a", "first summary for the day"),
+            ("sum-b", "second summary for the day"),
+        ] {
+            summaries
+                .insert(&StoredSummary {
+                    id: id.to_string(),
+                    day: "2026-11-10".to_string(),
+                    content: content.to_string(),
+                    source_session_ids: vec![],
+                    token_estimate: 4,
+                    created_at: 10,
+                })
+                .expect("insert summary");
+        }
+        let repo = MemoryEmbeddingRepo::new(db);
+        let missing = repo.list_missing_sources().expect("missing");
+        let mut summaries: Vec<(&str, &str)> = missing
+            .iter()
+            .filter(|m| m.kind == "summary")
+            .map(|m| (m.id.as_str(), m.content.as_str()))
+            .collect();
+        summaries.sort_unstable();
+        assert_eq!(
+            summaries,
+            vec![
+                ("summary:sum-a", "first summary for the day"),
+                ("summary:sum-b", "second summary for the day"),
+            ],
+            "two summaries on one day must get distinct embedding ids"
+        );
     }
 }
 

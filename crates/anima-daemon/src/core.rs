@@ -72,14 +72,17 @@ fn provider_info(p: &StoredProvider) -> anima_channel::wire::ProviderInfo {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+        // `ProviderConfig` serializes this as `base_url`; only older/foreign
+        // rows carry the camelCase spelling. Reading just `baseUrl` reported
+        // an empty base URL for every provider written through the daemon.
         base_url: config
             .as_object()
-            .and_then(|o| o.get("baseUrl"))
+            .and_then(|o| o.get("base_url").or_else(|| o.get("baseUrl")))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
         enabled: p.enabled,
-        updated_at: p.updated_at as i32,
+        updated_at: p.updated_at,
     }
 }
 
@@ -128,8 +131,10 @@ impl CoreService {
 
         match Database::open(&path) {
             Ok(db) => {
-                let sessions = anima_store::SessionRepo::new(db.clone()).list().map(|v| v.len() as u64).unwrap_or(0);
-                let messages = anima_store::MessageRepo::new(db.clone()).list_all().map(|v| v.len() as u64).unwrap_or(0);
+                // `list()`/`list_all()` materialized the entire messages table
+                // just to take `.len()`. Two `count(*)` queries give the same
+                // status numbers without a full-table scan at startup.
+                let (sessions, messages) = Self::quick_counts(&db).unwrap_or((0, 0));
                 let core = AppCore::new(db);
                 Self {
                     inner: Arc::new(Mutex::new(CoreInner {
@@ -157,6 +162,18 @@ impl CoreService {
             })),
             cancels: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Cheap session/message counts for the health snapshot. Uses the same
+    /// public `with_connection` escape hatch `anima_core::vault::stats` uses;
+    /// no full-row materialization.
+    fn quick_counts(db: &anima_store::Database) -> Result<(u64, u64), String> {
+        db.with_connection(|conn| {
+            let sessions: i64 = conn.query_row("select count(*) from sessions", [], |r| r.get(0))?;
+            let messages: i64 = conn.query_row("select count(*) from messages", [], |r| r.get(0))?;
+            Ok((sessions as u64, messages as u64))
+        })
+        .map_err(|_| "count query failed".to_string())
     }
 
     /// Whether core/store is available.
@@ -201,6 +218,74 @@ impl CoreService {
         let providers = repo.list().map_err(|_| "store query failed".to_string())?;
         let infos = providers.into_iter().map(|p| provider_info(&p)).collect();
         Ok(anima_channel::wire::ProvidersListReply { providers: infos })
+    }
+
+    /// Create or update a provider through the daemon-owned `ProviderRepo`.
+    /// Accepts the secret only on input; the returned id is safe to put on the
+    /// wire. Missing fields keep the stored value so a partial update cannot
+    /// silently drop an api key.
+    pub fn providers_save(&self, payload: &serde_json::Value) -> Result<String, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let repo = core.provider_repo();
+        let id = payload
+            .get("id")
+            .or_else(|| payload.get("providerId"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "missing id".to_string())?;
+        let kind_text = payload
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing kind".to_string())?;
+        let kind: anima_store::ProviderKind =
+            serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
+                .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
+
+        let existing = repo.get(id).map_err(|_| "provider query failed".to_string())?;
+        let mut config = existing
+            .as_ref()
+            .and_then(|p| p.config.as_object().cloned())
+            .unwrap_or_default();
+        let enabled = payload
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or_else(|| existing.as_ref().map_or(true, |p| p.enabled));
+        // `ProviderConfig` stores snake_case; clients speak the wire's
+        // camelCase. Accept both spellings on input.
+        for (wire_key, stored_key) in [
+            ("model", "model"),
+            ("baseUrl", "base_url"),
+            ("base_url", "base_url"),
+            ("apiKey", "api_key"),
+            ("api_key", "api_key"),
+        ] {
+            if let Some(value) = payload.get(wire_key).and_then(|v| v.as_str()) {
+                config.insert(
+                    stored_key.to_string(),
+                    serde_json::Value::String(value.to_string()),
+                );
+            }
+        }
+        repo.upsert(&StoredProvider {
+            id: id.to_string(),
+            kind,
+            config: serde_json::Value::Object(config),
+            enabled,
+            updated_at: 0, // upsert stamps the current time
+        })
+        .map_err(|_| "provider save failed".to_string())?;
+        Ok(id.to_string())
+    }
+
+    /// Delete a provider by id. Returns whether a row was actually removed.
+    pub fn providers_delete(&self, id: &str) -> Result<bool, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        core.provider_repo()
+            .delete(id)
+            .map_err(|_| "provider delete failed".to_string())
     }
 
     /// Get a typed settings section.
@@ -330,6 +415,30 @@ impl CoreService {
             .map_err(|_| "message append failed".to_string())
     }
 
+    /// Ensure the requested session row exists before `send_message` runs.
+    ///
+    /// `ChatService::ensure_session` only honours an explicit id when that row
+    /// already exists; otherwise it mints a new id. Without this, passing
+    /// `Some(&sid)` would still stream the reply into a different session than
+    /// the one returned in `chat.send`'s ack (and `chat.cancel` would flag the
+    /// wrong one). This creates the session only — `send_message` writes the
+    /// user turn, so there is no duplicate message.
+    pub fn ensure_chat_session(&self, session_id: &str) -> Result<(), String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let sessions = anima_store::SessionRepo::new(core.db.clone());
+        if sessions
+            .get(session_id)
+            .map_err(|_| "session query failed".to_string())?
+            .is_none()
+        {
+            sessions
+                .create(session_id, session_id)
+                .map_err(|_| "session create failed".to_string())?;
+        }
+        Ok(())
+    }
+
     /// Replay the persisted messages of a session from the daemon-owned store.
     pub fn chat_stream(
         &self,
@@ -367,28 +476,30 @@ impl CoreService {
             .map_err(|e| e.to_string())
     }
 
-    /// Borrow (or create) the cancel flag for `session_id` so a streaming
-    /// pump can honour cancellation cooperatively.
+    /// Install a fresh cancel flag for a new turn in `session_id` and return
+    /// it. Each turn owns its own flag, so a stale flag from an earlier turn
+    /// can never signal cancellation into a later one.
     pub fn chat_cancel_flag(&self, session_id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
         let mut map = self.cancels.lock().expect("cancel mutex poisoned");
-        map.entry(session_id.to_string())
-            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
-            .clone()
+        map.insert(session_id.to_string(), flag.clone());
+        flag
     }
 
     /// Cancel an in-flight generation for `session_id`.
     ///
-    /// Sets the shared cancel flag and forwards to the daemon-owned
-    /// `ChatService`. Returns `true` when a generation was in flight.
+    /// Flags the current turn's pump without creating a flag for a session
+    /// that has no active turn, then forwards to the daemon-owned
+    /// `ChatService`. `ChatService::stop` is authoritative: `true` only when
+    /// a generation was actually in flight.
     pub fn chat_cancel(&self, session_id: &str) -> bool {
-        let had_flag = {
+        {
             let map = self.cancels.lock().expect("cancel mutex poisoned");
-            map.contains_key(session_id)
-        };
-        let flag = self.chat_cancel_flag(session_id);
-        flag.store(true, Ordering::SeqCst);
-        let svc_cancelled = self.chat_stop(session_id).unwrap_or(false);
-        svc_cancelled || had_flag
+            if let Some(flag) = map.get(session_id) {
+                flag.store(true, Ordering::SeqCst);
+            }
+        }
+        self.chat_stop(session_id).unwrap_or(false)
     }
     /// Daemon-owned short-term memory (STMM) service, sharing the store and
     /// provider table. Single writer.
@@ -487,5 +598,42 @@ mod tests {
         let snap = svc.snapshot();
         assert!(!snap.available);
         assert!(snap.reason.is_some());
+    }
+
+    #[test]
+    fn startup_counts_are_cheap_and_accurate() {
+        let dir = tempdir().unwrap();
+        {
+            let svc = CoreService::open(Some(dir.path().to_path_buf()));
+            assert_eq!(svc.snapshot().session_count, 0);
+            svc.chat_send("s1", "one").unwrap();
+            svc.chat_send("s2", "two").unwrap();
+        }
+        // Reopening must count rows without materializing the messages table.
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let snap = svc.snapshot();
+        assert_eq!(snap.session_count, 2);
+        assert_eq!(snap.message_count, 2);
+    }
+
+    #[test]
+    fn cancel_flag_is_per_turn_not_stale_across_turns() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+
+        // Turn 1 is cancelled; its flag is set.
+        let first = svc.chat_cancel_flag("s1");
+        first.store(true, Ordering::SeqCst);
+
+        // Turn 2 in the same session must receive a fresh flag. A stale true
+        // flag from turn 1 must not signal cancellation into turn 2.
+        let second = svc.chat_cancel_flag("s1");
+        assert!(!second.load(Ordering::SeqCst));
+        assert!(!Arc::ptr_eq(&first, &second));
+
+        // Cancel with no generation in flight is honest and only flags the
+        // current turn; it must not resurrect a brand-new flag afterwards.
+        assert!(!svc.chat_cancel("s1"));
+        assert!(second.load(Ordering::SeqCst));
     }
 }

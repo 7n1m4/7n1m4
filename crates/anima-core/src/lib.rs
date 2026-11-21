@@ -198,13 +198,17 @@ pub(crate) fn now_ms() -> i64 {
 }
 
 pub(crate) fn new_id() -> String {
-    // time+random-ish without adding uuid dep yet
+    // Time + pid keeps ids roughly sortable; the atomic counter guarantees
+    // uniqueness even when two ids are minted within the same clock tick.
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    format!("{:x}{:x}", n, std::process::id())
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}{:x}-{:x}", n, std::process::id(), counter)
 }
 
 #[cfg(test)]
@@ -220,6 +224,15 @@ mod tests {
         let session = core.create_session("Demo").unwrap();
         let msg = core.append_message(&session.id, "user", "hello").unwrap();
         assert_eq!(msg.content, "hello");
+    }
+
+    #[test]
+    fn new_id_is_unique_in_a_tight_loop() {
+        // Regression: the old time+pid scheme collided when two ids were
+        // generated within a single clock tick (same nanos, same pid).
+        use std::collections::HashSet;
+        let ids: HashSet<String> = (0..20_000).map(|_| new_id()).collect();
+        assert_eq!(ids.len(), 20_000, "new_id() produced duplicate ids");
     }
 
     #[test]

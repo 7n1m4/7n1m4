@@ -78,12 +78,31 @@ public sealed class DaemonClient : IDisposable
     private readonly Lazy<ClientWebSocket> _socket;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
-    // One reader at a time on a ClientWebSocket. Frames meant for the other
-    // flow (events for the pump, replies for RPC/ping) are parked here until
-    // their owner reads them.
-    private readonly SemaphoreSlim _receiveLock = new(1, 1);
+    // One reader at a time on a ClientWebSocket. A single pump reads frames and
+    // hands each to the first matching waiter; unmatched frames are parked for
+    // a later caller. The lock is held only while dispatching a frame, never
+    // across the blocking receive, so a parked event pump cannot starve a
+    // concurrent SendRpc waiting for its reply.
+    private readonly object _receiveGate = new();
+    private readonly List<FrameWaiter> _waiters = new();
     private readonly List<JsonElement> _deferredFrames = new();
+    private readonly CancellationTokenSource _shutdownCts = new();
+    private bool _reading;
     private long _rpcId;
+
+    private sealed class FrameWaiter
+    {
+        public FrameWaiter(bool forEvents, long? replyId, TaskCompletionSource<JsonElement> completion)
+        {
+            ForEvents = forEvents;
+            ReplyId = replyId;
+            Completion = completion;
+        }
+
+        public bool ForEvents { get; }
+        public long? ReplyId { get; }
+        public TaskCompletionSource<JsonElement> Completion { get; }
+    }
 
     /// <summary>Current connection state. View state only; never persisted.</summary>
     public DaemonConnectionState State { get; private set; } =
@@ -97,6 +116,16 @@ public sealed class DaemonClient : IDisposable
 
     /// <summary>Application-level heartbeat cadence. Defaults to <see cref="DefaultHeartbeatInterval"/>.</summary>
     public TimeSpan HeartbeatInterval { get; set; } = DefaultHeartbeatInterval;
+
+    /// <summary>Default maximum time to wait for a pong reply to one ping round.</summary>
+    public static readonly TimeSpan DefaultHeartbeatTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Maximum time to wait for the daemon's pong reply to a single ping. A
+    /// peer that stops answering is failed once this deadline elapses instead
+    /// of leaving the client permanently "connected".
+    /// </summary>
+    public TimeSpan HeartbeatTimeout { get; set; } = DefaultHeartbeatTimeout;
 
     /// <summary>UTC time of the last observed pong, or null before the first heartbeat.</summary>
     public DateTimeOffset? LastPongAtUtc { get; private set; }
@@ -133,6 +162,22 @@ public sealed class DaemonClient : IDisposable
         _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
         _authToken = authToken ?? LoadTokenFromDaemonConfig();
         _socket = new Lazy<ClientWebSocket>(CreateSocket);
+    }
+
+    // Test seam: the test project compiles this file directly into its own
+    // assembly, so internal is enough. It lets a regression test drive two
+    // in-flight SendRpc calls over a scripted frame stream without a daemon.
+    internal Func<string, CancellationToken, Task>? SendOverride;
+    internal Func<CancellationToken, Task<JsonElement>>? ReceiveOverride;
+
+    internal DaemonClient(
+        Func<string, CancellationToken, Task> sendOverride,
+        Func<CancellationToken, Task<JsonElement>> receiveOverride)
+        : this("test-token")
+    {
+        SendOverride = sendOverride;
+        ReceiveOverride = receiveOverride;
+        SetState(DaemonConnectionState.Authenticated);
     }
 
     private static ClientWebSocket CreateSocket() => new();
@@ -331,13 +376,34 @@ public sealed class DaemonClient : IDisposable
     /// <summary>
     /// Application-level heartbeat: send <c>{"type":"ping"}</c> on the existing
     /// WS and record <see cref="LastPongAtUtc"/> when the daemon answers
-    /// <c>{"type":"pong"}</c>. No separate transport or client-to-client path.
+    /// <c>{"type":"pong"}</c>. A missing, non-pong or late reply fails the
+    /// connection so the caller's reconnect path can rebuild it.
     /// </summary>
     public async Task PingAsync(CancellationToken cancellationToken = default)
     {
         EnsureConnected();
-        await SendJsonAsync(DaemonRpc.PingFrame(), cancellationToken).ConfigureAwait(false);
-        var reply = await ReceiveJsonAsync(cancellationToken).ConfigureAwait(false);
+        var timeout = HeartbeatTimeout > TimeSpan.Zero ? HeartbeatTimeout : DefaultHeartbeatTimeout;
+        using var roundCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        roundCts.CancelAfter(timeout);
+        var roundToken = roundCts.Token;
+
+        JsonElement reply;
+        try
+        {
+            await SendJsonAsync(DaemonRpc.PingFrame(), roundToken).ConfigureAwait(false);
+            reply = await ReceiveJsonAsync(roundToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            FailHeartbeat($"no pong within {timeout}");
+            throw new InvalidOperationException($"ping timed out: no pong within {timeout}");
+        }
+
+        if (reply.ValueKind == JsonValueKind.Undefined)
+        {
+            FailHeartbeat("daemon closed the connection before replying to ping");
+            throw new InvalidOperationException("ping failed: daemon closed the connection");
+        }
         if (DaemonRpc.IsError(reply))
         {
             var reason = TryGetErrorMessage(reply) ?? "ping rejected";
@@ -345,10 +411,13 @@ public sealed class DaemonClient : IDisposable
             SetState(DaemonConnectionState.Failed);
             throw new InvalidOperationException($"ping failed: {reason}");
         }
-        if (DaemonRpc.IsPong(reply))
-            LastPongAtUtc = DateTimeOffset.UtcNow;
-        // Non-pong control frames are tolerated: a missed pong is reported by
-        // LastPongAtUtc, never by tearing down the pet's window.
+        if (!DaemonRpc.IsPong(reply))
+        {
+            FailHeartbeat("ping reply was not a pong");
+            throw new InvalidOperationException("ping failed: reply was not a pong");
+        }
+
+        LastPongAtUtc = DateTimeOffset.UtcNow;
     }
 
     /// <summary>
@@ -361,11 +430,21 @@ public sealed class DaemonClient : IDisposable
         var interval = HeartbeatInterval > TimeSpan.Zero
             ? HeartbeatInterval
             : DefaultHeartbeatInterval;
+        var timeout = HeartbeatTimeout > TimeSpan.Zero ? HeartbeatTimeout : DefaultHeartbeatTimeout;
+        var deadline = interval + timeout;
         while (!cancellationToken.IsCancellationRequested && IsConnected)
         {
             try
             {
                 await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                // LastPongAtUtc is the freshness gate between rounds: a peer
+                // that went silent well before this round must not be treated
+                // as alive just because a ping is about to be sent.
+                if (LastPongAtUtc is { } lastPong && DateTimeOffset.UtcNow - lastPong > deadline)
+                {
+                    FailHeartbeat($"no pong within {deadline}");
+                    break;
+                }
                 await PingAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -381,6 +460,12 @@ public sealed class DaemonClient : IDisposable
                 break;
             }
         }
+    }
+
+    private void FailHeartbeat(string reason)
+    {
+        LastError = reason;
+        SetState(DaemonConnectionState.Failed);
     }
 
     /// <summary>
@@ -400,7 +485,13 @@ public sealed class DaemonClient : IDisposable
         var id = Interlocked.Increment(ref _rpcId);
         await SendJsonAsync(DaemonRpc.Frame(method, payload, id), cancellationToken)
             .ConfigureAwait(false);
-        var reply = await ReceiveJsonAsync(cancellationToken).ConfigureAwait(false);
+
+        // The event pump, heartbeat and other probes share this one socket.
+        // ReceiveJsonAsync keeps reading until a frame with OUR id arrives,
+        // parking a pong or another call's reply for its rightful owner.
+        var reply = await ReceiveJsonAsync(cancellationToken, replyId: id).ConfigureAwait(false);
+        if (reply.ValueKind == JsonValueKind.Undefined)
+            throw new InvalidOperationException($"{method}: daemon closed the connection before replying");
         if (DaemonRpc.IsError(reply) || DaemonRpc.IsFailedReply(reply))
         {
             var reason = TryGetErrorMessage(reply) ?? "rpc error";
@@ -524,6 +615,11 @@ public sealed class DaemonClient : IDisposable
     private async Task SendJsonAsync(object value, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(value, Json);
+        if (SendOverride is not null)
+        {
+            await SendOverride(json, cancellationToken).ConfigureAwait(false);
+            return;
+        }
         var bytes = Encoding.UTF8.GetBytes(json);
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -538,53 +634,177 @@ public sealed class DaemonClient : IDisposable
     }
 
     /// <summary>
-    /// Read one frame of the requested kind. The pump wants events; auth,
-    /// subscribe, RPC and ping want replies. Frames for the other flow are
-    /// parked so a concurrent read can pick them up without two callers ever
-    /// issuing ReceiveAsync on the same socket.
+    /// Wait for a frame of the requested kind. The pump wants events; auth,
+    /// subscribe, RPC and ping want replies. A single reader owns the socket;
+    /// each caller registers a waiter and is woken when a matching frame is
+    /// read. Frames for the other flow are parked for their rightful owner.
+    /// No lock is held across the blocking receive, so a waiting event pump
+    /// cannot stall a concurrent RPC's reply.
     /// </summary>
     private async Task<JsonElement> ReceiveJsonAsync(
         CancellationToken cancellationToken,
-        bool forEvents = false)
+        bool forEvents = false,
+        long? replyId = null)
     {
-        await _receiveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            while (true)
-            {
-                var parked = _deferredFrames.FindIndex(f => Matches(f, forEvents));
-                if (parked >= 0)
-                {
-                    var frame = _deferredFrames[parked];
-                    _deferredFrames.RemoveAt(parked);
-                    return frame;
-                }
+        cancellationToken.ThrowIfCancellationRequested();
 
-                var incoming = await ReceiveRawAsync(cancellationToken).ConfigureAwait(false);
-                if (incoming.ValueKind == JsonValueKind.Undefined)
-                    return incoming; // socket closed
-                if (Matches(incoming, forEvents))
-                    return incoming;
-                _deferredFrames.Add(incoming);
-            }
-        }
-        finally
+        FrameWaiter waiter;
+        bool startReader;
+        lock (_receiveGate)
         {
-            _receiveLock.Release();
+            var parked = _deferredFrames.FindIndex(f => Matches(f, forEvents, replyId));
+            if (parked >= 0)
+            {
+                var frame = _deferredFrames[parked];
+                _deferredFrames.RemoveAt(parked);
+                return frame;
+            }
+
+            waiter = new FrameWaiter(
+                forEvents, replyId,
+                new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously));
+            _waiters.Add(waiter);
+            startReader = !_reading;
+            if (startReader)
+                _reading = true;
+        }
+
+        using var registration = cancellationToken.Register(() =>
+        {
+            lock (_receiveGate)
+                _waiters.Remove(waiter);
+            waiter.Completion.TrySetCanceled(cancellationToken);
+        });
+
+        if (startReader)
+            _ = ReadLoopAsync();
+
+        return await waiter.Completion.Task.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The sole reader of the socket. Reads one frame at a time and dispatches
+    /// it to the first matching waiter; unmatched frames are parked. Exits when
+    /// no waiters remain or the client is shutting down.
+    /// </summary>
+    private async Task ReadLoopAsync()
+    {
+        while (true)
+        {
+            JsonElement frame;
+            try
+            {
+                frame = await ReceiveRawAsync(_shutdownCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_shutdownCts.IsCancellationRequested)
+            {
+                CompleteAllWaiters(default); // shutting down: wake everyone with "closed"
+                return;
+            }
+            catch (Exception ex)
+            {
+                FailAllWaiters(ex);
+                return;
+            }
+
+            FrameWaiter? target = null;
+            var closed = frame.ValueKind == JsonValueKind.Undefined;
+            bool keepReading;
+            lock (_receiveGate)
+            {
+                if (!closed)
+                {
+                    var idx = _waiters.FindIndex(w => Matches(frame, w.ForEvents, w.ReplyId));
+                    if (idx >= 0)
+                    {
+                        target = _waiters[idx];
+                        _waiters.RemoveAt(idx);
+                    }
+                    else
+                    {
+                        _deferredFrames.Add(frame);
+                    }
+                }
+                keepReading = _waiters.Count > 0;
+                if (!keepReading)
+                    _reading = false;
+            }
+
+            if (closed)
+            {
+                CompleteAllWaiters(default);
+                return;
+            }
+
+            target?.Completion.TrySetResult(frame);
+            if (!keepReading)
+                return;
         }
     }
 
-    private static bool Matches(JsonElement frame, bool forEvents)
+    private void CompleteAllWaiters(JsonElement frame)
+    {
+        List<FrameWaiter> pending;
+        lock (_receiveGate)
+        {
+            pending = new List<FrameWaiter>(_waiters);
+            _waiters.Clear();
+            _reading = false;
+        }
+        foreach (var waiter in pending)
+            waiter.Completion.TrySetResult(frame);
+    }
+
+    private void FailAllWaiters(Exception ex)
+    {
+        List<FrameWaiter> pending;
+        lock (_receiveGate)
+        {
+            pending = new List<FrameWaiter>(_waiters);
+            _waiters.Clear();
+            _reading = false;
+        }
+        foreach (var waiter in pending)
+            waiter.Completion.TrySetException(ex);
+    }
+
+    private static bool Matches(JsonElement frame, bool forEvents, long? replyId)
     {
         if (frame.ValueKind != JsonValueKind.Object
             || !frame.TryGetProperty("type", out var type)
             || type.ValueKind != JsonValueKind.String)
-            return !forEvents; // non-event/empty frames are control traffic
-        return (type.GetString() == EventType) == forEvents;
+            return !forEvents && replyId is null; // control traffic for generic reads only
+
+        if (forEvents)
+            return type.GetString() == EventType;
+
+        // A correlated RPC read takes only its own reply (or a global error
+        // frame, which carries no id). Everything else is parked for its owner.
+        if (replyId is not null)
+            return DaemonRpc.IsError(frame) || MatchesId(frame, replyId.Value);
+
+        // Generic reads (auth / ping / subscribe) must not steal a correlated
+        // reply parked for a SendRpc caller. A null id (subscribe) is fine.
+        return type.GetString() != EventType && TryGetId(frame) is null;
+    }
+
+    private static bool MatchesId(JsonElement frame, long id)
+    {
+        if (!frame.TryGetProperty("id", out var frameId))
+            return false;
+        return frameId.ValueKind switch
+        {
+            JsonValueKind.Number => frameId.TryGetInt64(out var n) && n == id,
+            JsonValueKind.String => long.TryParse(frameId.GetString(), out var n) && n == id,
+            _ => false,
+        };
     }
 
     private async Task<JsonElement> ReceiveRawAsync(CancellationToken cancellationToken)
     {
+        if (ReceiveOverride is not null)
+            return await ReceiveOverride(cancellationToken).ConfigureAwait(false);
+
         // Daemon frames are small (human-cadence, KBs); a single buffer
         // suffices. If a frame ever exceeds it, drain the remainder.
         var buffer = new byte[8192];
@@ -686,8 +906,8 @@ public sealed class DaemonClient : IDisposable
 
     public void Dispose()
     {
+        _shutdownCts.Cancel();
         _sendLock.Dispose();
-        _receiveLock.Dispose();
         _deferredFrames.Clear();
         if (_socket.IsValueCreated)
             Socket.Dispose();

@@ -131,7 +131,11 @@ export function createChatService(db: Database) {
         }
 
         if (payload.messages.length > 0) {
-          const messageIds = payload.messages.map(m => m.id)
+          // A retried sync can repeat an id. ON CONFLICT DO UPDATE rejects a row
+          // targeted twice in one statement ("cannot affect row a second time"),
+          // which would roll back the chat, its members and every message.
+          const messages = [...new Map(payload.messages.map(m => [m.id, m] as const)).values()]
+          const messageIds = messages.map(m => m.id)
           const existingMessages = await tx
             .select({ id: schema.messages.id, chatId: schema.messages.chatId })
             .from(schema.messages)
@@ -142,7 +146,7 @@ export function createChatService(db: Database) {
             throw createConflictError('Message already belongs to another chat')
 
           await tx.insert(schema.messages)
-            .values(payload.messages.map(message => ({
+            .values(messages.map(message => ({
               id: message.id,
               chatId,
               senderId: resolveSenderId(message.role, userId, characterId),

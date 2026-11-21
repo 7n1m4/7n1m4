@@ -30,6 +30,7 @@ public partial class Main : Node2D
     private DaemonClient? _daemon;
     private CancellationTokenSource? _pumpCts;
     private CancellationTokenSource? _heartbeatCts;
+    private CancellationTokenSource? _reconnectCts;
     private Label? _statusLabel;
     private Label? _expressionLabel;
     private EventHandler<DaemonConnectionState>? _stateHandler;
@@ -45,56 +46,123 @@ public partial class Main : Node2D
         if (_statusLabel is not null)
             _statusLabel.Text = "Disconnected";
 
+        // Construct the view renderer up front. This is purely local (the
+        // factory only records the config on the generic renderer), so it
+        // cannot trigger card/model generation before the daemon connects.
+        // Without this, _renderer stays null and lip-sync/emotion events and
+        // the per-frame Process tick are all silent no-ops.
+        LoadCard(new CardRenderConfig(
+            PetRenderBackend.Live2d, "res://cards/default.model3.json"));
+
         GD.Print($"[AnimaPet] renderer spike ready; daemon endpoint: {DaemonClient.DefaultEndpoint}");
 
         // Start the daemon connection. The auth token is read from the
         // daemon-owned server-channel/config.json (same path the daemon
         // uses); pass an explicit token to DaemonClient if that file is
         // unavailable (e.g. a non-Linux host before the daemon has run).
+        _reconnectCts = new CancellationTokenSource();
         _ = ConnectToDaemonAsync();
     }
 
+    private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Connect, subscribe and stay connected. A daemon restart closes the WS;
+    /// the pump/heartbeat flip state to Disconnected, which releases the wait
+    /// below and makes us tear down and build a fresh client (a fresh socket,
+    /// since a ClientWebSocket cannot be reopened) and re-subscribe. Keeps the
+    /// window alive while the daemon is down.
+    /// </summary>
     private async Task ConnectToDaemonAsync()
     {
-        try
+        var loopCts = _reconnectCts!;
+        while (!loopCts.IsCancellationRequested)
         {
-            _daemon = new DaemonClient();
-            _stateHandler = (_, state) => UpdateStatus(state.ToString());
-            _eventHandler = OnDaemonEvent;
-            _daemon.StateChanged += _stateHandler;
-            _daemon.EventReceived += _eventHandler;
-            await _daemon.ConnectAsync().ConfigureAwait(true);
-
-            // Pet topics plus chat deltas so the pet can react to streamed text.
-            var topics = new[]
+            var disconnected = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using var stopRegistration = loopCts.Token.Register(() => disconnected.TrySetResult());
+            DaemonClient? daemon = null;
+            CancellationTokenSource? pumpCts = null;
+            CancellationTokenSource? heartbeatCts = null;
+            try
             {
-                EventTopics.LipSyncRms,
-                EventTopics.EmotionTag,
-                EventTopics.TokenDelta,
-                EventTopics.PresenceChanged,
-                EventTopics.StatusChanged,
-            };
-            await _daemon.SubscribeAsync(topics).ConfigureAwait(true);
-            UpdateStatus(_daemon.State.ToString());
-            GD.Print($"[AnimaPet] daemon connected; subscribed to {string.Join(", ", topics)}");
+                daemon = new DaemonClient();
+                _daemon = daemon;
+                _stateHandler = (_, state) =>
+                {
+                    UpdateStatus(state.ToString());
+                    if (state is DaemonConnectionState.Disconnected or DaemonConnectionState.Failed)
+                        disconnected.TrySetResult();
+                };
+                _eventHandler = OnDaemonEvent;
+                daemon.StateChanged += _stateHandler;
+                daemon.EventReceived += _eventHandler;
+                await daemon.ConnectAsync().ConfigureAwait(true);
 
-            // Pump events. Godot object access from background threads is
-            // unsafe; UI updates are marshalled via CallDeferred below.
-            _pumpCts = new CancellationTokenSource();
-            _ = _daemon.PumpAsync(_pumpCts.Token);
+                // Pet topics plus chat deltas so the pet can react to streamed text.
+                var topics = new[]
+                {
+                    EventTopics.LipSyncRms,
+                    EventTopics.EmotionTag,
+                    EventTopics.TokenDelta,
+                    EventTopics.PresenceChanged,
+                    EventTopics.StatusChanged,
+                };
+                await daemon.SubscribeAsync(topics).ConfigureAwait(true);
+                UpdateStatus(daemon.State.ToString());
+                GD.Print($"[AnimaPet] daemon connected; subscribed to {string.Join(", ", topics)}");
 
-            // One real caller per capability group so the client's RPC claim is
-            // exercised at runtime, not just asserted in the parity table.
-            _heartbeatCts = new CancellationTokenSource();
-            await ProbeCapabilitiesAsync(_heartbeatCts.Token).ConfigureAwait(true);
-            _ = _daemon.RunHeartbeatAsync(_heartbeatCts.Token);
-        }
-        catch (Exception ex)
-        {
-            // The daemon may not be running yet; log and keep the window alive
-            // so the user sees the pet even before the core is up.
-            GD.PrintErr($"[AnimaPet] daemon connection failed: {ex.Message}");
-            UpdateStatus($"Failed: {ex.Message}");
+                // Pump events. Godot object access from background threads is
+                // unsafe; UI updates are marshalled via CallDeferred below.
+                pumpCts = new CancellationTokenSource();
+                _pumpCts = pumpCts;
+                _ = daemon.PumpAsync(pumpCts.Token);
+
+                // One real caller per capability group so the client's RPC claim is
+                // exercised at runtime, not just asserted in the parity table.
+                heartbeatCts = new CancellationTokenSource();
+                _heartbeatCts = heartbeatCts;
+                await ProbeCapabilitiesAsync(heartbeatCts.Token).ConfigureAwait(true);
+                _ = daemon.RunHeartbeatAsync(heartbeatCts.Token);
+
+                // Hold this connection until the daemon drops or we shut down.
+                await disconnected.Task.ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutdown; the loop condition below ends the retry cycle.
+            }
+            catch (Exception ex)
+            {
+                // The daemon may not be running yet; log and keep the window
+                // alive so the user sees the pet even before the core is up.
+                GD.PrintErr($"[AnimaPet] daemon connection failed: {ex.Message}");
+                UpdateStatus($"Failed: {ex.Message}");
+            }
+            finally
+            {
+                pumpCts?.Cancel();
+                heartbeatCts?.Cancel();
+                if (daemon is not null)
+                {
+                    daemon.StateChanged -= _stateHandler;
+                    daemon.EventReceived -= _eventHandler;
+                    daemon.Dispose();
+                }
+                _daemon = null;
+            }
+
+            if (loopCts.IsCancellationRequested)
+                break;
+            GD.Print($"[AnimaPet] daemon connection lost; retrying in {ReconnectDelay.TotalSeconds}s");
+            try
+            {
+                await Task.Delay(ReconnectDelay, loopCts.Token).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 
@@ -155,7 +223,7 @@ public partial class Main : Node2D
             ("chat.send", (d, ct) => d.ChatSendAsync("debug", "[AnimaPet] capability probe", ct)),
             ("chat.cancel", (d, ct) => d.ChatCancelAsync("debug", ct)),
             ("providers.list", (d, ct) => d.ProvidersListAsync(ct)),
-            ("settings.get", (d, ct) => d.SettingsGetAsync("core", ct)),
+            ("settings.get", (d, ct) => d.SettingsGetAsync("general", ct)),
             ("vault.status", (d, ct) => d.VaultStatusAsync(ct)),
             ("stmm.list", (d, ct) => d.StmmListAsync(50, ct)),
             ("journal.search", (d, ct) => d.JournalSearchAsync("AnimaPet", 50, ct)),
@@ -210,6 +278,7 @@ public partial class Main : Node2D
 
     public override void _ExitTree()
     {
+        _reconnectCts?.Cancel();
         _pumpCts?.Cancel();
         _heartbeatCts?.Cancel();
         if (_daemon is not null)

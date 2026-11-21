@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using Xunit;
@@ -9,52 +8,52 @@ namespace AnimaPet.Tests;
 
 /// <summary>
 /// Golden-fixture tests for <see cref="EventPayloadDecoder"/> (D5,
-/// <c>docs/decision-client-bindings.md</c>). Each fixture in
-/// <c>fixtures/</c> is a JSON object shaped from the Rust-canonical
-/// <c>EventPayload</c> variant in <c>crates/anima-channel/src/wire.rs</c>;
-/// the decoder must round-trip it into the matching typed record without
-/// throwing and with every field preserved.
-///
-/// These fixtures are hand-authored from the wire shapes (the Rust golden
-/// fixtures from airi-wxp.2.8 do not exist yet). When the Rust side lands
-/// its fixtures, regenerate these to match.
+/// <c>docs/decision-client-bindings.md</c>). The fixtures are the Rust-canonical
+/// frames in <c>crates/anima-channel/fixtures/golden/</c>, copied into the test
+/// output by <c>AnimaPet.Tests.csproj</c>. Each is a full
+/// <c>{"type":"event","topic":…,"data":…}</c> envelope; the decoder consumes its
+/// <c>data</c> object and must round-trip it into the matching typed record.
+/// Using the Rust fixtures (rather than hand-written ones) pins the real wire
+/// field names, including snake_case <c>status.changed</c> fields.
 /// </summary>
 public sealed class EventPayloadDecoderTests
 {
-    private static readonly JsonSerializerOptions PrettyWriter = new() { WriteIndented = true };
-
-    private static string FixtureDir()
+    private static string GoldenDir()
     {
         // AppContext.BaseDirectory points at the test bin output dir; the
-        // fixtures are copied there by the csproj <None Include> rule.
-        var dir = Path.Combine(AppContext.BaseDirectory, "fixtures");
-        Assert.True(Directory.Exists(dir), $"fixtures directory not found: {dir}");
+        // golden frames are copied there by the csproj <None Include> rule.
+        var dir = Path.Combine(AppContext.BaseDirectory, "golden");
+        Assert.True(Directory.Exists(dir), $"golden fixtures directory not found: {dir}");
         return dir;
     }
 
-    private static JsonElement LoadFixture(string name)
+    private static JsonElement LoadGoldenFrame(string name)
     {
-        var path = Path.Combine(FixtureDir(), name + ".json");
-        Assert.True(File.Exists(path), $"fixture not found: {path}");
+        var path = Path.Combine(GoldenDir(), name + ".json");
+        Assert.True(File.Exists(path), $"golden fixture not found: {path}");
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         return doc.RootElement.Clone();
     }
 
-    private static object? DecodeFixture(string name, string topic)
+    private static JsonElement GoldenData(string name)
     {
-        var data = LoadFixture(name);
-        Assert.Equal(JsonValueKind.Object, data.ValueKind);
-        return EventPayloadDecoder.Decode(topic, data);
+        var frame = LoadGoldenFrame(name);
+        Assert.Equal(JsonValueKind.Object, frame.ValueKind);
+        Assert.Equal("event", frame.GetProperty("type").GetString());
+        return frame.GetProperty("data").Clone();
     }
 
+    private static object? DecodeGolden(string name, string topic) =>
+        EventPayloadDecoder.Decode(topic, GoldenData(name));
+
     [Theory]
-    [InlineData("lip_sync_rms.silence", EventTopics.LipSyncRms)]
-    [InlineData("lip_sync_rms.basic", EventTopics.LipSyncRms)]
-    [InlineData("lip_sync_rms.peak", EventTopics.LipSyncRms)]
+    [InlineData("event.lip_sync_rms.silence", EventTopics.LipSyncRms)]
+    [InlineData("event.lip_sync_rms.basic", EventTopics.LipSyncRms)]
+    [InlineData("event.lip_sync_rms.peak", EventTopics.LipSyncRms)]
     public void LipSyncRms_RoundTrips(string fixture, string topic)
     {
-        var decoded = Assert.IsType<LipSyncRmsData>(DecodeFixture(fixture, topic));
-        var src = LoadFixture(fixture);
+        var decoded = Assert.IsType<LipSyncRmsData>(DecodeGolden(fixture, topic));
+        var src = GoldenData(fixture);
 
         Assert.Equal(src.GetProperty("actor_id").GetString(), decoded.ActorId);
         Assert.Equal(src.GetProperty("level").GetSingle(), decoded.Level);
@@ -66,8 +65,7 @@ public sealed class EventPayloadDecoderTests
     public void EmotionTag_Emotion_WithDuration_RoundTrips()
     {
         var decoded = Assert.IsType<EmotionTagData>(
-            DecodeFixture("emotion_tag.emotion", EventTopics.EmotionTag));
-        var src = LoadFixture("emotion_tag.emotion");
+            DecodeGolden("event.emotion_tag.emotion", EventTopics.EmotionTag));
 
         Assert.Equal("character-7", decoded.ActorId);
         Assert.Equal("happy", decoded.Tag);
@@ -82,8 +80,7 @@ public sealed class EventPayloadDecoderTests
     public void EmotionTag_Motion_WithoutDuration_RoundTrips()
     {
         var decoded = Assert.IsType<EmotionTagData>(
-            DecodeFixture("emotion_tag.motion_no_duration", EventTopics.EmotionTag));
-        var src = LoadFixture("emotion_tag.motion_no_duration");
+            DecodeGolden("event.emotion_tag.motion_no_duration", EventTopics.EmotionTag));
 
         Assert.Equal("character-7", decoded.ActorId);
         Assert.Equal("wave", decoded.Tag);
@@ -97,7 +94,7 @@ public sealed class EventPayloadDecoderTests
     public void EmotionTag_Vfx_RoundTrips()
     {
         var decoded = Assert.IsType<EmotionTagData>(
-            DecodeFixture("emotion_tag.vfx", EventTopics.EmotionTag));
+            DecodeGolden("event.emotion_tag.vfx", EventTopics.EmotionTag));
         Assert.Equal(CueKind.Vfx, decoded.Kind);
         Assert.Equal("sparkle", decoded.Tag);
         Assert.Equal(1.0f, decoded.Intensity, precision: 4);
@@ -105,13 +102,13 @@ public sealed class EventPayloadDecoderTests
     }
 
     [Theory]
-    [InlineData("presence_changed.online", "online")]
-    [InlineData("presence_changed.offline", "offline")]
+    [InlineData("event.presence_changed.online", "online")]
+    [InlineData("event.presence_changed.offline", "offline")]
     public void PresenceChanged_RoundTrips(string fixture, string expectedState)
     {
         var decoded = Assert.IsType<PresenceChangedData>(
-            DecodeFixture(fixture, EventTopics.PresenceChanged));
-        var src = LoadFixture(fixture);
+            DecodeGolden(fixture, EventTopics.PresenceChanged));
+        var src = GoldenData(fixture);
 
         Assert.Equal("user-42", decoded.Subject);
         Assert.Equal(expectedState, decoded.State);
@@ -122,9 +119,11 @@ public sealed class EventPayloadDecoderTests
     [Fact]
     public void StatusChanged_Healthy_RoundTrips()
     {
+        // The Rust golden frame uses snake_case field names. Reading camelCase
+        // here used to decode a healthy daemon to false/false/"".
         var decoded = Assert.IsType<StatusChangedData>(
-            DecodeFixture("status_changed.healthy", EventTopics.StatusChanged));
-        var src = LoadFixture("status_changed.healthy");
+            DecodeGolden("event.status_changed.healthy", EventTopics.StatusChanged));
+        var src = GoldenData("event.status_changed.healthy");
 
         Assert.True(decoded.CoreAvailable);
         Assert.True(decoded.StoreAvailable);
@@ -137,20 +136,20 @@ public sealed class EventPayloadDecoderTests
     public void StatusChanged_Unhealthy_RoundTrips()
     {
         var decoded = Assert.IsType<StatusChangedData>(
-            DecodeFixture("status_changed.unhealthy", EventTopics.StatusChanged));
+            DecodeGolden("event.status_changed.unhealthy", EventTopics.StatusChanged));
         Assert.False(decoded.CoreAvailable);
         Assert.False(decoded.StoreAvailable);
         Assert.Equal("unavailable", decoded.StoreHealth);
     }
 
     [Theory]
-    [InlineData("token_delta.partial")]
-    [InlineData("token_delta.final")]
+    [InlineData("event.token_delta.partial")]
+    [InlineData("event.token_delta.final")]
     public void TokenDelta_RoundTrips(string fixture)
     {
         var decoded = Assert.IsType<TokenDeltaData>(
-            DecodeFixture(fixture, EventTopics.TokenDelta));
-        var src = LoadFixture(fixture);
+            DecodeGolden(fixture, EventTopics.TokenDelta));
+        var src = GoldenData(fixture);
 
         Assert.Equal(src.GetProperty("session_id").GetString(), decoded.SessionId);
         Assert.Equal(src.GetProperty("message_id").GetString(), decoded.MessageId);
@@ -213,13 +212,16 @@ public sealed class EventPayloadDecoderTests
     }
 
     [Fact]
-    public void EveryFixture_IsValidJson()
+    public void EveryGoldenFrame_IsValidEnvelope()
     {
-        foreach (var path in Directory.EnumerateFiles(FixtureDir(), "*.json"))
+        foreach (var path in Directory.EnumerateFiles(GoldenDir(), "event.*.json"))
         {
-            var json = File.ReadAllText(path);
-            using var doc = JsonDocument.Parse(json);
-            Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var frame = doc.RootElement;
+            Assert.Equal(JsonValueKind.Object, frame.ValueKind);
+            Assert.Equal("event", frame.GetProperty("type").GetString());
+            Assert.False(string.IsNullOrEmpty(frame.GetProperty("topic").GetString()));
+            Assert.Equal(JsonValueKind.Object, frame.GetProperty("data").ValueKind);
         }
     }
 }

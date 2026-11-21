@@ -2,7 +2,8 @@
 //! Append-only audit JSONL at `<data_dir>/airi-slint/audit/awareness-audit.jsonl`.
 //!
 //! - every arm/disarm/observed event is one line;
-//! - `detail` is redacted (see [`crate::redact`]) before it is written;
+//! - `event` and `detail` are redacted (see [`crate::redact`]) before they are
+//!   written;
 //! - on startup the file is pruned to a 7-day retention window;
 //! - lines that cannot be aged (malformed JSON, no numeric `ts_ms`, or a
 //!   timestamp in the future) survive prune untouched — never silently lost;
@@ -96,7 +97,7 @@ impl AuditLog {
         let line = serde_json::json!({
             "ts_ms": now_ms(),
             "source": source,
-            "event": event,
+            "event": redact(event),
             "detail": redact(detail),
         });
         // Written 0600: the log carries credential-adjacent context.
@@ -266,6 +267,42 @@ mod tests {
             "secret leaked into audit log"
         );
         assert!(contents.contains("resumed with ***"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_redacts_event_and_detail() {
+        let dir = std::env::temp_dir().join(format!(
+            "airi-daemon-audit-event-test-{}",
+            std::process::id()
+        ));
+        let path = dir.join("awareness-audit.jsonl");
+        let log = AuditLog::open(path.clone());
+        // Both free-form fields carry a sk- key and an apiKey value. Redaction
+        // must apply to each field, not just `detail` (regression for F4).
+        let secret_event = "media: sk-ant-abc123 apiKey=supersecretvalue123";
+        log.append("media", secret_event, secret_event);
+
+        let contents = fs::read_to_string(&path).expect("audit file written");
+        assert!(
+            !contents.contains("sk-ant-abc123"),
+            "sk key leaked into audit log: {contents}"
+        );
+        assert!(
+            !contents.contains("supersecretvalue123"),
+            "apiKey value leaked into audit log: {contents}"
+        );
+        let line: serde_json::Value =
+            serde_json::from_str(contents.trim()).expect("valid jsonl line");
+        let event = line.get("event").and_then(|v| v.as_str()).unwrap();
+        let detail = line.get("detail").and_then(|v| v.as_str()).unwrap();
+        for (field, value) in [("event", event), ("detail", detail)] {
+            assert!(!value.contains("sk-ant-abc123"), "{field} leaked sk key");
+            assert!(
+                !value.contains("supersecretvalue123"),
+                "{field} leaked apiKey value"
+            );
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 

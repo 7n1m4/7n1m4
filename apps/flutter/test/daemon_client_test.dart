@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/connection/connection_settings.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 
+import 'support/fakes.dart';
+
 Future<void> _pump() => Future<void>.delayed(Duration.zero);
 
 final Map<String, dynamic> _healthyCore = <String, dynamic>{
@@ -59,6 +61,8 @@ class FakeTransport implements DaemonTransport {
   }
 
   void receive(String frame) => _messages.add(frame);
+
+  void fail(Object error) => _errors.add(error);
 }
 
 void main() {
@@ -164,7 +168,7 @@ void main() {
     );
   });
 
-  test('event frames reach the hook with a typed topic; client sends no subscription', () async {
+  test('event frames reach the hook; client re-subscribes to token.delta after auth', () async {
     final fake = FakeTransport();
     final client = DaemonClient(
       transportFactory: () => fake,
@@ -174,7 +178,8 @@ void main() {
     addTearDown(client.dispose);
 
     GatewayEventFrame? seen;
-    client.onEvent = (event) => seen = event;
+    final unsubscribe = client.onEvent((event) => seen = event);
+    addTearDown(unsubscribe);
 
     final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
     await _pump();
@@ -196,7 +201,70 @@ void main() {
     await _pump();
 
     expect(seen?.topic, EventTopic.statusChanged);
-    expect(fake.sent.any((frame) => frame.contains('event.subscribe')), isFalse);
+    final subscriptions = fake.sent
+        .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
+        .where((frame) => frame['action'] == 'event.subscribe')
+        .toList();
+    expect(subscriptions, hasLength(1));
+    expect(
+      subscriptions.first['payload'],
+      <String, dynamic>{'topics': <String>['token.delta']},
+    );
+  });
+
+  test('a reconnect re-subscribes on the fresh authenticated socket', () async {
+    final transports = <FakeTransport>[];
+    final client = DaemonClient(
+      transportFactory: () {
+        final transport = FakeTransport();
+        transports.add(transport);
+        return transport;
+      },
+      reconnectPolicy: const ReconnectPolicy(initialDelay: Duration(milliseconds: 10)),
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(client.dispose);
+
+    final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
+    await _pump();
+    final first = transports.single;
+    first.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(first.sent[1]) as Map<String, dynamic>;
+    first.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': probe['id'],
+    }));
+    await connecting;
+
+    // Drop the authenticated socket; subscriptions are per-socket, so the
+    // fresh peer must opt in again.
+    first.fail(const TransportClosed());
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(transports, hasLength(2), reason: 'a fresh transport was opened');
+    final fresh = transports.last;
+    fresh.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final freshProbe = jsonDecode(fresh.sent[1]) as Map<String, dynamic>;
+    fresh.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': freshProbe['id'],
+    }));
+    await _pump();
+
+    final subscriptions = transports
+        .expand((transport) => transport.sent)
+        .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
+        .where((frame) => frame['action'] == 'event.subscribe')
+        .toList();
+    expect(subscriptions, hasLength(2), reason: 'one per authenticated socket');
   });
 
   test('authenticated client pings on its heartbeat interval', () async {
@@ -390,5 +458,158 @@ void main() {
       reply(fake, request, <String, dynamic>{'ok': true});
       await pending;
     }
+  });
+
+  test('chat.history decodes bare and wrapped payloads; rpc failure throws', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final bare = client.chatHistory('s1');
+    final bareRequest = lastRequest(fake);
+    expect(bareRequest['action'], 'chat.history');
+    expect(bareRequest['payload'], <String, dynamic>{'session_id': 's1'});
+    reply(fake, bareRequest, <Object>[
+      <String, dynamic>{'role': 'user', 'content': 'hi'},
+    ]);
+    expect(await bare, hasLength(1));
+
+    final wrapped = client.chatHistory('s1');
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'messages': <Object>[<String, dynamic>{'role': 'assistant', 'content': 'yo'}],
+    });
+    expect((await wrapped).single['content'], 'yo');
+
+    final failing = client.chatHistory('s1');
+    reply(fake, lastRequest(fake), null, ok: false);
+    await expectLater(failing, throwsA(isA<DaemonClientException>()));
+  });
+
+  test('settings.get decodes the JSON string; settings.set round-trips the section', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final reading = client.settingsGet('general');
+    final getRequest = lastRequest(fake);
+    expect(getRequest['action'], 'settings.get');
+    expect(getRequest['payload'], <String, dynamic>{'section': 'general'});
+    reply(fake, getRequest, <String, dynamic>{
+      'section': 'general',
+      'settings': '{"language":"en","remoteSyncEnabled":false}',
+    });
+    expect(await reading, <String, dynamic>{
+      'language': 'en',
+      'remoteSyncEnabled': false,
+    });
+
+    final writing = client.settingsSet('general', <String, dynamic>{'language': 'ja'});
+    final setRequest = lastRequest(fake);
+    expect(setRequest['action'], 'settings.set');
+    expect(setRequest['payload']['section'], 'general');
+    reply(fake, setRequest, <String, dynamic>{'ok': true});
+    expect(await writing, isTrue);
+  });
+
+  // --- Event subscribers and pre-auth transport recovery -------------------
+
+  test('event listeners are independent and unsubscribe cleanly', () async {
+    final fake = ScriptedTransport();
+    final client = DaemonClient(
+      transportFactory: () => fake,
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(client.dispose);
+
+    final first = <GatewayEventFrame>[];
+    final second = <GatewayEventFrame>[];
+    final unsubscribeFirst = client.onEvent(first.add);
+    client.onEvent(second.add);
+
+    final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
+    await _pump();
+    fake.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(fake.sent[1]) as Map<String, dynamic>;
+    fake.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': probe['id'],
+    }));
+    await connecting;
+
+    fake.receive('{"type":"event","topic":"status.changed","data":{"store_health":"ok"}}');
+    await _pump();
+    expect(first, hasLength(1));
+    expect(second, hasLength(1));
+
+    unsubscribeFirst();
+    fake.receive('{"type":"event","topic":"status.changed","data":{"store_health":"ok"}}');
+    await _pump();
+    expect(first, hasLength(1), reason: 'unsubscribed listener stays quiet');
+    expect(second, hasLength(2), reason: 'other listener keeps receiving');
+  });
+
+  test('a transport failure before auth retries on a fresh socket', () async {
+    final transports = <ScriptedTransport>[];
+    final client = DaemonClient(
+      transportFactory: () {
+        final transport = ScriptedTransport(
+          connectError: transports.isEmpty ? const TransportClosed() : null,
+        );
+        transports.add(transport);
+        return transport;
+      },
+      reconnectPolicy: const ReconnectPolicy(initialDelay: Duration(milliseconds: 10)),
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(client.dispose);
+
+    await client.connect(const ConnectionSettings(authToken: 'tok'));
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(transports, hasLength(2), reason: 'pre-auth transport errors retry');
+    final fresh = transports.last;
+    fresh.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(fresh.sent[1]) as Map<String, dynamic>;
+    fresh.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': probe['id'],
+    }));
+    await _pump();
+    expect(client.snapshot.state, DaemonConnectionState.connected);
+  });
+
+  test('an auth rejection before auth is terminal and not retried', () async {
+    var opened = 0;
+    final fake = ScriptedTransport();
+    final client = DaemonClient(
+      transportFactory: () {
+        opened++;
+        return fake;
+      },
+      reconnectPolicy: const ReconnectPolicy(initialDelay: Duration(milliseconds: 10)),
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(client.dispose);
+
+    final connecting = client.connect(const ConnectionSettings(authToken: 'bad'));
+    await _pump();
+    fake.receive(
+      '{"type":"error","error":{"code":"invalid_token","message":"invalid token"}}',
+    );
+    await connecting;
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    expect(opened, 1, reason: 'a bad token is not retried');
+    expect(client.snapshot.state, DaemonConnectionState.failed);
+    expect(client.snapshot.error?.code, 'invalid_token');
   });
 }

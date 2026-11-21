@@ -1,7 +1,10 @@
 # Design: Daemon core RPC boundary
 
-**Status:** accepted · **Owner:** project lead
+**Status:** accepted (historical; client/fallback path superseded) · **Owner:** project lead
 **Scope:** Slice B boundary only. No implementation is implied by this document.
+
+> [!WARNING]
+> **The "Slint fallback" promised below no longer exists.** `crates/anima-slint` was removed; the desktop app is now Electrobun at `apps/stage-tamagotchi`. Its fallback is the **in-app path** used when the daemon does not answer on the session bus (see [`design-daemon-gateway.md`](./design-daemon-gateway.md)), not an embedded Slint store. Read each "Slint" / "slint-side ownership" reference below as that historical in-app fallback — the daemon is now the single owner of core state and registers 18 `renderer.*` RPC handlers. Do not implement or restore a Slint-mode writer; this document is retained for the ownership invariant, not as a live fallback design.
 
 ## Context
 

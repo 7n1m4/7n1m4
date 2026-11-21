@@ -63,7 +63,7 @@ pub const MAX_EMBEDDINGS_SCANNED: usize = 2000;
 /// A retrieved memory row, with its hybrid score.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RetrievedMemory {
-    /// Source row id (`journal_entries.id`, or `'summary:' || summaries.day`).
+    /// Source row id (`journal_entries.id`, or `'summary:' || summaries.id`).
     pub source_id: String,
     /// `'journal'` | `'summary'`.
     pub kind: String,
@@ -76,7 +76,7 @@ pub struct RetrievedMemory {
 /// A memory entry to index, as provided by the caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexEntry {
-    /// Source row id (`'summary:' || day` for summaries).
+    /// Source row id (`'summary:' || summaries.id` for summaries).
     pub source_id: String,
     /// `'journal'` | `'summary'`.
     pub kind: String,
@@ -270,10 +270,11 @@ impl MemoryIndexer {
         .map(|_| ())
     }
 
-    /// Index a daily summary; the source id is `'summary:' || day`.
-    pub async fn index_summary_day(&self, day: &str, content: &str) -> Result<()> {
+    /// Index a daily summary by its `summaries.id`; the source id is
+    /// `'summary:' || id`, so multiple summaries on one day stay distinct.
+    pub async fn index_summary(&self, id: &str, content: &str) -> Result<()> {
         self.index_entries(&[IndexEntry {
-            source_id: format!("summary:{day}"),
+            source_id: format!("summary:{id}"),
             kind: "summary".to_string(),
             content: content.to_string(),
         }])
@@ -671,7 +672,7 @@ mod tests {
             .await
             .unwrap();
         indexer
-            .index_summary_day("2026-11-09", "The user talked about their cat  Miso again")
+            .index_summary("sum-1", "The user talked about their cat  Miso again")
             .await
             .unwrap();
 
@@ -697,7 +698,7 @@ mod tests {
             .await
             .unwrap();
         indexer
-            .index_summary_day("2026-11-09", "Summary mentions the user's cat Miso")
+            .index_summary("sum-1", "Summary mentions the user's cat Miso")
             .await
             .unwrap();
 
@@ -709,7 +710,30 @@ mod tests {
         assert!(only_summaries.iter().all(|m| m.kind == "summary"));
         assert!(only_summaries
             .iter()
-            .any(|m| m.source_id == "summary:2026-11-09"));
+            .any(|m| m.source_id == "summary:sum-1"));
+    }
+
+    #[tokio::test]
+    async fn index_summary_keys_by_id_so_same_day_summaries_stay_distinct() {
+        let (_dir, db) = seeded_db();
+        let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder);
+        let indexer = MemoryIndexer::new(db.clone(), embedder);
+        indexer
+            .index_summary("sum-a", "first summary for the day")
+            .await
+            .unwrap();
+        indexer
+            .index_summary("sum-b", "second summary for the day")
+            .await
+            .unwrap();
+
+        let rows = MemoryEmbeddingRepo::new(db)
+            .list_latest(10, Some("summary"))
+            .unwrap();
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids.len(), 2, "summaries must not overwrite each other: {ids:?}");
+        assert!(ids.contains(&"summary:sum-a"), "{ids:?}");
+        assert!(ids.contains(&"summary:sum-b"), "{ids:?}");
     }
 
     #[test]

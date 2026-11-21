@@ -48,8 +48,6 @@ export default defineConfig({
     'apps/stage-tamagotchi/out/**',
     'apps/stage-tamagotchi/src/bindings/**',
     'apps/stage-tamagotchi/src-tauri/**',
-    'apps/stage-tamagotchi-electron/out/**',
-    'apps/stage-tamagotchi-electron/src/renderer/bindings/**',
     'crates/**',
     // NOTICE: Full-repo type-aware linting (projectService / defaultProject tsconfig
     // resolution) OOMs on these two trees — both 8GB and 16GB heaps time out. In

@@ -49,7 +49,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 | **Eventa IPC contract** | `apps/stage-tamagotchi/src/shared/eventa.ts` | All typed IPC/RPC event definitions between main and renderer. |
 | **Window managers** | `apps/stage-tamagotchi/src/main/windows/` | One dir per window. Primary: `main/` (control strip), `stage/`, `chat/`, `caption/`, `widgets/`, `settings/`. Auxiliary: `about/`, `beat-sync/`, `customizer/`, `dashboard/`, `devtools/`, `inlay/`, `notice/`, `onboarding/`, plus `shared/` helpers. |
 | **Renderer bootstrap** | `apps/stage-tamagotchi/src/renderer/` | `App.vue`, `router.ts`, layouts at `layouts/settings.vue` |
-| **Renderer build config** | `apps/stage-tamagotchi/electron.vite.config.ts` | Vite config + route definitions for the Electron renderer |
+| **Renderer build config** | `apps/stage-tamagotchi/electrobun.config.ts` | Electrobun build config for the desktop renderer (the desktop app is Electrobun, not Electron) |
 | **Web app entry** | `apps/stage-web/src/App.vue` | `pages/`, `layouts/`; router config via `vite.config.ts` |
 | **Main process services** | `apps/stage-tamagotchi/src/main/services/airi/` | discord, widgets (comfyui, artistry-bridge), mcp-servers |
 
@@ -60,11 +60,11 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 | Concept | Path | Notes |
 | :--- | :--- | :--- |
 | `CoreService` (daemon-owned core) | `crates/anima-daemon/src/core.rs` | Clone, Arc<Mutex<CoreInner>>; ONLY place daemon touches core state. `open(profile)` fails closed; `snapshot()`; `status_reply()`. |
-| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core)` registers only `core.status`. |
+| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core, &self.publisher)` registers 18 `renderer.*` RPC handlers (`core.status`, chat, settings, providers, vault, cards, sessions, STMM, journal, retrieval). |
 | `CoreStatusReply` (wire DTO) | `crates/anima-channel/src/wire.rs` | additive, read-only, no secrets. |
 | `core.status` (RPC action) | `crates/anima-channel/src/dispatch.rs` | resolves via renderer-handler registry by exact action name. |
 | `GatewayClient::core_status` | `crates/anima-channel/src/client.rs` | mirrors `runtime_status`. |
-| `DaemonMode` / `select_mode` | `crates/anima-slint/src/daemon_mode.rs` | pure mode selection; default Disabled; NOT wired into GUI startup (pending). |
+| Daemon-vs-in-app gateway selection | `apps/stage-tamagotchi/src/main/services/airi/daemon-gateway.ts` | `getDaemonGatewayStatus` / `applyDaemonGatewayConfig` probe the session bus; the app falls back to its in-app path when the daemon does not answer. The old Slint `daemon_mode.rs` selector was removed. |
 ## 2. Core UI & Surfaces
 
 | Concept | Path |
@@ -606,7 +606,7 @@ Cross-window communication relies on named `BroadcastChannel` instances. This is
 | `docs/design-web-stage-pages-deployment.md` | Web Stage GitHub Pages deployment architecture & surface reference |
 | `apps/stage-tamagotchi/src/main/services/airi/` | Main process services (discord, widgets, MCP) |
 | `scripts/` | Utility scripts (`yaml-manager.js`, `pr_summary.sh`) |
-| `crates/` | Rust runtime core: `anima-daemon` (hosts the WS/wss gateway via `anima-channel`), `anima-slint` (native shell), `anima-core` |
+| `crates/` | Rust runtime core: `anima-daemon` (owns state; hosts the WS/wss gateway via `anima-channel`), `anima-core`, and domain crates (stt / llm / speech / render / store / sync / ...). The Slint native shell was removed. |
 | `docs/` | Proposal docs, reference sheets, how-to guides |
 | `docs/content/en/docs/` | In-app manual content (vitepress) |
 | `scripts/motion-export/` | ONNX texture-export lineage (`compile_onnx.py`, `inspect_sampler.py`, `test_onnx_parity.py`) |

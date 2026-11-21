@@ -33,6 +33,9 @@ export function createGoogleDriveService(db: Database, env: Env) {
 
     // Attempt to refresh if we have a refresh token
     if (refreshToken) {
+      if (!env.AUTH_GOOGLE_CLIENT_ID || !env.AUTH_GOOGLE_CLIENT_SECRET) {
+        throw new Error('Google OAuth is not configured on this server.')
+      }
       logger.log(`[GDrive] Access token expired, attempting to refresh for user ${userId}...`)
       try {
         const res = await fetch('https://oauth2.googleapis.com/token', {

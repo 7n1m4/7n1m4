@@ -227,7 +227,8 @@ pub struct ProviderInfo {
     /// Whether this provider is active.
     pub enabled: bool,
     /// Unix milliseconds of last update.
-    pub updated_at: i32,
+    #[specta(type = specta_typescript::Number)]
+    pub updated_at: i64,
 }
 
 /// `data` payload of a `settings.get` reply.
@@ -1405,6 +1406,25 @@ mod tests {
                 "forbidden field present in provider: {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn provider_info_updated_at_accepts_epoch_milliseconds() {
+        // Epoch milliseconds (~1.7e12) do not fit in an i32; the wire DTO must
+        // keep full precision. This literal would not compile with i32.
+        let ms: i64 = 1_700_000_000_000;
+        let provider = ProviderInfo {
+            id: "openai".to_string(),
+            kind: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            base_url: String::new(),
+            enabled: true,
+            updated_at: ms,
+        };
+        let value = serde_json::to_value(&provider).unwrap();
+        assert_eq!(value["updatedAt"], serde_json::json!(ms));
+        let round_trip: ProviderInfo = serde_json::from_value(value).unwrap();
+        assert_eq!(round_trip.updated_at, ms);
     }
 
     #[test]

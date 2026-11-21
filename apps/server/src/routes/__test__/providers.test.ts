@@ -169,4 +169,43 @@ describe('providerRoutes', () => {
     const deleted = await providerService.findUserConfigById(providerId)
     expect(deleted).toBeUndefined()
   })
+
+  it('patch /:id must not let a client overwrite stored credentials via config', async () => {
+    await providerService.createUserConfig({
+      id: 'prov-credentials',
+      ownerId: testUser.id,
+      definitionId: 'openai',
+      name: 'Credential Provider',
+      config: {
+        apiKey: 'sk-original',
+        authHeader: 'Bearer original',
+        maxTokens: '100',
+        tokenizer: 'cl100k',
+      },
+    })
+
+    const res = await app.fetch(new Request('http://localhost/prov-credentials', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: 'Rotated Provider',
+        config: {
+          apiKey: 'sk-attacker',
+          authHeader: 'Bearer attacker',
+          maxTokens: '200',
+          tokenizer: 'cl100k',
+        },
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    }), { user: testUser } as any)
+
+    expect(res.status).toBe(200)
+    const stored = await providerService.findUserConfigById('prov-credentials')
+    expect(stored?.name).toBe('Rotated Provider')
+    const config = stored?.config as Record<string, string>
+    // Secrets are owned by the server; ordinary settings remain writable.
+    expect(config.apiKey).toBe('sk-original')
+    expect(config.authHeader).toBe('Bearer original')
+    expect(config.maxTokens).toBe('200')
+    expect(config.tokenizer).toBe('cl100k')
+  })
 })

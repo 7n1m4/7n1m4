@@ -14,7 +14,7 @@ namespace AnimaPet.Net;
 ///   <item><c>lip_sync.rms</c>  → <c>{actor_id, level, seq, ts_ms}</c></item>
 ///   <item><c>emotion.tag</c>   → <c>{actor_id, tag, kind, intensity, duration_ms?, seq, ts_ms}</c></item>
 ///   <item><c>presence.changed</c> → <c>{subject, state, seq, ts_ms}</c></item>
-///   <item><c>status.changed</c> → <c>{coreAvailable, storeAvailable, storeHealth, seq, ts_ms}</c></item>
+///   <item><c>status.changed</c> → <c>{core_available, store_available, store_health, seq, ts_ms}</c></item>
 ///   <item><c>token.delta</c>   → <c>{session_id, message_id, delta, index, final, seq, ts_ms}</c></item>
 /// </list>
 ///
@@ -82,9 +82,9 @@ internal static class EventPayloadDecoder
         TsMs: UInt(e, "ts_ms"));
 
     private static StatusChangedData DecodeStatus(JsonElement e) => new(
-        CoreAvailable: Bool(e, "coreAvailable"),
-        StoreAvailable: Bool(e, "storeAvailable"),
-        StoreHealth: Str(e, "storeHealth"),
+        CoreAvailable: Bool(e, "core_available"),
+        StoreAvailable: Bool(e, "store_available"),
+        StoreHealth: Str(e, "store_health"),
         Seq: UInt(e, "seq"),
         TsMs: UInt(e, "ts_ms"));
 
