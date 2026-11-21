@@ -201,3 +201,24 @@ whether a socket answered.
   escape hatch. And the pivot's two "tray/lifecycle ownership is OPEN" caveats
   (`design-flutter-godot-pivot.md:216-218` and `:418-419`) are answered here; E5 should update
   them when it lands rather than leaving a stale OPEN.
+
+
+## 6. Supervisor implementation (airi-wxp.5.2, landed)
+
+- **Crate:** `crates/anima-supervisor` (bin `anima-supervisor`), standalone — no `anima-slint`
+  dependency. Registered in the root `Cargo.toml` workspace `members`.
+- **Tray:** `tray_item::TrayItem` (ksni backend, already a workspace dep at `tray-item 0.10`).
+  Degrades gracefully when no `StatusNotifierWatcher` is present (no icon, app runs).
+- **Process table (clients only):** Flutter and Godot. Spawn/stop/restart tracked via
+  `std::process::Child` behind `Mutex<Option<Child>>`. Binaries, working dirs, and args are
+  configurable through env vars (`ANIMA_FLUTTER_BIN`, `ANIMA_FLUTTER_DIR`, `ANIMA_FLUTTER_ARGS`,
+  `ANIMA_GODOT_BIN`, `ANIMA_GODOT_DIR`, `ANIMA_GODOT_ARGS`) with sensible defaults.
+- **Daemon is never started/stopped/restarted by the supervisor.** The only daemon-related
+  action is a "Start Core (systemd)" menu item that shells out to
+  `systemctl --user start anima-daemon` — systemd remains the sole restart authority. "Quit"
+  stops tracked clients then exits the supervisor; `anima-daemon` keeps running.
+- **No socket bind, no cert minting, no token handling** anywhere in the supervisor.
+- **Status check:** tray can report daemon reachability via D-Bus `GetGatewayConfig`
+  (`org.moeru.airi.Daemon1`); `bound`/`lastError` are status reports only.
+- **Handoff:** supervisor stays dark while `apps/stage-tamagotchi` is the live fallback
+  (one tray icon per session); Electrobun tray deletion is a follow-up bead.

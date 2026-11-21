@@ -8,7 +8,6 @@ members = [
   "crates/anima-core",
   "crates/anima-i18n",
   "crates/anima-render",
-  "crates/anima-slint",
   "crates/anima-stt",
   "crates/anima-speech",
   "crates/anima-local-llm",
@@ -20,6 +19,7 @@ members = [
   "crates/anima-discord",
   "crates/anima-daemon",
   "crates/anima-a11y",
+  "crates/anima-supervisor",
 ]
 
 [workspace.dependencies]
@@ -87,10 +87,6 @@ image = { version = "0.25", features = [
   "webp"
 ] }
 png = "0.17"
-
-# Slint UI toolkit
-slint = { version = "1.18", features = [ "renderer-software" ] }
-slint-build = "1.18"
 
 # ONNX Runtime + HF tokenizers (anima-speech, anima-stt)
 ort = "2.0.0-rc.15"

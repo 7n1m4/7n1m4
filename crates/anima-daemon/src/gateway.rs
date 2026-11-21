@@ -609,6 +609,7 @@ impl Gateway {
                     // persist user turn via single writer
                     let _ = core.chat_send(&session_id, &content);
                     let cancel_flag = core.chat_cancel_flag(&session_id);
+                    cancel_flag.store(false, std::sync::atomic::Ordering::SeqCst);
                     let pub_clone = publisher.clone();
                     let sid = session_id.clone();
                     let content_clone = content.clone();

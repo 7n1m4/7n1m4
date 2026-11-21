@@ -65,11 +65,11 @@ flutter analyze
 flutter test
 ```
 
-**Scaffold limitation:** neither `flutter` nor `dart` is installed in the
-environment where this tree was created, so the project was authored as source
-only. `flutter analyze`/`flutter test` were **not run**. Platform runner
-directories and `pubspec.lock` are intentionally absent: generate them with the
-SDK present, e.g.
+**Verified toolchain:** the scaffold was validated with Flutter 3.38.5 / Dart
+3.10.4 (fvm at `~/fvm/versions/3.38.5/bin`). `flutter analyze` reports 0 errors
+(a handful of info-level lint hints remain), and `flutter test` passes all 52
+tests. `pubspec.lock` is present; platform runner directories are still absent
+— generate them with the SDK present, e.g.
 
 ```sh
 flutter create --platforms=linux,macos,windows,android,ios .

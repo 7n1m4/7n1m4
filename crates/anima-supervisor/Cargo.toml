@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "anima-supervisor"
+version = "0.1.0"
+edition = "2021"
+description = "AIRI supervisor: owns the system tray and launches/stops/restarts the Flutter and Godot clients."
+
+[dependencies]
+tray-item = { workspace = true }

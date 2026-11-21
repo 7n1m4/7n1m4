@@ -198,4 +198,61 @@ void main() {
     expect(seen?.topic, 'status.changed');
     expect(fake.sent.any((frame) => frame.contains('event.subscribe')), isFalse);
   });
+
+  test('authenticated client pings on its heartbeat interval', () async {
+    final fake = FakeTransport();
+    final client = DaemonClient(
+      transportFactory: () => fake,
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+      heartbeatInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(client.dispose);
+
+    final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
+    await _pump();
+    fake.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(fake.sent[1]) as Map<String, dynamic>;
+    fake.receive(jsonEncode(<String, dynamic>{
+      'type': 'rpc',
+      'action': 'core.status',
+      'ok': true,
+      'data': _healthyCore,
+      'id': probe['id'],
+    }));
+    await connecting;
+
+    // The daemon reaps a peer that sends nothing for DEAD_PEER_TTL (75 s), so
+    // an authenticated client must keep the link warm without user activity.
+    await Future<void>.delayed(const Duration(milliseconds: 45));
+    final pings = fake.sent.where((f) => f.contains('"ping"')).length;
+    expect(pings, greaterThanOrEqualTo(2));
+
+    await client.disconnect();
+    final afterDisconnect = fake.sent.length;
+    await Future<void>.delayed(const Duration(milliseconds: 45));
+    expect(fake.sent.length, afterDisconnect, reason: 'heartbeat stops on disconnect');
+  });
+
+  test('heartbeat does not start before authentication', () async {
+    final fake = FakeTransport();
+    final client = DaemonClient(
+      transportFactory: () => fake,
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+      heartbeatInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(client.dispose);
+
+    final connecting = client.connect(const ConnectionSettings(authToken: 'tok'));
+    await Future<void>.delayed(const Duration(milliseconds: 45));
+
+    // Only the auth frame may be on the wire while unauthenticated.
+    expect(fake.sent, hasLength(1));
+    expect(jsonDecode(fake.sent.single)['type'], 'auth');
+
+    fake.receive('{"type":"error","error":{"code":"invalid_token","message":"no"}}');
+    await connecting;
+  });
 }

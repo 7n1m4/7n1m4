@@ -412,6 +412,113 @@ impl CoreService {
         let svc_cancelled = self.chat_stop(session_id).unwrap_or(false);
         svc_cancelled || had_flag
     }
+    /// Daemon-owned short-term memory (STMM) service, sharing the store and
+    /// provider table. Single writer.
+    pub fn stmm_service(&self) -> Option<anima_core::memory::ShortTermMemoryService> {
+        let guard = self.inner.lock().ok()?;
+        let core = guard.core.as_ref()?;
+        Some(anima_core::memory::ShortTermMemoryService::with_shared_providers(
+            core.db.clone(),
+            core.providers.clone(),
+            Default::default(),
+        ))
+    }
+
+    /// Alias for [`Self::stmm_service`].
+    pub fn short_term_memory_service(&self) -> Option<anima_core::memory::ShortTermMemoryService> {
+        self.stmm_service()
+    }
+
+    /// Daemon-owned text journal service. Single writer.
+    pub fn journal_service(&self) -> Option<anima_core::memory::TextJournalService> {
+        let guard = self.inner.lock().ok()?;
+        let core = guard.core.as_ref()?;
+        Some(anima_core::memory::TextJournalService::new(core.db.clone()))
+    }
+
+    /// Alias for [`Self::journal_service`].
+    pub fn text_journal_service(&self) -> Option<anima_core::memory::TextJournalService> {
+        self.journal_service()
+    }
+
+    /// Daemon-owned retrieval service bound to the supplied embedder.
+    pub fn retrieval_service(
+        &self,
+        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
+    ) -> Option<anima_core::memory::retrieval::MemoryRetrieval> {
+        let guard = self.inner.lock().ok()?;
+        let core = guard.core.as_ref()?;
+        Some(anima_core::memory::retrieval::MemoryRetrieval::new(
+            core.db.clone(),
+            embedder,
+        ))
+    }
+
+    /// Alias for [`Self::retrieval_service`].
+    pub fn memory_retrieval(
+        &self,
+        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
+    ) -> Option<anima_core::memory::retrieval::MemoryRetrieval> {
+        self.retrieval_service(embedder)
+    }
+
+    /// Daemon-owned memory indexer bound to the supplied embedder.
+    pub fn memory_indexer(
+        &self,
+        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
+    ) -> Option<anima_core::memory::retrieval::MemoryIndexer> {
+        let guard = self.inner.lock().ok()?;
+        let core = guard.core.as_ref()?;
+        Some(anima_core::memory::retrieval::MemoryIndexer::new(
+            core.db.clone(),
+            embedder,
+        ))
+    }
+
+    /// Alias for [`Self::memory_indexer`].
+    pub fn indexer(
+        &self,
+        embedder: std::sync::Arc<dyn anima_core::memory::embedding::Embedder>,
+    ) -> Option<anima_core::memory::retrieval::MemoryIndexer> {
+        self.memory_indexer(embedder)
+    }
+
+
+    /// Daemon-owned database handle (single writer).
+    pub fn db(&self) -> Option<anima_store::Database> {
+        let guard = self.inner.lock().ok()?;
+        guard.core.as_ref().map(|c| c.db.clone())
+    }
+
+    /// Alias for [`Self::db`].
+    pub fn database(&self) -> Option<anima_store::Database> {
+        self.db()
+    }
+
+    /// Alias for [`Self::db`].
+    pub fn store(&self) -> Option<anima_store::Database> {
+        self.db()
+    }
+
+    /// Export a session and its messages as JSONL through the daemon-owned store.
+    pub fn session_export_jsonl(&self, session_id: &str) -> Result<String, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        anima_core::sessions::export_jsonl(&core.db, session_id)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Alias for [`Self::session_export_jsonl`].
+    pub fn export_session_jsonl(&self, session_id: &str) -> Result<String, String> {
+        self.session_export_jsonl(session_id)
+    }
+
+    /// Alias for [`Self::session_export_jsonl`].
+    pub fn session_export(&self, session_id: &str) -> Result<String, String> {
+        self.session_export_jsonl(session_id)
+    }
+
+
 }
 #[cfg(test)]
 mod tests {

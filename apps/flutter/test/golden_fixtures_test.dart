@@ -21,9 +21,12 @@ import 'package:anima_control/daemon_client/daemon_client.dart';
 
 /// Path to the Rust golden fixtures directory.
 final String _fixturesDir = () {
-  // Works from repo root (monorepo layout).
-  final fromCwd = Directory('crates/anima-channel/fixtures/golden');
-  if (fromCwd.existsSync()) return fromCwd.path;
+  // Works when tests are run from the repo root.
+  final fromRepoRoot = Directory('crates/anima-channel/fixtures/golden');
+  if (fromRepoRoot.existsSync()) return fromRepoRoot.path;
+  // Works when tests are run from apps/flutter (flutter test default cwd).
+  final fromApp = Directory('../../crates/anima-channel/fixtures/golden');
+  if (fromApp.existsSync()) return fromApp.path;
   // Fallback for IDE runners.
   final fromScript = Directory(
     '../crates/anima-channel/fixtures/golden',
@@ -86,7 +89,8 @@ void main() {
       final frame = ServerFrame.parse(_loadFixture('event.lip_sync_rms.basic'));
       final data = frame.event!.data;
       expect(data['actor_id'], 'character-7');
-      expect(data['level'], 0.42);
+      // Fixtures serialize f32; compare with float tolerance.
+      expect(data['level'], closeTo(0.42, 1e-6));
       expect(data['seq'], 1024);
       expect(data['ts_ms'], 1700000000123);
     });
@@ -97,7 +101,7 @@ void main() {
       expect(data['actor_id'], 'character-7');
       expect(data['tag'], 'happy');
       expect(data['kind'], 'emotion');
-      expect(data['intensity'], 0.8);
+      expect(data['intensity'], closeTo(0.8, 1e-6));
       expect(data['duration_ms'], 3000);
       expect(data['seq'], 42);
     });

@@ -21,6 +21,7 @@ export 'protocol.dart'
         ServerFrameKind,
         encodeAuthFrame,
         encodeModuleAuthFrame,
+        encodePingFrame,
         kProtocolId;
 export 'reconnect_policy.dart' show ReconnectPolicy;
 export 'rpc.dart' show CoreStatus, RpcError, RpcReply, RpcRequest;
@@ -88,6 +89,7 @@ class DaemonClient {
     this.reconnectPolicy = const ReconnectPolicy(),
     this.authTimeout = const Duration(seconds: 5),
     this.rpcTimeout = const Duration(seconds: 15),
+    this.heartbeatInterval = const Duration(seconds: 30),
   }) : _transportFactory = transportFactory ?? (() => DirectWebSocketTransport());
 
   final DaemonTransportFactory _transportFactory;
@@ -95,11 +97,17 @@ class DaemonClient {
   final Duration authTimeout;
   final Duration rpcTimeout;
 
+  /// How often an authenticated client pings the gateway. The daemon reaps a
+  /// peer with no inbound frame for `DEAD_PEER_TTL` (75 s, ~2× the SDK's 30 s
+  /// cadence), so this must stay well under that TTL.
+  final Duration heartbeatInterval;
+
   DaemonTransport? _transport;
   StreamSubscription<String>? _messageSub;
   StreamSubscription<Object>? _errorSub;
   ConnectionSettings? _settings;
   Timer? _reconnectTimer;
+  Timer? _heartbeatTimer;
   bool _wantsConnection = false;
   bool _authenticated = false;
   int _nextId = 0;
@@ -187,6 +195,7 @@ class DaemonClient {
     if (settings == null || !_wantsConnection) return;
 
     _authenticated = false;
+    _stopHeartbeat();
     _emit(state: DaemonConnectionState.connecting, clearCore: true, clearError: true, attempt: 0);
     await _teardownTransport();
 
@@ -238,6 +247,7 @@ class DaemonClient {
     _authCompleter = null;
     _authenticated = true;
     _emit(state: DaemonConnectionState.connected, clearError: true);
+    _startHeartbeat();
 
     // Best-effort health probe: a degraded core is surfaced as an error on an
     // otherwise connected snapshot, never as a dropped connection.
@@ -247,6 +257,28 @@ class DaemonClient {
     } on DaemonClientException catch (e) {
       if (_wantsConnection) _emit(error: e);
     }
+  }
+
+  /// Pings the gateway on [heartbeatInterval] while authenticated. The daemon
+  /// closes a peer that sends nothing for `DEAD_PEER_TTL` (75 s), so an idle
+  /// client would otherwise be reaped mid-session.
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(heartbeatInterval, (_) {
+      final transport = _transport;
+      if (!_authenticated || !_wantsConnection || transport == null) return;
+      try {
+        transport.send(encodePingFrame());
+      } on Object {
+        // A send failure surfaces through the transport's error/done stream,
+        // which drives the reconnect path; nothing to do here.
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
   }
 
   void _onMessage(String text) {
@@ -332,6 +364,7 @@ class DaemonClient {
 
     _failAllPending(failure);
     _authenticated = false;
+    _stopHeartbeat();
     if (!_wantsConnection) {
       _emit(state: DaemonConnectionState.disconnected, clearError: true);
       return;
@@ -411,6 +444,7 @@ class DaemonClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _authenticated = false;
+    _stopHeartbeat();
     _failAuth(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
     _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
     await _teardownTransport();
@@ -430,6 +464,7 @@ class DaemonClient {
 
   void dispose() {
     _wantsConnection = false;
+    _stopHeartbeat();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Client disposed.'));

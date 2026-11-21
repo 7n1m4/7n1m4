@@ -34,6 +34,37 @@ godot/
     fixtures/                    golden JSON fixtures (one per event topic + edge cases)
 ```
 
+## Window transparency and always-on-top
+
+`project.godot` enables a transparent, borderless, always-on-top pet window
+(`window/size/transparent`, `window/size/borderless`,
+`window/size/always_on_top`, `window/per_pixel_transparency/allowed`,
+`viewport/transparent_background`). Actual alpha behavior varies by OS and
+display server — this is the documented platform-caveat surface for E4-T2:
+
+- **Linux X11** — transparency needs a compositing WM (picom, mutter, KWin,
+  xfwm4). `always_on_top` maps to `_NET_WM_STATE_ABOVE`; some tiling WMs ignore
+  it. `gl_compatibility` + ARGB visual is the most reliable path.
+- **Linux Wayland** — alpha depends on the compositor. KWin and Mutter
+  generally work; wlroots compositors (sway/Hyprland/river) support alpha but
+  some versions render black with `gl_compatibility` (use Forward+ Vulkan as
+  fallback). `always_on_top` is not core Wayland and is best-effort per
+  compositor; wlroots users should set a WM rule. For guaranteed overlays,
+  force X11 via `--display-driver x11`.
+- **Windows** — DWM (Win8+) honors transparency; `always_on_top` maps to
+  `HWND_TOPMOST` reliably. Borderless windows still get a taskbar entry.
+- **macOS** — transparency works on all supported versions; prefer the
+  Forward+ (Metal) renderer over `gl_compatibility`. `always_on_top` maps to
+  `NSWindow.level = .floating`. Borderless windows need a drag handle in code.
+  Unsigned builds may be denied screen-recording permission, blanking the
+  window.
+- **Mobile / Web** — per-pixel transparency is Android-only and requires
+  `per_pixel_transparency/allowed`; always-on-top is meaningless in the mobile
+  sandbox. Web export is unsupported for C# in Godot 4.
+
+If the compositor cannot provide alpha, the window degrades to opaque; the
+spike has no runtime `DisplayServer` check to detect that fallback.
+
 ## How the decoder is wired into the scene
 
 1. `Main._Ready()` constructs a `DaemonClient` (reads the auth token from the

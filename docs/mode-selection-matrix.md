@@ -41,7 +41,5 @@ fallback database.
 
 ## References
 
-- `crates/anima-slint/src/daemon_mode.rs` — `select_mode`, `DaemonMode`,
-  `SelectedMode`.
 - `crates/anima-daemon/src/core.rs` — `CoreService::open`, `status_reply`.
 - `docs/design-daemon-client.md` — Slice A/B/D ownership decisions.

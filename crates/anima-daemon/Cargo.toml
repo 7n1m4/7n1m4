@@ -28,5 +28,4 @@ tokio = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-anima-slint = { path = "../anima-slint" }
 tokio = { workspace = true, features = ["macros","rt-multi-thread","time"] }

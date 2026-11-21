@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use anima_core::memory::TextJournalService;
 use anima_core::settings::CardsSettings;
 use anima_daemon::core::CoreService;
-use anima_slint::daemon_mode::{DaemonMode, SelectedMode, select_mode};
 use anima_store::Database;
 use anima_store::SessionRepo;
 use anima_store::MessageRepo;
@@ -22,26 +21,12 @@ fn daemon_mode_owns_the_store() {
     assert!(svc.available());
     assert!(store_path(daemon_profile.path()).exists());
 
-    assert_eq!(select_mode(DaemonMode::Required, || true), SelectedMode::Daemon);
-
     let client_profile = tempdir().unwrap();
     assert!(!store_path(client_profile.path()).exists());
 }
 
 #[test]
 fn fallback_mode_opens_local_store() {
-    let probe_called = std::cell::Cell::new(false);
-    assert_eq!(
-        select_mode(DaemonMode::Disabled, || {
-            probe_called.set(true);
-            true
-        }),
-        SelectedMode::Local
-    );
-    assert!(!probe_called.get());
-
-    assert_eq!(select_mode(DaemonMode::Auto, || false), SelectedMode::Local);
-
     let local_profile = tempdir().unwrap();
     let svc = CoreService::open(Some(local_profile.path().to_path_buf()));
     assert!(svc.available());
@@ -53,8 +38,6 @@ fn fallback_mode_opens_local_store() {
 
 #[test]
 fn required_unhealthy_never_opens_local() {
-    assert_eq!(select_mode(DaemonMode::Required, || false), SelectedMode::Unavailable);
-
     let profile = tempdir().unwrap();
     assert!(!store_path(profile.path()).exists());
 }
@@ -147,21 +130,18 @@ fn cards_daemon_settings_load_and_save() {
 fn mode_selection_controls_store_ownership() {
     // Daemon mode: daemon owns the store.
     let daemon_profile = tempdir().unwrap();
-    assert_eq!(select_mode(DaemonMode::Required, || true), SelectedMode::Daemon);
     let daemon_svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
     assert!(daemon_svc.available());
     assert!(store_path(daemon_profile.path()).exists());
 
     // Client-local fallback: local store.
     let local_profile = tempdir().unwrap();
-    assert_eq!(select_mode(DaemonMode::Auto, || false), SelectedMode::Local);
     let local_svc = CoreService::open(Some(local_profile.path().to_path_buf()));
     assert!(local_svc.available());
     assert!(store_path(local_profile.path()).exists());
 
     // Required-unhealthy: no local store opened.
     let profile = tempdir().unwrap();
-    assert_eq!(select_mode(DaemonMode::Required, || false), SelectedMode::Unavailable);
     assert!(!store_path(profile.path()).exists());
 }
 
@@ -204,6 +184,68 @@ fn chat_stream_replays_sessions() {
 
     let replay_b = svc.chat_stream("session-b").unwrap();
     assert_eq!(replay_b.len(), 1);
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
+}
+
+#[test]
+fn stmm_and_journal_services_daemon_owned() {
+    let daemon_profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
+    assert!(svc.available());
+
+    let stmm = svc.stmm_service().unwrap();
+    let db = svc.db().unwrap();
+    let summaries = anima_store::SummaryRepo::new(db.clone());
+    summaries
+        .insert(&anima_store::StoredSummary {
+            id: "sum-2".to_string(),
+            day: "2026-11-21".to_string(),
+            content: "more".to_string(),
+            source_session_ids: vec![],
+            token_estimate: 2,
+            created_at: 11,
+        })
+        .unwrap();
+    let ctx = stmm.build_context(&["2026-11-21".to_string()]).unwrap();
+    assert!(ctx.contains("more"));
+
+    let journal = svc.journal_service().unwrap();
+    let id = journal.append_note("daemon note").unwrap();
+    assert!(!id.is_empty());
+    assert_eq!(journal.count().unwrap(), 1);
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
+}
+
+#[test]
+fn session_export_daemon_owned() {
+    let daemon_profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
+    assert!(svc.available());
+
+    svc.chat_send("export-1", "hello").unwrap();
+    let jsonl = svc.session_export_jsonl("export-1").unwrap();
+    assert!(jsonl.contains("\"type\":\"session\""));
+    assert!(jsonl.contains("hello"));
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
+}
+
+#[test]
+fn cards_settings_daemon_owned_round_trip() {
+    let daemon_profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(daemon_profile.path().to_path_buf()));
+    assert!(svc.available());
+
+    let value = serde_json::json!({"activeCardId": "daemon-hero"});
+    let reply = svc.settings_set("cards", value).unwrap();
+    assert!(reply.ok);
+    let got = svc.settings_get("cards").unwrap();
+    assert!(got.settings.contains("daemon-hero"));
 
     let client_profile = tempdir().unwrap();
     assert!(!store_path(client_profile.path()).exists());
