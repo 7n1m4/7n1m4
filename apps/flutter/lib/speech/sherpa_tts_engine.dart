@@ -29,12 +29,26 @@ abstract class TtsEngine {
   /// Stable vendor/engine identifier, e.g. `sherpa-onnx`.
   String get id;
 
-  /// Sample rate of [synthesize] output (may be model-dependent).
+  /// Sample rate of [synthesize] output (may be model-dependent). Zero until
+  /// the engine is initialized or the first synthesis succeeds.
   int get sampleRate;
 
   /// Synthesize [text] into interleaved f32 samples in `[-1, 1]`.
   /// Implementations must not return fabricated audio.
   Future<Float32List> synthesize(String text);
+
+  /// Synthesize [text] as a one-shot [PcmSource] for the RMS tap.
+  ///
+  /// Default wraps the real samples from [synthesize]; engines that already
+  /// hold a decoded WAVE buffer may override this to stream it directly.
+  Future<PcmSource> synthesizeToSource(String text) async {
+    final samples = await synthesize(text);
+    return MemoryPcmSource(
+      sampleRate: sampleRate,
+      channels: 1,
+      samples: samples,
+    );
+  }
 
   void dispose();
 }
@@ -71,10 +85,16 @@ class SherpaTtsConfig {
 /// model paths. [synthesize] calls `OfflineTts.generate`, wrapping the real
 /// f32 buffer in a [MemoryPcmSource] for the RMS tap. No fake amplitudes.
 class SherpaTtsEngine implements TtsEngine {
-  SherpaTtsEngine({required this.config});
+  SherpaTtsEngine({required this.config, this.loader});
 
   final SherpaTtsConfig config;
 
+  /// Optional adapter injected for tests; otherwise resolved from the public
+  /// [SherpaLoaderRegistry] when [initialize] runs, so app startup order does
+  /// not matter.
+  final SherpaLoader? loader;
+
+  SherpaLoader? _activeLoader;
   Object? _tts;
   int _sampleRate = 0;
 
@@ -87,21 +107,19 @@ class SherpaTtsEngine implements TtsEngine {
   /// Load plugin/native bindings. Throws [TtsEngineUnavailable] with a clear
   /// reason when the dependency or model assets are absent.
   Future<void> initialize() async {
+    final adapter = loader ?? sherpaLoader;
+    if (adapter == null) {
+      throw const TtsEngineUnavailable(
+        'sherpa_onnx package is not installed; add it to pubspec.yaml '
+        'and provide downloaded model assets to enable Option B.',
+      );
+    }
     try {
-      // Optional dependency: importing the package through the normal URI
-      // would fail at compile time when it is not in pubspec.yaml. Use a
-      // runtime plugin lookup so the core app builds without sherpa-onnx.
-      final loader = _SherpaLoader.lookup();
-      if (loader == null) {
-        throw const TtsEngineUnavailable(
-          'sherpa_onnx package is not installed; add it to pubspec.yaml '
-          'and provide downloaded model assets to enable Option B.',
-        );
-      }
-      await loader.initBindings();
-      final tts = loader.createOfflineTts(config);
+      await adapter.initBindings();
+      final tts = adapter.createOfflineTts(config);
       _tts = tts;
-      _sampleRate = loader.sampleRate(tts);
+      _activeLoader = adapter;
+      _sampleRate = adapter.sampleRate(tts);
       if (_sampleRate <= 0) {
         throw const TtsEngineUnavailable('engine reported no sample rate');
       }
@@ -115,14 +133,11 @@ class SherpaTtsEngine implements TtsEngine {
   @override
   Future<Float32List> synthesize(String text) async {
     final tts = _tts;
-    if (tts == null) {
+    final adapter = _activeLoader;
+    if (tts == null || adapter == null) {
       throw const TtsEngineUnavailable('initialize() was not called');
     }
-    final loader = _SherpaLoader.lookup();
-    if (loader == null) {
-      throw const TtsEngineUnavailable('sherpa_onnx plugin disappeared');
-    }
-    final audio = loader.generate(tts, text, config);
+    final audio = adapter.generate(tts, text, config);
     if (audio.sampleRate <= 0 || audio.samples.isEmpty) {
       throw const TtsEngineUnavailable('synthesis produced no PCM');
     }
@@ -131,7 +146,10 @@ class SherpaTtsEngine implements TtsEngine {
   }
 
   /// Treat the synthesized buffer as a one-shot PCM source for the tap.
-  Future<PcmSource> sourceFor(String text) async {
+  Future<PcmSource> sourceFor(String text) => synthesizeToSource(text);
+
+  @override
+  Future<PcmSource> synthesizeToSource(String text) async {
     final samples = await synthesize(text);
     return MemoryPcmSource(
       sampleRate: _sampleRate,
@@ -144,9 +162,10 @@ class SherpaTtsEngine implements TtsEngine {
   void dispose() {
     final tts = _tts;
     if (tts != null) {
-      _SherpaLoader.lookup()?.free(tts);
+      _activeLoader?.free(tts);
       _tts = null;
     }
+    _activeLoader = null;
     _sampleRate = 0;
   }
 }
@@ -169,17 +188,27 @@ abstract class SherpaLoader {
   void free(Object tts);
 }
 
-/// Registry for the optional adapter. Kept separate from [SherpaTtsEngine] so
-/// the core Flutter app compiles without adding the heavy native plugin to
-/// pubspec.yaml in this environment.
-class _SherpaLoader {
-  static SherpaLoader? _loader;
+/// Durable process-wide registry for the optional sherpa-onnx adapter.
+/// Separate from [SherpaTtsEngine] so the core Flutter app compiles without
+/// adding the heavy native plugin to pubspec.yaml.
+class SherpaLoaderRegistry {
+  SherpaLoaderRegistry._();
 
-  static void register(SherpaLoader loader) => _loader = loader;
+  static final SherpaLoaderRegistry instance = SherpaLoaderRegistry._();
 
-  static SherpaLoader? lookup() => _loader;
+  SherpaLoader? _loader;
+
+  void register(SherpaLoader loader) => _loader = loader;
+
+  SherpaLoader? lookup() => _loader;
+
+  /// Test-only reset; production code registers exactly once at startup.
+  void clear() => _loader = null;
 }
+
+/// Currently registered adapter, if any.
+SherpaLoader? get sherpaLoader => SherpaLoaderRegistry.instance.lookup();
 
 /// Public registration hook for the optional sherpa-onnx adapter.
 void registerSherpaLoader(SherpaLoader loader) =>
-    _SherpaLoader.register(loader);
+    SherpaLoaderRegistry.instance.register(loader);

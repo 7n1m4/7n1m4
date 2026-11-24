@@ -11,22 +11,38 @@ namespace AnimaPet.Audio
     /// shelling out to a locally installed `piper` binary and decoding the
     /// resulting WAV via <see cref="WavPcmReader"/>. No proprietary binaries or
     /// model files are committed; the engine requires:
-    ///   1. A `piper` executable on PATH (or `PiperPath`).
+    ///   1. A `piper` executable on PATH (or `PiperPath` / `PIPER_PATH`).
     ///   2. A voice model `.onnx` + its `.onnx.json` (downloaded assets).
-    /// Fetch step (run once, outside the repo):
-    ///   - Install piper: https://github.com/rhasspy/piper/releases
-    ///   - Download a voice: https://huggingface.co/rhasspy/piper-voices
+    ///   Set `PIPER_MODEL` to the `.onnx` path (or pass via constructor).
+    ///
+    /// Fetch/install step (run once, outside the repo):
+    ///   - Piper releases / build instructions: https://github.com/rhasspy/piper
+    ///   - Voice models (Apache-2.0 / CC-BY-SA per voice card):
+    ///     https://huggingface.co/rhasspy/piper-voices
     ///     e.g. en_US-lessac-medium.onnx (+ .onnx.json)
-    ///   - Set PIPER_MODEL to the .onnx path (or pass via constructor).
+    /// Check the selected voice's Hugging Face model card for its license
+    /// before shipping; no model artifact is committed here.
+    ///
+    /// Pass <c>--output_file</c> WAV through <see cref="WavPcmReader"/>, which
+    /// is the same decode path used by the deterministic Option C test harness.
     /// </summary>
     public sealed class PiperTtsEngine : ITtsEngine
     {
+        /// <summary>Default Piper CLI synthesis sample rate (22.05 kHz).</summary>
+        public const int DefaultSampleRate = 22050;
+
         public string Id => "piper";
 
         public string PiperPath { get; }
         public string ModelPath { get; }
 
-        public PiperTtsEngine(string? piperPath = null, string? modelPath = null)
+        /// <inheritdoc/>
+        public int SampleRate { get; }
+
+        public PiperTtsEngine(
+            string? piperPath = null,
+            string? modelPath = null,
+            int sampleRate = DefaultSampleRate)
         {
             PiperPath = piperPath
                 ?? Environment.GetEnvironmentVariable("PIPER_PATH")
@@ -37,6 +53,9 @@ namespace AnimaPet.Audio
             if (string.IsNullOrWhiteSpace(ModelPath))
                 throw new ArgumentException(
                     "Piper model path is required (PIPER_MODEL env or constructor).", nameof(modelPath));
+            if (sampleRate <= 0)
+                throw new ArgumentOutOfRangeException(nameof(sampleRate), "sampleRate must be positive.");
+            SampleRate = sampleRate;
         }
 
         public async Task<IPcmSource> SynthesizeAsync(
@@ -61,20 +80,51 @@ namespace AnimaPet.Audio
                 };
                 using var proc = Process.Start(psi)
                     ?? throw new InvalidOperationException("Failed to start piper.");
-                await proc.StandardInput.WriteAsync(text);
-                proc.StandardInput.Close();
-                await proc.WaitForExitAsync(cancellationToken);
-                if (proc.ExitCode != 0)
+
+                // Drain stderr from the moment the child starts: a piper that
+                // fills the OS pipe would otherwise block forever while we wait
+                // for exit. The drain is uncancelled so it always reaches EOF.
+                var stderrTask = proc.StandardError.ReadToEndAsync();
+                try
                 {
-                    var err = await proc.StandardError.ReadToEndAsync(cancellationToken);
-                    throw new InvalidOperationException($"piper exited {proc.ExitCode}: {err}");
+                    await proc.StandardInput.WriteAsync(text).ConfigureAwait(false);
+                    proc.StandardInput.Close();
+                    await proc.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                    var err = await stderrTask.ConfigureAwait(false);
+                    if (proc.ExitCode != 0)
+                        throw new InvalidOperationException($"piper exited {proc.ExitCode}: {err}");
+
+                    var pcm = WavPcmReader.ReadFile(outPath);
+                    if (pcm.SampleRate != SampleRate)
+                        throw new InvalidDataException(
+                            $"Piper declared {SampleRate} Hz but decoded WAV at {pcm.SampleRate} Hz.");
+                    return pcm;
                 }
-                return WavPcmReader.ReadFile(outPath);
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    KillProcessTree(proc);
+                    // Uncancelled wait: deleting the temp WAV while the child
+                    // can still write it would race the child's file handle.
+                    await proc.WaitForExitAsync().ConfigureAwait(false);
+                    try { await stderrTask.ConfigureAwait(false); } catch { }
+                    throw;
+                }
             }
             finally
             {
                 try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
             }
+        }
+
+        private static void KillProcessTree(Process proc)
+        {
+            try
+            {
+                if (!proc.HasExited)
+                    proc.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) { } // exited between check and kill
+            catch (AggregateException) { } // a grandchild may already be gone
         }
     }
 }

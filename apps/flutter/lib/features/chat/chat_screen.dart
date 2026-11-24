@@ -34,12 +34,17 @@ class _ChatScreenState extends State<ChatScreen> {
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   bool _wasConnected = false;
+  _EmotionCue? _cue;
+  // Event topics are per socket; serialize subscribe/unsubscribe so disposing
+  // mid-RPC cannot leave a stale topic enabled on the daemon.
+  Future<void> _eventRpc = Future<void>.value();
 
   @override
   void initState() {
     super.initState();
     _unsubscribeEvent = widget.client.onEvent(_onEvent);
     _wasConnected = widget.client.snapshot.isConnected;
+    if (_wasConnected) _requestEmotionEvents();
     // A reconnect lands on a fresh socket with no in-flight turn from this
     // screen's point of view: drop the stuck "sending" state instead of
     // leaving the input disabled until a full app relaunch. The status stream
@@ -48,12 +53,14 @@ class _ChatScreenState extends State<ChatScreen> {
       final connected = status.state == DaemonConnectionState.connected;
       final regainedConnection = connected && !_wasConnected;
       _wasConnected = connected;
+      if (regainedConnection) _requestEmotionEvents();
       if (regainedConnection && mounted) {
         setState(() {
           _sending = false;
           _assistantStreaming = false;
           _activeMessageId = null;
           _deltaBuffer.clear();
+          _cue = null;
         });
       }
     });
@@ -68,11 +75,41 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _statusSub?.cancel();
     _unsubscribeEvent?.call();
+    _requestEventRpc('event.unsubscribe');
     _input.dispose();
     super.dispose();
   }
 
+  /// Best-effort topic opt-in on the authenticated socket. A daemon without
+  /// event support must not break the chat surface.
+  void _requestEmotionEvents() => _requestEventRpc('event.subscribe');
+
+  void _requestEventRpc(String action) {
+    _eventRpc = _eventRpc.then((_) async {
+      try {
+        await widget.client.call(action, payload: <String, dynamic>{
+          'topics': <String>[EventTopic.emotionTag.wireName],
+        });
+      } on Object {
+        // Subscription failure is non-fatal: chat and cues degrade quietly.
+      }
+    });
+  }
+
   void _onEvent(GatewayEventFrame event) {
+    if (event.topic == EventTopic.emotionTag) {
+      final cue = _decodeEmotionCue(event.data);
+      if (cue == null || !mounted) return;
+      final previous = _cue;
+      if (previous != null &&
+          previous.seq != null &&
+          cue.seq != null &&
+          cue.seq! <= previous.seq!) {
+        return; // Ignore replayed/out-of-order cues.
+      }
+      setState(() => _cue = cue);
+      return;
+    }
     if (event.topic != EventTopic.tokenDelta) return;
     final data = event.data;
     final sid = data['session_id'] as String? ?? '';
@@ -112,6 +149,31 @@ class _ChatScreenState extends State<ChatScreen> {
         _sending = false;
       }
     });
+  }
+
+  /// Decode `emotion.tag` defensively: only a well-typed tag/kind/intensity
+  /// becomes a cue. `motion`/`vfx` stay cues but are never facial emotions.
+  static _EmotionCue? _decodeEmotionCue(Map<String, dynamic> data) {
+    final rawTag = data['tag'];
+    final rawKind = data['kind'];
+    final rawIntensity = data['intensity'];
+    if (rawTag is! String || rawTag.trim().isEmpty) return null;
+    if (rawKind is! String ||
+        !const <String>{'emotion', 'motion', 'vfx'}.contains(rawKind)) {
+      return null;
+    }
+    if (rawIntensity is! num || !rawIntensity.isFinite) return null;
+    final rawActor = data['actor_id'];
+    final rawSeq = data['seq'];
+    final rawTs = data['ts_ms'];
+    return _EmotionCue(
+      tag: rawTag,
+      kind: rawKind,
+      intensity: rawIntensity.toDouble().clamp(0.0, 1.0),
+      actorId: rawActor is String ? rawActor : '',
+      seq: rawSeq is int ? rawSeq : null,
+      tsMs: rawTs is int ? rawTs : null,
+    );
   }
 
   Future<void> _send() async {
@@ -237,6 +299,34 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Text(_error!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
+        if (_cue != null)
+          Padding(
+            key: const Key('emotion-cue'),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.emoji_emotions_outlined, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(_cue!.label),
+                      Text(
+                        'Intensity ${(_cue!.intensity * 100).round()}% · '
+                        'seq ${_cue!.seq ?? '?'} · ts ${_cue!.tsMs ?? '?'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 56,
+                  child: LinearProgressIndicator(value: _cue!.intensity),
+                ),
+              ],
+            ),
+          ),
         if (_historyUnavailable)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
@@ -269,6 +359,34 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ],
     );
+  }
+}
+
+class _EmotionCue {
+  const _EmotionCue({
+    required this.tag,
+    required this.kind,
+    required this.intensity,
+    required this.actorId,
+    this.seq,
+    this.tsMs,
+  });
+
+  final String tag;
+  final String kind;
+  final double intensity;
+  final String actorId;
+  final int? seq;
+  final int? tsMs;
+
+  String get label {
+    final className = switch (kind) {
+      'motion' => 'Motion',
+      'vfx' => 'VFX',
+      _ => 'Emotion',
+    };
+    final actor = actorId.isEmpty ? '' : ' · $actorId';
+    return '$className cue: $tag$actor';
   }
 }
 

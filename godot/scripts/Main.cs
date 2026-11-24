@@ -3,8 +3,10 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using AnimaPet.Audio;
 using AnimaPet.Net;
 using AnimaPet.Renderers;
+using AnimaPet.Speech;
 
 namespace AnimaPet;
 
@@ -26,6 +28,12 @@ namespace AnimaPet;
 public partial class Main : Node2D
 {
     private IPetRenderer? _renderer;
+    private ITtsEngine? _ttsEngine;
+    private LocalSpeechPipeline? _speechPipeline;
+    private AudioStreamPlayer? _speechPlayer;
+    private CancellationTokenSource? _speechCts;
+    private Task? _speechTask;
+    private readonly SpeechTurnAccumulator _speechTurns = new(CapabilityProbeSession);
     private DaemonClient? _daemon;
     private CancellationTokenSource? _pumpCts;
     private CancellationTokenSource? _heartbeatCts;
@@ -53,6 +61,15 @@ public partial class Main : Node2D
         LoadCard(new CardRenderConfig(
             PetRenderBackend.Live2d, "res://cards/default.model3.json"));
 
+        // Speech is client-local: the daemon has no speaker, and it never
+        // publishes lip_sync.rms (docs/decision-bridge-scope.md). The only
+        // engine asset needed here is a locally installed Piper binary/model;
+        // without PIPER_MODEL this scene still runs, but speech stays silent.
+        _speechPlayer = new AudioStreamPlayer { Name = "LocalSpeechPlayer" };
+        AddChild(_speechPlayer);
+        _ttsEngine = CreateLocalTtsEngine();
+        RebuildSpeechPipeline();
+
         GD.Print($"[AnimaPet] renderer spike ready; daemon endpoint: {DaemonClient.DefaultEndpoint}");
 
         // Start the daemon connection. The auth token is read from the
@@ -64,6 +81,9 @@ public partial class Main : Node2D
     }
 
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(2);
+
+    /// <summary>Session used only by the startup capability probe; never spoken.</summary>
+    private const string CapabilityProbeSession = "debug";
 
     /// <summary>
     /// Connect, subscribe and stay connected. A daemon restart closes the WS;
@@ -98,7 +118,9 @@ public partial class Main : Node2D
                 daemon.EventReceived += _eventHandler;
                 await daemon.ConnectAsync().ConfigureAwait(true);
 
-                // Pet topics plus chat deltas so the pet can react to streamed text.
+                // Pet topics plus chat deltas so the pet can react to streamed
+                // text. lip_sync.rms is deliberately absent: the RMS samples
+                // are produced here from local TTS playback, not by the daemon.
                 var topics = new[]
                 {
                     EventTopics.EmotionTag,
@@ -184,9 +206,16 @@ public partial class Main : Node2D
 
         if (data is TokenDeltaData token)
         {
-            // Chat deltas drive the pet's expression/text surface.
+            // Chat deltas drive the pet's expression/text surface and provide
+            // the text for client-local synthesis. The daemon sends text only;
+            // audio is produced and played here (no daemon audio subscription).
             if (_expressionLabel is not null)
                 _expressionLabel.Text = token.Delta;
+            // Turns are keyed by (session, message): concurrent sessions must
+            // not interleave their text or speak a turn that never finalized.
+            var completed = _speechTurns.Observe(token);
+            if (completed is not null)
+                Speak(completed);
             return;
         }
 
@@ -212,8 +241,8 @@ public partial class Main : Node2D
         var probes = new (string Label, Func<DaemonClient, CancellationToken, Task<JsonElement>>)[]
         {
             ("core.status", (d, ct) => d.CoreStatusAsync(ct)),
-            ("chat.send", (d, ct) => d.ChatSendAsync("debug", "[AnimaPet] capability probe", ct)),
-            ("chat.cancel", (d, ct) => d.ChatCancelAsync("debug", ct)),
+            ("chat.send", (d, ct) => d.ChatSendAsync(CapabilityProbeSession, "[AnimaPet] capability probe", ct)),
+            ("chat.cancel", (d, ct) => d.ChatCancelAsync(CapabilityProbeSession, ct)),
             ("providers.list", (d, ct) => d.ProvidersListAsync(ct)),
             ("settings.get", (d, ct) => d.SettingsGetAsync("general", ct)),
             ("vault.status", (d, ct) => d.VaultStatusAsync(ct)),
@@ -261,6 +290,94 @@ public partial class Main : Node2D
         _renderer?.Dispose();
         _renderer = PetRendererFactory.Create(config);
         _renderer.Initialize(config);
+        RebuildSpeechPipeline();
+    }
+
+    private static ITtsEngine? CreateLocalTtsEngine()
+    {
+        // Opt in by supplying a locally installed Piper model. Download and
+        // license notes live in docs/guide-client-local-tts-runtime.md; no
+        // binary or model is committed to the repo.
+        var model = System.Environment.GetEnvironmentVariable("PIPER_MODEL");
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            GD.Print("[AnimaPet] local TTS disabled: set PIPER_MODEL (and optionally PIPER_PATH) to enable speech");
+            return null;
+        }
+        var piper = System.Environment.GetEnvironmentVariable("PIPER_PATH");
+        var sampleRate = SpeechSampleRate.ResolvePiperSampleRate(
+            System.Environment.GetEnvironmentVariable(SpeechSampleRate.EnvironmentVariable));
+        return new PiperTtsEngine(piper, model, sampleRate);
+    }
+
+    private void RebuildSpeechPipeline()
+    {
+        _speechPipeline?.Dispose();
+        _speechPipeline = _ttsEngine is null || _renderer is null
+            ? null
+            : new LocalSpeechPipeline(_ttsEngine, _renderer);
+    }
+
+    /// <summary>
+    /// Speak locally from any scene script, with or without a daemon: engine
+    /// PCM is tapped into the renderer and the same samples are queued for
+    /// physical playback on the Godot audio server.
+    /// </summary>
+    public void Speak(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        Callable.From(() => { _speechTask = SpeakLocalAsync(text); }).CallDeferred();
+    }
+
+    private async Task SpeakLocalAsync(string text)
+    {
+        if (_speechPipeline is null) return;
+
+        if (_speechCts is not null)
+        {
+            // A superseded utterance must not hold the mouth open while the
+            // new one synthesizes. Zero is silence, not a fabricated sample.
+            _speechCts.Cancel();
+            _speechPlayer?.Stop();
+            _renderer?.SetLipSync(0f);
+            // Do not dispose here: the canceled call may still be awaiting a
+            // token registration from this source; let GC collect it instead.
+        }
+        _speechCts = new CancellationTokenSource();
+        var cancellation = _speechCts.Token;
+
+        try
+        {
+            // Godot's synchronization context resumes this continuation on the
+            // main thread, so the tap/renderer sink and node access stay there.
+            var pcm = await _speechPipeline.SpeakAsync(text, cancellationToken: cancellation).ConfigureAwait(true);
+            if (cancellation.IsCancellationRequested || _speechPlayer is null) return;
+            PlayPcm(pcm);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer utterance replaced this one; its PCM was deliberately
+            // discarded, so no stale amplitude reaches the renderer. The
+            // release of the old mouth state is already queued above.
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[AnimaPet] local speech failed: {ex.Message}");
+        }
+    }
+
+    private void PlayPcm(IPcmSource pcm)
+    {
+        _speechPlayer!.Stop();
+        var stream = new AudioStreamWav
+        {
+            Format = AudioStreamWav.FormatEnum.Format16Bits,
+            MixRate = pcm.SampleRate,
+            Stereo = false,
+            Data = PcmEncoding.FloatsToPcm16(pcm.Samples),
+        };
+        _speechPlayer.Stream = stream;
+        _speechPlayer.Play();
     }
 
     public override void _Process(double delta)
@@ -273,6 +390,17 @@ public partial class Main : Node2D
         _reconnectCts?.Cancel();
         _pumpCts?.Cancel();
         _heartbeatCts?.Cancel();
+        var speechCts = _speechCts;
+        speechCts?.Cancel();
+        _speechCts = null;
+        var speechTask = _speechTask;
+        _speechTask = null;
+        _speechTurns.Clear();
+        _speechPlayer?.Stop();
+        _speechPlayer?.QueueFree();
+        _speechPlayer = null;
+        _speechPipeline?.Dispose();
+        _speechPipeline = null;
         if (_daemon is not null)
         {
             if (_stateHandler is not null) _daemon.StateChanged -= _stateHandler;
@@ -283,5 +411,32 @@ public partial class Main : Node2D
         }
         _renderer?.Dispose();
         _renderer = null;
+
+        if (speechCts is not null)
+            _ = DisposeSpeechCtsAfterAsync(speechTask, speechCts);
+    }
+
+    /// <summary>
+    /// Canceling a token never waits for its registrations, so disposing its
+    /// source while SpeakLocalAsync is still awaiting one races with that
+    /// call. Dispose only once the in-flight utterance finishes, without
+    /// blocking Godot's shutdown path. SpeakLocalAsync logs its own failures.
+    /// </summary>
+    private static async Task DisposeSpeechCtsAfterAsync(Task? speechTask, CancellationTokenSource speechCts)
+    {
+        try
+        {
+            if (speechTask is not null)
+                await speechTask.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Shutdown must not surface a fault from the canceled utterance;
+            // SpeakLocalAsync already reports synthesis failures.
+        }
+        finally
+        {
+            speechCts.Dispose();
+        }
     }
 }

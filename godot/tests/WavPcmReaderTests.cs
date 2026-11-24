@@ -78,4 +78,20 @@ public sealed class WavPcmReaderTests
         Assert.Equal(2, emissions);
         Assert.True(last > 0.4f && last < 0.6f);
     }
+
+    [Fact]
+    public void Fixture_Tone_DecodesToSamePcmShape()
+    {
+        var tone = WavFixture.Tone();
+        var src = WavPcmReader.ReadBytes(WavFixture.Pcm16Wav(tone));
+
+        Assert.Equal(WavFixture.SampleRate, src.SampleRate);
+        Assert.Equal(1, src.Channels);
+        Assert.Equal(tone.Length, src.Samples.Length);
+        // PCM16 round-trip quantizes each sample to within one LSB.
+        var tolerance = 1f / short.MaxValue;
+        for (var i = 0; i < tone.Length; i++)
+            Assert.True(Math.Abs(tone[i] - src.Samples[i]) <= tolerance,
+                $"sample {i}: expected {tone[i]}, decoded {src.Samples[i]}");
+    }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using AnimaPet.Renderers;
 
 namespace AnimaPet.Audio
@@ -33,17 +34,26 @@ namespace AnimaPet.Audio
         public IPetRenderer Renderer => _renderer;
 
         /// <summary>Feed a PCM source through the tap and into the renderer.</summary>
-        public void Feed(IPcmSource source)
+        public void Feed(IPcmSource source, CancellationToken cancellationToken = default)
         {
             if (source is null) throw new ArgumentNullException(nameof(source));
-            _tap.Process(source);
-            _tap.Complete();
+            Feed(source.Samples, cancellationToken);
         }
 
         /// <summary>Feed raw samples through the tap and into the renderer.</summary>
-        public void Feed(ReadOnlySpan<float> samples)
+        public void Feed(ReadOnlySpan<float> samples, CancellationToken cancellationToken = default)
         {
-            _tap.Process(samples);
+            // Check before each window: a superseded utterance must not leave
+            // any stale RMS on the renderer, even if synthesis finished just
+            // as cancellation arrived.
+            const int chunk = 4096;
+            for (var offset = 0; offset < samples.Length; offset += chunk)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var length = Math.Min(chunk, samples.Length - offset);
+                _tap.Process(samples.Slice(offset, length));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             _tap.Complete();
         }
 

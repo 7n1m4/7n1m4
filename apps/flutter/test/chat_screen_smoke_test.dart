@@ -118,13 +118,21 @@ void main() {
   testWidgets('ChatScreen unregisters its event listener on dispose', (tester) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
+    final actions = <String, Map<String, dynamic>?>{};
+    client.onCall = (action, payload) {
+      actions[action] = payload;
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+    client.emitStatus(DaemonConnectionState.connected);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ChatScreen(client: client))));
     await tester.pump();
     expect(client.listeners, hasLength(1));
+    expect(actions['event.subscribe']?['topics'], <String>['emotion.tag']);
 
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
     await tester.pump();
     expect(client.listeners, isEmpty);
+    expect(actions['event.unsubscribe']?['topics'], <String>['emotion.tag']);
 
     // A later screen can subscribe without going deaf on a stale listener.
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: ChatScreen(client: client))));

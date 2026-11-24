@@ -21,7 +21,16 @@ Maps each daemon capability to client implementation status across
 | heartbeat keepalive | implemented | implemented | **TS-core-remaining** (in-app server heartbeat path) | daemon heartbeat wired; Vue store not yet migrated |
 | event subscription lane | implemented (Flutter subscribes `token.delta` per connection) | implemented (Godot subscribes via `DaemonEvents`) | **TS-core-remaining** (`useModsServerChannelStore` in `channel-server/index.ts`; no daemon event subscription yet) | **TS-core-remaining** — event lane shipped; Vue store needs migration |
 | `emotion.tag` cues | consumed (Flutter `protocol.dart` `EventTopic.emotionTag`) | consumed (Godot `DaemonEvents.cs`) | **TS-core-remaining** (BeatSync BroadcastChannel; not yet daemon event) | daemon-published; Vue store not yet migrated |
-| `lip_sync.rms` animation | planned (client-local envelope generation, airi-b2q) | planned (client-local envelope generation, airi-b2q) | — | **client-local only** — not daemon-published per `decision-bridge-scope.md` (airi-b2q) |
+| `lip_sync.rms` animation | **runtime seam** (Flutter `speech/`: Piper/sherpa engines → `AmplitudeTap` → `LipSyncGenerator` frames; **no renderer**) | **wired, generic renderer** (Godot `Main.cs` → `LocalSpeechPipeline` → tap → `IPetRenderer.SetLipSync` + PCM playback; VRM/Live2D backends are generic stubs) | — | **client-local only** — daemon does not publish it (`decision-bridge-scope.md`); see decision/guide below for setup and limits |
+
+## Client-local TTS/PCM capability status
+
+Per `docs/decision-client-local-tts-pcm.md` (ratified Option B: on-device Piper-class TTS exposing PCM; Option C: real WAVE decode as fallback/test harness):
+
+- Flutter has `PiperTtsEngine` (local `piper` CLI → WAVE → `WavPcmSource`), an optional `SherpaTtsEngine` adapter requiring a user-supplied `package:sherpa_onnx` + `SherpaLoader` registration (no dependency in `pubspec.yaml`), and `LipSyncGenerator` producing client-stamped `LipSyncRmsData` frames. There is **no Flutter renderer** and no app entry-point wiring; the proof ends at the frame stream. An opt-in test exercises real Piper output when `PIPER_MODEL` is supplied (`PIPER_PATH` is optional); it is otherwise skipped.
+- Godot has `PiperTtsEngine` (local `piper` CLI → WAVE → `WavPcmReader`), `AmplitudeTap`, `PcmLipSyncDriver`, and the pure-managed `LocalSpeechPipeline` (`SpeakAsync` forwards tap levels into `IPetRenderer.SetLipSync` → `LipSyncSmoother` → generic node scale/tint/animation key). `Main.cs` enables this when `PIPER_MODEL` is set, speaks completed assistant turns from local token text, and plays the same PCM through `AudioStreamPlayer`. The shipped VRM/Live2D backends extend `GenericPetRenderer` with no vendored addons (stub/planned, below).
+- Neither client commits binaries/models; reproducible downloads, env/config names (`PIPER_PATH`, `PIPER_MODEL`, `SherpaTtsConfig` paths), and license verification steps are in [`docs/guide-client-local-tts-runtime.md`](./guide-client-local-tts-runtime.md). Missing assets must fail loudly, not yield fake PCM.
+- Parity is client-local: Godot has an observable text → PCM → RMS → renderer path with local assets; Flutter stops at stamped frames until a renderer exists. Do not claim daemon-published `lip_sync.rms` or committed model assets.
 
 ## Remaining TS business logic (not yet in daemon or thin clients)
 
@@ -29,7 +38,7 @@ Maps each daemon capability to client implementation status across
 - **Character likes / bookmarks** — `packages/stage-ui/src/stores/characters.ts` lines 276–333: like/bookmark state reconciled from daemon `cards.metadata` (no remote API call); remote CRUD remains at lines 138, 171, 198, 236, 261.
 - **Chat session sync / multi-device mirror** — `packages/stage-ui/src/stores/chat/session-store.ts` line 139: `syncSessionToRemote()`. No daemon equivalent.
 - **Sync-engine manifest fetch** — `packages/stage-ui/src/stores/sync-engine.ts` lines 495–595: remote display-models / VMD / VRMA manifest fetch. No daemon equivalent.
-- **Godot renderers (stub/planned)** — `godot/scripts/Renderers/Live2dRenderer.cs` and `VrmRenderer.cs` extend `GenericPetRenderer` with scale/tint only (no VRM addon / Cubism GDExtension vendored). Marked **stub/planned**; not functional backends.
+- **Godot renderers (stub/planned)** — `godot/scripts/Renderers/Live2dRenderer.cs` and `VrmRenderer.cs` extend `GenericPetRenderer` with scale/tint only (no VRM addon / Cubism GDExtension vendored). Marked **stub/planned**; not functional backends. The generic renderer's `SetLipSync` is observable via node scale/tint/animation key, but it is not a real mouth mesh.
 - **Vue/Electrobun server channel store (TS-core-remaining)** — `packages/stage-ui/src/stores/mods/api/channel-server.ts` (`useModsServerChannelStore`); initialised in `apps/stage-tamagotchi/src/renderer/App.vue:483` with ~20 store calls still in TypeScript. **TS-core-remaining**.
 
 ## Opt-in TS remote-sync retirement gate
@@ -66,7 +75,8 @@ checklist never reports green while work is outstanding.
 playback are client-local per `docs/decision-bridge-scope.md` (authoritative).
 `emotion.tag` remains daemon-published from the LLM token stream, which the
 same decision leaves daemon-owned. Do not mark `lip_sync.rms` implemented
-until Flutter and Godot generate envelopes locally (tracked by `airi-b2q`).
+until both clients can generate envelopes locally **and** feed a renderer;
+Flutter's renderer gap and the generic-only Godot backends remain outstanding.
 
 ## Source of truth
 
@@ -74,4 +84,7 @@ Daemon capabilities live in `crates/anima-daemon/src/core.rs`
 (`CoreService`) and `crates/anima-daemon/src/gateway.rs`
 (`renderer_handlers`). Client implementations live in
 `apps/flutter/lib/daemon_client/`, `godot/scripts/Net/`, and the Vue
-reference app.
+reference app; the local TTS/PCM seams live in `apps/flutter/lib/speech/`
+and `godot/scripts/Audio/` and are described by
+`docs/decision-client-local-tts-pcm.md` and
+`docs/guide-client-local-tts-runtime.md`.

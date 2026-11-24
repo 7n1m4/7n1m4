@@ -10,3 +10,4 @@ export 'lip_sync_rms_data.dart';
 export 'pcm_source.dart';
 export 'wav_pcm_source.dart';
 export 'sherpa_tts_engine.dart';
+export 'piper_tts_engine.dart';

@@ -22,6 +22,8 @@
        test project, and these are pure C# with no Godot deps. -->
   <ItemGroup>
     <Compile Include="../scripts/Net/DaemonEvents.cs" Link="Net/DaemonEvents.cs" />
+    <Compile Include="../scripts/Speech/SpeechTurnAccumulator.cs" Link="Speech/SpeechTurnAccumulator.cs" />
+    <Compile Include="../scripts/Speech/SpeechSampleRate.cs" Link="Speech/SpeechSampleRate.cs" />
     <Compile Include="../scripts/Net/EventPayloadDecoder.cs" Link="Net/EventPayloadDecoder.cs" />
     <Compile Include="../scripts/Renderers/IPetRenderer.cs" Link="Renderers/IPetRenderer.cs" />
     <Compile Include="../scripts/Renderers/CardRenderConfig.cs" Link="Renderers/CardRenderConfig.cs" />
@@ -33,6 +35,8 @@
     <Compile Include="../scripts/Audio/AmplitudeTap.cs" Link="Audio/AmplitudeTap.cs" />
     <Compile Include="../scripts/Audio/PcmLipSyncDriver.cs" Link="Audio/PcmLipSyncDriver.cs" />
     <Compile Include="../scripts/Audio/WavPcmReader.cs" Link="Audio/WavPcmReader.cs" />
+    <Compile Include="../scripts/Audio/PiperTtsEngine.cs" Link="Audio/PiperTtsEngine.cs" />
+    <Compile Include="../scripts/Audio/LocalSpeechPipeline.cs" Link="Audio/LocalSpeechPipeline.cs" />
     <Compile Include="../scripts/Renderers/GenericPetRenderer.cs" Link="Renderers/GenericPetRenderer.cs" />
     <Compile Include="../scripts/Net/DaemonClient.cs" Link="Net/DaemonClient.cs" />
     <Compile Include="../scripts/Net/DaemonRpc.cs" Link="Net/DaemonRpc.cs" />

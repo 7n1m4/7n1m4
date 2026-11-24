@@ -16,6 +16,10 @@ namespace AnimaPet.Audio
     public interface ITtsEngine
     {
         string Id { get; }
+
+        /// <summary>Sample rate of every buffer returned by this engine.</summary>
+        int SampleRate { get; }
+
         Task<IPcmSource> SynthesizeAsync(string text, string? voice = null, CancellationToken cancellationToken = default);
     }
 
