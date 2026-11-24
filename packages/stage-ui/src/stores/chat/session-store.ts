@@ -8,9 +8,6 @@ import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
-import { client } from '../../composables/api'
-import { stripMarkers } from '../../composables/response-categoriser'
-import { useLocalFirstRequest } from '../../composables/use-local-first'
 import { chatSessionsRepo } from '../../database/repos/chat-sessions.repo'
 import { echoChipsRepo } from '../../database/repos/echo-chips.repo'
 import { shortTermMemoryRepo } from '../../database/repos/short-term-memory.repo'
@@ -24,7 +21,6 @@ import { useMemoryLifetimeStore } from '../memory-lifetime'
 import { useShortTermMemoryStore } from '../memory-short-term'
 import { useTextJournalStore } from '../memory-text-journal'
 import { useAiriCardStore } from '../modules/airi-card'
-import { useSettingsGeneral } from '../settings'
 import { markSyncTombstone } from '../sync-tombstones'
 import { CHAT_STREAM_CHANNEL_NAME } from './constants'
 import { stripLargeInlineImagesForPersistence } from './message-sanitizer'
@@ -32,9 +28,8 @@ import { updateRecentTopics } from './recent-topics'
 import { extractMessageContent, mergeLoadedSessionMessages } from './session-message-merge'
 
 export const useChatSessionStore = defineStore('chat-session', () => {
-  const { userId, isAuthenticated } = storeToRefs(useAuthStore())
+  const { userId } = storeToRefs(useAuthStore())
   const { activeCardId, systemPrompt } = storeToRefs(useAiriCardStore())
-  const { remoteSyncEnabled } = storeToRefs(useSettingsGeneral())
   const shortTermMemory = useShortTermMemoryStore()
   const lifetimeMemory = useMemoryLifetimeStore()
 
@@ -78,7 +73,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
   let initializePromise: Promise<void> | null = null
 
   let persistQueue = Promise.resolve()
-  let syncQueue = Promise.resolve()
   const loadedSessions = new Set<string>()
   const loadingSessions = new Map<string, Promise<void>>()
   let ensuringSessionPromise: Promise<void> | null = null
@@ -96,11 +90,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
   function enqueuePersist(task: () => Promise<void>) {
     persistQueue = persistQueue.then(task, task)
     return persistQueue
-  }
-
-  function enqueueSync(task: () => Promise<void>) {
-    syncQueue = syncQueue.then(task, task)
-    return syncQueue
   }
 
   function ensureSessionMessageIds(sessionId: string) {
@@ -122,93 +111,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       // but we return the modified array.
     }
     return next
-  }
-
-  function buildSyncMessages(messages: ChatHistoryItem[]) {
-    return messages.map(message => ({
-      id: message.id ?? nanoid(),
-      role: message.role,
-      // NOTICE: Strip orchestration tokens before syncing to remote server.
-      // The local DB retains rawContent for LLM inference, but remote consumers
-      // should only see clean, display-friendly content.
-      content: stripMarkers(extractMessageContent(message)),
-      createdAt: message.createdAt,
-    }))
-  }
-
-  async function syncSessionToRemote(sessionId: string) {
-    let cachedRecord: ChatSessionRecord | null | undefined
-    const request = useLocalFirstRequest({
-      local: async () => {
-        cachedRecord = await chatSessionsRepo.getSession(sessionId)
-        return cachedRecord
-      },
-      remote: async () => {
-        if (!cachedRecord)
-          cachedRecord = await chatSessionsRepo.getSession(sessionId)
-        if (!cachedRecord)
-          return cachedRecord
-
-        const members: Array<
-          | { type: 'user', userId: string }
-          | { type: 'character', characterId: string }
-        > = [
-          { type: 'user', userId: userId.value },
-        ]
-
-        if (cachedRecord.meta.characterId) {
-          members.push({
-            type: 'character',
-            characterId: cachedRecord.meta.characterId,
-          })
-        }
-
-        const normalizedMessages = cachedRecord.messages.map(message => message.id ? message : { ...message, id: nanoid() })
-        if (normalizedMessages.some((message, index) => cachedRecord?.messages[index]?.id !== message.id)) {
-          cachedRecord = {
-            ...cachedRecord,
-            messages: normalizedMessages,
-          }
-          await chatSessionsRepo.saveSession(sessionId, cachedRecord)
-        }
-
-        const res = await client.api.chats.sync.$post({
-          json: {
-            chat: {
-              id: cachedRecord.meta.sessionId,
-              type: 'group',
-              title: cachedRecord.meta.title,
-              createdAt: cachedRecord.meta.createdAt,
-              updatedAt: cachedRecord.meta.updatedAt,
-            },
-            members,
-            messages: buildSyncMessages(cachedRecord.messages),
-          },
-        })
-
-        if (!res.ok)
-          throw new Error('Failed to sync chat session')
-        return cachedRecord
-      },
-      allowRemote: () => remoteSyncEnabled.value && isAuthenticated.value,
-      lazy: true,
-    })
-
-    await request.execute()
-  }
-
-  function scheduleSync(sessionId: string) {
-    if (!remoteSyncEnabled.value)
-      return
-
-    void enqueueSync(async () => {
-      try {
-        await syncSessionToRemote(sessionId)
-      }
-      catch (error) {
-        debug('Failed to sync chat session', error)
-      }
-    })
   }
 
   function buildShortTermMemoryContext(characterId = getCurrentCharacterId()) {
@@ -444,7 +346,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
 
     await enqueuePersist(() => chatSessionsRepo.saveSession(sessionId, record))
     await persistIndex()
-    scheduleSync(sessionId)
 
     // Trigger Recent Topics background computation if enabled
     const cardStore = useAiriCardStore()
@@ -705,7 +606,6 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     const record: ChatSessionRecord = { meta, messages: initialMessages }
     await enqueuePersist(() => chatSessionsRepo.saveSession(sessionId, record))
     await persistIndex()
-    scheduleSync(sessionId)
 
     if (options?.setActive !== false) {
       activeSessionId.value = sessionId
