@@ -99,33 +99,6 @@ export function createProviderService(db: Database) {
       })
     },
 
-    async findById(id: string, ownerId: string) {
-      const userConfig = await db.query.userProviderConfigs.findFirst({
-        where: and(
-          eq(schema.userProviderConfigs.id, id),
-          eq(schema.userProviderConfigs.ownerId, ownerId),
-          isNull(schema.userProviderConfigs.deletedAt),
-        ),
-      })
-
-      if (userConfig) {
-        return { ...userConfig, isSystem: false }
-      }
-
-      const systemConfig = await db.query.systemProviderConfigs.findFirst({
-        where: and(
-          eq(schema.systemProviderConfigs.id, id),
-          isNull(schema.systemProviderConfigs.deletedAt),
-        ),
-      })
-
-      if (systemConfig) {
-        return { ...toSafeSystemRow(systemConfig), isSystem: true }
-      }
-
-      return null
-    },
-
     async findUserConfigById(id: string) {
       return await db.query.userProviderConfigs.findFirst({
         where: and(

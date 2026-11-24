@@ -70,14 +70,6 @@ describe('providerService', () => {
     expect(systemConfig?.name).toBe('System Anthropic')
   })
 
-  it('findById should find both user and system configs', async () => {
-    const userFound = await service.findById('prov-1', testUser.id)
-    expect(userFound?.isSystem).toBe(false)
-
-    const sysFound = await service.findById('sys-1', testUser.id)
-    expect(sysFound?.isSystem).toBe(true)
-  })
-
   it('updateUserConfig should update provider fields', async () => {
     await service.updateUserConfig('prov-1', { name: 'Updated OpenAI' })
     const prov = await service.findUserConfigById('prov-1')

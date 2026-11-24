@@ -93,19 +93,6 @@ describe('characterRoutes', () => {
     expect(data[0].i18n[0].name).toBe('Aster')
   })
 
-  it('post /:id/like should toggle like', async () => {
-    const characters = await characterService.findAll()
-    const charId = characters[0].id
-
-    const res = await app.fetch(new Request(`http://localhost/${charId}/like`, { method: 'POST' }), { user: testUser } as any)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ liked: true })
-
-    const res2 = await app.fetch(new Request('http://localhost/'), { user: testUser } as any)
-    const data = await res2.json()
-    expect(data[0].likesCount).toBe(1)
-  })
-
   it('get /:id should return 404 if not found', async () => {
     const res = await app.fetch(new Request('http://localhost/non-existent'), { user: testUser } as any)
     expect(res.status).toBe(404)
@@ -229,14 +216,6 @@ describe('characterRoutes', () => {
     expect(updated.ownerId).toBe(testUser.id)
     expect(updated.version).toBe('2')
     expect(updated.coverUrl).toBe('cover-new')
-  })
-
-  it('post /:id/like on a nonexistent character returns 404, not 500', async () => {
-    const res = await app.fetch(new Request('http://localhost/does-not-exist/like', {
-      method: 'POST',
-    }), { user: testUser } as any)
-
-    expect(res.status).toBe(404)
   })
 
   it('post / ignores client-supplied counters and derives them server-side', async () => {

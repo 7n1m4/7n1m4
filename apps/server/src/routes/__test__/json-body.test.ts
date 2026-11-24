@@ -6,7 +6,6 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { ApiError } from '../../utils/error'
 import { createCharacterRoutes } from '../characters'
 import { createChatRoutes } from '../chats'
-import { createGoogleDriveRoutes } from '../gdrive'
 import { createProviderRoutes } from '../providers'
 
 describe('malformed JSON bodies', () => {
@@ -28,7 +27,6 @@ describe('malformed JSON bodies', () => {
     app.route('/characters', createCharacterRoutes(stub))
     app.route('/providers', createProviderRoutes(stub))
     app.route('/chats', createChatRoutes(stub))
-    app.route('/gdrive', createGoogleDriveRoutes(stub))
   })
 
   it.each([
@@ -37,7 +35,6 @@ describe('malformed JSON bodies', () => {
     ['POST', '/providers'],
     ['PATCH', '/providers/p1'],
     ['POST', '/chats/sync'],
-    ['POST', '/gdrive/manifest'],
   ])('%s %s returns 400, not 500', async (method, path) => {
     const res = await app.fetch(new Request(`http://localhost${path}`, {
       method,

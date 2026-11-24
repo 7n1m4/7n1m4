@@ -103,25 +103,6 @@ describe('providerRoutes', () => {
     expect(JSON.stringify(sys.config ?? {})).not.toContain('sys-sk')
   })
 
-  it('get /:id should return specific provider (user or system)', async () => {
-    const providers = await providerService.findUserConfigsByOwnerId(testUser.id)
-    const providerId = providers[0].id
-
-    const res = await app.fetch(new Request(`http://localhost/${providerId}`), { user: testUser } as any)
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.id).toBe(providerId)
-    expect(data.isSystem).toBe(false)
-
-    // Test system config access
-    const resSys = await app.fetch(new Request('http://localhost/sys-1'), { user: testUser } as any)
-    expect(resSys.status).toBe(200)
-    const dataSys = await resSys.json()
-    expect(dataSys.id).toBe('sys-1')
-    expect(dataSys.isSystem).toBe(true)
-    expect(JSON.stringify(dataSys.config ?? {})).not.toContain('sys-sk')
-  })
-
   it('patch /:id should update provider config', async () => {
     const providers = await providerService.findUserConfigsByOwnerId(testUser.id)
     const providerId = providers[0].id

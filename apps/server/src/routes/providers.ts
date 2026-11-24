@@ -20,16 +20,6 @@ export function createProviderRoutes(providerService: ProviderService) {
       return c.json(providers)
     })
 
-    .get('/:id', async (c) => {
-      const user = c.get('user')!
-      const id = c.req.param('id')
-      const provider = await providerService.findById(id, user.id)
-      if (!provider)
-        throw createNotFoundError()
-
-      return c.json(provider)
-    })
-
     .post('/', async (c) => {
       const user = c.get('user')!
       const body = await readJsonBody(c.req)
