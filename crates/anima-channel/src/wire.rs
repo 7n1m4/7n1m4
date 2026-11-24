@@ -402,11 +402,63 @@ pub struct CardInfo {
     pub name: String,
 }
 
+/// Reply of `cards.metadata` and `cards.metadata.set`.
+///
+/// Local, daemon-owned flags for one card. No user identity, social graph,
+/// hosted community count, or secret material crosses the wire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardMetadataReply {
+    /// Stable card identifier.
+    pub id: String,
+    /// Whether the local user has liked this card.
+    pub liked: bool,
+    /// Whether the local user has bookmarked this card.
+    pub bookmarked: bool,
+}
+
+/// Request of `cards.metadata.set`.
+///
+/// Both flags are explicit booleans: a read-modify-write on the client must
+/// never turn a stale toggle into an unintended flip on the daemon.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardMetadataSetRequest {
+    /// Stable card identifier.
+    pub id: String,
+    /// Desired liked state.
+    pub liked: bool,
+    /// Desired bookmarked state.
+    pub bookmarked: bool,
+}
+
 /// Reply payload for `sessions.export`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct SessionExportReply {
     /// JSONL export.
     pub jsonl: String,
+}
+
+/// Wire-level status of a `sessions.import` reply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionImportStatus {
+    /// Snapshot applied (new session or newer revision).
+    Applied,
+    /// Local session already has the same revision and content.
+    Duplicate,
+    /// Incoming revision is older than the local session.
+    Older,
+    /// Same revision but divergent content; local stays canonical.
+    Conflict,
+}
+
+/// Outcome of applying a `sessions.import` snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SessionImportReply {
+    /// Outcome classification.
+    pub status: SessionImportStatus,
+    /// Revision (`sessions.updated_at`, ms) stored after the import.
+    #[specta(type = specta_typescript::Number)]
+    pub revision: i64,
 }
 
 /// Vault statistics data.
@@ -466,7 +518,6 @@ pub struct CharacterStatsData {
     /// Total bytes.
     pub bytes: u32,
 }
-
 
 /// `data` payload of a `gateway.config` reply.
 ///
@@ -959,7 +1010,10 @@ pub fn type_collection() -> specta::Types {
         .register::<JournalEntry>()
         .register::<SessionInfo>()
         .register::<CardInfo>()
+        .register::<CardMetadataReply>()
+        .register::<CardMetadataSetRequest>()
         .register::<SessionExportReply>()
+        .register::<SessionImportReply>()
         .register::<VaultStatsData>()
         .register::<DomainStatsData>()
         .register::<MemoryStatsData>()
@@ -1476,5 +1530,27 @@ mod tests {
         assert!(providers.contains_key("bytes"));
         assert!(!providers.contains_key("config"));
         assert!(!providers.contains_key("keys"));
+    }
+
+    #[test]
+    fn session_import_status_uses_known_lowercase_strings() {
+        for (status, wire) in [
+            (SessionImportStatus::Applied, "applied"),
+            (SessionImportStatus::Duplicate, "duplicate"),
+            (SessionImportStatus::Older, "older"),
+            (SessionImportStatus::Conflict, "conflict"),
+        ] {
+            let reply = SessionImportReply {
+                status,
+                revision: 1_700_000_000_123,
+            };
+            let value = serde_json::to_value(&reply).unwrap();
+            assert_eq!(value["status"], json!(wire));
+            let decoded: SessionImportReply = serde_json::from_value(value).unwrap();
+            assert_eq!(decoded, reply);
+        }
+        // Unknown statuses are rejected at the wire boundary; no catch-all.
+        let unknown = json!({ "status": "unknown", "revision": 1 });
+        assert!(serde_json::from_value::<SessionImportReply>(unknown).is_err());
     }
 }

@@ -48,6 +48,7 @@ fn start_server_with_ttl(ttl: Duration) -> anima_channel::ServerHandle {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let server = ChannelServer::bind("127.0.0.1", test_port(), &config)
         .expect("bind channel server")
@@ -297,6 +298,7 @@ fn rpc_runtime_ping_round_trip() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let server = match ChannelServer::bind("127.0.0.1", test_port(), &config) {
         Ok(server) => server,
@@ -373,6 +375,7 @@ fn renderer_info_round_trip() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let mut handlers = RendererHandlers::new();
     handlers.insert(
@@ -486,6 +489,7 @@ fn tls_round_trip_upgrade_auth_and_rpc() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let server = ChannelServer::bind_tls("127.0.0.1", test_port(), &config, tls)
         .expect("bind TLS channel server");

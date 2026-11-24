@@ -261,7 +261,9 @@ impl GatewayClient {
     }
 
     /// Call `providers.list` and decode the typed reply.
-    pub fn providers_list(&mut self) -> Result<crate::wire::ProvidersListReply, GatewayClientError> {
+    pub fn providers_list(
+        &mut self,
+    ) -> Result<crate::wire::ProvidersListReply, GatewayClientError> {
         let value = self.rpc("providers.list", None)?;
         serde_json::from_value(value).map_err(|err| {
             GatewayClientError::UnexpectedFrame(format!("invalid providers.list reply: {err}"))

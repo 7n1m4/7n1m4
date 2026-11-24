@@ -18,6 +18,36 @@ export type CardInfo = {
 	name: string,
 };
 
+/**
+ *  Reply of `cards.metadata` and `cards.metadata.set`.
+ *
+ *  Local, daemon-owned flags for one card. No user identity, social graph,
+ *  hosted community count, or secret material crosses the wire.
+ */
+export type CardMetadataReply = {
+	/**  Stable card identifier. */
+	id: string,
+	/**  Whether the local user has liked this card. */
+	liked: boolean,
+	/**  Whether the local user has bookmarked this card. */
+	bookmarked: boolean,
+};
+
+/**
+ *  Request of `cards.metadata.set`.
+ *
+ *  Both flags are explicit booleans: a read-modify-write on the client must
+ *  never turn a stale toggle into an unintended flip on the daemon.
+ */
+export type CardMetadataSetRequest = {
+	/**  Stable card identifier. */
+	id: string,
+	/**  Desired liked state. */
+	liked: boolean,
+	/**  Desired bookmarked state. */
+	bookmarked: boolean,
+};
+
 /**  The persisted channel-server configuration. */
 export type ChannelConfig = {
 	/**
@@ -33,6 +63,14 @@ export type ChannelConfig = {
 	 *  reload in another.
 	 */
 	tlsConfig?: unknown,
+	/**
+	 *  Strict `allowActions` opt-in for mutating/executing WS verbs
+	 *  (`chat.send`, `settings.set`, `journal.append`, MCP/ACP, …).
+	 *  `Some(true)` allows; anything else (absent, `false`, wrong type)
+	 *  fails closed. Re-read per call by the gateway; never used to
+	 *  authenticate. See `docs/design-daemon-gateway.md` (airi-f03).
+	 */
+	allowActions?: boolean | null,
 };
 
 /**  Character domain statistics. */
@@ -513,6 +551,25 @@ export type SessionExportReply = {
 	/**  JSONL export. */
 	jsonl: string,
 };
+
+/**  Outcome of applying a `sessions.import` snapshot. */
+export type SessionImportReply = {
+	/**  Outcome classification. */
+	status: SessionImportStatus,
+	/**  Revision (`sessions.updated_at`, ms) stored after the import. */
+	revision: number,
+};
+
+/**  Wire-level status of a `sessions.import` reply. */
+export type SessionImportStatus =
+/**  Snapshot applied (new session or newer revision). */
+"applied" |
+/**  Local session already has the same revision and content. */
+"duplicate" |
+/**  Incoming revision is older than the local session. */
+"older" |
+/**  Same revision but divergent content; local stays canonical. */
+"conflict";
 
 /**  A stored chat session surfaced to thin clients. */
 export type SessionInfo = {

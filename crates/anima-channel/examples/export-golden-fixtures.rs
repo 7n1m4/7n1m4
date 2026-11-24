@@ -16,11 +16,12 @@
 use std::path::{Path, PathBuf};
 
 use anima_channel::wire::{
-    CharacterStatsData, CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload,
-    EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
-    GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData,
-    ProviderInfo, ProviderStatsData, ProvidersListReply, RpcErrorObject, RuntimePingReply,
-    RuntimeStatusReply, SettingsGetReply, SettingsSetReply, StatusChangedData, TokenDeltaData,
+    CardMetadataReply, CardMetadataSetRequest, CharacterStatsData, ChatSendRequest, CoreStatusReply,
+    DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply, EventTopic,
+    GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData,
+    HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
+    ProvidersListReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionImportReply,
+    SessionImportStatus, SettingsGetReply, SettingsSetReply, StatusChangedData, TokenDeltaData,
     VaultStatsData, VaultStatusReply,
 };
 
@@ -28,16 +29,12 @@ fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/golden")
 }
 
-/// One golden fixture: a file name and its serializable content.
 struct Fixture {
     name: &'static str,
     value: serde_json::Value,
 }
 
-fn write_fixtures() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
-    let dir = fixtures_dir();
-
-    // -- EventPayload fixtures (one per variant, covering edge cases) -------
+fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
     let events: Vec<(&str, EventPayload)> = vec![
         (
             "event.lip_sync_rms.silence",
@@ -166,7 +163,6 @@ fn write_fixtures() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>>
         ),
     ];
 
-    // -- Core DTO fixtures (one each) ---------------------------------------
     let dto_fixtures: Vec<(&str, serde_json::Value)> = vec![
         (
             "core_status.reply",
@@ -292,57 +288,89 @@ fn write_fixtures() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>>
                 message: "invalid token".into(),
             })?,
         ),
+        (
+            "cards.metadata.reply",
+            serde_json::to_value(CardMetadataReply {
+                id: "card-7".into(),
+                liked: true,
+                bookmarked: false,
+            })?,
+        ),
+        (
+            "cards.metadata.set.request",
+            serde_json::to_value(CardMetadataSetRequest {
+                id: "card-7".into(),
+                liked: true,
+                bookmarked: false,
+            })?,
+        ),
+        (
+            "chat.send.request",
+            serde_json::to_value(ChatSendRequest {
+                session_id: "sess-abc".into(),
+                content: "Hello, Anima!".into(),
+            })?,
+        ),
+        (
+            "sessions.import.reply",
+            serde_json::to_value(SessionImportReply {
+                status: SessionImportStatus::Applied,
+                revision: 1_700_000_000_123,
+            })?,
+        ),
     ];
 
-    // Build the full fixture list with serialized JSON.
     let mut fixtures: Vec<Fixture> = Vec::new();
-
     for (name, payload) in &events {
         let event = GatewayEvent::new(payload.topic(), payload.clone());
         let frame = GatewayServerFrame::event(event);
         let value = serde_json::to_value(&frame)?;
         fixtures.push(Fixture { name, value });
     }
-
     for (name, value) in &dto_fixtures {
         fixtures.push(Fixture {
             name,
             value: value.clone(),
         });
     }
+    Ok(fixtures)
+}
 
-    // Write each fixture as pretty-printed JSON.
+fn write_fixtures() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    let dir = fixtures_dir();
     std::fs::create_dir_all(&dir)?;
-    let mut written: Vec<(String, String)> = Vec::new();
+    let fixtures = build_fixtures()?;
+    let mut written = Vec::new();
     for f in &fixtures {
         let json = serde_json::to_string_pretty(&f.value)?;
         let json = format!("{json}\n");
-        let path = dir.join(format!("{}.json", f.name));
-        std::fs::write(&path, &json)?;
+        std::fs::write(dir.join(format!("{}.json", f.name)), &json)?;
         written.push((f.name.to_string(), json));
     }
-
     Ok(written)
 }
 
 fn check_fixtures() -> Result<(), Box<dyn std::error::Error>> {
+    // Read-only drift check: build expected data in memory and diff it against
+    // the checked-in files. This MUST NOT rewrite fixtures, or a stale fixture
+    // would pass the check by being silently updated first.
     let dir = fixtures_dir();
-    let expected = write_fixtures()?;
+    let expected = build_fixtures()?;
     let mut stale = Vec::new();
-
-    for (name, content) in &expected {
-        let path = dir.join(format!("{name}.json"));
+    for f in &expected {
+        let json = serde_json::to_string_pretty(&f.value)?;
+        let json = format!("{json}\n");
+        let path = dir.join(format!("{}.json", f.name));
         let current = std::fs::read_to_string(&path).map_err(|e| {
             format!(
                 "cannot read {}: {e} (run the exporter once to create it)",
                 path.display()
             )
         })?;
-        if &current != content {
-            stale.push(name.clone());
+        if current != json {
+            stale.push(f.name);
         }
     }
-
     if !stale.is_empty() {
         eprintln!(
             "error: {} fixture(s) are stale. Run `cargo run -p anima-channel --example export-golden-fixtures` and commit the result.",
@@ -351,11 +379,43 @@ fn check_fixtures() -> Result<(), Box<dyn std::error::Error>> {
         for name in &stale {
             eprintln!("  stale: {name}");
         }
-        std::process::exit(1);
+        return Err("stale golden fixtures".into());
     }
-
     println!("ok: all {} golden fixtures are up to date", expected.len());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// airi-jy5: `--check` must reject a drifted fixture without rewriting it.
+    /// We prove the read-only path by temporarily modifying the real fixtures
+    /// dir, running check, and confirming the file was not changed.
+    #[test]
+    fn check_does_not_rewrite_fixtures() {
+        let dir = fixtures_dir();
+        let fixture_name = "core_status.reply.json";
+        let fixture_path: PathBuf = dir.join(fixture_name);
+        let original = std::fs::read_to_string(&fixture_path).unwrap();
+
+        // Inject a deliberate mutation.
+        let mutated = format!("{original}\nX");
+        std::fs::write(&fixture_path, &mutated).unwrap();
+        let mutated_bytes = std::fs::read(&fixture_path).unwrap();
+
+        // check_fixtures() must fail because the fixture is stale.
+        let result = check_fixtures();
+        assert!(result.is_err(), "check must fail on stale fixtures");
+
+        // The fixture file must be unchanged after the check.
+        let after = std::fs::read(&fixture_path).unwrap();
+        assert_eq!(after, mutated_bytes, "fixture file was rewritten by --check");
+
+        // Restore the original fixture.
+        std::fs::write(&fixture_path, original).unwrap();
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

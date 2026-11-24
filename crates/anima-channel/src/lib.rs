@@ -84,6 +84,7 @@ pub use certs::{
     ca_cert_pem, certs_exist, get_or_create_certs, san_domains, server_config as tls_server_config,
     CertBundle, CertsError,
 };
+pub use client::{daemon_connect, daemon_connect_with_ca};
 pub use client::{GatewayClient, GatewayClientError};
 pub use config::{default_config_path, load_or_heal, ChannelConfig, ConfigError, DEFAULT_HOSTNAME};
 pub use control::{GatewayControlApply, GatewayControlStatus};
@@ -91,15 +92,15 @@ pub use dispatch::{
     RendererHandler, RendererHandlers, RpcContext, RpcError, RpcRegistry, APP_NAME, PROTOCOL,
 };
 pub use event_bus::{EventBus, EventLane, DEFAULT_EVENT_POLL_INTERVAL, DEFAULT_LANE_CAPACITY};
-pub use client::{daemon_connect, daemon_connect_with_ca};
 pub use server::{ChannelServer, ServerHandle};
 pub use session::{CloseInfo, Session, SessionOutcome, SessionState, CLOSE_POLICY_VIOLATION};
 pub use wire::{
-    AuthenticatedData, CardInfo, ChatMessage, CoreStatusReply, CueKind, EmotionTagData, EventPayload,
-    EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayClientFrame, GatewayConfigReply,
-    GatewayEvent, GatewayServerFrame, HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData,
-    ModuleAuthData, PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
-    SessionExportReply, SessionInfo, StmmSummary, StatusChangedData, TokenDeltaData,
+    AuthenticatedData, CardInfo, CardMetadataReply, CardMetadataSetRequest, ChatMessage,
+    CoreStatusReply, CueKind, EmotionTagData, EventPayload, EventSubscriptionReply, EventTopic,
+    GatewayAuthReply, GatewayClientFrame, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
+    HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData, ModuleAuthData,
+    PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionExportReply,
+    SessionImportReply, SessionInfo, StatusChangedData, StmmSummary, TokenDeltaData,
     CANONICAL_EMOTION_KEYS,
 };
 pub use ws::{accept_key, encode_frame, Frame, FrameDecoder, OP_CLOSE, OP_PING, OP_PONG, OP_TEXT};

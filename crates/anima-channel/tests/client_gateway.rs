@@ -22,6 +22,7 @@ fn start_server() -> anima_channel::ServerHandle {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     ChannelServer::bind("127.0.0.1", 0, &config)
         .expect("bind channel server")
@@ -82,6 +83,7 @@ fn wss_client_round_trip_with_generated_ca() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let server =
         ChannelServer::bind_tls("127.0.0.1", 0, &config, tls).expect("bind TLS channel server");
@@ -106,6 +108,7 @@ fn start_core_status_server() -> (anima_channel::ServerHandle, CoreStatusReply) 
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let reply = CoreStatusReply {
         app: "airi-daemon".to_string(),
@@ -161,6 +164,7 @@ fn server_pushes_event_without_a_preceding_client_frame() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let server = ChannelServer::bind("127.0.0.1", 0, &config).expect("bind channel server");
     let bus = server.event_bus();
@@ -239,6 +243,7 @@ fn core_status_client_error_path() {
         hostname: "127.0.0.1".to_string(),
         auth_token: TOKEN.to_string(),
         tls_config: None,
+        allow_actions: None,
     };
     let mut handlers = RendererHandlers::new();
     handlers.insert(

@@ -15,9 +15,10 @@
 #[cfg(test)]
 mod golden_fixtures {
     use anima_channel::wire::{
-        CoreStatusReply, EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply,
-        GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply,
-        RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SettingsGetReply, SettingsSetReply,
+        CardMetadataReply, CardMetadataSetRequest, ChatSendRequest, CoreStatusReply, EmotionTagData,
+        EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
+        GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject, RuntimePingReply,
+        RuntimeStatusReply, SessionImportReply, SettingsGetReply, SettingsSetReply,
         VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
@@ -91,7 +92,10 @@ mod golden_fixtures {
 
     #[test]
     fn event_presence_changed_fixtures() {
-        for name in &["event.presence_changed.online", "event.presence_changed.offline"] {
+        for name in &[
+            "event.presence_changed.online",
+            "event.presence_changed.offline",
+        ] {
             let value = load_json(name);
             round_trip::<GatewayServerFrame>(name, &value);
         }
@@ -99,7 +103,10 @@ mod golden_fixtures {
 
     #[test]
     fn event_status_changed_fixtures() {
-        for name in &["event.status_changed.healthy", "event.status_changed.unhealthy"] {
+        for name in &[
+            "event.status_changed.healthy",
+            "event.status_changed.unhealthy",
+        ] {
             let value = load_json(name);
             round_trip::<GatewayServerFrame>(name, &value);
         }
@@ -185,6 +192,34 @@ mod golden_fixtures {
     fn rpc_error_fixture() {
         let value = load_json("rpc.error.invalid_token");
         round_trip::<RpcErrorObject>("rpc.error.invalid_token", &value);
+    }
+
+    #[test]
+    fn card_metadata_fixtures() {
+        let reply = load_json("cards.metadata.reply");
+        round_trip::<CardMetadataReply>("cards.metadata.reply", &reply);
+        let set = load_json("cards.metadata.set.request");
+        round_trip::<CardMetadataSetRequest>("cards.metadata.set.request", &set);
+    }
+
+    #[test]
+    fn chat_send_request_fixture_locks_camel_case_session_id() {
+        let value = load_json("chat.send.request");
+        round_trip::<ChatSendRequest>("chat.send.request", &value);
+        assert!(
+            value.get("sessionId").is_some(),
+            "chat.send.request: camelCase `sessionId` must cross the wire"
+        );
+        assert!(
+            value.get("session_id").is_none(),
+            "chat.send.request: snake_case `session_id` is not the wire shape"
+        );
+    }
+
+    #[test]
+    fn session_import_reply_fixture() {
+        let value = load_json("sessions.import.reply");
+        round_trip::<SessionImportReply>("sessions.import.reply", &value);
     }
 
     // ----------------------------------------------------------------

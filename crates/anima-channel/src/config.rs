@@ -12,12 +12,19 @@
 //! anything else is tolerated on read but dropped on write):
 //!
 //! ```json
-//! { "hostname": "127.0.0.1", "authToken": "<uuid-v4>", "tlsConfig": {} }
+//! { "hostname": "127.0.0.1", "authToken": "<uuid-v4>", "tlsConfig": {}, "allowActions": true }
 //! ```
 //!
 //! `tlsConfig` is an opaque flag object: absent/`null` = plaintext listener,
 //! present (any object, even `{}`) = `wss://` with a locally minted CA +
 //! SAN-covered server certificate (see [`crate::certs`]).
+//!
+//! `allowActions` is the strict opt-in for mutating WS verbs (chat.send,
+//! settings.set, journal.append, MCP/ACP, …). A freshly healed config — the
+//! single-user loopback daemon — writes `true`; parsing preserves only a
+//! literal `true` (anything else stays absent, fail-closed); healing an
+//! unparseable config drops it. Non-loopback binds stay fail-closed; see
+//! `docs/design-daemon-gateway.md` (airi-f03).
 
 use std::fs;
 use std::io;
@@ -47,15 +54,30 @@ pub struct ChannelConfig {
     // the opaque flag exports as `unknown`, same as the frame payload fields.
     #[specta(type = specta_typescript::Unknown)]
     pub tls_config: Option<serde_json::Value>,
+    /// Strict `allowActions` opt-in for mutating/executing WS verbs
+    /// (`chat.send`, `settings.set`, `journal.append`, MCP/ACP, …).
+    /// `Some(true)` allows; anything else (absent, `false`, wrong type)
+    /// fails closed. Re-read per call by the gateway; never used to
+    /// authenticate. See `docs/design-daemon-gateway.md` (airi-f03).
+    #[serde(rename = "allowActions", default, skip_serializing_if = "Option::is_none")]
+    pub allow_actions: Option<bool>,
 }
 
 impl ChannelConfig {
     /// Construct a fresh config with a random token bound to loopback.
+    ///
+    /// The fresh config carries `"allowActions": true`: the healed default is
+    /// the single-user loopback daemon, where thin clients (Flutter/Godot/Vue)
+    /// need the mutating verbs (chat.send, settings.set, journal.append, …) to
+    /// work out of the box. Non-loopback binds stay fail-closed — the gateway
+    /// forces TLS there and operators must opt in explicitly. See
+    /// `docs/design-daemon-gateway.md` (airi-f03).
     pub fn healed() -> Self {
         Self {
             hostname: DEFAULT_HOSTNAME.to_string(),
             auth_token: uuid_v4(),
             tls_config: None,
+            allow_actions: Some(true),
         }
     }
 }
@@ -126,10 +148,18 @@ fn parse_config(raw: &str) -> Option<ChannelConfig> {
     // means TLS. `null` means plaintext and is dropped on write.
     let tls_config = obj.get("tlsConfig").filter(|v| !v.is_null()).cloned();
 
+    // Preserve `allowActions` verbatim: only literal JSON `true` enables
+    // mutating verbs; anything else stays absent (fail-closed).
+    let allow_actions = obj
+        .get("allowActions")
+        .and_then(|v| v.as_bool())
+        .filter(|v| *v);
+
     Some(ChannelConfig {
         hostname,
         auth_token: auth_token.to_string(),
         tls_config,
+        allow_actions,
     })
 }
 
@@ -149,10 +179,13 @@ fn heal_in_place(path: &Path, raw: &str) -> Result<ChannelConfig, ConfigError> {
         .ok()
         .and_then(|v| v.get("tlsConfig").cloned())
         .filter(|v| !v.is_null());
+    // Healing drops `allowActions` (fail-closed): a config that could not be
+    // parsed must not keep executing mutating verbs on a fresh token.
     let cfg = ChannelConfig {
         hostname,
         auth_token: uuid_v4(),
         tls_config,
+        allow_actions: None,
     };
     write_config(path, &cfg)?;
     Ok(cfg)
@@ -323,5 +356,51 @@ mod tests {
         let cfg = load_or_heal(&path).unwrap();
         assert_eq!(cfg.hostname, "0.0.0.0");
         assert_ne!(cfg.auth_token, "");
+    }
+
+    #[test]
+    fn healed_config_opts_into_actions_for_local_use() {
+        // Production healing is the single-user loopback daemon: it provisions
+        // `allowActions: true` so thin clients' mutating verbs work out of the
+        // box. Non-loopback binds stay fail-closed (see gateway docs).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let cfg = load_or_heal(&path).unwrap();
+        assert_eq!(cfg.allow_actions, Some(true));
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(raw["allowActions"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn allow_actions_parsing_is_strict() {
+        let dir = tempfile::tempdir().unwrap();
+        // Literal true survives; everything else stays absent (fail-closed).
+        for (raw, expected) in [
+            (r#"{ "authToken": "t", "allowActions": true }"#, Some(true)),
+            (r#"{ "authToken": "t", "allowActions": false }"#, None),
+            (r#"{ "authToken": "t", "allowActions": "true" }"#, None),
+            (r#"{ "authToken": "t", "allowActions": 1 }"#, None),
+            (r#"{ "authToken": "t" }"#, None),
+        ] {
+            let path = dir.path().join("config.json");
+            fs::write(&path, raw).unwrap();
+            let cfg = load_or_heal(&path).unwrap();
+            assert_eq!(cfg.allow_actions, expected, "raw: {raw}");
+        }
+    }
+
+    #[test]
+    fn healing_drops_allow_actions_fail_closed() {
+        // An unparseable config regenerates the token and must NOT keep the
+        // actions opt-in.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        fs::write(&path, r#"{ "authToken": "", "allowActions": true }"#).unwrap();
+        let cfg = load_or_heal(&path).unwrap();
+        assert_eq!(cfg.allow_actions, None);
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(raw.get("allowActions").is_none());
     }
 }
