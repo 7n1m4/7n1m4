@@ -1,15 +1,59 @@
+import type { DaemonCardMetadata } from '../composables/daemon-card-metadata'
 import type { Character, CreateCharacterPayload, UpdateCharacterPayload } from '../types/character'
 
 import { nanoid } from 'nanoid'
 import { defineStore } from 'pinia'
 import { parse } from 'valibot'
 import { ref } from 'vue'
+import { toast } from 'vue-sonner'
 
 import { client } from '../composables/api'
+import { fetchDaemonCardMetadata, hasDaemonCardMetadata, setDaemonCardMetadata } from '../composables/daemon-card-metadata'
 import { useLocalFirstRequest } from '../composables/use-local-first'
 import { charactersRepo } from '../database/repos/characters.repo'
 import { CharacterWithRelationsSchema } from '../types/character'
 import { useAuthStore } from './auth'
+
+// Serialization per card for daemon metadata work (hydrate / like / bookmark).
+// A promise chain per id guarantees one in-flight daemon request per card.
+const daemonMetadataQueues = new Map<string, Promise<void>>()
+
+function enqueueDaemonMetadata(cardId: string, task: () => Promise<void>): Promise<void> {
+  const previous = daemonMetadataQueues.get(cardId) ?? Promise.resolve()
+  const run = previous.then(async () => {
+    try {
+      await task()
+    }
+    finally {
+      if (daemonMetadataQueues.get(cardId) === run)
+        daemonMetadataQueues.delete(cardId)
+    }
+  })
+  daemonMetadataQueues.set(cardId, run)
+  return run
+}
+
+function applyDaemonMetadata(character: Character, metadata: DaemonCardMetadata, userId: string) {
+  // The daemon owns the local user's flags. The relation arrays are the
+  // optimistic mirrors used by the card toggles. Counts are hosted totals:
+  // adjust them only when the daemon disagrees with the local flag, never
+  // recompute them from the per-user arrays.
+  const wasLiked = character.likes?.some(item => item.userId === userId) ?? false
+  if (wasLiked !== metadata.liked) {
+    character.likesCount = Math.max(0, character.likesCount + (metadata.liked ? 1 : -1))
+  }
+  character.likes = metadata.liked
+    ? [...(character.likes ?? []).filter(item => item.userId !== userId), { userId, characterId: character.id }]
+    : (character.likes ?? []).filter(item => item.userId !== userId)
+
+  const wasBookmarked = character.bookmarks?.some(item => item.userId === userId) ?? false
+  if (wasBookmarked !== metadata.bookmarked) {
+    character.bookmarksCount = Math.max(0, character.bookmarksCount + (metadata.bookmarked ? 1 : -1))
+  }
+  character.bookmarks = metadata.bookmarked
+    ? [...(character.bookmarks ?? []).filter(item => item.userId !== userId), { userId, characterId: character.id }]
+    : (character.bookmarks ?? []).filter(item => item.userId !== userId)
+}
 
 function buildLocalCharacter(userId: string, payload: CreateCharacterPayload) {
   const id = payload.character.id ?? nanoid()
@@ -74,10 +118,13 @@ function buildLocalCharacter(userId: string, payload: CreateCharacterPayload) {
 
 export const useCharacterStore = defineStore('characters', () => {
   const characters = ref<Map<string, Character>>(new Map())
+  const error = ref<string | null>(null)
   const auth = useAuthStore()
 
-  async function fetchList(all: boolean = false) {
-    return useLocalFirstRequest({
+  async function fetchList(all: boolean = false, allowRemote?: () => boolean | Promise<boolean>) {
+    const request = useLocalFirstRequest({
+      lazy: true,
+      allowRemote,
       local: async () => {
         const cached = await charactersRepo.getAll()
         if (cached.length > 0) {
@@ -106,6 +153,9 @@ export const useCharacterStore = defineStore('characters', () => {
         await charactersRepo.saveAll(parsedData)
       },
     })
+    await request.execute()
+    void loadDaemonMetadata(undefined, auth.userId)
+    return request
   }
 
   async function fetchById(id: string) {
@@ -129,6 +179,7 @@ export const useCharacterStore = defineStore('characters', () => {
 
         characters.value.set(character.id, character)
         await charactersRepo.upsert(character)
+        await loadDaemonMetadata([character.id], auth.userId)
         return character
       },
     })
@@ -217,69 +268,95 @@ export const useCharacterStore = defineStore('characters', () => {
     })
   }
 
+  // Likes/bookmarks are one-local-user state owned by the daemon
+  // (`cards.metadata` / `cards.metadata.set` RPCs, backed by the daemon's
+  // `card_metadata` SQLite table). The local character row keeps the
+  // optimistic counters so the card grid renders immediately; the daemon
+  // flags are the durable source of truth and win on failure rollback.
   async function like(id: string) {
-    return useLocalFirstRequest({
-      local: async () => {
-        const character = characters.value.get(id)
-        if (!character) {
-          return
-        }
-        const likes = character.likes ?? []
-        if (!likes.some(item => item.userId === auth.userId)) {
-          likes.push({ userId: auth.userId, characterId: id })
-          character.likes = likes
-          character.likesCount += 1
-          character.updatedAt = new Date()
-          characters.value.set(character.id, character)
-          await charactersRepo.upsert(character)
-        }
-      },
-      remote: async () => {
-        const res = await client.api.characters[':id'].like.$post({
-          param: { id },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to like character')
-        }
+    const character = characters.value.get(id)
+    if (!character) {
+      return
+    }
+    const wasLiked = character.likes?.some(item => item.userId === auth.userId) ?? false
+    const nextLiked = !wasLiked
 
-        const data = await res.json()
-        const character = parse(CharacterWithRelationsSchema, data)
+    // Optimistic local update, reverted below if the daemon write fails.
+    const likes = character.likes ?? []
+    character.likes = nextLiked
+      ? [...likes.filter(item => item.userId !== auth.userId), { userId: auth.userId, characterId: id }]
+      : likes.filter(item => item.userId !== auth.userId)
+    character.likesCount = Math.max(0, character.likesCount + (nextLiked ? 1 : -1))
+    character.updatedAt = new Date()
+    characters.value.set(character.id, character)
+    await charactersRepo.upsert(character)
+
+    if (!hasDaemonCardMetadata()) {
+      return
+    }
+    await enqueueDaemonMetadata(id, async () => {
+      try {
+        const bookmarked = character.bookmarks?.some(item => item.userId === auth.userId) ?? false
+        const metadata = await setDaemonCardMetadata(id, { liked: nextLiked, bookmarked })
+        applyDaemonMetadata(character, metadata, auth.userId)
+        await charactersRepo.upsert(character)
+      }
+      catch (err) {
+        // Daemon write failed: restore the pre-toggle optimistic state so the
+        // local row matches what the daemon still believes.
+        character.likes = likes
+        character.likesCount = Math.max(0, character.likesCount + (nextLiked ? -1 : 1))
+        character.updatedAt = new Date()
         characters.value.set(character.id, character)
         await charactersRepo.upsert(character)
-      },
+        const message = err instanceof Error ? err.message : String(err)
+        error.value = message
+        console.error('[CharacterStore] Failed to persist like state for', id, err)
+        toast.error(message)
+      }
     })
   }
 
   async function bookmark(id: string) {
-    return useLocalFirstRequest({
-      local: async () => {
-        const character = characters.value.get(id)
-        if (!character) {
-          return
-        }
-        const bookmarks = character.bookmarks ?? []
-        if (!bookmarks.some(item => item.userId === auth.userId)) {
-          bookmarks.push({ userId: auth.userId, characterId: id })
-          character.bookmarks = bookmarks
-          character.bookmarksCount += 1
-          character.updatedAt = new Date()
-          characters.value.set(character.id, character)
-          await charactersRepo.upsert(character)
-        }
-      },
-      remote: async () => {
-        const res = await client.api.characters[':id'].bookmark.$post({
-          param: { id },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to bookmark character')
-        }
+    const character = characters.value.get(id)
+    if (!character) {
+      return
+    }
+    const wasBookmarked = character.bookmarks?.some(item => item.userId === auth.userId) ?? false
+    const nextBookmarked = !wasBookmarked
 
-        const data = await res.json()
-        const character = parse(CharacterWithRelationsSchema, data)
+    const bookmarks = character.bookmarks ?? []
+    character.bookmarks = nextBookmarked
+      ? [...bookmarks.filter(item => item.userId !== auth.userId), { userId: auth.userId, characterId: id }]
+      : bookmarks.filter(item => item.userId !== auth.userId)
+    character.bookmarksCount = Math.max(0, character.bookmarksCount + (nextBookmarked ? 1 : -1))
+    character.updatedAt = new Date()
+    characters.value.set(character.id, character)
+    await charactersRepo.upsert(character)
+
+    if (!hasDaemonCardMetadata()) {
+      return
+    }
+    await enqueueDaemonMetadata(id, async () => {
+      try {
+        const liked = character.likes?.some(item => item.userId === auth.userId) ?? false
+        const metadata = await setDaemonCardMetadata(id, { liked, bookmarked: nextBookmarked })
+        applyDaemonMetadata(character, metadata, auth.userId)
+        await charactersRepo.upsert(character)
+      }
+      catch (err) {
+        // Daemon write failed: restore the pre-toggle optimistic state so the
+        // local row matches what the daemon still believes.
+        character.bookmarks = bookmarks
+        character.bookmarksCount = Math.max(0, character.bookmarksCount + (nextBookmarked ? -1 : 1))
+        character.updatedAt = new Date()
         characters.value.set(character.id, character)
         await charactersRepo.upsert(character)
-      },
+        const message = err instanceof Error ? err.message : String(err)
+        error.value = message
+        console.error('[CharacterStore] Failed to persist bookmark state for', id, err)
+        toast.error(message)
+      }
     })
   }
 
@@ -287,9 +364,56 @@ export const useCharacterStore = defineStore('characters', () => {
     return characters.value.get(id)
   }
 
+  /**
+   * Hydrate local flags from the daemon-owned metadata. Called after the
+   * character list loads so a restart still shows the right liked/bookmarked
+   * state; the daemon is the durable source of truth, the local row is the
+   * optimistic mirror.
+   */
+  async function loadDaemonMetadata(ids?: string[], userId?: string) {
+    if (!hasDaemonCardMetadata()) {
+      return
+    }
+    const actingUserId = userId ?? auth.userId
+    const targets = ids ?? Array.from(characters.value.keys())
+    const bulk = ids === undefined
+    const pending = targets.map(async (id) => {
+      const character = characters.value.get(id)
+      if (!character) {
+        return
+      }
+      await enqueueDaemonMetadata(id, async () => {
+        try {
+          const metadata = await fetchDaemonCardMetadata(id)
+          applyDaemonMetadata(character, metadata, actingUserId)
+          characters.value.set(character.id, character)
+          await charactersRepo.upsert(character)
+        }
+        catch (err) {
+          // Daemon absent: keep whatever the local cache holds. Bulk hydration
+          // runs in the background, so one unavailable daemon must not produce
+          // a toast per card or overwrite a more relevant action's error.
+          if (bulk) {
+            return
+          }
+          const message = err instanceof Error ? err.message : String(err)
+          error.value = message
+          console.error('[CharacterStore] Failed to load daemon card metadata for', id, err)
+          toast.error(message)
+        }
+      })
+    })
+    if (bulk) {
+      // Do not block fetchList: each RPC may open a WebSocket and time out.
+      void Promise.all(pending)
+      return
+    }
+    await Promise.all(pending)
+  }
+
   return {
     characters,
-
+    error,
     fetchList,
     fetchById,
     create,
@@ -298,5 +422,6 @@ export const useCharacterStore = defineStore('characters', () => {
     like,
     bookmark,
     getCharacter,
+    loadDaemonMetadata,
   }
 })
