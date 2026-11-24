@@ -21,8 +21,6 @@
 </div>
 
 > [!WARNING]
-> **Status — mid-pivot, not a daily driver.**
->
 > Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A long-lived Rust daemon (`anima-daemon`) is the single source of truth for state and business logic and hosts the WS/wss gateway (`anima-channel`). It drives the maintained full-parity renderers: the Flutter window companion (`apps/flutter`), the Godot renderer (`godot/`), and the Vue web UI (`apps/stage-web`), plus the Electrobun desktop app (`apps/stage-tamagotchi`) while it remains live. "Thin client" describes who owns state — not a reduced UI surface. WS/wss is the data plane; D-Bus is the control plane on Linux. Those clients hold view state and client-local audio/render state, while TypeScript stores remain the behavior reference where daemon ports are incomplete. Assumed load: one developer with local clients and one daemon, later a few trusted LAN/remote clients; not public multi-tenant.
 >
 > Retiring TypeScript business logic (the gated opt-in TS remote-sync slice) does **not** retire the Vue renderer: all three named renderers stay in scope at full feature parity. Docs and code drift. For the current topology, invariants, and gateway trust gates read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for the multi-renderer contract read [`docs/design-flutter-godot-pivot.md`](./docs/design-flutter-godot-pivot.md) and [`docs/feature-parity-checklist.md`](./docs/feature-parity-checklist.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md). File issues against the fork you actually intend to run.
