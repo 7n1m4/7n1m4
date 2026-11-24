@@ -17,6 +17,61 @@ pub const ENV_BASE_URL: &str = "AIRI_SLINT_BASE_URL";
 /// Environment variable for the model of the env-selected provider.
 pub const ENV_MODEL: &str = "AIRI_SLINT_MODEL";
 
+/// TS `isSecretConfigKey`: normalized names ending in `key`/`token` or
+/// containing an auth word are secrets. Used to keep pooled/system-row
+/// credentials out of thin-client replies (`toSafeSystemRow` in the TS
+/// reference) and to stop a PATCH from rotating a managed secret.
+pub fn is_secret_config_key(key: &str) -> bool {
+    let normalized: String = key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    const SUBSTRINGS: &[&str] = &[
+        "apikey",
+        "authheader",
+        "authorization",
+        "secret",
+        "password",
+        "credential",
+        "bearer",
+    ];
+    const SUFFIXES: &[&str] = &["token", "key"];
+    SUBSTRINGS.iter().any(|s| normalized.contains(s))
+        || SUFFIXES.iter().any(|s| normalized.ends_with(s))
+}
+
+/// Recursively strip secret-shaped keys from a provider config value.
+pub fn strip_secret_config_keys(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .filter(|(key, _)| !is_secret_config_key(key))
+                .map(|(key, v)| (key.clone(), strip_secret_config_keys(v)))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(strip_secret_config_keys).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+/// Merge an incoming config patch while preserving stored credential-shaped
+/// keys. A client cannot overwrite a managed secret by echoing its key.
+pub fn merge_config_preserving_secrets(
+    existing: &serde_json::Map<String, serde_json::Value>,
+    incoming: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut merged = incoming.clone();
+    for (key, value) in existing {
+        if is_secret_config_key(key) {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    serde_json::Value::Object(merged)
+}
+
 /// The provider a send would go through.
 #[derive(Debug, Clone)]
 pub struct ProviderResolution {
@@ -65,7 +120,17 @@ pub fn resolve_provider(
         }
     }
     let provider = rows.iter().find(|p| p.enabled)?;
-    let config: ProviderConfig = serde_json::from_value(provider.config.clone()).unwrap_or_default();
+    let config: ProviderConfig = match serde_json::from_value(provider.config.clone()) {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::warn!(
+                provider_id = %provider.id,
+                error = %err,
+                "stored provider config failed to deserialize; using empty config"
+            );
+            ProviderConfig::default()
+        }
+    };
     let model = config.model.clone().unwrap_or_default();
     Some(ProviderResolution {
         id: provider.id.clone(),
@@ -94,7 +159,12 @@ mod tests {
     }
 
     fn env_fn(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
-        move |key| pairs.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string())
+        move |key| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.to_string())
+        }
     }
 
     #[test]
@@ -104,7 +174,11 @@ mod tests {
             (ENV_API_KEY, "sk-test"),
             (ENV_MODEL, "claude-x"),
         ]);
-        let rows = [row("openai", true, serde_json::json!({ "model": "stored-model" }))];
+        let rows = [row(
+            "openai",
+            true,
+            serde_json::json!({ "model": "stored-model" }),
+        )];
         let r = resolve_provider(env, &rows).unwrap();
         assert_eq!(r.id, "anthropic");
         assert_eq!(r.config.api_key.as_deref(), Some("sk-test"));
@@ -114,7 +188,11 @@ mod tests {
     #[test]
     fn blank_env_id_falls_through_to_stored() {
         let env = env_fn(&[(ENV_PROVIDER, "   ")]);
-        let rows = [row("openai", true, serde_json::json!({ "model": "stored-model" }))];
+        let rows = [row(
+            "openai",
+            true,
+            serde_json::json!({ "model": "stored-model" }),
+        )];
         let r = resolve_provider(env, &rows).unwrap();
         assert_eq!(r.id, "openai");
         assert_eq!(r.model, "stored-model");
@@ -142,15 +220,103 @@ mod tests {
     }
 
     #[test]
+    fn camelcase_stored_config_is_accepted() {
+        let rows = [row(
+            "openai",
+            true,
+            serde_json::json!({ "apiKey": "sk-legacy", "baseUrl": "https://legacy.test/v1", "model": "m" }),
+        )];
+        let r = resolve_provider(empty_env, &rows).unwrap();
+        assert_eq!(r.config.api_key.as_deref(), Some("sk-legacy"));
+        assert_eq!(r.config.base_url.as_deref(), Some("https://legacy.test/v1"));
+        assert_eq!(r.model, "m");
+    }
+
+    #[test]
     fn nothing_configured_resolves_to_none() {
         assert!(resolve_provider(empty_env, &[]).is_none());
     }
 
     #[test]
     fn label_shows_model_when_present_else_id() {
-        let rows = [row("openai", true, serde_json::json!({ "model": "gpt-4o" }))];
-        assert_eq!(resolve_provider(empty_env, &rows).unwrap().label(), "openai · gpt-4o");
+        let rows = [row(
+            "openai",
+            true,
+            serde_json::json!({ "model": "gpt-4o" }),
+        )];
+        assert_eq!(
+            resolve_provider(empty_env, &rows).unwrap().label(),
+            "openai · gpt-4o"
+        );
         let rows = [row("openai", true, serde_json::json!({}))];
-        assert_eq!(resolve_provider(empty_env, &rows).unwrap().label(), "openai");
+        assert_eq!(
+            resolve_provider(empty_env, &rows).unwrap().label(),
+            "openai"
+        );
+    }
+
+    #[test]
+    fn secret_keys_are_stripped_recursively_without_echoing_values() {
+        let raw = serde_json::json!({
+            "apiKey": "TOP-SECRET",
+            "base_url": "https://example.test/v1",
+            // `credentials` is a secret-shaped container: TS toSafeSystemRow
+            // strips the whole subtree, including non-secret-looking fields.
+            "credentials": { "accessToken": "ANOTHER-SECRET", "region": "us-east" },
+            "extra": [{ "auth_header": "BEARER-SECRET", "maxTokens": 100 }],
+            "maxTokens": 500,
+            "tokenizer": "cl100k",
+        });
+        let safe = strip_secret_config_keys(&raw);
+        let text = safe.to_string();
+        assert!(!text.contains("TOP-SECRET"));
+        assert!(!text.contains("ANOTHER-SECRET"));
+        assert!(!text.contains("BEARER-SECRET"));
+        assert_eq!(safe["base_url"], "https://example.test/v1");
+        assert!(safe["credentials"].is_null(), "secret container must be stripped wholesale");
+        assert_eq!(safe["extra"][0]["maxTokens"], 100);
+        assert_eq!(safe["maxTokens"], 500);
+        assert_eq!(safe["tokenizer"], "cl100k");
+        assert!(is_secret_config_key("apiKey"));
+        assert!(is_secret_config_key("auth-header"));
+        assert!(is_secret_config_key("secretAccessKey"));
+        assert!(!is_secret_config_key("maxTokens"));
+    }
+
+    #[test]
+    fn patch_preserves_stored_secrets_but_updates_other_settings() {
+        let existing = serde_json::json!({
+            "api_key": "STORED-SECRET",
+            "base_url": "https://old.test/v1",
+            "maxTokens": 100,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let incoming = serde_json::json!({
+            "apiKey": "CLIENT-SECRET",
+            "baseUrl": "https://new.test/v1",
+            "maxTokens": 200,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let merged = merge_config_preserving_secrets(&existing, &incoming);
+        assert_eq!(merged["api_key"], "STORED-SECRET");
+        assert_eq!(merged["baseUrl"], "https://new.test/v1");
+        assert_eq!(merged["maxTokens"], 200);
+    }
+    #[test]
+    fn client_cannot_inject_secret_via_camelcase_key() {
+        let existing = serde_json::json!({ "api_key": "STORED-SECRET" })
+            .as_object().unwrap().clone();
+        let incoming = serde_json::json!({ "apiKey": "CLIENT-SECRET", "maxTokens": 200 })
+            .as_object().unwrap().clone();
+        let merged = merge_config_preserving_secrets(&existing, &incoming);
+        let safe = strip_secret_config_keys(&merged);
+        assert_eq!(merged["api_key"], "STORED-SECRET");
+        assert!(!safe.to_string().contains("CLIENT-SECRET"));
+        assert!(!safe.to_string().contains("STORED-SECRET"));
+        assert_eq!(safe["maxTokens"], 200);
     }
 }

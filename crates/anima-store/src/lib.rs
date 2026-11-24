@@ -21,7 +21,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// v3: lane ② (p7-retrieval) — `memory_embeddings` retrieval index.
 /// v4: wave ④ (p9-data-vault) — `scrub_runs` optimization log.
 /// v5: drop day-keyed summary embeddings (collided across summaries per day).
-const SCHEMA_VERSION: i32 = 5;
+/// v6: local card metadata (liked/bookmarked flags owned by the daemon).
+const SCHEMA_VERSION: i32 = 6;
 /// Application data directory name.
 const APP_DIR_NAME: &str = "airi-slint";
 /// Database file name.
@@ -176,6 +177,103 @@ impl Database {
                  where kind = 'summary'
                    and id in (select 'summary:' || day from summaries);",
             )?;
+        }
+        if current < 6 {
+            // Local card metadata owned by the daemon. There is exactly one
+            // row per card; an absent row means both flags are false.
+            //
+            // Beta builds may have created a differently-shaped table at this
+            // version. Validate the actual columns before trusting
+            // `IF NOT EXISTS`: create the canonical table when missing, and
+            // rebuild it (preserving usable flags) when the shape is wrong.
+            let table_exists: bool = tx.query_row(
+                "select exists(select 1 from sqlite_master where type = 'table' and name = 'card_metadata')",
+                [],
+                |row| row.get::<_, i32>(0).map(|v| v != 0),
+            )?;
+            let mut columns = Vec::new();
+            if table_exists {
+                let mut stmt = tx.prepare("pragma table_info(card_metadata)")?;
+                // Column name and declared type both matter: a beta table
+                // with a `liked` TEXT column passed the old name-only check,
+                // then rewrote flags via SQLite's lossy text→integer cast.
+                let rows = stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?.to_ascii_lowercase(),
+                    ))
+                })?;
+                for column in rows {
+                    columns.push(column?);
+                }
+            }
+            let canonical = [
+                ("card_id", "text"),
+                ("liked", "integer"),
+                ("bookmarked", "integer"),
+                ("updated_at", "integer"),
+            ];
+            let shape_ok = table_exists
+                && columns.len() == canonical.len()
+                && columns
+                    .iter()
+                    .all(|c| canonical.iter().any(|(n, t)| n == &c.0 && t == &c.1));
+            if !shape_ok {
+                if table_exists {
+                    tx.execute_batch(
+                        "alter table card_metadata rename to card_metadata_legacy;",
+                    )?;
+                }
+                tx.execute_batch(
+                    r#"
+                    create table card_metadata (
+                        card_id text primary key,
+                        liked integer not null default 0,
+                        bookmarked integer not null default 0,
+                        updated_at integer not null
+                    );
+                    "#,
+                )?;
+                if table_exists {
+                    // Copy rows whenever the legacy table can identify a card
+                    // and holds at least one flag; a beta table with only
+                    // `updated_at` still keeps its timestamps, and a table
+                    // with unrelated columns is dropped. Missing columns are
+                    // defaulted instead of dropping otherwise-usable rows.
+                    let has_card_id = columns.iter().any(|c| c.0 == "card_id");
+                    let has_liked = columns.iter().any(|c| c.0 == "liked");
+                    let has_bookmarked = columns.iter().any(|c| c.0 == "bookmarked");
+                    let has_updated_at = columns.iter().any(|c| c.0 == "updated_at");
+                    if has_card_id && (has_liked || has_bookmarked) {
+                        // Beta builds declared the flags as TEXT; cast safely
+                        // so a non-numeric legacy value becomes false instead
+                        // of aborting the migration or poisoning reads.
+                        let liked_expr = if has_liked {
+                            "case when typeof(liked) = 'integer' then liked else 0 end"
+                        } else {
+                            "0"
+                        };
+                        let bookmarked_expr = if has_bookmarked {
+                            "case when typeof(bookmarked) = 'integer' then bookmarked else 0 end"
+                        } else {
+                            "0"
+                        };
+                        let updated_expr = if has_updated_at {
+                            "coalesce(updated_at, 0)"
+                        } else {
+                            "0"
+                        };
+                        tx.execute_batch(&format!(
+                            "insert into card_metadata (card_id, liked, bookmarked, updated_at)
+                             select card_id, {liked_expr}, {bookmarked_expr}, {updated_expr}
+                             from card_metadata_legacy;
+                             drop table card_metadata_legacy;",
+                        ))?;
+                    } else {
+                        tx.execute_batch("drop table card_metadata_legacy;")?;
+                    }
+                }
+            }
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -1365,7 +1463,9 @@ mod tests {
 
         // The stored row is newer than this write: reject loudly instead of
         // silently succeeding with nothing written.
-        let err = repo.set("theme", &"light").expect_err("older write rejected");
+        let err = repo
+            .set("theme", &"light")
+            .expect_err("older write rejected");
         assert!(err.to_string().contains("theme"), "error: {err:#}");
         assert_eq!(
             repo.get::<String>("theme").unwrap().as_deref(),
@@ -1439,7 +1539,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_is_schema_v5_with_memory_and_scrub_tables() {
+    fn fresh_database_is_schema_v6_with_memory_and_scrub_tables() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("fresh.sqlite");
         let db = Database::open(&path).expect("open db");
@@ -1447,7 +1547,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         let summaries = SummaryRepo::new(db.clone());
         summaries
@@ -1495,7 +1595,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
 
         // v1 data survived the upgrade.
         let session = SessionRepo::new(db.clone());
@@ -1525,7 +1625,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         let entries = JournalRepo::new(db).list_recent(10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "persisted");
@@ -1709,7 +1809,7 @@ mod tests {
             let version: i32 = db
                 .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
                 .expect("read user_version");
-            assert_eq!(version, 5);
+            assert_eq!(version, 6);
             let table_count: i64 = db
                 .with_connection(|c| {
                     Ok(c.query_row(
@@ -1855,6 +1955,215 @@ mod tests {
             "two summaries on one day must get distinct embedding ids"
         );
     }
+
+    #[test]
+    fn card_metadata_defaults_to_false_and_survives_reopen() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("card-metadata.sqlite");
+
+        let db = Database::open(&path).expect("open db");
+        let repo = CardMetadataRepo::new(db.clone());
+        assert_eq!(repo.get("never-seen").unwrap(), CardMetadata::default());
+
+        repo.set("card-1", true, false).unwrap();
+        assert_eq!(
+            repo.get("card-1").unwrap(),
+            CardMetadata {
+                liked: true,
+                bookmarked: false,
+            }
+        );
+
+        repo.set("card-1", false, true).unwrap();
+        assert_eq!(
+            repo.get("card-1").unwrap(),
+            CardMetadata {
+                liked: false,
+                bookmarked: true,
+            }
+        );
+        drop(db);
+
+        let reopened = Database::open(&path).expect("reopen db");
+        assert_eq!(
+            CardMetadataRepo::new(reopened).get("card-1").unwrap(),
+            CardMetadata {
+                liked: false,
+                bookmarked: true,
+            },
+            "flags must survive a restart of the daemon store"
+        );
+    }
+
+    #[test]
+    fn migration_v6_rebuilds_legacy_card_metadata_without_updated_at() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("legacy-card.sqlite");
+
+        // Simulate a partially-migrated beta DB: card_metadata has card_id,
+        // liked, bookmarked but NOT updated_at.
+        {
+            let conn = rusqlite::Connection::open(&path).expect("open raw conn");
+            conn.execute_batch(
+                "create table card_metadata (
+                    card_id text primary key,
+                    liked integer not null default 0,
+                    bookmarked integer not null default 0
+                 );",
+            )
+            .expect("create legacy table");
+            conn.execute(
+                "insert into card_metadata (card_id, liked, bookmarked) values (?1, ?2, ?3)",
+                rusqlite::params!["legacy-card", 1_i64, 0_i64],
+            )
+            .expect("insert legacy row");
+            conn.pragma_update(None, "user_version", 5_i32)
+                .expect("set v5");
+        }
+
+        // Reopen with anima-store: migration v6 should rebuild the table.
+        let db = Database::open(&path).expect("reopen and migrate");
+
+        // Row is preserved with updated_at = 0.
+        let repo = CardMetadataRepo::new(db.clone());
+        let metadata = repo.get("legacy-card").expect("get legacy card");
+        assert_eq!(metadata.liked, true);
+        assert_eq!(metadata.bookmarked, false);
+
+        // Verify updated_at is 0.
+        let updated_at: i64 = db
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "select updated_at from card_metadata where card_id = ?1",
+                    rusqlite::params!["legacy-card"],
+                    |row| row.get(0),
+                )?)
+            })
+            .expect("read updated_at");
+        assert_eq!(updated_at, 0, "missing updated_at defaults to 0");
+    }
+
+    #[test]
+    fn card_metadata_set_rejects_older_write_loudly() {
+        let db = test_db();
+        let repo = CardMetadataRepo::new(db.clone());
+        repo.set_at("card-1", true, false, 1_000).unwrap();
+
+        // An older event from another process must not revert the stored row.
+        let err = repo
+            .set_at("card-1", false, true, 999)
+            .expect_err("older write rejected");
+        assert!(err.to_string().contains("card-1"), "error: {err:#}");
+        assert_eq!(
+            repo.get("card-1").unwrap(),
+            CardMetadata {
+                liked: true,
+                bookmarked: false,
+            }
+        );
+
+        // Equal timestamp is last-writer-wins, like SettingsRepo::set.
+        repo.set_at("card-1", false, true, 1_000).unwrap();
+        assert_eq!(
+            repo.get("card-1").unwrap(),
+            CardMetadata {
+                liked: false,
+                bookmarked: true,
+            }
+        );
+    }
+
+    #[test]
+    fn migration_v6_preserves_legacy_rows_with_mixed_flag_columns() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("legacy-mixed-card.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&path).expect("open raw conn");
+            conn.execute_batch(
+                "create table card_metadata (
+                    card_id text primary key,
+                    bookmarked integer not null default 0,
+                    updated_at integer not null default 500
+                 );",
+            )
+            .expect("create legacy table");
+            conn.execute(
+                "insert into card_metadata (card_id, bookmarked, updated_at) values (?1, ?2, ?3)",
+                rusqlite::params!["legacy-card", 1_i64, 500_i64],
+            )
+            .expect("insert legacy row");
+            conn.pragma_update(None, "user_version", 5_i32)
+                .expect("set v5");
+        }
+
+        let db = Database::open(&path).expect("reopen and migrate");
+        let repo = CardMetadataRepo::new(db.clone());
+        let metadata = repo.get("legacy-card").expect("get legacy card");
+        assert_eq!(metadata.liked, false, "missing flag defaults to false");
+        assert_eq!(metadata.bookmarked, true, "surviving flag is preserved");
+
+        // The preserved timestamp still participates in the LWW guard.
+        let err = repo
+            .set_at("legacy-card", true, false, 499)
+            .expect_err("older write rejected");
+        assert!(err.to_string().contains("legacy-card"), "error: {err:#}");
+        repo.set_at("legacy-card", true, false, 500).unwrap();
+        assert_eq!(
+            repo.get("legacy-card").unwrap(),
+            CardMetadata {
+                liked: true,
+                bookmarked: false,
+            }
+        );
+    }
+
+    #[test]
+    fn migration_v6_rebuilds_wrong_column_types_and_preserves_usable_flags() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("legacy-text-card.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&path).expect("open raw conn");
+            conn.execute_batch(
+                "create table card_metadata (
+                    card_id text primary key,
+                    liked text not null default '0',
+                    bookmarked integer not null default 0,
+                    updated_at integer not null default 10
+                 );",
+            )
+            .expect("create wrong-type table");
+            conn.execute(
+                "insert into card_metadata (card_id, liked, bookmarked, updated_at)
+                 values (?1, ?2, ?3, ?4)",
+                rusqlite::params!["legacy-card", "not-a-boolean", 1_i64, 10_i64],
+            )
+            .expect("insert legacy row");
+            conn.pragma_update(None, "user_version", 5_i32)
+                .expect("set v5");
+        }
+
+        let db = Database::open(&path).expect("reopen and migrate");
+        let columns: Vec<(String, String)> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("pragma table_info(card_metadata)")?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(rows)
+            })
+            .expect("read canonical schema");
+        assert_eq!(columns[1], ("liked".to_string(), "INTEGER".to_string()));
+
+        // A non-numeric legacy flag cannot be interpreted: the card and its
+        // usable bookmark flag still survive instead of the whole row vanishing.
+        let metadata = CardMetadataRepo::new(db.clone())
+            .get("legacy-card")
+            .expect("get legacy card");
+        assert!(!metadata.liked);
+        assert!(metadata.bookmarked);
+    }
 }
 
 // ============================================================================
@@ -1929,5 +2238,95 @@ impl ScrubRunRepo {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+}
+
+// ============================================================================
+// Card metadata (local liked/bookmarked flags owned by the daemon)
+// ============================================================================
+
+/// Local, daemon-owned metadata for one card.
+///
+/// An absent row is equivalent to [`CardMetadata::default`]: both flags false.
+/// There is deliberately no user id or social count here — likes/bookmarks are
+/// one-local-user state, not a hosted community graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CardMetadata {
+    /// Whether the local user liked the card.
+    pub liked: bool,
+    /// Whether the local user bookmarked the card.
+    pub bookmarked: bool,
+}
+
+/// Repository for [`CardMetadata`].
+#[derive(Clone)]
+pub struct CardMetadataRepo {
+    db: Database,
+}
+
+impl CardMetadataRepo {
+    /// Create the repository.
+    pub fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    /// Read a card's metadata; missing rows return the all-false default.
+    pub fn get(&self, card_id: &str) -> Result<CardMetadata> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let row = conn
+            .query_row(
+                "select liked, bookmarked from card_metadata where card_id = ?1",
+                params![card_id],
+                |row| {
+                    Ok(CardMetadata {
+                        liked: row.get::<_, i64>(0)? != 0,
+                        bookmarked: row.get::<_, i64>(1)? != 0,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row.unwrap_or_default())
+    }
+
+    /// Upsert a card's metadata with explicit flag values, stamped with now.
+    ///
+    /// The booleans are applied verbatim: a stale client must never turn into
+    /// an unintended toggle. Writes older than the row's `updated_at` are
+    /// rejected loudly, matching [`SettingsRepo::set`]; same-millisecond
+    /// writes are last-writer-wins. Callers with a source timestamp should use
+    /// [`Self::set_at`] to make the ordering explicit.
+    pub fn set(&self, card_id: &str, liked: bool, bookmarked: bool) -> Result<()> {
+        self.set_at(card_id, liked, bookmarked, now_ms())
+    }
+    /// Update a card's metadata with an explicit logical timestamp.
+    ///
+    /// Mirrors [`SettingsRepo::set`]: a write older than the stored
+    /// `updated_at` is rejected loudly instead of silently reverting a newer
+    /// value written by another process sharing the same database. Equal
+    /// timestamps are last-writer-wins. Use this overload when a caller has a
+    /// timestamp from the source event; otherwise [`Self::set`] stamps now.
+    pub fn set_at(
+        &self,
+        card_id: &str,
+        liked: bool,
+        bookmarked: bool,
+        updated_at_ms: i64,
+    ) -> Result<()> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let affected = conn.execute(
+            "insert into card_metadata (card_id, liked, bookmarked, updated_at)
+             values (?1, ?2, ?3, ?4)
+             on conflict(card_id) do update set
+                 liked = excluded.liked,
+                 bookmarked = excluded.bookmarked,
+                 updated_at = excluded.updated_at
+             where excluded.updated_at >= card_metadata.updated_at",
+            params![card_id, liked as i64, bookmarked as i64, updated_at_ms],
+        )?;
+        anyhow::ensure!(
+            affected > 0,
+            "card metadata `{card_id}` was not written: a newer value already exists"
+        );
+        Ok(())
     }
 }

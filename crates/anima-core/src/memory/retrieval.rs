@@ -731,7 +731,11 @@ mod tests {
             .list_latest(10, Some("summary"))
             .unwrap();
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids.len(), 2, "summaries must not overwrite each other: {ids:?}");
+        assert_eq!(
+            ids.len(),
+            2,
+            "summaries must not overwrite each other: {ids:?}"
+        );
         assert!(ids.contains(&"summary:sum-a"), "{ids:?}");
         assert!(ids.contains(&"summary:sum-b"), "{ids:?}");
     }

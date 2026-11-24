@@ -362,10 +362,10 @@ pub static PROVIDER_DEFS: &[ProviderDef] = &[
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderConfig {
     /// API key or token.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "apiKey", skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     /// Base URL override.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "baseUrl", skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     /// Model default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
