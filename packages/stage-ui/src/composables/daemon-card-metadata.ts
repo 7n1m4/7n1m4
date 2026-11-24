@@ -67,12 +67,13 @@ async function rpc<T>(action: string, payload: Record<string, unknown>): Promise
   const id = `${action}-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const socket = new WebSocket(resolveWebSocketUrl())
 
+  let timeout: ReturnType<typeof setTimeout>
   const settle = (fn: () => void) => {
-    clearTimeout(timeout);
+    clearTimeout(timeout)
     socket.close()
     fn()
   }
-  const timeout = setTimeout(() => {
+  timeout = setTimeout(() => {
     settle(() => reject(new Error(`daemon rpc timed out: ${action}`)))
   }, RPC_TIMEOUT_MS)
 
