@@ -17,6 +17,7 @@ internal static class DaemonRpc
 {
     internal const string ChatSend = "chat.send";
     internal const string ChatCancel = "chat.cancel";
+    internal const string ChatHistory = "chat.history";
     internal const string CoreStatus = "core.status";
     internal const string ProvidersList = "providers.list";
     internal const string SettingsGet = "settings.get";
@@ -32,6 +33,7 @@ internal static class DaemonRpc
     internal const string CardsImport = "cards.import";
     internal const string SessionsList = "sessions.list";
     internal const string SessionsExport = "sessions.export";
+    internal const string SessionsImport = "sessions.import";
 
     /// <summary>Every RPC action the Godot client claims to support.</summary>
     internal static readonly string[] AllActions =
@@ -39,6 +41,7 @@ internal static class DaemonRpc
         ChatSend, ChatCancel, CoreStatus, ProvidersList, SettingsGet, SettingsSet,
         VaultStatus, StmmList, StmmRebuild, JournalAppend, JournalSearch,
         RetrievalStatus, CardsList, CardsGet, CardsImport, SessionsList, SessionsExport,
+        ChatHistory, SessionsImport,
     };
 
     private const string RpcType = "rpc";
@@ -60,7 +63,23 @@ internal static class DaemonRpc
     internal static object SessionPayload(string sessionId) => new { session_id = sessionId ?? string.Empty };
 
     internal static object ChatSendPayload(string sessionId, string content) =>
-        new { session_id = sessionId ?? string.Empty, content = content ?? string.Empty };
+        new { sessionId = sessionId ?? string.Empty, content = content ?? string.Empty };
+
+    /// <summary>
+    /// <c>chat.history</c> request payload. The daemon reads the snake_case
+    /// <c>session_id</c> key (<c>crates/anima-daemon/src/gateway.rs:938</c>),
+    /// so this reuses <see cref="SessionPayload"/>; a missing/empty id is
+    /// rejected by the daemon with <c>missing session_id</c>.
+    /// </summary>
+    internal static object ChatHistoryPayload(string sessionId) => SessionPayload(sessionId);
+
+    /// <summary>
+    /// <c>sessions.import</c> request payload: an exported JSONL snapshot as a
+    /// single string under <c>jsonl</c> (<c>gateway.rs:1155</c>). An empty
+    /// string is sent as-is; the daemon reports the parse/import outcome in a
+    /// <c>SessionImportReply</c> (<c>status</c> + <c>revision</c>).
+    /// </summary>
+    internal static object SessionsImportPayload(string jsonl) => new { jsonl = jsonl ?? string.Empty };
 
     internal static object SectionPayload(string section) =>
         new { section = section ?? string.Empty };

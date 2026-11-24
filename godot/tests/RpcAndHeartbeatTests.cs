@@ -23,6 +23,7 @@ public sealed class RpcAndHeartbeatTests
         "settings.get", "settings.set", "vault.status", "stmm.list",
         "stmm.rebuild", "journal.append", "journal.search", "retrieval.status",
         "cards.list", "cards.get", "cards.import", "sessions.list", "sessions.export",
+        "chat.history", "sessions.import",
     };
 
     private static JsonElement Serialize(object value)
@@ -46,7 +47,7 @@ public sealed class RpcAndHeartbeatTests
         Assert.Equal("rpc", frame.GetProperty("type").GetString());
         Assert.Equal("chat.send", frame.GetProperty("action").GetString());
         Assert.Equal(7, frame.GetProperty("id").GetInt32());
-        Assert.Equal("s1", frame.GetProperty("payload").GetProperty("session_id").GetString());
+        Assert.Equal("s1", frame.GetProperty("payload").GetProperty("sessionId").GetString());
         Assert.Equal("hi", frame.GetProperty("payload").GetProperty("content").GetString());
     }
 

@@ -18,8 +18,7 @@ namespace AnimaPet;
 ///
 /// <para>
 /// The daemon is the single owner of state. This scene holds view state only:
-/// it forwards <c>lip_sync.rms</c> → <see cref="IPetRenderer.SetLipSync"/> and
-/// <c>emotion.tag</c> → <see cref="IPetRenderer.SetEmotion"/>; it does not
+/// it forwards <c>emotion.tag</c> → <see cref="IPetRenderer.SetEmotion"/>; it does not
 /// persist or reinterpret those events. Connection status and the latest chat
 /// delta are reflected in the scene's labels for the pet window.
 /// </para>
@@ -102,7 +101,6 @@ public partial class Main : Node2D
                 // Pet topics plus chat deltas so the pet can react to streamed text.
                 var topics = new[]
                 {
-                    EventTopics.LipSyncRms,
                     EventTopics.EmotionTag,
                     EventTopics.TokenDelta,
                     EventTopics.PresenceChanged,
@@ -176,12 +174,6 @@ public partial class Main : Node2D
 
     private void HandleEvent(object? data)
     {
-        if (data is LipSyncRmsData lip)
-        {
-            _renderer?.SetLipSync(lip.Level);
-            return;
-        }
-
         if (data is EmotionTagData emotion && emotion.Kind == CueKind.Emotion)
         {
             _renderer?.SetEmotion(emotion.Tag, emotion.Intensity);

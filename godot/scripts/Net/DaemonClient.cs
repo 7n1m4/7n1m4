@@ -511,6 +511,10 @@ public sealed class DaemonClient : IDisposable
     public Task<JsonElement> ChatCancelAsync(string sessionId, CancellationToken cancellationToken = default) =>
         SendRpc(DaemonRpc.ChatCancel, DaemonRpc.SessionPayload(sessionId), cancellationToken);
 
+    /// <summary>chat.history</summary>
+    public Task<JsonElement> ChatHistoryAsync(string sessionId, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.ChatHistory, DaemonRpc.ChatHistoryPayload(sessionId), cancellationToken);
+
     /// <summary>core.status</summary>
     public Task<JsonElement> CoreStatusAsync(CancellationToken cancellationToken = default) =>
         SendRpc(DaemonRpc.CoreStatus, null, cancellationToken);
@@ -570,6 +574,10 @@ public sealed class DaemonClient : IDisposable
     /// <summary>sessions.export</summary>
     public Task<JsonElement> SessionsExportAsync(string sessionId, CancellationToken cancellationToken = default) =>
         SendRpc(DaemonRpc.SessionsExport, DaemonRpc.SessionPayload(sessionId), cancellationToken);
+
+    /// <summary>sessions.import</summary>
+    public Task<JsonElement> SessionsImportAsync(string jsonl, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.SessionsImport, DaemonRpc.SessionsImportPayload(jsonl), cancellationToken);
 
     private bool IsConnected =>
         State is DaemonConnectionState.Authenticated or DaemonConnectionState.Subscribed;

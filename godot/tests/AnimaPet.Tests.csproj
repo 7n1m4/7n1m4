@@ -29,6 +29,10 @@
     <Compile Include="../scripts/Renderers/Live2dRenderer.cs" Link="Renderers/Live2dRenderer.cs" />
     <Compile Include="../scripts/Renderers/VrmRenderer.cs" Link="Renderers/VrmRenderer.cs" />
     <Compile Include="../scripts/Renderers/LipSyncSmoother.cs" Link="Renderers/LipSyncSmoother.cs" />
+    <Compile Include="../scripts/Audio/IPcmSource.cs" Link="Audio/IPcmSource.cs" />
+    <Compile Include="../scripts/Audio/AmplitudeTap.cs" Link="Audio/AmplitudeTap.cs" />
+    <Compile Include="../scripts/Audio/PcmLipSyncDriver.cs" Link="Audio/PcmLipSyncDriver.cs" />
+    <Compile Include="../scripts/Audio/WavPcmReader.cs" Link="Audio/WavPcmReader.cs" />
     <Compile Include="../scripts/Renderers/GenericPetRenderer.cs" Link="Renderers/GenericPetRenderer.cs" />
     <Compile Include="../scripts/Net/DaemonClient.cs" Link="Net/DaemonClient.cs" />
     <Compile Include="../scripts/Net/DaemonRpc.cs" Link="Net/DaemonRpc.cs" />
@@ -38,6 +42,12 @@
     <!-- Rust-canonical golden event frames are the single source of truth for
          the decoder (D5). Copied read-only from crates/anima-channel/fixtures/golden. -->
     <None Include="../../crates/anima-channel/fixtures/golden/event.*.json"
+          Link="golden/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../crates/anima-channel/fixtures/golden/*.reply.json"
+          Link="golden/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../crates/anima-channel/fixtures/golden/*.request.json"
           Link="golden/%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
