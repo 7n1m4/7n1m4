@@ -129,7 +129,7 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     try {
       final reply = await widget.client.call('chat.send', payload: <String, dynamic>{
-        'session_id': _sessionId ?? '',
+        'sessionId': _sessionId ?? '',
         'content': text,
       });
       if (!mounted) return;
