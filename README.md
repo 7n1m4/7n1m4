@@ -23,9 +23,14 @@
 > [!WARNING]
 > **Status — mid-pivot, not a daily driver.**
 >
-> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A long-lived Rust daemon (`anima-daemon`) owns state and hosts the WS/wss gateway (`anima-channel`); every UI (the Electrobun desktop app at `apps/stage-tamagotchi` and the web stage) is a thin client of it — WS/wss for the data plane, D-Bus for the control plane on Linux. The desktop app is Electrobun, not Electron or Slint.
+> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A Rust daemon (anima-daemon) owns state, awareness, and an authenticated  
+ WS/wss gateway (anima-channel); Flutter, Godot, and Vue are maintained full-parity             
+ renderers/clients. Those clients hold view state and client-local audio/render state, while    
+ TypeScript stores remain the behavior reference where daemon ports are incomplete. Assumed     
+ load: one developer with local clients and one daemon, later a few trusted LAN/remote clients; 
+ not public multi-tenant.
 >
-> Docs and code drift. For the current topology, invariants, and threat model read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md). File issues against the fork you actually intend to run.
+> Docs and code drift. For the current topology, invariants, and threat model read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md).
 
 <p align="center"><strong>Presence without custody.</strong></p>
 
