@@ -24,7 +24,10 @@ fn env_or(key: &str, default: &str) -> String {
 
 fn spawn_flutter() -> Result<(), String> {
     let mut guard = FLUTTER.lock().map_err(|e| e.to_string())?;
-    if guard.as_mut().map_or(false, |c| c.try_wait().ok().flatten().is_none()) {
+    if guard
+        .as_mut()
+        .map_or(false, |c| c.try_wait().ok().flatten().is_none())
+    {
         return Ok(());
     }
     let bin = env_or("ANIMA_FLUTTER_BIN", "flutter");
@@ -62,7 +65,10 @@ fn restart_flutter() {
 
 fn spawn_godot() -> Result<(), String> {
     let mut guard = GODOT.lock().map_err(|e| e.to_string())?;
-    if guard.as_mut().map_or(false, |c| c.try_wait().ok().flatten().is_none()) {
+    if guard
+        .as_mut()
+        .map_or(false, |c| c.try_wait().ok().flatten().is_none())
+    {
         return Ok(());
     }
     let bin = env_or("ANIMA_GODOT_BIN", "godot");

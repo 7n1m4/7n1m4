@@ -10,7 +10,7 @@
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{fmt, EnvFilter};
 
 /// Initialise the global tracing subscriber. Safe to call once at process start.
 pub fn init() {
