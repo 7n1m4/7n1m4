@@ -5,8 +5,8 @@
 //! This is the ONLY place the daemon touches core state. It opens the
 //! application store using the same profile/identity rules Slint uses today
 //! and fails closed on open error: no empty/temp/fallback database.
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -15,7 +15,8 @@ use anima_core::AppCore;
 use anima_store::{Database, StoredProvider};
 
 type SettingsLoadFn = fn(&anima_core::settings::SettingsStore) -> Result<serde_json::Value, String>;
-type SettingsSaveFn = fn(&anima_core::settings::SettingsStore, serde_json::Value) -> Result<(), String>;
+type SettingsSaveFn =
+    fn(&anima_core::settings::SettingsStore, serde_json::Value) -> Result<(), String>;
 
 /// Resolve a settings-section name to its typed load/save operations.
 ///
@@ -25,41 +26,98 @@ fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
     fn load<S: anima_core::settings::SettingsSection>(
         store: &anima_core::settings::SettingsStore,
     ) -> Result<serde_json::Value, String> {
-        serde_json::to_value(store.load_section::<S>().map_err(|_| "load failed".to_string())?)
-            .map_err(|_| "serialize failed".to_string())
+        serde_json::to_value(
+            store
+                .load_section::<S>()
+                .map_err(|_| "load failed".to_string())?,
+        )
+        .map_err(|_| "serialize failed".to_string())
     }
 
     fn save<S: anima_core::settings::SettingsSection>(
         store: &anima_core::settings::SettingsStore,
         value: serde_json::Value,
     ) -> Result<(), String> {
-        let parsed: S = serde_json::from_value(value).map_err(|_| "invalid settings shape".to_string())?;
-        store.save_section(&parsed).map_err(|_| "save failed".to_string())
+        let parsed: S =
+            serde_json::from_value(value).map_err(|_| "invalid settings shape".to_string())?;
+        store
+            .save_section(&parsed)
+            .map_err(|_| "save failed".to_string())
     }
 
     Some(match section {
-        "general" => (load::<anima_core::settings::GeneralSettings>, save::<anima_core::settings::GeneralSettings>),
-        "chat" => (load::<anima_core::settings::ChatSettings>, save::<anima_core::settings::ChatSettings>),
-        "theme" => (load::<anima_core::settings::ThemeSettings>, save::<anima_core::settings::ThemeSettings>),
-        "control-strip" => (load::<anima_core::settings::ControlStripSettings>, save::<anima_core::settings::ControlStripSettings>),
-        "cards" => (load::<anima_core::settings::CardsSettings>, save::<anima_core::settings::CardsSettings>),
-        "stage-model" => (load::<anima_core::settings::StageModelSettings>, save::<anima_core::settings::StageModelSettings>),
-        "captions" => (load::<anima_core::settings::CaptionsSettings>, save::<anima_core::settings::CaptionsSettings>),
-        "stage-window" => (load::<anima_core::settings::StageWindowSettings>, save::<anima_core::settings::StageWindowSettings>),
-        "positioning" => (load::<anima_core::settings::PositioningSettings>, save::<anima_core::settings::PositioningSettings>),
-        "spine" => (load::<anima_core::settings::SpineSettings>, save::<anima_core::settings::SpineSettings>),
-        "mmd" => (load::<anima_core::settings::MmdSettings>, save::<anima_core::settings::MmdSettings>),
-        "live2d" => (load::<anima_core::settings::Live2dSettings>, save::<anima_core::settings::Live2dSettings>),
-        "audio-device" => (load::<anima_core::settings::AudioDeviceSettings>, save::<anima_core::settings::AudioDeviceSettings>),
-        "user-profile" => (load::<anima_core::settings::UserProfileSettings>, save::<anima_core::settings::UserProfileSettings>),
-        "local-llm" => (load::<anima_core::settings::LocalLlmSettings>, save::<anima_core::settings::LocalLlmSettings>),
+        "general" => (
+            load::<anima_core::settings::GeneralSettings>,
+            save::<anima_core::settings::GeneralSettings>,
+        ),
+        "chat" => (
+            load::<anima_core::settings::ChatSettings>,
+            save::<anima_core::settings::ChatSettings>,
+        ),
+        "theme" => (
+            load::<anima_core::settings::ThemeSettings>,
+            save::<anima_core::settings::ThemeSettings>,
+        ),
+        "control-strip" => (
+            load::<anima_core::settings::ControlStripSettings>,
+            save::<anima_core::settings::ControlStripSettings>,
+        ),
+        "cards" => (
+            load::<anima_core::settings::CardsSettings>,
+            save::<anima_core::settings::CardsSettings>,
+        ),
+        "stage-model" => (
+            load::<anima_core::settings::StageModelSettings>,
+            save::<anima_core::settings::StageModelSettings>,
+        ),
+        "captions" => (
+            load::<anima_core::settings::CaptionsSettings>,
+            save::<anima_core::settings::CaptionsSettings>,
+        ),
+        "stage-window" => (
+            load::<anima_core::settings::StageWindowSettings>,
+            save::<anima_core::settings::StageWindowSettings>,
+        ),
+        "positioning" => (
+            load::<anima_core::settings::PositioningSettings>,
+            save::<anima_core::settings::PositioningSettings>,
+        ),
+        "spine" => (
+            load::<anima_core::settings::SpineSettings>,
+            save::<anima_core::settings::SpineSettings>,
+        ),
+        "mmd" => (
+            load::<anima_core::settings::MmdSettings>,
+            save::<anima_core::settings::MmdSettings>,
+        ),
+        "live2d" => (
+            load::<anima_core::settings::Live2dSettings>,
+            save::<anima_core::settings::Live2dSettings>,
+        ),
+        "audio-device" => (
+            load::<anima_core::settings::AudioDeviceSettings>,
+            save::<anima_core::settings::AudioDeviceSettings>,
+        ),
+        "user-profile" => (
+            load::<anima_core::settings::UserProfileSettings>,
+            save::<anima_core::settings::UserProfileSettings>,
+        ),
+        "local-llm" => (
+            load::<anima_core::settings::LocalLlmSettings>,
+            save::<anima_core::settings::LocalLlmSettings>,
+        ),
         _ => return None,
     })
 }
 
 /// Project a stored provider into the secret-free wire DTO.
+///
+/// `ProviderInfo` has no config field, but system/pooled rows carry managed
+/// credentials in their config blob. Strip secret-shaped keys before reading
+/// any settings out of it so a future DTO field cannot leak them by accident.
 fn provider_info(p: &StoredProvider) -> anima_channel::wire::ProviderInfo {
-    let config = &p.config;
+    let config = anima_core::providers::strip_secret_config_keys(&p.config);
+    let config = config.as_object();
     anima_channel::wire::ProviderInfo {
         id: p.id.clone(),
         kind: serde_json::to_string(&p.kind)
@@ -67,7 +125,6 @@ fn provider_info(p: &StoredProvider) -> anima_channel::wire::ProviderInfo {
             .trim_matches('"')
             .to_string(),
         model: config
-            .as_object()
             .and_then(|o| o.get("model"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -76,7 +133,6 @@ fn provider_info(p: &StoredProvider) -> anima_channel::wire::ProviderInfo {
         // rows carry the camelCase spelling. Reading just `baseUrl` reported
         // an empty base URL for every provider written through the daemon.
         base_url: config
-            .as_object()
             .and_then(|o| o.get("base_url").or_else(|| o.get("baseUrl")))
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -113,6 +169,17 @@ struct CoreInner {
     reason: Option<String>,
     session_count: u64,
     message_count: u64,
+}
+
+/// Shared id normalization for card metadata reads and writes: both paths must
+/// trim client-supplied ids identically, otherwise a whitespace-padded id
+/// writes one row and reads a different one.
+fn normalized_card_id(id: &str) -> Result<&str, String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("missing id".to_string());
+    }
+    Ok(id)
 }
 
 impl CoreService {
@@ -169,8 +236,10 @@ impl CoreService {
     /// no full-row materialization.
     fn quick_counts(db: &anima_store::Database) -> Result<(u64, u64), String> {
         db.with_connection(|conn| {
-            let sessions: i64 = conn.query_row("select count(*) from sessions", [], |r| r.get(0))?;
-            let messages: i64 = conn.query_row("select count(*) from messages", [], |r| r.get(0))?;
+            let sessions: i64 =
+                conn.query_row("select count(*) from sessions", [], |r| r.get(0))?;
+            let messages: i64 =
+                conn.query_row("select count(*) from messages", [], |r| r.get(0))?;
             Ok((sessions as u64, messages as u64))
         })
         .map_err(|_| "count query failed".to_string())
@@ -200,7 +269,11 @@ impl CoreService {
             version: env!("CARGO_PKG_VERSION").to_string(),
             core_available: snap.available,
             store_available: snap.available,
-            store_health: if snap.available { "ok".to_string() } else { "unavailable".to_string() },
+            store_health: if snap.available {
+                "ok".to_string()
+            } else {
+                "unavailable".to_string()
+            },
             protocol: "airi-channel/1".to_string(),
             session_count: snap.session_count,
             message_count: snap.message_count,
@@ -226,7 +299,10 @@ impl CoreService {
     /// silently drop an api key.
     pub fn providers_save(&self, payload: &serde_json::Value) -> Result<String, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         let repo = core.provider_repo();
         let id = payload
             .get("id")
@@ -243,8 +319,10 @@ impl CoreService {
             serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
                 .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
 
-        let existing = repo.get(id).map_err(|_| "provider query failed".to_string())?;
-        let mut config = existing
+        let existing = repo
+            .get(id)
+            .map_err(|_| "provider query failed".to_string())?;
+        let stored_config = existing
             .as_ref()
             .and_then(|p| p.config.as_object().cloned())
             .unwrap_or_default();
@@ -253,7 +331,9 @@ impl CoreService {
             .and_then(|v| v.as_bool())
             .unwrap_or_else(|| existing.as_ref().map_or(true, |p| p.enabled));
         // `ProviderConfig` stores snake_case; clients speak the wire's
-        // camelCase. Accept both spellings on input.
+        // camelCase. Accept both spellings on input. Start from the stored
+        // config so a PATCH preserves non-secret extras it does not mention.
+        let mut incoming = stored_config.clone();
         for (wire_key, stored_key) in [
             ("model", "model"),
             ("baseUrl", "base_url"),
@@ -262,16 +342,21 @@ impl CoreService {
             ("api_key", "api_key"),
         ] {
             if let Some(value) = payload.get(wire_key).and_then(|v| v.as_str()) {
-                config.insert(
+                incoming.insert(
                     stored_key.to_string(),
                     serde_json::Value::String(value.to_string()),
                 );
             }
         }
+        // A client-supplied apiKey must never rotate a daemon-managed
+        // credential: stored secret-shaped keys win over every incoming
+        // spelling, including camelCase aliases (TS
+        // `mergeConfigPreservingSecrets` parity).
+        let merged = anima_core::providers::merge_config_preserving_secrets(&stored_config, &incoming);
         repo.upsert(&StoredProvider {
             id: id.to_string(),
             kind,
-            config: serde_json::Value::Object(config),
+            config: merged,
             enabled,
             updated_at: 0, // upsert stamps the current time
         })
@@ -282,14 +367,20 @@ impl CoreService {
     /// Delete a provider by id. Returns whether a row was actually removed.
     pub fn providers_delete(&self, id: &str) -> Result<bool, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         core.provider_repo()
             .delete(id)
             .map_err(|_| "provider delete failed".to_string())
     }
 
     /// Get a typed settings section.
-    pub fn settings_get(&self, section: &str) -> Result<anima_channel::wire::SettingsGetReply, String> {
+    pub fn settings_get(
+        &self,
+        section: &str,
+    ) -> Result<anima_channel::wire::SettingsGetReply, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
         let core = &guard.core;
         let Some(core) = core else {
@@ -299,7 +390,8 @@ impl CoreService {
         let (load, _) = settings_section(section)
             .ok_or_else(|| format!("unknown settings section: {section}"))?;
         let value = load(&store)?;
-        let value_str = serde_json::to_string(&value).map_err(|_| "serialize failed".to_string())?;
+        let value_str =
+            serde_json::to_string(&value).map_err(|_| "serialize failed".to_string())?;
         Ok(anima_channel::wire::SettingsGetReply {
             section: section.to_string(),
             settings: value_str,
@@ -307,7 +399,11 @@ impl CoreService {
     }
 
     /// Set a typed settings section.
-    pub fn settings_set(&self, section: &str, settings: serde_json::Value) -> Result<anima_channel::wire::SettingsSetReply, String> {
+    pub fn settings_set(
+        &self,
+        section: &str,
+        settings: serde_json::Value,
+    ) -> Result<anima_channel::wire::SettingsSetReply, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
         let core = &guard.core;
         let Some(core) = core else {
@@ -400,7 +496,10 @@ impl CoreService {
         content: &str,
     ) -> Result<anima_store::StoredMessage, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         let sessions = anima_store::SessionRepo::new(core.db.clone());
         if sessions
             .get(session_id)
@@ -425,7 +524,10 @@ impl CoreService {
     /// user turn, so there is no duplicate message.
     pub fn ensure_chat_session(&self, session_id: &str) -> Result<(), String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         let sessions = anima_store::SessionRepo::new(core.db.clone());
         if sessions
             .get(session_id)
@@ -440,12 +542,12 @@ impl CoreService {
     }
 
     /// Replay the persisted messages of a session from the daemon-owned store.
-    pub fn chat_stream(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<anima_store::StoredMessage>, String> {
+    pub fn chat_stream(&self, session_id: &str) -> Result<Vec<anima_store::StoredMessage>, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         let messages = anima_store::MessageRepo::new(core.db.clone());
         messages
             .list(session_id)
@@ -462,7 +564,10 @@ impl CoreService {
     /// chat sending. Callers must never serve these over RPC.
     pub fn provider_rows(&self) -> Result<Vec<anima_store::StoredProvider>, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
         core.provider_repo()
             .list()
             .map_err(|_| "provider list failed".to_string())
@@ -470,7 +575,9 @@ impl CoreService {
 
     /// Request cancellation of an in-flight generation.
     pub fn chat_stop(&self, session_id: &str) -> Result<bool, String> {
-        let svc = self.chat_service().ok_or_else(|| "store unavailable".to_string())?;
+        let svc = self
+            .chat_service()
+            .ok_or_else(|| "store unavailable".to_string())?;
         let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
         rt.block_on(svc.stop(session_id.to_string()))
             .map_err(|e| e.to_string())
@@ -506,11 +613,13 @@ impl CoreService {
     pub fn stmm_service(&self) -> Option<anima_core::memory::ShortTermMemoryService> {
         let guard = self.inner.lock().ok()?;
         let core = guard.core.as_ref()?;
-        Some(anima_core::memory::ShortTermMemoryService::with_shared_providers(
-            core.db.clone(),
-            core.providers.clone(),
-            Default::default(),
-        ))
+        Some(
+            anima_core::memory::ShortTermMemoryService::with_shared_providers(
+                core.db.clone(),
+                core.providers.clone(),
+                Default::default(),
+            ),
+        )
     }
 
     /// Daemon-owned text journal service. Single writer.
@@ -557,12 +666,75 @@ impl CoreService {
         self.db()
     }
 
+    /// Read the daemon-owned local metadata for one card.
+    pub fn card_metadata(
+        &self,
+        card_id: &str,
+    ) -> Result<anima_channel::wire::CardMetadataReply, String> {
+        let card_id = normalized_card_id(card_id)?;
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        let repo = anima_store::CardMetadataRepo::new(db);
+        let metadata = repo
+            .get(card_id)
+            .map_err(|_| "store query failed".to_string())?;
+        Ok(anima_channel::wire::CardMetadataReply {
+            id: card_id.to_string(),
+            liked: metadata.liked,
+            bookmarked: metadata.bookmarked,
+        })
+    }
+
+    /// Write the daemon-owned local metadata for one card.
+    ///
+    /// Both flags are explicit booleans: the daemon never flips a bit on its
+    /// own, so a stale client cannot cause an unintended toggle.
+    pub fn card_metadata_set(
+        &self,
+        req: &anima_channel::wire::CardMetadataSetRequest,
+    ) -> Result<anima_channel::wire::CardMetadataReply, String> {
+        let card_id = normalized_card_id(&req.id)?;
+        let liked = req.liked;
+        let bookmarked = req.bookmarked;
+
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        let repo = anima_store::CardMetadataRepo::new(db);
+        repo.set(card_id, liked, bookmarked)
+            .map_err(|_| "store write failed".to_string())?;
+        Ok(anima_channel::wire::CardMetadataReply {
+            id: card_id.to_string(),
+            liked,
+            bookmarked,
+        })
+    }
+
     /// Export a session and its messages as JSONL through the daemon-owned store.
     pub fn session_export_jsonl(&self, session_id: &str) -> Result<String, String> {
-        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
-        let core = guard.core.as_ref().ok_or_else(|| "store unavailable".to_string())?;
-        anima_core::sessions::export_jsonl(&core.db, session_id)
-            .map_err(|e| e.to_string())
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        anima_core::sessions::export_jsonl(&db, session_id).map_err(|e| e.to_string())
     }
 
     /// Alias for [`Self::session_export_jsonl`].
@@ -570,7 +742,39 @@ impl CoreService {
         self.session_export_jsonl(session_id)
     }
 
-
+    /// Import a JSONL session snapshot into the daemon-owned store.
+    pub fn session_import_jsonl(
+        &self,
+        jsonl: &str,
+    ) -> Result<anima_channel::wire::SessionImportReply, String> {
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        let outcome = anima_core::sessions::import_jsonl(&db, jsonl).map_err(|e| e.to_string())?;
+        Ok(anima_channel::wire::SessionImportReply {
+            status: match outcome.status {
+                anima_core::sessions::ImportStatus::Applied => {
+                    anima_channel::wire::SessionImportStatus::Applied
+                }
+                anima_core::sessions::ImportStatus::Duplicate => {
+                    anima_channel::wire::SessionImportStatus::Duplicate
+                }
+                anima_core::sessions::ImportStatus::Older => {
+                    anima_channel::wire::SessionImportStatus::Older
+                }
+                anima_core::sessions::ImportStatus::Conflict => {
+                    anima_channel::wire::SessionImportStatus::Conflict
+                }
+            },
+            revision: outcome.revision,
+        })
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -635,5 +839,135 @@ mod tests {
         // current turn; it must not resurrect a brand-new flag afterwards.
         assert!(!svc.chat_cancel("s1"));
         assert!(second.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn card_metadata_whitespace_padded_id_round_trips() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+
+        let written = svc
+            .card_metadata_set(&anima_channel::wire::CardMetadataSetRequest {
+                id: "  card-1\t".to_string(),
+                liked: true,
+                bookmarked: false,
+            })
+            .expect("padded write succeeds");
+        let read = svc
+            .card_metadata("  card-1\t")
+            .expect("padded read succeeds");
+
+        assert_eq!(written.id, "card-1");
+        assert_eq!(read.id, "card-1");
+        assert_eq!(read.liked, true);
+        assert_eq!(read.bookmarked, false);
+        assert!(read.liked);
+        assert!(!read.bookmarked);
+
+        // Same trimmed id reads the same row the padded write landed in.
+        assert_eq!(svc.card_metadata("card-1").unwrap(), written);
+        assert_eq!(svc.card_metadata("  \t ").unwrap_err(), "missing id");
+    }
+
+    #[test]
+    fn card_metadata_io_releases_core_mutex() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+
+        // Hold the SQLite connection so the metadata read below blocks on I/O.
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let holder = {
+            let db = db.clone();
+            std::thread::spawn(move || {
+                db.with_connection(|_| {
+                    held_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap();
+            })
+        };
+        held_rx.recv().unwrap();
+
+        let io_svc = svc.clone();
+        let io = std::thread::spawn(move || io_svc.card_metadata("card-1"));
+        // Give the reader time to reach the blocked connection lock.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let core_mutex_free = svc.inner.try_lock().is_ok();
+
+        release_tx.send(()).unwrap();
+        io.join().unwrap().unwrap();
+        holder.join().unwrap();
+
+        // The daemon-wide core mutex must stay reachable while store I/O is in
+        // flight; holding it across the 5s busy_timeout would stall every other
+        // CoreService caller.
+        assert!(core_mutex_free);
+    }
+
+    #[test]
+    fn providers_list_scrubs_system_row_secrets_before_wire_projection() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        repo.upsert(&StoredProvider {
+            id: "system-pool".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({
+                "model": "gpt-pooled",
+                "apiKey": "SYSTEM-SECRET",
+                "credentials": { "region": "us-east", "accessToken": "NESTED-SECRET" },
+            }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+
+        let reply = svc.providers_list().unwrap();
+        let text = serde_json::to_string(&reply).unwrap();
+        assert!(!text.contains("SYSTEM-SECRET"));
+        assert!(!text.contains("NESTED-SECRET"));
+        assert_eq!(reply.providers[0].model, "gpt-pooled");
+    }
+
+    #[test]
+    fn providers_save_patch_preserves_extras_and_managed_credential() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        repo.upsert(&StoredProvider {
+            id: "managed".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({
+                "model": "old-model",
+                "api_key": "MANAGED-SECRET",
+                "account_id": "acct-1",
+                "headers": { "x-region": "eu", "authorization": "BEARER-OLD" },
+            }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+
+        svc.providers_save(&serde_json::json!({
+            "id": "managed",
+            "kind": "open-ai-compatible",
+            "model": "new-model",
+            "apiKey": "CLIENT-ROTATION",
+            "api_key": "CLIENT-ROTATION-SNAKE",
+        }))
+        .unwrap();
+
+        let stored = repo.get("managed").unwrap().unwrap();
+        assert_eq!(stored.config["model"], "new-model");
+        assert_eq!(stored.config["api_key"], "MANAGED-SECRET");
+        assert_eq!(stored.config["account_id"], "acct-1");
+        assert_eq!(stored.config["headers"]["x-region"], "eu");
+        assert_eq!(stored.config["headers"]["authorization"], "BEARER-OLD");
+        assert!(!stored.config.to_string().contains("CLIENT-ROTATION"));
     }
 }

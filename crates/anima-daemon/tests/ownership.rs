@@ -6,8 +6,8 @@ use anima_core::memory::TextJournalService;
 use anima_core::settings::CardsSettings;
 use anima_daemon::core::CoreService;
 use anima_store::Database;
-use anima_store::SessionRepo;
 use anima_store::MessageRepo;
+use anima_store::SessionRepo;
 use tempfile::tempdir;
 
 fn store_path(profile: &std::path::Path) -> PathBuf {
@@ -145,7 +145,6 @@ fn mode_selection_controls_store_ownership() {
     assert!(!store_path(profile.path()).exists());
 }
 
-
 #[test]
 fn chat_send_daemon_single_writer() {
     let daemon_profile = tempdir().unwrap();
@@ -233,6 +232,38 @@ fn session_export_daemon_owned() {
 
     let client_profile = tempdir().unwrap();
     assert!(!store_path(client_profile.path()).exists());
+}
+
+#[test]
+fn session_import_round_trip_is_daemon_owned() {
+    let source_profile = tempdir().unwrap();
+    let source = CoreService::open(Some(source_profile.path().to_path_buf()));
+    assert!(source.available());
+    source.chat_send("import-1", "hello").unwrap();
+    let jsonl = source.session_export_jsonl("import-1").unwrap();
+
+    let dest_profile = tempdir().unwrap();
+    let dest = CoreService::open(Some(dest_profile.path().to_path_buf()));
+    assert!(dest.available());
+    let reply = dest.session_import_jsonl(&jsonl).unwrap();
+    assert_eq!(
+        reply.status,
+        anima_channel::wire::SessionImportStatus::Applied
+    );
+    assert!(dest
+        .chat_stream("import-1")
+        .unwrap()
+        .iter()
+        .any(|m| m.content == "hello"));
+
+    let duplicate = dest.session_import_jsonl(&jsonl).unwrap();
+    assert_eq!(
+        duplicate.status,
+        anima_channel::wire::SessionImportStatus::Duplicate
+    );
+
+    let dest_client_profile = tempdir().unwrap();
+    assert!(!store_path(dest_client_profile.path()).exists());
 }
 
 #[test]

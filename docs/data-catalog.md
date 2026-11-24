@@ -29,7 +29,27 @@ storage.mount('outbox', indexedDbDriver({ base: 'airi-sync-queue' })) // sync qu
 **File:** `packages/stage-ui/src/database/storage.ts`
 **Repos directory:** `packages/stage-ui/src/database/repos/`
 
+
+### Daemon-owned SQLite (Rust core)
+
+The Rust daemon owns `<data>/airi-slint/airi.sqlite` (schema version tracked by
+`PRAGMA user_version` in `crates/anima-store/src/lib.rs`). It is the single writer for
+daemon mode. The client-side `local:*` mirrors of daemon state are `local:characters` and
+`local:providers`: the Vue store keeps optimistic `likes`/`bookmarks` in
+`local:characters` and reconciles them from `cards.metadata`, and the provider
+catalog is mirrored via `local:providers` against daemon `providers.*` RPCs
+(`packages/stage-ui/src/stores/characters.ts`, `stores/provider-catalog.ts`).
+**Other `local:*` keys are not daemon mirrors and remain TS-written state** — notably
+the IndexedDB chat session store (`local:chat/sessions/*`, `local:chat/index/*`) with
+its BYOS outbox/`sync-engine.ts` reconciliation (§1, §6), memory lanes, and the
+`local:airi-cards` cache (daemon `cards.*` list/get/import are stubs; card
+management is out of daemon scope).
+
+| Table | Shape | Repository | Sync |
+| :--- | :--- | :--- | :--- |
+| `card_metadata` (schema v6) | `card_id text primary key, liked int, bookmarked int, updated_at int` — one row per card; absent row = both flags false | `anima_store::CardMetadataRepo` (`crates/anima-store/src/lib.rs`) | none — daemon-owned local state; exposed to clients via `cards.metadata` / `cards.metadata.set` RPCs (`crates/anima-daemon/src/gateway.rs`) |
 ---
+
 
 ## 1. IndexedDB — Structured Data (`local:*`)
 

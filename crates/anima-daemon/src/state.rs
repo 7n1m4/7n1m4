@@ -295,7 +295,7 @@ mod tests {
         let mut a = Awareness::new();
         assert!(a.lockdown_begin(LockdownReason::Sleep));
         assert!(!a.lockdown_begin(LockdownReason::Locked)); // already in lockdown
-        // Wake (sleep false) must not clear the lock reason.
+                                                            // Wake (sleep false) must not clear the lock reason.
         assert!(!a.lockdown_end(LockdownReason::Sleep));
         assert!(a.lockdown_active());
         assert!(!a.effective_armed(Source::Media));

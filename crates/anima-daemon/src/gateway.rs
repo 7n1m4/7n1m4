@@ -68,6 +68,43 @@ const RPC_MAX_LIMIT: usize = 500;
 /// `JournalRepo` has no query pushdown yet; see the store-side follow-up.
 const JOURNAL_SEARCH_SCAN_CAP: usize = 100_000;
 
+/// Prefix recognized by `anima-channel`'s RPC dispatch as `rpc_actions_disabled`.
+const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
+
+/// Strict per-call check for the `allowActions` opt-in in `config.json`,
+/// AND for a loopback bind hostname.
+///
+/// Reads the file on every call so a live disable takes effect immediately.
+/// The gate requires both:
+/// - `allowActions` is literal JSON `true` (missing file, missing key,
+///   wrong type, invalid JSON all fail closed), and
+/// - the bound hostname is loopback (`is_loopback_hostname`).
+///
+/// This means upgrading a healed config to a LAN/non-loopback hostname
+/// does NOT keep mutating verbs enabled — the operator must re-enable
+/// after moving back to loopback, or the gate stays closed. The error
+/// text names the flag and path, never the config contents or auth token.
+fn require_actions(config_path: &Path, hostname: &str) -> Result<(), String> {
+    let enabled = fs::read_to_string(config_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|value| value.get("allowActions")?.as_bool())
+        .unwrap_or(false);
+    if !enabled {
+        return Err(format!(
+            "{ACTIONS_DISABLED_PREFIX}: gateway actions are off; set \"allowActions\": true in {}",
+            config_path.display()
+        ));
+    }
+    if !is_loopback_hostname(hostname) {
+        return Err(format!(
+            "{ACTIONS_DISABLED_PREFIX}: gateway actions require a loopback hostname (bound: {})",
+            hostname
+        ));
+    }
+    Ok(())
+}
+
 /// Receive the next chat event, transparently recovering from a lagged
 /// broadcast receiver. `Lagged` means the bounded bus dropped events while we
 /// were behind — not that the stream ended. Only `Closed` terminates it.
@@ -395,10 +432,13 @@ impl Gateway {
             Some(_) => tls = true,                        // any other value: enable
         }
 
+        // `allow_actions: None` — `persist` re-injects the live `allowActions`
+        // value from the existing file, so D-Bus rewrites preserve the opt-in.
         let config = ChannelConfig {
             hostname: hostname.clone(),
             auth_token: auth_token.clone(),
             tls_config: tls.then(|| serde_json::json!({})),
+            allow_actions: None,
         };
         if let Err(err) = Self::persist(&self.config_path, &config) {
             let message = format!("failed to persist gateway config: {err}");
@@ -440,6 +480,7 @@ impl Gateway {
                 hostname: inner.hostname.clone(),
                 auth_token: uuid_v4(),
                 tls_config: inner.tls_flag.then(|| serde_json::json!({})),
+                allow_actions: None,
             }
         };
         if let Err(err) = Self::persist(&self.config_path, &config) {
@@ -500,7 +541,20 @@ impl Gateway {
             fs::create_dir_all(parent)?;
         }
         let tmp = path.with_extension("json.tmp");
-        let json = serde_json::to_string_pretty(config)
+        // D-Bus config rewrites must preserve the live `allowActions` opt-in:
+        // `apply`/`regenerate_token` pass `allow_actions: None`, so carry the
+        // current file's value forward (fail-closed if the file is gone).
+        let mut value = serde_json::to_value(config)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        if config.allow_actions.is_none() {
+            let previous = fs::read_to_string(path)
+                .ok()
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+            if let Some(allow) = previous.and_then(|p| p.get("allowActions").cloned()) {
+                value["allowActions"] = allow;
+            }
+        }
+        let json = serde_json::to_string_pretty(&value)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         #[cfg(unix)]
         {
@@ -530,13 +584,15 @@ impl Gateway {
     pub(crate) fn renderer_handlers(
         core: &CoreService,
         publisher: &EventPublisher,
+        config_path: &Path,
+        hostname: &str,
     ) -> anima_channel::RendererHandlers {
         // Single coercion point from a concrete `move` closure to the boxed RPC
         // handler type. Captures and handler behavior are defined entirely by
         // the closure; this only removes the repeated `as Box<dyn Fn…>` casts.
-        fn handler<F>(f: F) -> Box<
-            dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync,
-        >
+        fn handler<F>(
+            f: F,
+        ) -> Box<dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync>
         where
             F: Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
                 + Send
@@ -546,13 +602,32 @@ impl Gateway {
             Box::new(f)
         }
 
-        // NOTICE: the WS/RPC surface deliberately carries the thin clients'
-        // authorized user actions — chat.send/cancel, settings.set,
-        // journal.append, stmm.rebuild, providers.save/delete. The "mutating
-        // verbs stay on D-Bus" rule applies to *gateway control*
-        // (Get/Apply/RegenerateToken), not to user data. `allowActions` was an
-        // Electron-era GUI-dispatch opt-in that `ChannelConfig` never carried;
-        // gating these behind it would break every thin client by default.
+        // Wrap a mutating/executing handler in a strict, live `allowActions`
+        // + loopback-hostname check. The verb stays registered so clients get
+        // a typed `rpc_actions_disabled` reply instead of `rpc_unknown_method`.
+        // `hostname` is the effective bind hostname captured at bind time.
+        fn gated<F>(config_path: &Path, hostname: &str, f: F) -> Box<
+            dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync,
+        >
+        where
+            F: Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
+                + Send
+                + Sync
+                + 'static,
+        {
+            let config_path = config_path.to_path_buf();
+            let hostname = hostname.to_string();
+            handler(move |method, value| {
+                require_actions(&config_path, &hostname)?;
+                f(method, value)
+            })
+        }
+
+        // NOTICE: mutating and process-spawning verbs are gated on the strict
+        // `allowActions: true` opt-in in `config.json` (fail-closed per call).
+        // This covers thin-client user-data writes and the MCP/ACP execution
+        // surfaces. Read-only verbs stay ungated; gateway control verbs stay
+        // on D-Bus only.
         let mut m = std::collections::HashMap::new();
         {
             let core = core.clone();
@@ -590,7 +665,7 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "providers.save".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let id = core.providers_save(value).map_err(|e| e.to_string())?;
                     // Secret-free: the apiKey is written through ProviderRepo
                     // but never echoed back on the wire.
@@ -602,7 +677,7 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "providers.delete".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     if id.is_empty() {
                         return Err("missing id".to_string());
@@ -630,7 +705,7 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "settings.set".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let section = value
                         .get("section")
                         .and_then(|v| v.as_str())
@@ -659,14 +734,10 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.send".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let req: anima_channel::wire::ChatSendRequest =
-                        serde_json::from_value(value.clone()).unwrap_or_else(|_| {
-                            anima_channel::wire::ChatSendRequest {
-                                session_id: value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                content: value.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                            }
-                        });
+                        serde_json::from_value(value.clone())
+                            .map_err(|e| e.to_string())?;
                     if req.content.is_empty() {
                         return Err("empty content".to_string());
                     }
@@ -743,17 +814,33 @@ impl Gateway {
                                         continue;
                                     }
                                     match ev {
-                                        anima_core::chat::ChatEvent::Delta { session, message, delta } => {
+                                        anima_core::chat::ChatEvent::Delta {
+                                            session,
+                                            message,
+                                            delta,
+                                        } => {
                                             let slot = indices.entry(message.clone()).or_insert(0);
                                             let index = *slot;
                                             *slot += 1;
-                                            pub_clone.token_delta(session, message, delta, index, false, None);
+                                            pub_clone.token_delta(
+                                                session, message, delta, index, false, None,
+                                            );
                                         }
-                                        anima_core::chat::ChatEvent::MessageDone { session, message } => {
+                                        anima_core::chat::ChatEvent::MessageDone {
+                                            session,
+                                            message,
+                                        } => {
                                             // The terminal marker follows the
                                             // last token; carry its next index.
                                             let index = indices.remove(&message).unwrap_or(0);
-                                            pub_clone.token_delta(session, message, String::new(), index, true, None);
+                                            pub_clone.token_delta(
+                                                session,
+                                                message,
+                                                String::new(),
+                                                index,
+                                                true,
+                                                None,
+                                            );
                                         }
                                         _ => {}
                                     }
@@ -784,15 +871,15 @@ impl Gateway {
                                     );
                                 }
                             }
-                        // Disconnect behavior: this handler returns the chat.send ack before the
-                        // stream completes, and the pump runs in a background thread that is not
-                        // tied to the WebSocket connection lifetime. If a client disconnects
-                        // mid-stream, deltas continue to be published on the event bus; with no
-                        // subscriber they are dropped by the bus, and the persisted user turn
-                        // remains honest. The supported way to stop an in-flight turn is
-                        // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
-                        // stops the generation; late events do not resurrect a cancelled turn.
-                        let _ = sid;
+                            // Disconnect behavior: this handler returns the chat.send ack before the
+                            // stream completes, and the pump runs in a background thread that is not
+                            // tied to the WebSocket connection lifetime. If a client disconnects
+                            // mid-stream, deltas continue to be published on the event bus; with no
+                            // subscriber they are dropped by the bus, and the persisted user turn
+                            // remains honest. The supported way to stop an in-flight turn is
+                            // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
+                            // stops the generation; late events do not resurrect a cancelled turn.
+                            let _ = sid;
                         });
                     });
                     let reply = anima_channel::wire::ChatSendReply {
@@ -809,11 +896,22 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.cancel".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
-                    let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
+                    let session_id = value
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let cancelled = core.chat_cancel(&session_id);
                     if cancelled {
-                        publisher.token_delta(session_id.clone(), String::new(), String::new(), 0, true, None);
+                        publisher.token_delta(
+                            session_id.clone(),
+                            String::new(),
+                            String::new(),
+                            0,
+                            true,
+                            None,
+                        );
                     }
                     let reply = anima_channel::wire::ChatCancelReply { cancelled };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
@@ -825,21 +923,26 @@ impl Gateway {
             m.insert(
                 "chat.history".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
-                    let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let session_id = value
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if session_id.is_empty() {
                         return Err("missing session_id".to_string());
                     }
                     let messages = core.chat_stream(session_id).map_err(|e| e.to_string())?;
                     let messages: Vec<serde_json::Value> = messages
                         .into_iter()
-                        .map(|m| serde_json::json!({
-                            "id": m.id,
-                            "sessionId": m.session_id,
-                            "role": m.role,
-                            "content": m.content,
-                            "createdAt": m.created_at,
-                            "metadata": m.metadata,
-                        }))
+                        .map(|m| {
+                            serde_json::json!({
+                                "id": m.id,
+                                "sessionId": m.session_id,
+                                "role": m.role,
+                                "content": m.content,
+                                "createdAt": m.created_at,
+                                "metadata": m.metadata,
+                            })
+                        })
                         .collect();
                     Ok(serde_json::json!({ "sessionId": session_id, "messages": messages }))
                 }),
@@ -863,7 +966,7 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "stmm.rebuild".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, _value: &serde_json::Value| {
                     // `summarize_day` needs a day key, session bucket, and a
                     // provider/model, none of which this verb carries, so
                     // 'rebuild' is scoped to pruning stale blocks here.
@@ -879,13 +982,19 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "journal.append".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
-                    let content = value.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
+                    let content = value
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if content.is_empty() {
                         return Err("empty content".to_string());
                     }
                     let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("note");
-                    let svc = core.journal_service().ok_or_else(|| "core unavailable".to_string())?;
+                    let svc = core
+                        .journal_service()
+                        .ok_or_else(|| "core unavailable".to_string())?;
                     let id = match kind {
                         "milestone" => svc.append_milestone(&content),
                         "dream" => svc.append_dream_gate_outcome(&content),
@@ -901,7 +1010,11 @@ impl Gateway {
             m.insert(
                 "journal.search".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
-                    let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let query = value
+                        .get("query")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let limit = rpc_limit(value, 50);
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::JournalRepo::new(db);
@@ -962,6 +1075,37 @@ impl Gateway {
             );
         }
         {
+            let core = core.clone();
+            m.insert(
+                "cards.metadata".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let id = value
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| "missing id".to_string())?;
+                    let reply = core.card_metadata(id)?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "cards.metadata.set".to_string(),
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
+                    // Decode the wire DTO at the RPC boundary. The core setter
+                    // consumes the typed DTO, so a flag of the wrong type is a
+                    // boundary failure instead of a per-field `as_bool` that
+                    // cannot tell a missing key from a misspelled one.
+                    let req: anima_channel::wire::CardMetadataSetRequest =
+                        serde_json::from_value(value.clone())
+                            .map_err(|_| "invalid request".to_string())?;
+                    let reply = core.card_metadata_set(&req)?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
+            );
+        }
+        {
             m.insert(
                 "providers.models".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
@@ -986,9 +1130,31 @@ impl Gateway {
             m.insert(
                 "sessions.export".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
-                    let session_id = value.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let jsonl = core.session_export(&session_id).map_err(|e| e.to_string())?;
+                    let session_id = value
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let jsonl = core
+                        .session_export(&session_id)
+                        .map_err(|e| e.to_string())?;
                     Ok(serde_json::json!({ "jsonl": jsonl }))
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "sessions.import".to_string(),
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
+                    let jsonl = value
+                        .get("jsonl")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| "missing jsonl".to_string())?;
+                    let reply = core
+                        .session_import_jsonl(jsonl)
+                        .map_err(|e| e.to_string())?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
         }
@@ -1004,7 +1170,7 @@ impl Gateway {
         {
             m.insert(
                 "mcp.list_servers".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let base_url = value
                         .get("base_url")
                         .and_then(|v| v.as_str())
@@ -1031,7 +1197,7 @@ impl Gateway {
         {
             m.insert(
                 "mcp.tools_list".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let transport = value
                         .get("transport")
                         .and_then(|v| v.as_str())
@@ -1060,7 +1226,7 @@ impl Gateway {
         {
             m.insert(
                 "mcp.tools_call".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let transport = value
                         .get("transport")
                         .and_then(|v| v.as_str())
@@ -1111,7 +1277,7 @@ impl Gateway {
         {
             m.insert(
                 "mcp.call_tool".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let transport = value
                         .get("transport")
                         .and_then(|v| v.as_str())
@@ -1163,11 +1329,8 @@ impl Gateway {
         {
             m.insert(
                 "acp.run".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
-                    let command = value
-                        .get("command")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
+                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
                     if command.is_empty() {
                         return Err("missing command".to_string());
                     }
@@ -1204,14 +1367,17 @@ impl Gateway {
                         .and_then(|v| v.as_str())
                         .map(std::path::PathBuf::from);
 
-                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
-                        .map_err(|e| e.to_string())?;
+                    let client =
+                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                            .map_err(|e| e.to_string())?;
                     client.set_permission_policy(policy);
                     let init = client.initialize().map_err(|e| e.to_string())?;
                     let session_id = client
                         .new_session(cwd_path.as_deref())
                         .map_err(|e| e.to_string())?;
-                    let result = client.prompt(&session_id, prompt_text).map_err(|e| e.to_string())?;
+                    let result = client
+                        .prompt(&session_id, prompt_text)
+                        .map_err(|e| e.to_string())?;
                     client.close();
                     let updates: Vec<serde_json::Value> = result
                         .updates
@@ -1238,7 +1404,7 @@ impl Gateway {
         {
             m.insert(
                 "acp.prompt".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
                     if command.is_empty() {
                         return Err("missing command".to_string());
@@ -1275,8 +1441,9 @@ impl Gateway {
                         .get("cwd")
                         .and_then(|v| v.as_str())
                         .map(std::path::PathBuf::from);
-                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
-                        .map_err(|e| e.to_string())?;
+                    let client =
+                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                            .map_err(|e| e.to_string())?;
                     client.set_permission_policy(policy);
                     let init = client.initialize().map_err(|e| e.to_string())?;
                     let session_id = client
@@ -1308,7 +1475,7 @@ impl Gateway {
         {
             m.insert(
                 "acp.list_sessions".to_string(),
-                handler(move |_method: &str, value: &serde_json::Value| {
+                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
                     if command.is_empty() {
                         return Err("missing command".to_string());
@@ -1324,8 +1491,9 @@ impl Gateway {
                         .unwrap_or_default();
                     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
                     let env = parse_env(value);
-                    let mut client = anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
-                        .map_err(|e| e.to_string())?;
+                    let client =
+                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                            .map_err(|e| e.to_string())?;
                     client.initialize().map_err(|e| e.to_string())?;
                     let sessions = client.list_sessions().map_err(|e| e.to_string())?;
                     client.close();
@@ -1409,7 +1577,12 @@ impl Gateway {
                         &config.hostname,
                         port,
                         config,
-                        Self::renderer_handlers(&self.core, &self.publisher),
+                        Self::renderer_handlers(
+                            &self.core,
+                            &self.publisher,
+                            &self.config_path,
+                            &config.hostname,
+                        ),
                         tls_config,
                     )
                 }
@@ -1425,7 +1598,12 @@ impl Gateway {
                 &config.hostname,
                 port,
                 config,
-                Self::renderer_handlers(&self.core, &self.publisher),
+                Self::renderer_handlers(
+                    &self.core,
+                    &self.publisher,
+                    &self.config_path,
+                    &config.hostname,
+                ),
             )
         };
 
@@ -1727,8 +1905,11 @@ mod tests {
         let dir = tmp.path().join("server-channel");
         // Isolate from the real data dir by overriding paths directly.
         let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
-        // Heal the log path: write a fresh config and bind.
-        let config = ChannelConfig::healed();
+        // Heal the log path: write a fresh config and bind. The fixture is
+        // fail-closed (`allow_actions: None`) regardless of what
+        // `ChannelConfig::healed()` provisions in production.
+        let mut config = ChannelConfig::healed();
+        config.allow_actions = None;
         fs::create_dir_all(&dir).unwrap();
         let json = serde_json::to_string_pretty(&config).unwrap();
         fs::write(&gateway.config_path, json).unwrap();
@@ -1738,6 +1919,43 @@ mod tests {
 
     fn get_json(gateway: &Gateway) -> serde_json::Value {
         serde_json::from_str(&gateway.handle(&GatewayRequest::Get)).unwrap()
+    }
+
+    /// Test-only alias that includes the gateway's own config path, which
+    /// gates the mutating verbs (see `require_actions`).
+    fn handlers(gateway: &Gateway) -> anima_channel::RendererHandlers {
+        Gateway::renderer_handlers(
+            &gateway.core,
+            &gateway.publisher(),
+            &gateway.config_path,
+            &gateway.inner.lock().unwrap().hostname.clone(),
+        )
+    }
+
+    /// Like `handlers`, but with an explicit effective hostname (for LAN
+    /// gate tests). Does not consult the gateway's bound state.
+    fn handlers_with_hostname(
+        gateway: &Gateway,
+        hostname: &str,
+    ) -> anima_channel::RendererHandlers {
+        Gateway::renderer_handlers(
+            &gateway.core,
+            &gateway.publisher(),
+            &gateway.config_path,
+            hostname,
+        )
+    }
+
+    /// Write `config.json` so the `allowActions` gate permits mutating verbs.
+    fn enable_actions(gateway: &Gateway) {
+        let mut value = serde_json::to_value(ChannelConfig::healed()).unwrap();
+        value["allowActions"] = serde_json::json!(true);
+        fs::create_dir_all(gateway.config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &gateway.config_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
     }
 
     /// Gateway with an isolated on-disk core, for tests that write data.
@@ -1762,7 +1980,10 @@ mod tests {
                 last_attempt: Instant::now() - RETRY_INTERVAL,
             }),
         };
-        let config = ChannelConfig::healed();
+        let mut config = ChannelConfig::healed();
+        // Fail-closed fixture: mutating verbs stay denied unless a test opts
+        // in via `enable_actions` (production healing opts in for loopback).
+        config.allow_actions = None;
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             &gateway.config_path,
@@ -1853,10 +2074,19 @@ mod tests {
         lane.subscribe(anima_channel::EventTopic::ALL);
         gateway.publisher().bus().register_lane(&lane);
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let send = handlers.get("chat.send").unwrap();
-        send("chat.send", &serde_json::json!({ "session_id": "A", "content": "a" })).unwrap();
-        send("chat.send", &serde_json::json!({ "session_id": "B", "content": "b" })).unwrap();
+        send(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "A", "content": "a" }),
+        )
+        .unwrap();
+        send(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "B", "content": "b" }),
+        )
+        .unwrap();
 
         for _ in 0..200 {
             if arrived.load(Ordering::SeqCst) >= 2 {
@@ -1893,11 +2123,12 @@ mod tests {
     #[test]
     fn chat_send_without_provider_persists_user_turn() {
         let (gateway, _tmp) = isolated_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let send = handlers.get("chat.send").unwrap();
         let reply = send(
             "chat.send",
-            &serde_json::json!({ "session_id": "no-provider", "content": "remember me" }),
+            &serde_json::json!({ "sessionId": "no-provider", "content": "remember me" }),
         )
         .unwrap();
         assert_eq!(reply["accepted"], true);
@@ -1920,28 +2151,87 @@ mod tests {
     #[test]
     fn chat_send_over_ws_returns_deltas() {
         let (gateway, _tmp) = fresh_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let h = handlers.get("chat.send").expect("chat.send registered");
-        let reply = h("chat.send", &serde_json::json!({"session_id":"s1","content":"hi"})).expect("ok");
+        let reply = h(
+            "chat.send",
+            &serde_json::json!({"sessionId":"s1","content":"hi"}),
+        )
+        .expect("ok");
         assert_eq!(reply["accepted"], true);
     }
 
     #[test]
     fn chat_send_rejects_empty_content() {
         let (gateway, _tmp) = fresh_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let h = handlers.get("chat.send").expect("chat.send registered");
-        let err = h("chat.send", &serde_json::json!({"session_id":"s1","content":""})).expect_err("empty content must fail");
+        let err = h(
+            "chat.send",
+            &serde_json::json!({"sessionId":"s1","content":""}),
+        )
+        .expect_err("empty content must fail");
         assert!(!err.is_empty());
     }
 
     #[test]
     fn chat_cancel_stops_stream() {
-        let (gateway, _tmp) = fresh_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+
+        // A cancel is honest only when a generation is actually in flight:
+        // register a never-yielding provider and start a turn through the
+        // public chat.send handler before cancelling it.
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::Arc;
+
+        struct PendingMock;
+        #[async_trait]
+        impl anima_llm::ChatProvider for PendingMock {
+            fn id(&self) -> &str {
+                "cancel-test"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::pending::<
+                    Result<ChatChunk, anima_llm::LlmError>,
+                >()))
+            }
+        }
+        let svc = gateway.core.chat_service().expect("chat service");
+        svc.register_client("cancel-test", Arc::new(PendingMock));
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "cancel-test".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+        let send = handlers.get("chat.send").expect("chat.send registered");
+        send(
+            "chat.send",
+            &serde_json::json!({"sessionId":"cancel-session","content":"stop me"}),
+        )
+        .expect("chat.send Ok");
+        // Give the spawned pump time to register the generation's cancel flag.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         let h = handlers.get("chat.cancel").expect("chat.cancel registered");
-        let reply = h("chat.cancel", &serde_json::json!({"session_id":"s1"})).expect("ok");
-        assert!(reply.get("cancelled").is_some());
+        let reply = h(
+            "chat.cancel",
+            &serde_json::json!({"session_id":"cancel-session"}),
+        )
+        .expect("ok");
+        assert_eq!(reply["cancelled"], true, "an accepted cancel must report cancelled=true");
     }
 
     #[test]
@@ -2188,7 +2478,7 @@ mod tests {
         lane.subscribe(anima_channel::EventTopic::ALL);
         gateway.publisher().bus().register_lane(&lane);
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
+        let handlers = handlers(&gateway);
         let h = handlers
             .get("core.status")
             .expect("core.status handler registered");
@@ -2226,7 +2516,12 @@ mod tests {
         std::fs::create_dir_all(&db).unwrap();
         let core = CoreService::open(Some(dir2.path().to_path_buf()));
         assert!(!core.available());
-        let handlers = Gateway::renderer_handlers(&core, &gateway.publisher);
+        let handlers = Gateway::renderer_handlers(
+            &core,
+            &gateway.publisher,
+            &gateway.config_path,
+            &gateway.inner.lock().unwrap().hostname.clone(),
+        );
         let h = handlers.get("core.status").unwrap();
         let err = h("core.status", &serde_json::json!({})).expect_err("unavailable must Err");
         assert!(err.starts_with("core unavailable:"), "got: {err}");
@@ -2242,10 +2537,13 @@ mod tests {
         let dir = tmp.path().join("server-channel");
         let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
 
         // Set a setting
-        let set_handler = handlers.get("settings.set").expect("settings.set registered");
+        let set_handler = handlers
+            .get("settings.set")
+            .expect("settings.set registered");
         let set_payload = serde_json::json!({
             "section": "chat",
             "settings": {
@@ -2261,7 +2559,9 @@ mod tests {
         assert_eq!(set_v["ok"], true);
 
         // Get it back
-        let get_handler = handlers.get("settings.get").expect("settings.get registered");
+        let get_handler = handlers
+            .get("settings.get")
+            .expect("settings.get registered");
         let get_payload = serde_json::json!({ "section": "chat" });
         let get_reply = get_handler("settings.get", &get_payload).expect("settings.get Ok");
         let get_v: serde_json::Value = get_reply;
@@ -2278,8 +2578,10 @@ mod tests {
         let dir = tmp.path().join("server-channel");
         let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
-        let handler = handlers.get("providers.list").expect("providers.list registered");
+        let handlers = handlers(&gateway);
+        let handler = handlers
+            .get("providers.list")
+            .expect("providers.list registered");
         let reply = handler("providers.list", &serde_json::json!({})).expect("providers.list Ok");
         let v: serde_json::Value = reply;
 
@@ -2289,11 +2591,26 @@ mod tests {
         if let Some(providers) = providers {
             for provider in providers {
                 let p = provider.as_object().unwrap();
-                assert!(!p.contains_key("apiKey"), "apiKey must not be in provider list");
-                assert!(!p.contains_key("api_key"), "api_key must not be in provider list");
-                assert!(!p.contains_key("secret"), "secret must not be in provider list");
-                assert!(!p.contains_key("token"), "token must not be in provider list");
-                assert!(!p.contains_key("config"), "config must not be in provider list");
+                assert!(
+                    !p.contains_key("apiKey"),
+                    "apiKey must not be in provider list"
+                );
+                assert!(
+                    !p.contains_key("api_key"),
+                    "api_key must not be in provider list"
+                );
+                assert!(
+                    !p.contains_key("secret"),
+                    "secret must not be in provider list"
+                );
+                assert!(
+                    !p.contains_key("token"),
+                    "token must not be in provider list"
+                );
+                assert!(
+                    !p.contains_key("config"),
+                    "config must not be in provider list"
+                );
             }
         }
     }
@@ -2304,8 +2621,11 @@ mod tests {
         let dir = tmp.path().join("server-channel");
         let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
-        let handler = handlers.get("vault.status").expect("vault.status registered");
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let handler = handlers
+            .get("vault.status")
+            .expect("vault.status registered");
         let reply = handler("vault.status", &serde_json::json!({})).expect("vault.status Ok");
         let v: serde_json::Value = reply;
 
@@ -2334,16 +2654,13 @@ mod tests {
             fn id(&self) -> &str {
                 "e2e-stop"
             }
-            async fn models(
-                &self,
-            ) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
                 Ok(vec![])
             }
-            async fn stream(
-                &self,
-                _req: ChatRequest,
-            ) -> Result<ChatStream, anima_llm::LlmError> {
-                Ok(Box::pin(stream::pending::<Result<ChatChunk, anima_llm::LlmError>>()))
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::pending::<
+                    Result<ChatChunk, anima_llm::LlmError>,
+                >()))
             }
         }
 
@@ -2368,13 +2685,16 @@ mod tests {
             })
             .unwrap();
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher);
+        // The gate reads config.json per call, so opt in before invoking
+        // chat.cancel in this fixture (isolated_gateway starts fail-closed).
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
 
         // Start the stream (pends forever).
         let send = handlers.get("chat.send").expect("chat.send registered");
         let reply = send(
             "chat.send",
-            &serde_json::json!({"session_id":"stop-session","content":"stop me"}),
+            &serde_json::json!({"sessionId":"stop-session","content":"stop me"}),
         )
         .expect("chat.send Ok");
         assert_eq!(reply["accepted"], true);
@@ -2410,6 +2730,44 @@ mod tests {
     }
 
     #[test]
+    fn execution_verbs_are_denied_by_default() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        for method in [
+            "chat.cancel",
+            "sessions.import",
+            "mcp.list_servers",
+            "mcp.tools_list",
+            "mcp.tools_call",
+            "mcp.call_tool",
+            "acp.run",
+            "acp.prompt",
+            "acp.list_sessions",
+        ] {
+            let h = handlers
+                .get(method)
+                .unwrap_or_else(|| panic!("{method} must stay registered"));
+            let err = h(method, &serde_json::json!({}))
+                .expect_err("execution verb must be denied by default");
+            assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{method}: {err}");
+        }
+    }
+
+    #[test]
+    fn read_only_acp_list_agents_bypasses_actions_gate() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let h = handlers.get("acp.list_agents").expect("registered");
+        // Fails for the documented "not implemented" reason, not the gate:
+        // read-only verbs must remain callable without opt-in.
+        let err = h("acp.list_agents", &serde_json::json!({})).expect_err("not implemented");
+        assert!(
+            !err.starts_with(ACTIONS_DISABLED_PREFIX),
+            "read-only verb must bypass the gate: {err}"
+        );
+    }
+
+    #[test]
     fn regenerate_token_reports_ok_false_when_rebind_fails() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("server-channel");
@@ -2430,7 +2788,10 @@ mod tests {
 
         let reply = gateway.handle(&GatewayRequest::RegenerateToken);
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
-        assert_eq!(v["ok"], false, "unbound rotation must not look like success");
+        assert_eq!(
+            v["ok"], false,
+            "unbound rotation must not look like success"
+        );
         assert!(v["error"].as_str().is_some_and(|e| !e.is_empty()));
         assert!(
             v["authToken"].is_null(),
@@ -2441,7 +2802,7 @@ mod tests {
     #[test]
     fn card_verbs_report_not_implemented() {
         let (gateway, _tmp) = fresh_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
         for method in ["cards.list", "cards.get", "cards.import"] {
             let h = handlers
                 .get(method)
@@ -2453,13 +2814,75 @@ mod tests {
     }
 
     #[test]
+    fn card_metadata_rpc_persists_explicit_flags() {
+        // Isolated store: `fresh_gateway()` intentionally uses the real
+        // data dir, which another test run may have already written to.
+        let (gateway, _tmp) = isolated_gateway();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let defaults = handlers
+            .get("cards.metadata")
+            .expect("cards.metadata registered");
+        let reply = defaults("cards.metadata", &serde_json::json!({ "id": "card-1" }))
+            .expect("default metadata read");
+        assert_eq!(
+            reply,
+            serde_json::json!({ "id": "card-1", "liked": false, "bookmarked": false })
+        );
+
+        let set = handlers
+            .get("cards.metadata.set")
+            .expect("cards.metadata.set registered");
+        let reply = set(
+            "cards.metadata.set",
+            &serde_json::json!({ "id": "card-1", "liked": true, "bookmarked": true }),
+        )
+        .expect("metadata write");
+        assert_eq!(
+            reply,
+            serde_json::json!({ "id": "card-1", "liked": true, "bookmarked": true })
+        );
+
+        // Explicit booleans, not flips: writing `false` for liked keeps the
+        // bookmarked flag intact.
+        let reply = set(
+            "cards.metadata.set",
+            &serde_json::json!({ "id": "card-1", "liked": false, "bookmarked": true }),
+        )
+        .expect("second metadata write");
+        assert_eq!(
+            reply,
+            serde_json::json!({ "id": "card-1", "liked": false, "bookmarked": true })
+        );
+
+        let reply = defaults("cards.metadata", &serde_json::json!({ "id": "card-1" }))
+            .expect("metadata read-back");
+        assert_eq!(
+            reply,
+            serde_json::json!({ "id": "card-1", "liked": false, "bookmarked": true })
+        );
+
+        assert!(
+            set(
+                "cards.metadata.set",
+                &serde_json::json!({ "id": "card-1", "liked": "yes", "bookmarked": true }),
+            )
+            .is_err(),
+            "non-boolean flags must be rejected"
+        );
+    }
+
+    #[test]
     fn chat_history_replays_persisted_turns() {
         let (gateway, _tmp) = isolated_gateway();
         gateway.core.chat_send("h1", "first").unwrap();
         gateway.core.chat_send("h1", "second").unwrap();
         gateway.core.chat_send("h2", "other").unwrap();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
-        let h = handlers.get("chat.history").expect("chat.history registered");
+        let handlers = handlers(&gateway);
+        let h = handlers
+            .get("chat.history")
+            .expect("chat.history registered");
         let reply = h("chat.history", &serde_json::json!({ "session_id": "h1" })).unwrap();
         assert_eq!(reply["sessionId"], "h1");
         let messages = reply["messages"].as_array().unwrap();
@@ -2474,7 +2897,8 @@ mod tests {
     #[test]
     fn providers_save_delete_roundtrip_without_secrets() {
         let (gateway, _tmp) = isolated_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let save = handlers.get("providers.save").unwrap();
         let reply = save(
             "providers.save",
@@ -2490,7 +2914,10 @@ mod tests {
         .unwrap();
         assert_eq!(reply["ok"], true);
         assert_eq!(reply["id"], "p1");
-        assert!(!reply.to_string().contains("TOP-SECRET"), "reply must not echo the key");
+        assert!(
+            !reply.to_string().contains("TOP-SECRET"),
+            "reply must not echo the key"
+        );
 
         let list = handlers.get("providers.list").unwrap();
         let listed = list("providers.list", &serde_json::json!({})).unwrap();
@@ -2521,9 +2948,45 @@ mod tests {
     }
 
     #[test]
+    fn providers_save_patch_cannot_rotate_a_nested_secret() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let save = handlers.get("providers.save").unwrap();
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "p2",
+                "kind": "open-ai-compatible",
+                "model": "gpt-x",
+                "enabled": true,
+            }),
+        )
+        .unwrap();
+
+        // Seed a nested secret-shaped key via the store, then PATCH only a
+        // non-secret field and confirm the stored secret survives.
+        let db = gateway.core.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        let mut stored = repo.get("p2").unwrap().unwrap();
+        stored.config["access_token"] = serde_json::json!("STORED-TOKEN");
+        repo.upsert(&stored).unwrap();
+
+        save(
+            "providers.save",
+            &serde_json::json!({ "id": "p2", "kind": "open-ai-compatible", "model": "gpt-y" }),
+        )
+        .unwrap();
+        let after = repo.get("p2").unwrap().unwrap();
+        assert_eq!(after.config["access_token"], "STORED-TOKEN");
+        assert_eq!(after.config["model"], "gpt-y");
+    }
+
+    #[test]
     fn general_settings_roundtrip_via_rpc() {
         let (gateway, _tmp) = isolated_gateway();
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let set = handlers.get("settings.set").unwrap();
         set(
             "settings.set",
@@ -2588,11 +3051,12 @@ mod tests {
             })
             .unwrap();
 
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
         let send = handlers.get("chat.send").unwrap();
         let reply = send(
             "chat.send",
-            &serde_json::json!({ "session_id": "idx-session", "content": "hi" }),
+            &serde_json::json!({ "sessionId": "idx-session", "content": "hi" }),
         )
         .unwrap();
         assert_eq!(reply["sessionId"], "idx-session");
@@ -2600,8 +3064,7 @@ mod tests {
 
         let mut indices = Vec::new();
         let mut final_index = None;
-        for _ in 0..50 {
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        for _ in 0..200 {
             for event in lane.drain() {
                 if let anima_channel::EventPayload::TokenDelta(d) = event.data {
                     if d.session_id == "idx-session" {
@@ -2613,17 +3076,30 @@ mod tests {
                     }
                 }
             }
-            if final_index.is_some() {
+            if final_index.is_some() && indices.len() >= 3 {
                 break;
             }
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(indices, vec![0, 1, 2], "per-message token indices must advance");
-        assert_eq!(final_index, Some(3), "terminal marker follows the last token");
+        assert_eq!(
+            indices,
+            vec![0, 1, 2],
+            "per-message token indices must advance"
+        );
+        assert_eq!(
+            final_index,
+            Some(3),
+            "terminal marker follows the last token"
+        );
 
         // F1: exactly one user turn, in the session id returned by the ack.
         let history = gateway.core.chat_stream("idx-session").unwrap();
         let user_turns: Vec<_> = history.iter().filter(|m| m.role == "user").collect();
-        assert_eq!(user_turns.len(), 1, "send_message persists the user turn once");
+        assert_eq!(
+            user_turns.len(),
+            1,
+            "send_message persists the user turn once"
+        );
         assert_eq!(user_turns[0].content, "hi");
         let sessions = anima_store::SessionRepo::new(gateway.core.db().unwrap())
             .list()
@@ -2648,11 +3124,13 @@ mod tests {
         let (gateway, _tmp) = isolated_gateway();
         let repo = anima_store::JournalRepo::new(gateway.core.db().unwrap());
         // Needle is the *oldest* entry, far outside the old 1000-row window.
-        repo.append("note", "needle-in-the-oldest-entry", None).unwrap();
+        repo.append("note", "needle-in-the-oldest-entry", None)
+            .unwrap();
         for i in 0..1005 {
-            repo.append("note", &format!("filler entry {i}"), None).unwrap();
+            repo.append("note", &format!("filler entry {i}"), None)
+                .unwrap();
         }
-        let handlers = Gateway::renderer_handlers(&gateway.core, &gateway.publisher());
+        let handlers = handlers(&gateway);
         let search = handlers.get("journal.search").unwrap();
         let reply = search(
             "journal.search",
@@ -2660,8 +3138,131 @@ mod tests {
         )
         .unwrap();
         let entries = reply["entries"].as_array().unwrap();
-        assert_eq!(entries.len(), 1, "matches outside the newest 1000 must be found");
+        assert_eq!(
+            entries.len(),
+            1,
+            "matches outside the newest 1000 must be found"
+        );
         assert_eq!(entries[0]["content"], "needle-in-the-oldest-entry");
         assert_eq!(reply["truncated"], false);
+    }
+
+    #[test]
+    fn mutating_verbs_are_denied_without_actions_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        // No allowActions key: mutating verbs must fail with the actions-
+        // disabled prefix, and read-only verbs must still work.
+        let handlers = handlers(&gateway);
+        for method in ["settings.set", "journal.append", "stmm.rebuild", "chat.send"] {
+            let h = handlers
+                .get(method)
+                .unwrap_or_else(|| panic!("{method} must stay registered"));
+            let err = h(method, &serde_json::json!({}))
+                .expect_err("mutating verb must be denied by default");
+            assert!(
+                err.starts_with(ACTIONS_DISABLED_PREFIX),
+                "{method}: {err}"
+            );
+        }
+        let read = handlers.get("core.status").unwrap();
+        read("core.status", &serde_json::json!({}))
+            .expect("read-only verb must work without opt-in");
+    }
+
+    #[test]
+    fn actions_gate_maps_to_typed_rpc_error_and_allows_when_opted_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+
+        // Disabled: the daemon returns the actions-disabled prefix, and the
+        // channel dispatch maps it to the stable `rpc_actions_disabled` code.
+        let set = handlers.get("settings.set").unwrap();
+        let err = set(
+            "settings.set",
+            &serde_json::json!({ "section": "chat", "settings": {} }),
+        )
+        .expect_err("denied by default");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
+        let rpc_err = anima_channel::dispatch::RpcRegistry::dispatch(
+            &anima_channel::RpcContext::new("127.0.0.1", 6121),
+            "settings.set",
+            &serde_json::json!({ "section": "chat", "settings": {} }),
+            &handlers,
+        )
+        .expect_err("dispatch must surface the refusal");
+        assert_eq!(rpc_err.code(), "rpc_actions_disabled");
+
+        // Opt in: the same verb now succeeds.
+        enable_actions(&gateway);
+        let reply = set(
+            "settings.set",
+            &serde_json::json!({ "section": "chat", "settings": {} }),
+        )
+        .expect("allowed when opted in");
+        assert_eq!(reply["ok"], true);
+    }
+
+    #[test]
+    fn actions_gate_rejects_non_boolean_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let mut value = serde_json::to_value(ChannelConfig::healed()).unwrap();
+        value["allowActions"] = serde_json::json!("true");
+        fs::create_dir_all(gateway.config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &gateway.config_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        let handlers = handlers(&gateway);
+        let err = handlers
+            .get("journal.append")
+            .unwrap()("journal.append", &serde_json::json!({ "content": "hi" }))
+            .expect_err("string \"true\" must not enable actions");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
+    }
+
+    #[test]
+    fn persist_preserves_allow_actions_flag() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let raw = fs::read_to_string(&gateway.config_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["allowActions"], serde_json::json!(true));
+        // A D-Bus-style rewrite (e.g. token rotation) must not drop the flag.
+        let config = ChannelConfig::healed();
+        Gateway::persist(&gateway.config_path, &config).unwrap();
+        let raw = fs::read_to_string(&gateway.config_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["allowActions"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn actions_gate_denies_mutating_verbs_on_non_loopback_host() {
+        // A LAN/non-loopback bind must NOT keep mutating verbs enabled even
+        // when allowActions is true (the documented property: the gate
+        // requires both the opt-in AND a loopback hostname).
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers_with_hostname(&gateway, "192.168.1.10");
+        let err = handlers
+            .get("settings.set")
+            .unwrap()("settings.set", &serde_json::json!({ "section": "chat", "settings": {} }))
+            .expect_err("LAN hostname must deny mutating verbs");
+        assert!(
+            err.starts_with(ACTIONS_DISABLED_PREFIX),
+            "LAN denial must use the actions-disabled prefix: {err}"
+        );
+        assert!(err.contains("loopback"), "error should name the reason: {err}");
+    }
+
+    #[test]
+    fn actions_gate_allows_mutating_verbs_on_loopback_host() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers_with_hostname(&gateway, "127.0.0.1");
+        handlers
+            .get("journal.append")
+            .unwrap()("journal.append", &serde_json::json!({ "content": "hi" }))
+            .expect("loopback + opt-in must allow mutating verbs");
     }
 }

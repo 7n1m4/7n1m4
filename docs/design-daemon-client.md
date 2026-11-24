@@ -1,7 +1,7 @@
 # Daemon client (Slice A)
 
-**Status:** accepted direction; only the transport slice is implemented.
-**Scope:** `crates/anima-channel` Rust client; no daemon business logic yet.
+**Status:** accepted direction; transport (Slice A), the daemon core-service split (Slices B/C), and the slint-side ownership deletion (Slice D) are implemented; the gateway has since grown far past the original single handler.
+**Scope:** `crates/anima-channel` Rust client; no daemon business logic in the client layer.
 
 ## Decisions
 
@@ -32,6 +32,6 @@
 - Integration tests against the real `ChannelServer`, including TLS.
 - No reconnect policy, daemon wiring, UI, or token storage.
 
-- **B (Slice B, implemented).** Daemon owns core state via `CoreService` (crates/anima-daemon/src/core.rs); `Gateway` holds it (gateway.rs); registers exactly one renderer handler `core.status`; `CoreStatusReply` (crates/anima-channel/src/wire.rs) additive/read-only/no secrets; `GatewayClient::core_status()` (client.rs). Slint-side ownership deletion done (Slice D: anima-slint removed).
-- **C (pending).** Chat over WS.
-- **D (pending).** Memory/settings/cards migrate; delete slint-side ownership.
+- **B (Slice B, implemented).** Daemon owns core state via `CoreService` (crates/anima-daemon/src/core.rs); `Gateway` holds it (gateway.rs) and `renderer_handlers` registers the wire-facing verbs; `CoreStatusReply` (crates/anima-channel/src/wire.rs) is additive/read-only/no secrets; `GatewayClient::core_status()` (client.rs). Slice B originally registered exactly one handler (`core.status`); the registry has since grown to **33** `renderer.*` verbs (see `docs/rosetta-stone.md` §1b for the enumerated list) plus the **6** built-ins in `crates/anima-channel/src/dispatch.rs:299-304`. Slint-side ownership deletion done (Slice D: anima-slint removed).
+- **C (implemented).** Chat over WS: `chat.send` streams `token.delta` events; `chat.cancel` stops a turn; `chat.history` replays persisted turns. Registrations: `chat.send` at `crates/anima-daemon/src/gateway.rs:736`, `chat.cancel` at `:898`, `chat.history` at `:924`.
+- **D (implemented).** Slint-side ownership deleted (`anima-slint` removed); memory/settings remains daemon-owned via `CoreService`, while cards (`cards.list`/`.get`/`.import`) are explicitly out of daemon scope and return "not implemented" (`gateway.rs:1054-1075`).
