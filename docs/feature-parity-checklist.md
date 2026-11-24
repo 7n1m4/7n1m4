@@ -1,10 +1,16 @@
 # Feature-parity checklist
 
-Maps each daemon capability to client implementation status across
- Flutter, Godot, and the Vue reference. A blank cell = not implemented.
- Rows marked **stub** return a "not implemented" error from the daemon or are
- explicitly out-of-scope. Rows marked **TS-core-remaining** have their full
- business logic in TypeScript with no daemon port yet.
+Maps each daemon capability to implementation status across all three
+maintained full-parity renderers/clients driven by the same Rust backend:
+Flutter (`apps/flutter`), Godot (`godot/`), and the Vue web UI (`apps/stage-web`).
+A blank cell = not implemented. Rows marked **stub** return a "not implemented"
+error from the daemon or are explicitly out-of-scope. Rows marked
+**TS-core-remaining** have their full business logic in TypeScript with no
+daemon port yet — a gap to close, not a reason to retire the Vue renderer.
+The Vue **column** is also the behaviour reference for the port. Retiring
+TypeScript business logic (the gated `airi-3cp` remote-sync slice) does not
+change renderer parity; gateway trust gates and `airi-3cp` DO NOT START remain
+in force unless the user explicitly says otherwise.
 
 | Capability | Flutter | Godot | Vue reference | Parity gap |
 |---|---|---|---|---|
@@ -66,10 +72,14 @@ When a new daemon capability lands, add a row here and mark which clients
 implement it. A PR that adds a daemon capability without updating this
 checklist is incomplete.
 
-The Vue column is a **behaviour reference**, not a parity target: `—` there
-is documented reference scope, not an open implementation gap. A gap entry
-names the concrete follow-up bead (for example `airi-b2q` above) so the
-checklist never reports green while work is outstanding.
+Vue is a maintained full-parity renderer and the behaviour reference: a `—`
+marks a scope where the Vue renderer is not expected to implement a daemon
+verb (for example client-local `lip_sync.rms`), not an open implementation gap.
+The Flutter/Godot columns are equally in scope for parity. A gap entry names
+the concrete follow-up bead (for example `airi-b2q` above) so the checklist
+never reports green while work is outstanding. The TS remote-sync retirement
+gate below is about TypeScript **business logic**, not Vue renderer removal;
+it is blocked and must not start without explicit user authorization.
 
 `lip_sync.rms` is deliberately **not** daemon-published: speech capture and
 playback are client-local per `docs/decision-bridge-scope.md` (authoritative).
@@ -80,11 +90,12 @@ Flutter's renderer gap and the generic-only Godot backends remain outstanding.
 
 ## Source of truth
 
-Daemon capabilities live in `crates/anima-daemon/src/core.rs`
+The Rust daemon/backend in `crates/anima-daemon/src/core.rs`
 (`CoreService`) and `crates/anima-daemon/src/gateway.rs`
-(`renderer_handlers`). Client implementations live in
-`apps/flutter/lib/daemon_client/`, `godot/scripts/Net/`, and the Vue
-reference app; the local TTS/PCM seams live in `apps/flutter/lib/speech/`
+(`renderer_handlers`) is the single source of truth. Client implementations
+live in all three maintained renderers — `apps/flutter/lib/daemon_client/`,
+`godot/scripts/Net/`, and the Vue web UI (`apps/stage-web` with shared
+`packages/stage-ui`) — the local TTS/PCM seams live in `apps/flutter/lib/speech/`
 and `godot/scripts/Audio/` and are described by
 `docs/decision-client-local-tts-pcm.md` and
 `docs/guide-client-local-tts-runtime.md`.

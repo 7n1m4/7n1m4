@@ -23,14 +23,9 @@
 > [!WARNING]
 > **Status — mid-pivot, not a daily driver.**
 >
-> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A Rust daemon (anima-daemon) owns state, awareness, and an authenticated  
- WS/wss gateway (anima-channel); Flutter, Godot, and Vue are maintained full-parity             
- renderers/clients. Those clients hold view state and client-local audio/render state, while    
- TypeScript stores remain the behavior reference where daemon ports are incomplete. Assumed     
- load: one developer with local clients and one daemon, later a few trusted LAN/remote clients; 
- not public multi-tenant.
+> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A long-lived Rust daemon (`anima-daemon`) is the single source of truth for state and business logic and hosts the WS/wss gateway (`anima-channel`). It drives the maintained full-parity renderers: the Flutter window companion (`apps/flutter`), the Godot renderer (`godot/`), and the Vue web UI (`apps/stage-web`), plus the Electrobun desktop app (`apps/stage-tamagotchi`) while it remains live. "Thin client" describes who owns state — not a reduced UI surface. WS/wss is the data plane; D-Bus is the control plane on Linux. Those clients hold view state and client-local audio/render state, while TypeScript stores remain the behavior reference where daemon ports are incomplete. Assumed load: one developer with local clients and one daemon, later a few trusted LAN/remote clients; not public multi-tenant.
 >
-> Docs and code drift. For the current topology, invariants, and threat model read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md).
+> Retiring TypeScript business logic (the gated opt-in TS remote-sync slice) does **not** retire the Vue renderer: all three named renderers stay in scope at full feature parity. Docs and code drift. For the current topology, invariants, and gateway trust gates read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for the multi-renderer contract read [`docs/design-flutter-godot-pivot.md`](./docs/design-flutter-godot-pivot.md) and [`docs/feature-parity-checklist.md`](./docs/feature-parity-checklist.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md). File issues against the fork you actually intend to run.
 
 <p align="center"><strong>Presence without custody.</strong></p>
 
@@ -403,6 +398,8 @@ The provider system supports multiple configured instances rather than treating 
 | [Showcase](https://dasilva333.github.io/airi/en/docs/showcase/) | Visual introduction to the major experiences |
 | [Feature report](https://dasilva333.github.io/airi/en/docs/chronicles/feature-report) | Detailed inventory of fork-specific capabilities |
 | [Rosetta Stone](./docs/rosetta-stone.md) | Canonical architecture and source-location map |
+| [Multi-renderer pivot](./docs/design-flutter-godot-pivot.md) | Rust daemon as single source of truth; Flutter, Godot and Vue full-parity renderers |
+| [Feature-parity checklist](./docs/feature-parity-checklist.md) | Per-capability status across Flutter, Godot and the Vue web UI |
 | [Major features](./docs/project-major-features-added.md) | Higher-level implementation catalog |
 | [Roadmap](https://dasilva333.github.io/airi/en/docs/chronicles/roadmap) | Pending ideas and planning history; implementation may move ahead of the document |
 | [Agent guide](./AGENTS.md) | Repository-specific working rules for contributors and coding agents |

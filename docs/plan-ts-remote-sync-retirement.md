@@ -4,12 +4,21 @@
 
 - **Status:** proposed gate, not authorization to delete (2026-11-22)
 - **Design bead:** `airi-3mp`
-- **Final-removal bead:** `airi-3cp` (depends on this design; do not start it early)
+- **Final-removal bead:** `airi-3cp` — **DO NOT START**; it depends on this design and stays blocked
+  until every exit criterion below is green and approval is recorded.
 - **Authority:** [`decision-server-endpoints.md`](./decision-server-endpoints.md) keeps these
   endpoints temporarily; Wave 5 decision C in
   [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md) requires daemon business-logic
-  parity **and** Flutter frontend parity **and** explicit approval before the Vue/desktop reference
-  can be retired. This plan applies that gate to the remote-sync slice only.
+  parity **and** Flutter frontend parity **and** explicit approval before the Electrobun/Vue
+  **desktop TS shell/business logic** can be retired. This plan applies that gate to the opt-in TS
+  remote-sync mirror only.
+
+**Retirement boundary.** Parity comes first: daemon-owned business logic plus the Flutter window
+companion and Godot renderer exercising those flows over daemon RPC must be proven before the
+opt-in TS remote-sync mirror or the Electrobun TS shell is retired. The Vue **web** UI renderer
+(`apps/stage-web`) is a maintained full-parity renderer and the behaviour reference; it is **not**
+what this gate retires, and neither are the Flutter or Godot renderers. `airi-3cp` remains
+**DO NOT START** until the exit criteria below are green, and no deletion is authorized here.
 
 ## Current state (source verified, not an endorsement)
 
@@ -47,7 +56,7 @@ unverifiable claim is not evidence. All rows are mandatory; none may be waived b
 | 1   | **Daemon logic — providers.** Every Vue provider operation has a daemon RPC equivalent with contract tests and a documented migration from the local store: list/create/update/delete semantics match `providers.list`/`.save`/`.delete` (`gateway.rs:656-680`, tests `gateway.rs:2540,2822`), including validation state and secrets handling. `cargo test -p anima-daemon` passes.                                                                                                                                                          | Daemon owner; Rust tests and parity-checklist row                                    |
 | 2   | **Daemon logic — characters.** Character CRUD is daemon-owned, not a TS stub: either `cards.list`/`get`/`import` and create/update/delete are implemented with conformance tests, or an explicit ADR supersedes that scope and defines the local-only ownership. The current "not implemented" stubs (`gateway.rs:1066-1086`) cannot satisfy the gate as-is. Business logic no longer lives exclusively in `stores/characters.ts`.                                                                                          | Daemon owner; ADR/contract tests and parity-checklist row                            |
 | 3   | **Daemon logic — auth/session.** The reference no longer depends on better-auth for a functional path: the daemon supplies the identity/trust contract needed by remote clients, **or** the account/session UX is deliberately removed from the reference with a written BYOS identity decision. No user flow is silently broken when `/api/auth/*` disappears. **This criterion is currently blocked**: `airi-79o` (open) owns the BYOS identity/auth decision and must not be resolved by this gate.                                                                                                                                                           | Daemon owner + Vue reference owner; design decision plus request-level test evidence |
-| 4   | **Flutter/Godot parity.** The Flutter app exercises the end-to-end flows for providers and characters (and the decision from #3) over daemon RPC; Godot has the corresponding RPC methods where its renderer needs them. `flutter test` and `dotnet test` pass, and the parity checklist marks these rows implemented, not stub/TS-core-remaining. Vue web stays the behaviour reference until this is true.                                                                                                              | Flutter owner + Godot owner; `flutter test`, `dotnet test`, checklist                |
+| 4   | **Flutter/Godot parity.** The Flutter app exercises the end-to-end flows for providers and characters (and the decision from #3) over daemon RPC; Godot has the corresponding RPC methods where its renderer needs them. `flutter test` and `dotnet test` pass, and the parity checklist marks these rows implemented, not stub/TS-core-remaining. The Vue web renderer stays a maintained full-parity behaviour reference throughout; this row does not authorize retiring it.                                                                                                              | Flutter owner + Godot owner; `flutter test`, `dotnet test`, checklist                |
 | 5   | **Vue reference migration.** No production caller remains for `client.api.auth`, `client.api.characters`, or `client.api.providers`, nor for remote branches in `useLocalFirstRequest`. Login route/drawer, remote-sync checkbox and locale strings are removed or re-pointed to the replacement. Run a repo-wide inventory command for the remote-auth, Hono-client, and remote-sync symbols; it must return no production callers outside tests and the references documented in this plan. Focused Vitest suites pass. | Vue reference owner; `rg` output, Vitest output, checklist                           |
 | 6   | **Config/cutover readiness.** `SERVER_URL`/`VITE_SERVER_URL`, the Hono client, and `@proj-anima/server` type imports have zero remaining production readers; the final-removal change can delete the route mounts and server code without breaking another caller. Deployment docs that advertise `VITE_SERVER_URL` are listed for update.                                                                                                                                                                                | Vue reference owner + server maintainer; repo-wide `rg` inventory                    |
 | 7   | **User-visible docs.** `docs/README.md`, `docs/feature-parity-checklist.md`, `docs/decision-server-endpoints.md` and any deployment guide that documents the remote endpoint or its toggle say what replaces it and that the TS routes are gone. Doc links resolve; no "remote sync" promise remains without a replacement.                                                                                                                                                                                               | Docs owner; doc diff and link check                                                  |
@@ -58,8 +67,10 @@ unverifiable claim is not evidence. All rows are mandatory; none may be waived b
 - A Rust **REST** replacement. RPC parity and reference migration are enough; do not build `axum`
   routes just to retire Hono routes.
 - Retiring `apps/server` wholesale, the Electron/Electrobun shell, or the Vue web app. The Vue web
-  reference is kept out of respect for the original project and as the behaviour reference; only
-  this opt-in mirror is removed. `apps/stage-tamagotchi` stays alive until decision C is met.
+  renderer is kept out of respect for the original project and as a maintained full-parity
+  behaviour reference; only the opt-in TS mirror is removed here. Retirement of the Electrobun
+  desktop TS shell/business logic is the separate parity-gated decision C (`airi-wxp.6.4`), not a
+  Vue renderer retirement; `apps/stage-tamagotchi` stays alive until decision C is met.
 - Likes/bookmarks (`airi-1gu`), BYOS chat sync (`airi-94l`), gdrive/provider-detail cleanup
   (`airi-x41`), client-local lip-sync (`airi-b2q`), mobile packaging, or Godot renderer plugins.
   Those are separate scopes; their beads need not close for this gate.
@@ -74,7 +85,8 @@ after criterion 8 is recorded.
 
 1. Link the dated evidence and approvals in `airi-3cp`; update
    `docs/feature-parity-checklist.md` and this plan's status to "gate passed".
-2. Repoint Vue character/provider/auth callers to the daemon RPC/local path; update focused tests.
+2. Repoint Vue character/provider/auth callers to the daemon RPC/local path, keeping the Vue web
+   renderer intact; update focused tests.
    Remove `useLocalFirstRequest` remote branches, `composables/api.ts` (`hc<AppType>`),
    `SERVER_URL`/`VITE_SERVER_URL` reads, `libs/auth.ts` better-auth client, login drawer/page and
    the remote-sync setting plus its i18n strings. Delete the helper if no caller remains.

@@ -2,6 +2,8 @@
 
 A comprehensive inventory of every persisted store, namespace, and key in the AIRI codebase — their shapes, file locations, sync behaviors, and relationships. Intended as a reference for implementing selective sync, adding new stores, or debugging persistence issues.
 
+**Architecture note:** the Rust daemon/backend is the single source of truth for daemon-mode state. The Flutter window companion, Godot renderer and Vue web UI are all maintained full-parity renderers/clients of that backend; the TypeScript-owned stores inventoried below are the migration reference where the daemon has not yet ported a domain. Retiring TS business logic (the gated `airi-3cp` remote-sync slice) does not retire any renderer; gateway trust gates and `airi-3cp` DO NOT START remain in force unless the user explicitly says otherwise.
+
 ---
 
 ## Storage Layer Architecture

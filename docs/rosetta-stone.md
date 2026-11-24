@@ -2,6 +2,8 @@
 
 Concept-to-file-path index for rapid context retrieval. Use this to find where anything lives — UI, data, providers, modules, audio, memory, or the integration plumbing between them.
 
+> **Architecture in one line (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; the Flutter window companion (`apps/flutter`), Godot renderer (`godot/`) and Vue web UI (`apps/stage-web`) are maintained full-parity renderers/clients driven by that same backend. "Thin client" means no competing state writer, never a reduced UI surface. TS business-logic retirement (the still-gated `airi-3cp` remote-sync slice) does not retire the Vue renderer; gateway trust gates and `airi-3cp` DO NOT START remain unless the user explicitly says otherwise. Canonical overview: [`docs/README.md`](./README.md); per-capability status: [`docs/feature-parity-checklist.md`](./feature-parity-checklist.md).
+>
 > **Relationship to `.agents/skills/`:** The skills directory contains deep-dive domain guides (staged entry points, pitfalls, SOPs). This Rosetta Stone is the dense index layer — use it to locate where something lives; load the corresponding skill for implementation procedure.
 
 ---
@@ -14,6 +16,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 > | :--- | :--- |
 > | App startup, window managers, DI wiring, the `eventa` contract | **1, 6 (providers)** |
 > | Any visible window/island/chat surface (Control Strip, Stage, Chatbox, islands) | **2, 3, 4** |
+| Multi-renderer architecture: Rust daemon backend + Flutter/Godot/Vue full-parity clients | **1, 1b, 14** (+ [`docs/README.md`](./README.md), [`feature-parity-checklist.md`](./feature-parity-checklist.md)) |
 > | Anything persisted — cards, chat logs, memory, sync, IndexedDB/localStorage keys | **5** (+ catalog) |
 > | Swapping LLM/TTS/STT/vision/image backends, `defineProvider`, local model inference | **6** |
 > | Feature modules (card-embedded vs standalone) — consciousness, speech, hearing, vision, discord, etc. | **7** |
@@ -598,8 +601,10 @@ Cross-window communication relies on named `BroadcastChannel` instances. This is
 | `packages/stream-kit/` | Streaming utilities |
 | `packages/electron-eventa/` | Electron Eventa bindings |
 | `packages/font-*` | Font packages (allseto, departure-mono, xiaolai) |
-| `apps/stage-tamagotchi` | Electrobun app (main + renderer). Desktop stage; re-backed to the daemon when it answers on the session bus, with an in-app fallback elsewhere. |
-| `apps/stage-web` | Web app (hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml`; build with `pnpm run build:web:pages`). Web stage: relies on `apps/server` as its backend service. |
+| `apps/flutter` | Flutter window companion — maintained full-parity daemon client (`lib/daemon_client/`, `lib/speech/`); view state and client-local audio only. |
+| `godot` | Godot renderer — maintained full-parity daemon client (`scripts/Net/`, `scripts/Audio/`, `scripts/Renderers/`); VRM/Live2D backends still stubs. |
+| `apps/stage-tamagotchi` | Electrobun app (main + renderer). Desktop stage; re-backed to the daemon when it answers on the session bus, with an in-app fallback elsewhere. Its TS shell is parity-gated, not the Vue renderer. |
+| `apps/stage-web` | Vue web UI — maintained full-parity renderer, hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml` (build with `pnpm run build:web:pages`). Its temporary opt-in TS remote-sync backend (`apps/server`) is a separate gated business-logic slice, not a renderer dependency. |
 | `apps/stage-pocket` | ❌ Purged 2026-11. Native mobile app replaced by the unified Rust-native direction (`docs/proposal-unified-rust-native-app.md`). |
 | `apps/server` | Dedicated backend service for the Web Stage (`apps/stage-web`) topology (WebSocket channel server, API proxy, storage). Required for web-stage deployments. |
 | `.github/workflows/deploy-frontends.yml` | Frontends CI deploy workflow (builds Docs to `/airi/` root and Web Stage to `/airi/web-stage/`; local build via `pnpm run build:pages`) |
