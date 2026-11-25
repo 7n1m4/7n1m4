@@ -2,7 +2,6 @@ import type { Tool } from '@xsai/shared-chat'
 
 import { debug } from '@proj-anima/stage-shared'
 import { tryGetMcpToolBridge } from '@proj-anima/stage-ui/stores/mcp-tool-bridge'
-import { useArtistryStore } from '@proj-anima/stage-ui/stores/modules/artistry'
 import { useStickersStore } from '@proj-anima/stage-ui/stores/stickers'
 
 import { acpTools } from './acp'
@@ -13,7 +12,6 @@ import { stickersTools } from './stickers'
 import { textJournalTools } from './text-journal'
 
 export async function builtinTools(): Promise<Tool[]> {
-  const artistry = useArtistryStore()
   const stickers = useStickersStore()
 
   const mcpBridge = tryGetMcpToolBridge()
@@ -50,11 +48,9 @@ export async function builtinTools(): Promise<Tool[]> {
   toolPromises.push(textJournalTools())
   toolPromises.push(generateMotionTools())
 
-  // Artistry suite
-  if (artistry.configured) {
-    debug('[builtinTools] 🎨 Artistry configured, keeping image journal (widgets/stage_widgets deprecated).')
-    toolPromises.push(imageJournalTools())
-  }
+  // Image journal is always available: "apply" reuses existing generated images,
+  // while "create" is gated off (image generation is deprecated). See artistry.ts.
+  toolPromises.push(imageJournalTools())
 
   // Stickers library
   if (stickers.currentLibrary.length > 0) {

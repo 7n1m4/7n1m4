@@ -105,74 +105,55 @@ describe('image_journal tool parameter normalization and execution', () => {
   })
 
   describe('executeImageJournalAction parameter aliasing and recovery', () => {
-    it('defaults action to create when action is omitted but prompt is provided', async () => {
+    it('blocks create with a deprecation error and makes no generation call', async () => {
       const result = await executeImageJournalAction({
         prompt: 'a cyberpunk skyline',
       })
 
-      expect(mockGenerateHeadless).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: 'a cyberpunk skyline',
-      }))
-      expect(result).toContain('"prompt":"a cyberpunk skyline"')
+      expect(mockGenerateHeadless).not.toHaveBeenCalled()
+      expect(result).toContain('Error:')
+      expect(result).toContain('deprecated')
     })
 
-    it('recovers prompt from description alias', async () => {
-      await executeImageJournalAction({
+    it('blocks create recovered from description alias without generating', async () => {
+      const result = await executeImageJournalAction({
         action: 'create',
         description: 'a fluffy white cat',
       })
 
-      expect(mockGenerateHeadless).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: 'a fluffy white cat',
-      }))
+      expect(mockGenerateHeadless).not.toHaveBeenCalled()
+      expect(result).toContain('deprecated')
     })
 
-    it('recovers prompt from query alias when creating', async () => {
-      await executeImageJournalAction({
+    it('blocks create recovered from query alias without generating', async () => {
+      const result = await executeImageJournalAction({
         action: 'create',
         query: 'an autumn park in rain',
       })
 
-      expect(mockGenerateHeadless).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: 'an autumn park in rain',
-      }))
+      expect(mockGenerateHeadless).not.toHaveBeenCalled()
+      expect(result).toContain('deprecated')
     })
 
-    it('recovers prompt from text or content alias', async () => {
-      await executeImageJournalAction({
+    it('blocks create recovered from text alias without generating', async () => {
+      const result = await executeImageJournalAction({
         action: 'create',
         text: 'a futuristic robot barista',
       })
 
-      expect(mockGenerateHeadless).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: 'a futuristic robot barista',
-      }))
+      expect(mockGenerateHeadless).not.toHaveBeenCalled()
+      expect(result).toContain('deprecated')
     })
 
-    it('falls back to the last user message if prompt is omitted on create', async () => {
+    it('blocks create even when falling back to the last user message', async () => {
       mockGetSessionMessages.mockReturnValue([
         { role: 'user', content: 'draw me a cozy fireplace with snow outside' },
-        { role: 'assistant', content: 'Sure, I will draw that!' },
       ])
 
-      const result = await executeImageJournalAction({
-        action: 'create',
-      })
+      const result = await executeImageJournalAction({ action: 'create' })
 
-      expect(mockGenerateHeadless).toHaveBeenCalledWith(expect.objectContaining({
-        prompt: 'draw me a cozy fireplace with snow outside',
-      }))
-      expect(result).toContain('draw me a cozy fireplace with snow outside')
-    })
-
-    it('throws descriptive error if prompt is missing and no user message fallback exists', async () => {
-      mockGetSessionMessages.mockReturnValue([])
-
-      const result = await executeImageJournalAction({
-        action: 'create',
-      })
-
-      expect(result).toContain('Error: prompt is required for image_journal.create')
+      expect(mockGenerateHeadless).not.toHaveBeenCalled()
+      expect(result).toContain('deprecated')
     })
 
     it('handles apply action with search query or prompt alias', async () => {

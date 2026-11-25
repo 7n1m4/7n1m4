@@ -1,60 +1,28 @@
 <script setup lang="ts">
 import { useArtistryStore } from '@proj-anima/stage-ui/stores/modules/artistry'
-import { FieldInput, FieldRange } from '@proj-anima/ui'
 import { storeToRefs } from 'pinia'
 
 const artistryStore = useArtistryStore()
-
-const {
-  replicateApiKey,
-  replicateDefaultModel,
-  replicateAspectRatio,
-  replicateInferenceSteps,
-} = storeToRefs(artistryStore)
+const { replicateApiKey, replicateDefaultModel } = storeToRefs(artistryStore)
 </script>
 
 <template>
   <div class="flex flex-col gap-6">
-    <div>
-      <h2 class="text-lg text-neutral-500 md:text-2xl dark:text-neutral-400">
-        Replicate.ai Configuration
-      </h2>
-      <div class="text-neutral-400 dark:text-neutral-500">
-        Configure your cloud image generation settings.
+    <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-5">
+      <div class="mb-3 flex items-center gap-3">
+        <div class="i-solar:cloud-upload-bold-duotone text-3xl text-amber-500" />
+        <div>
+          <h2 class="text-xl text-neutral-800 font-semibold dark:text-neutral-100">
+            Image generation is deprecated
+          </h2>
+          <p class="text-sm text-neutral-600 dark:text-neutral-400">
+            Replicate provider settings are disabled. Image generation is deprecated and disabled; existing generated images remain available in the image journal. Future image control targets an external SAI integration.
+          </p>
+        </div>
       </div>
-    </div>
-
-    <div class="flex flex-col gap-4">
-      <FieldInput
-        v-model="replicateApiKey"
-        label="API Key"
-        description="Your Replicate API token (starts with r8_)"
-        placeholder="r8_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-        type="password"
-      />
-
-      <FieldInput
-        v-model="replicateDefaultModel"
-        label="Default Model"
-        description="Fallback owner/model string to use if the character card doesn't specify one"
-        placeholder="black-forest-labs/flux-schnell"
-      />
-
-      <FieldInput
-        v-model="replicateAspectRatio"
-        label="Aspect Ratio"
-        description="Default image aspect ratio (e.g. 16:9, 1:1, 9:16)"
-        placeholder="16:9"
-      />
-
-      <FieldRange
-        v-model="replicateInferenceSteps"
-        label="Inference Steps"
-        description="Number of steps for the diffusion process (lower is faster, higher is better quality)"
-        :min="1"
-        :max="50"
-        :step="1"
-      />
+      <p class="text-xs text-neutral-500 dark:text-neutral-500">
+        Existing configuration is preserved (model: {{ replicateDefaultModel || 'default' }}, key: {{ replicateApiKey ? 'set' : 'not set' }}); nothing is reset.
+      </p>
     </div>
   </div>
 </template>

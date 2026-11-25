@@ -1,11 +1,15 @@
 ---
 title: Local Artistry with ComfyUI
-description: How to connect your local ComfyUI instance to Anima, load custom workflows, and generate in-app desktop image widgets.
+description: >-
+  How to connect your local ComfyUI instance to Anima, load custom workflows, and generate in-app desktop image widgets. Deprecated: image generation is disabled; this page is retained as the technical reference for the planned external SAI integration.
 ---
 
 # Local Artistry with ComfyUI
 
-Anima features a built-in **Artistry Engine** capable of generating background artwork, character selfies, and interactive scene illustrations. While cloud backends like Replicate and Nanobanana are supported, you can connect your own local **ComfyUI** instance for unlimited, free, local image generation directly on your GPU.
+> [!WARNING]
+> **Deprecated — image generation is disabled.** AI-generated image generation in Anima is deprecated and stubbed: no new images are produced by any backend, ComfyUI included. Images you already generated remain available as read-only history in the image journal and Scene Vault. This page is kept as the technical reference for the planned external SAI integration, which will drive image control from outside Anima; the ComfyUI provider, `workflow_api.json` contract, and widget routing described below are the seam that integration targets. Do not file bugs against generation not working — it is disabled on purpose.
+
+Historically, Anima featured a built-in **Artistry Engine** capable of generating background artwork, character selfies, and interactive scene illustrations. While cloud backends like Replicate and Nanobanana are supported, a local **ComfyUI** instance could be connected for local image generation directly on your GPU. That path is deprecated and stubbed (see the warning above); the setup steps below remain accurate for the external SAI integration that will replace it.
 
 ---
 
@@ -55,9 +59,9 @@ Anima injects dynamic prompts and input images into your workflow using two plac
 
 ---
 
-## 5. Using Artistry in Conversations
+## 5. Using Artistry in Conversations (Deprecated — generation is disabled)
 
-Once ComfyUI is connected, Anima can generate artwork in multiple ways:
+Before generation was disabled, a connected ComfyUI instance produced artwork in several ways. All of them are stubbed now; the surfaces still exist and still display the read-only history of earlier images.
 
 - **Direct Requests**: Ask Anima in chat: *"Draw a scenic sunset view of the beach"* or *"Take a selfie in your cozy room"*.
 - **Autonomous Artistry**: If enabled, a background director loop evaluates significant narrative moments and silently generates matching atmospheric illustrations.

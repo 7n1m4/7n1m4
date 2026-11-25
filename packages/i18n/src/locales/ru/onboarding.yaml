@@ -418,7 +418,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -778,10 +777,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: Творчество
-    subtitle: Рисование и автономный режиссер
-    title: Творчество и создание артов
-    description: Научите компаньона рисовать портреты, делать селфи и
-      визуализировать образы на сцене.
+    subtitle: Журнал изображений (устарело)
+    title: Творчество устарело
+    description: Генерация изображений отключена.
+    deprecatedTitle: Генерация изображений устарела
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% бесплатно и без настроек)
       comfyui: ComfyUI (Локальный узел http://127.0.0.1:8188)

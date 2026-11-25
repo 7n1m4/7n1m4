@@ -14,6 +14,7 @@ import {
   useChatSessionStore,
 } from '@proj-anima/stage-ui/stores'
 import { tool } from '@xsai/tool'
+import { artistryGenerationDisabledError, artistryGenerationEnabled } from '@proj-anima/stage-ui/stores/modules/artistry'
 
 import { artistryGenerateHeadless, widgetsAdd } from '../../../../shared/eventa'
 import { notImplemented } from '../../../utils/port-error'
@@ -77,6 +78,10 @@ export async function executeCreateImageJournalEntry(params: {
   title?: string
   mode?: 'inline' | 'widget' | 'bg' | 'bg_widget'
 }) {
+  if (!artistryGenerationEnabled()) {
+    console.warn('[ImageJournalTool] image_journal.create blocked: image generation is deprecated.')
+    return `Error: ${artistryGenerationDisabledError()}`
+  }
   try {
     let prompt = params.prompt?.trim()
     if (!prompt) {

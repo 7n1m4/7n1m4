@@ -8,7 +8,7 @@ import { artistryComfyHealthCheck, artistryGenerateHeadless } from '@proj-anima/
 
 import { widgetsAdd, widgetsClear, widgetsFetch, widgetsHideWindow, widgetsOpenWindow, widgetsPrepareWindow, widgetsRemove, widgetsResizeWindow, widgetsUpdate } from '../../../../shared/eventa'
 import { ipcMain } from '../../../eventa-bus'
-import { generateHeadless } from './artistry-bridge'
+
 
 interface InvokeOptions {
   raw?: { ipcMainEvent?: IpcMainEvent }
@@ -108,40 +108,17 @@ export function createWidgetsService(params: { context: ReturnType<typeof create
         window: params.window,
       })
     },
-    artistryGenerateHeadless: async (payload, options) => {
+    artistryGenerateHeadless: async (_payload, options) => {
       if (!isFromWindow(options as InvokeOptions, params.window))
         return { error: 'Unauthorized window' }
-      if (!payload)
-        return { error: 'Payload missing' }
-      try {
-        return await generateHeadless(payload)
-      }
-      catch (error: any) {
-        return { error: error.message }
-      }
+      // Image generation is deprecated/disabled; never reach the provider bridge.
+      return { error: 'Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control will target an external SAI integration.' }
     },
-    artistryComfyHealthCheck: async (payload: { url: string }, options) => {
+    artistryComfyHealthCheck: async (_payload, options) => {
       if (!isFromWindow(options as InvokeOptions, params.window))
         throw new Error('Unauthorized window')
-      const url = payload?.url
-      if (!url)
-        throw new Error('Missing URL')
-      try {
-        const resp = await fetch(`${url}/system_stats`)
-        if (!resp.ok)
-          throw new Error(`HTTP ${resp.status}`)
-        const data = await resp.json()
-        const gpus = data.devices?.map((d: any) => d.name).join(', ') || 'Unknown GPU'
-        const vram = data.devices?.[0]?.vram_total
-        const vramStr = vram ? `${(vram / 1024 / 1024 / 1024).toFixed(1)} GB` : ''
-        return { gpus, vramStr }
-      }
-      catch (e: any) {
-        if (e.message.includes('fetch') || e.message.includes('CORS') || e.message.includes('Forbidden') || e.message.includes('fetch failed')) {
-          throw new Error('CORS')
-        }
-        throw e
-      }
+      // Health check performs no external call while image generation is deprecated.
+      throw new Error('Image generation is deprecated and disabled; ComfyUI health check is unavailable. Future image control will target an external SAI integration.')
     },
   })
 }

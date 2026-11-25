@@ -381,7 +381,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -725,9 +724,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: アート
-    subtitle: 画面生成と自律ディレクター
-    title: アート生成とビジュアル描画
-    description: パートナーが自画像を描いたり、自撮り写真を送ったり、ステージの情景を描き出す能力を有効化します。
+    subtitle: 画像ジャーナル (非推奨)
+    title: アート生成は非推奨です
+    description: 画像生成は無効化されました。
+    deprecatedTitle: 画像生成は非推奨です
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% 無料＆設定不要)
       comfyui: ComfyUI (ローカルノード http://127.0.0.1:8188)

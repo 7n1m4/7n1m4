@@ -77,24 +77,17 @@ describe('widgets tool helpers', () => {
       }))
     })
 
-    it('forces artistry updates into generating when prompt changes without explicit status', async () => {
+    it('rejects artistry widget updates while generation is deprecated', async () => {
       const invokers = makeInvokers()
-      await executeWidgetAction({
+      await expect(executeWidgetAction({
         action: 'update',
         id: 'staging-test-001',
         componentName: 'artistry',
         componentProps: '{"prompt":"A new generation prompt"}',
         size: 'm',
         ttlSeconds: 0,
-      }, { invokers })
-
-      expect(invokers.updateWidget).toHaveBeenCalledWith({
-        id: 'staging-test-001',
-        componentProps: expect.objectContaining({
-          prompt: 'A new generation prompt',
-          status: 'generating',
-        }),
-      })
+      }, { invokers })).rejects.toThrow(/deprecated/)
+      expect(invokers.updateWidget).not.toHaveBeenCalled()
     })
 
     it('removes when id provided', async () => {

@@ -414,7 +414,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -777,10 +776,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: Nghệ thuật
-    subtitle: Vẽ tranh & Đạo diễn tự quản
-    title: Sáng tạo nghệ thuật & Vẽ tranh AI
-    description: Trang bị cho bạn đồng hành khả năng vẽ tranh chân dung, chụp ảnh tự
-      sướng và vẽ bối cảnh sân khấu.
+    subtitle: Nhật ký ảnh (Không còn hỗ trợ)
+    title: Nghệ thuật đã không còn được hỗ trợ
+    description: Tạo ảnh đã bị tắt.
+    deprecatedTitle: Tạo ảnh đã không còn được hỗ trợ
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% miễn phí & không cần cấu hình)
       comfyui: ComfyUI (Cụm máy chủ nội bộ http://127.0.0.1:8188)

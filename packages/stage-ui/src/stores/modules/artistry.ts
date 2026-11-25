@@ -9,6 +9,23 @@ export interface ComfyUIWorkflowTemplate {
   exposedFields: Record<string, string[]>
 }
 
+/**
+ * Image generation is deprecated and disabled. Existing generated images remain
+ * available in the image journal (apply still works). A future image-control
+ * integration will target an external SAI; until then every generation path is a
+ * no-op that returns this message. Flip to true only when that seam lands.
+ */
+export const ARTISTRY_GENERATION_ENABLED = false
+export const ARTISTRY_GENERATION_DEPRECATION_MESSAGE = 'Image generation is deprecated and disabled. Existing generated images remain available in the image journal; use image_journal.apply to switch to one. Future image control will target an external SAI integration.'
+
+export function artistryGenerationEnabled(): boolean {
+  return ARTISTRY_GENERATION_ENABLED
+}
+
+export function artistryGenerationDisabledError(): string {
+  return ARTISTRY_GENERATION_DEPRECATION_MESSAGE
+}
+
 export const useArtistryStore = defineStore('artistry', () => {
   // --- Active provider & model ---
   const activeProvider = useLocalStorageManualReset<string>('artistry-provider', 'comfyui')
@@ -130,6 +147,9 @@ export const useArtistryStore = defineStore('artistry', () => {
   }
 
   const configured = computed(() => {
+    if (!ARTISTRY_GENERATION_ENABLED)
+      return false
+
     if (!activeProvider.value)
       return false
 

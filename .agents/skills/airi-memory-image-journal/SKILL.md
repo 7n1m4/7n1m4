@@ -2,14 +2,18 @@
 name: airi-memory-image-journal
 description: >-
   Implement/debug durable image journal: generated art/selfie storage, character/universe filtering, legacy migration, background reconciliation. Distinguish image_journal tool output from Autonomous Artistry output; generation orchestration uses airi-artistry-comfyui-widgets.
+  Generation is deprecated/disabled (2026-11-25): the journal is read-only history plus live apply/storage; this skill stays authoritative for storage.
 ---
 
 # Memory Pillar 6 — Image Journal & Autonomous Artistry
 
-Durable, append-only image history for AI-generated art. **Two completely separate producers write the same store** — and the distinction is the single most-misunderstood fact about this pillar:
+> [!WARNING]
+> **Generation is deprecated and disabled (2026-11-25); storage is not.** No new images are produced — both producers below are stubbed at the generation step. The store, migration, scoping, `apply`/`set_as_background`, and reconciliation guidance in this skill remain **fully authoritative and in force**: existing entries are read-only history that must keep loading, filtering, and applying. Do not delete, reset, or migrate-away user image data. Future image control targets an external SAI integration; the producer sections are retained as the seam that will feed it.
 
-1. **`image_journal` tool call** — the talking assistant decides to draw on its own turn (user asked, model called the tool; AA NOT involved). Gated per-card in the Tools tab (`CardCreationTabTools.vue`, `allowedTools` → gateway filter in `llm.ts`).
-2. **Autonomous Artistry (AA)** — a deterministic side-pipeline that takes the chat turn, sends it to a **second LLM (the Director)** to decide *whether* this turn deserves an image and compose a prompt **unknown to the talking assistant**, then generates headlessly and saves it behind the scenes. AA is NOT a tool call; it never touches the assistant's tool loop or stream.
+Durable, append-only image history for AI-generated art. **Append-only is now historical: with generation disabled the journal only grows through user-side paths, and existing rows are read-only history.** **Two completely separate producers write the same store** — and the distinction is the single most-misunderstood fact about this pillar:
+
+1. **`image_journal` tool call** — the talking assistant decides to draw on its own turn (user asked, model called the tool; AA NOT involved). Gated per-card in the Tools tab (`CardCreationTabTools.vue`, `allowedTools` → gateway filter in `llm.ts`). (**stubbed**: `create` no longer generates; `apply` still works)
+2. **Autonomous Artistry (AA)** — a deterministic side-pipeline that takes the chat turn, sends it to a **second LLM (the Director)** to decide *whether* this turn deserves an image and compose a prompt **unknown to the talking assistant**, then generates headlessly and saves it behind the scenes. AA is NOT a tool call; it never touches the assistant's tool loop or stream. (**stubbed**: no headless generation, no new journal entry)
 
 ## The Store (shared destination)
 
@@ -27,9 +31,9 @@ Note: a second background store exists in `packages/stage-layouts/src/stores/bac
 
 `apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts`:
 
-- Actions: `create` (prompt → headless generation via `artistryGenerateHeadless` eventa invoke :16/:29 → `backgroundStore.addBackground('journal', blob, title, prompt, cardId)` :90) and `apply`/`set_as_background` (search existing journal entries by id/title :166-196, set as stage background).
+- Actions: `create` (prompt → headless generation via `artistryGenerateHeadless` eventa invoke :16/:29 → `backgroundStore.addBackground('journal', blob, title, prompt, cardId)` :90) and `apply`/`set_as_background` (search existing journal entries by id/title :166-196, set as stage background). **`create` is stubbed while generation is disabled; `apply`/`set_as_background` and every read path stay live.**
 - Display modes: `inline | widget | bg | bg_widget` (:37) default to the character preference (`card.extensions.airi.artistry.spawnMode` :61).
-- Registered conditionally: only when `artistry.configured` is true (`builtin/index.ts`).
+- Registered conditionally: only when `artistry.configured` is true (`builtin/index.ts`). (⚠️ `artistry.configured` is no longer a generation gate — it must not hide the journal's read/apply surface from existing users.)
 
 ## Producer 2: Autonomous Artistry
 

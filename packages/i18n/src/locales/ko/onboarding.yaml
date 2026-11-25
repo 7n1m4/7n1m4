@@ -386,7 +386,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -730,9 +729,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: 예술 창작
-    subtitle: 그림 생성 및 자율 디렉터
-    title: 예술 창작 및 일러스트 그리기
-    description: 컴패니언이 서로의 초상화, 셀카, 무대 배경을 직접 그릴 수 있는 능력을 부여합니다.
+    subtitle: 이미지 저널 (사용 중단)
+    title: 예술 창작은 사용 중단되었습니다
+    description: 이미지 생성이 비활성화되었습니다.
+    deprecatedTitle: 이미지 생성은 사용 중단되었습니다
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% 무료 & 설정 필요 없음)
       comfyui: ComfyUI (로컬 노드 http://127.0.0.1:8188)

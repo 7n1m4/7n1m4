@@ -4,7 +4,7 @@ import z from 'zod'
 
 import { defineInvoke } from '@moeru/eventa'
 import { getElectronEventaContext } from '@proj-anima/electron-vueuse'
-import { useArtistryStore } from '@proj-anima/stage-ui/stores/modules/artistry'
+import { artistryGenerationDisabledError, artistryGenerationEnabled, useArtistryStore } from '@proj-anima/stage-ui/stores/modules/artistry'
 import { tool } from '@xsai/tool'
 
 import { widgetsAdd, widgetsClear, widgetsOpenWindow, widgetsPrepareWindow, widgetsRemove, widgetsUpdate } from '../../../../shared/eventa'
@@ -140,6 +140,11 @@ function getArtistryConfig() {
 }
 
 export async function executeWidgetAction(input: WidgetActionInput, deps?: { invokers?: WidgetInvokers }) {
+  // Artistry/comfy widgets drive image generation, which is deprecated. Reject
+  // those spawns/updates before any invoker runs; other widget actions are fine.
+  if (!artistryGenerationEnabled() && input.componentName === 'artistry') {
+    throw new Error(artistryGenerationDisabledError())
+  }
   const invokers = resolveInvokers(deps?.invokers)
   const normalizedId = input.id?.trim() || undefined
 
@@ -147,6 +152,9 @@ export async function executeWidgetAction(input: WidgetActionInput, deps?: { inv
     case 'spawn': {
       if (!input.componentName?.trim())
         throw new Error('componentName is required to spawn a widget.')
+
+      if (!artistryGenerationEnabled() && input.componentName === 'comfy')
+        throw new Error(artistryGenerationDisabledError())
 
       const rawProps = normalizeComponentProps(input.componentProps)
       if ((input.componentName === 'comfy' || input.componentName === 'artistry') && !rawProps.status) {

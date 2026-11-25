@@ -1,8 +1,11 @@
 # Production Studio & Autonomous Artistry
 
+> [!WARNING]
+> **Artistry is deprecated and image generation is disabled.** AI image generation is stubbed out in this build; no new images are produced. Everything you already generated stays available as read-only history in the Scene Vault and the image journal. The Studio surfaces below (Director's Monitor, timelines, World Bible, Scene Vault) remain usable for authoring and browsing. Image control is moving to an external SAI integration, and the generation pipeline documented here is retained only as the seam that integration will drive.
+
 ![Production Studio & Autonomous Artistry](/showcase/hero-09-artistry-studio.avif)
 
-The **Production Studio & Autonomous Artistry** subsystem turns Anima from a conversational agent into a full-fledged cinematic director. Powered by an autonomous **Director Loop**, ComfyUI Bring-Your-Own-Workflow (BYOW) integration, persistent visual state tracking, and a durable Scene Vault, Anima generates story illustrations, selfies, and visual novel backdrops in real time as conversations unfold.
+**Historical reference — generation is disabled.** The **Production Studio & Autonomous Artistry** subsystem turns Anima from a conversational agent into a full-fledged cinematic director. It is powered by an autonomous **Director Loop**, ComfyUI Bring-Your-Own-Workflow (BYOW) integration, persistent visual state tracking, and a durable Scene Vault. The generation path described here is deprecated and stubbed; it is kept as the technical seam for the planned external SAI integration.
 
 ---
 
@@ -34,6 +37,9 @@ Storylines branch and evolve over time:
 ![Scene Vault Gallery](/showcase/studio-scene-vault.avif)
 
 The **Scene Vault** is a persistent visual archive preserving every illustration generated during conversations:
+
+New generation is disabled, so the archive is read-only history — nothing is added to it, and nothing in it is removed.
+
 - **Universe-Scoped Galleries**: Browse generated art grouped by character, universe arc, and episode session.
 - **Metadata Overlays**: Inspect prompt seeds, sampler settings, LoRA weights, and generation timestamps.
 - **1-Click Stage Background Binding**: Set any generated illustration as the active stage backdrop with a single click.
@@ -44,7 +50,7 @@ The **Scene Vault** is a persistent visual archive preserving every illustration
 
 ![Live Studio Generation Canvas](/showcase/settings-artistry-live-studio-canvas.avif)
 
-- **Universal Engine Support**: Direct integration with local ComfyUI, Pollinations AI, Replicate, and Nano Banana Google AI Studio.
+- **Universal Engine Support**: Direct integration with local ComfyUI, Pollinations AI, Replicate, and Nano Banana Google AI Studio. (Deprecated — the generation path is stubbed; these backends are documented as the seam for the external SAI integration.)
 - **Autonomous Director Sensitivity Deck**: Fine-tune the manifestation threshold (`23%`), evaluation targets, and context history depth for spontaneous background image generation.
 
 ![Director Sensitivity Tuning Deck](/showcase/studio-director-sensitivity-controls.avif)
@@ -53,9 +59,9 @@ The **Scene Vault** is a persistent visual archive preserving every illustration
 
 ## Key Capabilities
 
-- **Autonomous Director Loop**: Evaluates narrative shifts and generates matching imagery without manual prompts.
+- **Autonomous Director Loop**: Evaluates narrative shifts and generates matching imagery without manual prompts. **Deprecated/stubbed:** the loop no longer produces images.
 - **Persistent Visual State Board**: Guarantees visual continuity of clothing, hairstyles, and scenery across turns.
 - **Branching Story Universes**: Multiple timeline tracks with isolated scene and image histories.
 - **Scene Vault Archive**: Durable local storage for generated art, character selfies, and stage backgrounds.
-- **ComfyUI BYOW Protocol**: Upload custom `workflow_api.json` templates with exposed field substitution.
+- **ComfyUI BYOW Protocol**: Upload custom `workflow_api.json` templates with exposed field substitution. **Deprecated/stubbed:** retained as the technical seam for the planned external SAI integration.
 - **Director Sensitivity Tuning**: Configurable autonomy thresholds for seamless background generation.

@@ -17,7 +17,6 @@ import {
   DEFAULT_TEXT_JOURNAL_WIDGET_INSTRUCTION,
 } from '@proj-anima/stage-ui/constants/prompts/character-defaults'
 import {
-  useArtistryStore,
   useConsciousnessStore,
   useDisplayModelsStore,
   useSpeechStore,
@@ -56,14 +55,12 @@ const { t } = useI18n()
 const cardStore = useAiriCardStore()
 const consciousnessStore = useConsciousnessStore()
 const speechStore = useSpeechStore()
-const artistryStore = useArtistryStore()
 const displayModelsStore = useDisplayModelsStore()
 
 const { removeCard } = cardStore
 const { activeCardId } = storeToRefs(cardStore)
 const { activeProvider: consciousnessProvider, activeModel: defaultConsciousnessModel } = storeToRefs(consciousnessStore)
 const { activeSpeechProvider: speechProvider, activeSpeechModel: defaultSpeechModel, activeSpeechVoiceId: defaultVoiceId } = storeToRefs(speechStore)
-const { activeProvider: defaultArtistryProvider } = storeToRefs(artistryStore)
 
 // Get selected card data
 const selectedCard = computed<AiriCard | undefined>(() => {
@@ -381,26 +378,26 @@ const directives = computed<DirectiveItem[]>(() => {
   const artistryWidget = airiExt.value?.artistry?.widgetInstruction || DEFAULT_ARTISTRY_WIDGET_INSTRUCTION
   list.push({
     id: 'artistry_widget',
-    title: 'Autonomous Artistry Widget Directive',
+    title: 'Image Journal Directive (Deprecated)',
     category: 'Autonomous Artistry',
     categoryColor: 'pink',
     icon: 'i-solar:palette-bold-duotone',
     content: artistryWidget,
     isCustom: !!airiExt.value?.artistry?.widgetInstruction,
-    description: 'Guides image generation tool invocation and visual context grounding.',
+    description: 'Guides image generation tool invocation and visual context grounding. Image generation is disabled.',
   })
 
   // 7. Artistry Reflection Prompt
   const artistryIntrusion = airiExt.value?.artistry?.artistryIntrusionPrompt || DEFAULT_ARTISTRY_INTRUSION_PROMPT
   list.push({
     id: 'artistry_intrusion',
-    title: 'Artistry Reflection Prompt',
+    title: 'Image Journal Reflection (Deprecated)',
     category: 'Autonomous Artistry',
     categoryColor: 'pink',
     icon: 'i-solar:camera-bold-duotone',
     content: artistryIntrusion,
     isCustom: !!airiExt.value?.artistry?.artistryIntrusionPrompt,
-    description: 'Spontaneous autonomous artwork creation impulse during conversations.',
+    description: 'Spontaneous autonomous artwork creation impulse during conversations. Image generation is disabled.',
   })
 
   // 8. Text Journal Widget Instruction
@@ -522,7 +519,7 @@ const allowedToolsList = computed(() => {
 
   return [
     { id: 'text_journal', label: 'Sacred Text Journal', icon: 'i-solar:notebook-bold-duotone', enabled: hasTextJournal },
-    { id: 'image_journal', label: 'Image Journal (Selfie & Art)', icon: 'i-solar:gallery-wide-bold-duotone', enabled: hasImageJournal },
+    { id: 'image_journal', label: 'Image Journal (Existing Artwork)', icon: 'i-solar:gallery-wide-bold-duotone', enabled: hasImageJournal },
     { id: 'web_search', label: 'Web Search Grounding', icon: 'i-solar:global-bold-duotone', enabled: hasWebSearch },
     { id: 'filesystem', label: 'Local Filesystem & Workspace', icon: 'i-solar:folder-with-files-bold-duotone', enabled: hasFilesystem },
     { id: 'generate_motion', label: 'Dynamic Motion Generator', icon: 'i-solar:running-bold-duotone', enabled: hasMotion },
@@ -530,20 +527,6 @@ const allowedToolsList = computed(() => {
   ]
 })
 
-// Autonomous Artistry (Director)
-const artistryAutonomousEnabled = computed(() => airiExt.value?.artistry?.autonomousEnabled ?? false)
-const artistryAutonomousThreshold = computed(() => airiExt.value?.artistry?.autonomousThreshold ?? 49)
-const artistryAutonomousModelMode = computed(() => airiExt.value?.artistry?.autonomousModelMode === 'custom' ? 'Custom Provider & Model' : 'Inherit Consciousness')
-const artistrySpawnMode = computed(() => {
-  const mode = airiExt.value?.artistry?.spawnMode ?? 'bg'
-  if (mode === 'widget')
-    return 'Floating Widget Canvas'
-  if (mode === 'inline')
-    return 'Chat Inline Attachment'
-  return 'Background Scene (bg)'
-})
-const artistryResolvedProvider = computed(() => airiExt.value?.artistry?.provider || defaultArtistryProvider.value)
-const artistryResolvedModel = computed(() => airiExt.value?.artistry?.model || 'Default')
 
 // -------------------------------------------------------------
 // TAB 4: Proactivity (STMM, Dream State, Screen Watching, Heartbeats, Operating Schedule)
@@ -1039,55 +1022,8 @@ const scheduleAfkThreshold = computed(() => airiExt.value?.heartbeats?.afkThresh
                   </div>
                 </div>
 
-                <!-- 5. Autonomous Artistry (Director) -->
-                <div class="flex flex-col gap-2.5">
-                  <div class="flex items-center justify-between border-b border-neutral-200/60 pb-1 dark:border-neutral-700/50">
-                    <h2 class="flex items-center gap-1.5 text-xs text-neutral-500 font-semibold tracking-wider uppercase dark:text-neutral-400">
-                      <div class="i-solar:palette-bold-duotone text-sm text-primary-500" />
-                      Autonomous Artistry (Director Engine)
-                    </h2>
-                    <span
-                      class="border rounded-full px-2 py-0.5 text-xs font-medium"
-                      :class="artistryAutonomousEnabled ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' : 'bg-neutral-500/10 text-neutral-500 dark:text-neutral-400 border-neutral-500/20'"
-                    >
-                      {{ artistryAutonomousEnabled ? 'Autonomous Director Active' : 'Director Disabled' }}
-                    </span>
-                  </div>
-
-                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div class="flex flex-col gap-1 border border-neutral-200/50 rounded-lg bg-white/60 p-3 dark:border-neutral-700/30 dark:bg-black/30">
-                      <span class="flex items-center gap-1.5 text-xs text-neutral-500 font-medium dark:text-neutral-400">
-                        <div class="i-solar:flame-linear" />
-                        Trigger Threshold
-                      </span>
-                      <span class="text-sm text-neutral-800 font-medium dark:text-neutral-200">
-                        {{ artistryAutonomousThreshold }} points
-                      </span>
-                    </div>
-
-                    <div class="flex flex-col gap-1 border border-neutral-200/50 rounded-lg bg-white/60 p-3 dark:border-neutral-700/30 dark:bg-black/30">
-                      <span class="flex items-center gap-1.5 text-xs text-neutral-500 font-medium dark:text-neutral-400">
-                        <div class="i-solar:monitor-camera-linear" />
-                        Spawn Target Mode
-                      </span>
-                      <span class="truncate text-sm text-neutral-800 font-medium dark:text-neutral-200">
-                        {{ artistrySpawnMode }}
-                      </span>
-                    </div>
-
-                    <div class="flex flex-col gap-1 border border-neutral-200/50 rounded-lg bg-white/60 p-3 dark:border-neutral-700/30 dark:bg-black/30">
-                      <span class="flex items-center gap-1.5 text-xs text-neutral-500 font-medium dark:text-neutral-400">
-                        <div class="i-solar:gallery-linear" />
-                        Art Backend & Model
-                      </span>
-                      <span class="truncate text-sm text-neutral-800 font-medium dark:text-neutral-200">
-                        {{ artistryResolvedProvider }}
-                      </span>
-                      <span class="truncate text-[11px] text-neutral-400 dark:text-neutral-500">
-                        Model: {{ artistryResolvedModel }} · {{ artistryAutonomousModelMode }}
-                      </span>
-                    </div>
-                  </div>
+                <div class="border border-amber-500/40 bg-amber-500/10 rounded-lg p-4 text-amber-700 dark:text-amber-300 text-sm">
+                  Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
                 </div>
               </div>
 

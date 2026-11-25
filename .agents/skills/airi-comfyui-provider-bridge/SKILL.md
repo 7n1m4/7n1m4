@@ -1,10 +1,13 @@
 ---
 name: airi-comfyui-provider-bridge
 description: >-
-  Implement/debug ComfyUI generation protocol: workflow_api.json upload, exposedFields, {{PROMPT}}/{{IMAGE}} substitution, queue/history/view endpoints, health checks, browser fallback. Widget routing and headless orchestration use airi-artistry-comfyui-widgets.
+  DEPRECATED (2026-11-25): AI image generation is disabled/stubbed; retained only as the external SAI technical seam. Implement/debug ComfyUI generation protocol: workflow_api.json upload, exposedFields, {{PROMPT}}/{{IMAGE}} substitution, queue/history/view endpoints, health checks, browser fallback. Widget routing and headless orchestration use airi-artistry-comfyui-widgets.
 ---
 
 # ComfyUI Provider Bridge — Local Image Generation Backend
+
+> [!WARNING]
+> **DEPRECATED 2026-11-25 — image generation is disabled.** The ComfyUI provider no longer runs: generation is stubbed at the bridge, so no `/prompt` job is queued and no image comes back. This skill is **retained in full as the technical reference for the planned external SAI integration**, which will own image control from outside Anima and is expected to drive exactly the `workflow_api.json` + exposed-fields + `{{PROMPT}}`/`{{IMAGE}}` contract documented here. Do not "fix" generation not working — it is disabled on purpose. Previously generated images remain read-only history in the image journal / Scene Vault.
 
 ComfyUI is AIRI's *local* art backend. Crucially it is **not** a registered model provider: `packages/stage-ui/src/libs/providers/providers/registry.ts` only holds LLM/TTS/STT/vision backends. ComfyUI plugs into the **generic Artistry interface** instead, so the rest of the system treats it exactly like a remote provider (Replicate, NanoBanana) — same request/job contracts, same routing, just a server URL + workflow templates instead of an API key + model id.
 
@@ -14,10 +17,12 @@ ComfyUI is AIRI's *local* art backend. Crucially it is **not** a registered mode
 | Contract | `ArtistryProvider` from `providers/base.ts` — `generate()`, `getStatus()`, `initialize()`, plus callback-style `setJobCallback()` |
 | Registration | `artistry-bridge.ts:52-55` — `artistryProviders.set('comfyui' \| 'replicate' \| 'nanobanana', ...)` |
 | Settings UI | `packages/stage-pages/src/pages/settings/providers/artistry/comfyui.vue` (734 lines) — connection test, upload, workflow management |
-| Settings store | `useArtistryStore` (`artistry.ts`) — `artistry-comfyui-server-url` (default `http://localhost:8188`), `artistry-comfyui-saved-workflows` (`ComfyUIWorkflowTemplate[]`), `artistry-comfyui-active-workflow` |
+| Settings store | `useArtistryStore` (`artistry.ts`) — `artistry-comfyui-server-url` (default `http://localhost:8188`), `artistry-comfyui-saved-workflows` (`ComfyUIWorkflowTemplate[]`), `artistry-comfyui-active-workflow` | ⚠️ With generation disabled these keys are inert config storage only — preserve them, never reset them.
 | Sample workflow | `providers/workflows/txt2img-default.json` — reference only, NOT auto-loaded |
 
-## 1. Workflow Upload & Annotation Rules (the user-facing contract)
+## 1. Workflow Upload & Annotation Rules (the user-facing contract; preserved for the SAI seam, inert while generation is disabled)
+
+The upload/annotation contract below is preserved verbatim because the external SAI integration is expected to drive it; nothing here executes while generation is disabled.
 
 Everything in `comfyui.vue`. The stored shape is `ComfyUIWorkflowTemplate = { id, name, workflow, exposedFields: Record<nodeTitle, string[]> }` (`artistry.ts:5-10`).
 
@@ -60,13 +65,13 @@ All against `{serverUrl}` (trailing slashes stripped in `initialize` :40):
 | `GET /history/{prompt_id}` | Poll completion | 5s interval (`POLL_INTERVAL_MS`), 10-min hard timeout; **1s-retry race guard** for history rows with empty `outputs` (:181-196); logs `status.messages` when present |
 | `GET /view?filename&subfolder&type` | Resolve `imageUrl` | First image from any node's outputs wins (:203-214); no images → failure with raw-history dump logged |
 | `POST /upload/image` | Texture upload (see §2.3) | multipart, returns `{ name }` |
-| `GET /system_stats` | Connection test | GPU names + VRAM; Electron path goes through `artistryComfyHealthCheck` eventa invoke — contract defined at `packages/stage-shared/src/artistry.ts:5` (`eventa:invoke:electron:artistry:comfy-health-check`), handler at `widgets/index.ts:93` (non-CORS errors pass through, fetch/CORS/Forbidden are rethrown as `'CORS'`); browser path fetches directly with `mode: 'cors'` (`comfyui.vue:43-59`) — CORS refusal is the #1 browser failure mode |
+| `GET /system_stats` | Connection test | GPU names + VRAM; desktop path goes through `artistryComfyHealthCheck` eventa invoke — contract defined at `packages/stage-shared/src/artistry.ts:5` (`eventa:invoke:electron:artistry:comfy-health-check`), handler at `widgets/index.ts:93` (non-CORS errors pass through, fetch/CORS/Forbidden are rethrown as `'CORS'`); browser path fetches directly with `mode: 'cors'` (`comfyui.vue:43-59`) — CORS refusal is the #1 browser failure mode |
 
 Callback lifecycle: results cached in `jobResults`, fired via `setJobCallback` (fires immediately if result already arrived); **both maps are GC'd 10s after completion** (:239-245) — late subscribers get nothing.
 
 ## 4. Web Fallback (`generateComfyUIWeb`)
 
-Non-Electron surfaces (stage-web/pocket) can't reach main-process providers: `artistry-autonomous.ts:294` implements a minimal renderer-side duplicate — injects the prompt **only into a field literally named `text`** (:317-323; no preference list, no `value`/`prompt` fallback — a divergence from the main provider), randomizes seed (:337-339), polls `/history` at **3s intervals with a 5-min timeout** (:354-387; vs 5s/10min in main), and downloads the image as base64 for the journal (:371-379). It does NOT implement the `{{IMAGE}}` upload path — bidirectional texture flows are desktop/Electron-only today.
+Non-desktop surfaces (stage-web) can't reach main-process providers: `artistry-autonomous.ts:294` implements a minimal renderer-side duplicate — injects the prompt **only into a field literally named `text`** (:317-323; no preference list, no `value`/`prompt` fallback — a divergence from the main provider), randomizes seed (:337-339), polls `/history` at **3s intervals with a 5-min timeout** (:354-387; vs 5s/10min in main), and downloads the image as base64 for the journal (:371-379). It does NOT implement the `{{IMAGE}}` upload path — bidirectional texture flows are desktop-only today.
 
 ## 5. Pitfalls & Failure Modes
 
@@ -75,7 +80,7 @@ Non-Electron surfaces (stage-web/pocket) can't reach main-process providers: `ar
 - **`{{IMAGE}}` lives in the saved template**, not the annotation UI — editing the saved workflow by hand without re-injecting it breaks bidirectional flows.
 - **"Job completed but no images"** = workflow never ended at an output node; the raw history is logged — check for `SaveImage`/`PreviewImage`.
 - **Concurrency**: headless runs are serialized (`MAX_CONCURRENT_HEADLESS = 1`, `artistry-bridge.ts:60-62`) and deduped by fingerprint while in flight — see peer skill for the bridge layer.
-- **Server CORS**: browser-direct mode requires ComfyUI started with `--enable-cors-header "*"` (the exact flag the settings page's troubleshooting banner teaches at `comfyui.vue:449`); the Electron `/system_stats` path sidesteps this entirely.
+- **Server CORS**: browser-direct mode requires ComfyUI started with `--enable-cors-header "*"` (the exact flag the settings page's troubleshooting banner teaches at `comfyui.vue:449`); the desktop `/system_stats` path sidesteps this entirely.
 
 ## 6. Cross-Citations & Verification
 

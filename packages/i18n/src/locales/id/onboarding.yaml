@@ -413,7 +413,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -770,10 +769,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: Artistry
-    subtitle: Visuals & Autonomous Director
-    title: Artistry & Image Generation
-    description: Equip your companion to paint portraits, generate selfies, and
-      visualize stage scenes.
+    subtitle: Jurnal Gambar (Usang)
+    title: Artistry sudah usang
+    description: Pembuatan gambar telah dinonaktifkan.
+    deprecatedTitle: Pembuatan gambar sudah usang
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% Free & Zero-Config)
       comfyui: ComfyUI (Local Node http://127.0.0.1:8188)

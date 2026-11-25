@@ -69,7 +69,7 @@ const tabLoaders: Record<string, () => Promise<any>> = {
   presence: () => import('./tabs/CardCreationTabModules.vue'),
   modules: () => import('./tabs/CardCreationTabModules.vue'),
   cognition: () => import('./tabs/CardCreationTabCognition.vue'),
-  artistry: () => import('./tabs/CardCreationTabArtistry.vue'),
+
   proactivity: () => import('./tabs/CardCreationTabProactivity.vue'),
   tools: () => import('./tabs/CardCreationTabTools.vue'),
   staging: () => import('./tabs/ProductionStudioTab.vue'),
@@ -82,11 +82,6 @@ const CardCreationTabIdentity = defineAsyncComponent({
 })
 const CardCreationTabActing = defineAsyncComponent({
   loader: tabLoaders.acting,
-  loadingComponent: TabLoadingPlaceholder,
-  delay: 0,
-})
-const CardCreationTabArtistry = defineAsyncComponent({
-  loader: tabLoaders.artistry,
   loadingComponent: TabLoadingPlaceholder,
   delay: 0,
 })
@@ -504,16 +499,6 @@ const consciousnessProviderOptions = computed(() => {
   }))
 })
 
-const artistryProviderOptions = computed(() => {
-  return [
-    { value: 'none', label: 'None (Disabled)' },
-    { value: 'pollinations', label: 'Pollinations AI (Free)' },
-    { value: 'comfyui', label: 'ComfyUI (Local)' },
-    { value: 'nanobanana', label: 'Nano Banana (Google AI Studio)' },
-    { value: 'replicate', label: 'Replicate (Cloud)' },
-  ]
-})
-
 // Computed: available consciousness models options
 const consciousnessModelOptions = computed(() => {
   const provider = selectedConsciousnessProvider.value || consciousnessProvider.value
@@ -867,7 +852,6 @@ const tabs: Tab[] = [
   { id: 'generation', label: 'Generation', icon: 'i-solar:tuning-square-bold-duotone' },
   { id: 'acting', label: 'Acting', icon: 'i-solar:mask-happly-bold-duotone' },
   { id: 'staging', label: 'Staging', icon: 'i-solar:clapperboard-play-bold-duotone' },
-  { id: 'artistry', label: t('settings.pages.card.creation.artistry', 'Artistry'), icon: 'i-solar:gallery-bold-duotone' },
   { id: 'proactivity', label: t('settings.pages.card.creation.proactivity', 'Proactivity'), icon: 'i-solar:heart-pulse-bold-duotone' },
   { id: 'tools', label: 'Tools', icon: 'i-solar:widget-bold-duotone' },
   { id: 'cognition', label: 'Cognition', icon: 'i-solar:cpu-bolt-bold-duotone' },
@@ -1656,10 +1640,6 @@ function handleTagExtractorApply(tags: string) {
   }
 }
 
-function openTagExtractor() {
-  showTagExtractorModal.value = true
-}
-
 const visualAssets = computed(() => {
   if (!isEditMode.value || !props.cardId)
     return {}
@@ -2041,28 +2021,6 @@ function handleGeneratorSave(newValue: string) {
         :consciousness-provider-active="Boolean(consciousnessProvider)"
         :first-hop-provider-active="Boolean(selectedFirstHopProvider || consciousnessProvider)"
       />
-      <CardCreationTabArtistry
-        v-else-if="activeTab === 'artistry'"
-        v-model:selected-artistry-provider="selectedArtistryProvider"
-        v-model:selected-artistry-model="selectedArtistryModel"
-        v-model:selected-artistry-prompt-prefix="selectedArtistryPromptPrefix"
-        v-model:selected-artistry-widget-instruction="selectedArtistryWidgetInstruction"
-        v-model:selected-artistry-autonomous-enabled="selectedArtistryAutonomousEnabled"
-        v-model:selected-artistry-autonomous-threshold="selectedArtistryAutonomousThreshold"
-        v-model:selected-artistry-autonomous-monitor-enabled="selectedArtistryAutonomousMonitorEnabled"
-        v-model:selected-artistry-autonomous-monitor-discord-enabled="selectedArtistryAutonomousMonitorDiscordEnabled"
-        v-model:selected-artistry-autonomous-history-depth="selectedArtistryAutonomousHistoryDepth"
-        v-model:selected-artistry-autonomous-model-mode="selectedArtistryAutonomousModelMode"
-        v-model:selected-artistry-autonomous-provider="selectedArtistryAutonomousProvider"
-        v-model:selected-artistry-autonomous-model="selectedArtistryAutonomousModel"
-        v-model:selected-artistry-autonomous-target="selectedArtistryAutonomousTarget"
-        v-model:selected-artistry-spawn-mode="selectedArtistrySpawnMode"
-        v-model:selected-artistry-config-str="selectedArtistryConfigStr"
-        :artistry-provider-options="artistryProviderOptions"
-        :default-artistry-provider-placeholder="getDefaultPlaceholder(defaultArtistryProvider)"
-        @sparkle-click="openSparkleGenerator"
-        @extract-tags-click="openTagExtractor"
-      />
       <CardCreationTabProactivity
         v-else-if="activeTab === 'proactivity'"
         v-model:heartbeats-enabled="heartbeatsEnabled"
@@ -2123,10 +2081,8 @@ function handleGeneratorSave(newValue: string) {
         v-model:selected-text-journal-instruction="selectedTextJournalInstruction"
         v-model:selected-inject-dream-context="selectedInjectDreamContext"
         v-model:selected-inject-journal-context="selectedInjectJournalContext"
-        v-model:selected-inject-artistry-context="selectedInjectArtistryContext"
         v-model:selected-dream-intrusion-prompt="selectedDreamIntrusionPrompt"
         v-model:selected-journal-intrusion-prompt="selectedJournalIntrusionPrompt"
-        v-model:selected-artistry-intrusion-prompt="selectedArtistryIntrusionPrompt"
         :dream-state-enabled="dreamStateEnabled"
       />
       <div class="mt-4 flex flex-row justify-end gap-2">

@@ -19,4 +19,11 @@ describe('artistry-autonomous store', () => {
     const store = useAutonomousArtistryStore()
     expect(store).toBeTruthy()
   })
+
+  it('runArtistTask never starts while image generation is deprecated', async () => {
+    const store = useAutonomousArtistryStore()
+    // Should resolve immediately without flipping isProcessing or throwing.
+    await expect(store.runArtistTask('a scene', [])).resolves.toBeUndefined()
+    expect(store.isProcessing).toBe(false)
+  })
 })

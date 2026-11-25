@@ -24,7 +24,7 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Settings Hub & The Engine Room</h3>
-    <p class="showcase-card-label">RippleGrid command center, 10 quick-action shortcuts, responsive modes, accent palette, provider discovery, and resilient fallbacks.</p>
+    <p class="showcase-card-label">Architecture and operational entry points for daemon-owned settings, gateway security, and client setup.</p>
   </div>
 </a>
 
@@ -153,7 +153,8 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Production Studio & Autonomous Artistry</h3>
-    <p class="showcase-card-label">Director's Monitor, concept stacks (Base/Layer), ComfyUI BYOW pipeline, multi-actor handoff, Scene Vault, and World Bible directives.</p>
+    <p class="showcase-card-label showcase-card-deprecated">Deprecated — AI image generation is disabled; existing images remain as read-only history. Image control is moving to an external SAI integration.</p>
+    <p class="showcase-card-label">Director's Monitor, concept stacks (Base/Layer), ComfyUI BYOW pipeline, multi-actor handoff, Scene Vault, and World Bible directives. The generation pipeline is retained only as the seam for that integration.</p>
   </div>
 </a>
 
@@ -229,5 +230,10 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   font-size: 0.82rem;
   color: var(--vp-c-text-2);
   line-height: 1.45;
+}
+
+.showcase-card-deprecated {
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 600;
 }
 </style>

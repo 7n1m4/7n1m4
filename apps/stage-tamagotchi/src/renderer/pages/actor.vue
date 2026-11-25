@@ -366,10 +366,6 @@ const userProfileStore = useSettingsUserProfile()
 const artistryAutonomousStore = useAutonomousArtistryStore()
 const { isProcessing: isArtistryProcessing } = storeToRefs(artistryAutonomousStore)
 
-const isAutonomousArtistryEnabled = computed(() => {
-  return cardStore.activeCard?.extensions?.airi?.artistry?.autonomousEnabled ?? false
-})
-
 const drawingStartedAt = ref<number>(0)
 const drawingElapsed = ref<number>(0)
 const showFinished = ref(false)
@@ -617,13 +613,11 @@ onBeforeUnmount(() => {
         leave-to-class="opacity-0"
       >
         <div
-          v-if="isAutonomousArtistryEnabled && (isArtistryProcessing || showFinished)"
+          v-if="cardStore.activeCard?.extensions?.airi?.artistry?.autonomousEnabled"
           class="pointer-events-none absolute left-2.5 top-2.5 z-50 flex items-center gap-1.5 border border-neutral-200/50 rounded-lg bg-white/80 p-1.5 shadow-sm backdrop-blur-md dark:border-neutral-800/40 dark:bg-neutral-900/70"
         >
-          <div v-if="isArtistryProcessing" class="i-ph:paint-brush-broad-duotone size-3.5 animate-pulse text-primary-500" />
-          <div v-else class="i-ph:check-circle-duotone size-3.5 text-emerald-500" />
           <span class="select-none pr-0.5 text-[9px] text-neutral-800 font-bold tracking-wider uppercase dark:text-neutral-200">
-            {{ isArtistryProcessing ? 'Drawing' : `Done in ${drawingElapsed.toFixed(1)}s` }}
+            Deprecated: autonomous artistry is no longer supported
           </span>
         </div>
       </Transition>

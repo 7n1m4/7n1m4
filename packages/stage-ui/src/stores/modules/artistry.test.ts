@@ -16,39 +16,22 @@ describe('artistry store', () => {
     expect(store.activeProvider).toBe('comfyui')
     expect(store.activeModel).toBe('')
     expect(store.comfyuiServerUrl).toBe('http://localhost:8188')
-    expect(store.configured).toBe(true)
+    // Image generation is deprecated/disabled, so `configured` is always false.
+    expect(store.configured).toBe(false)
   })
 
-  it('configured false for replicate without key', () => {
+  it('configured is always false while generation is deprecated', () => {
     const store = useArtistryStore()
     store.activeProvider = 'replicate'
-    expect(store.configured).toBe(false)
     store.replicateApiKey = 'key'
-    expect(store.configured).toBe(true)
-  })
+    expect(store.configured).toBe(false)
 
-  it('configured branches', () => {
-    const store = useArtistryStore()
     store.activeProvider = 'comfyui'
-    store.comfyuiServerUrl = ''
-    expect(store.configured).toBe(false)
     store.comfyuiServerUrl = 'http://x'
-    expect(store.configured).toBe(true)
-
-    store.activeProvider = 'nanobanana'
-    store.nanobananaApiKey = ''
     expect(store.configured).toBe(false)
-    store.nanobananaApiKey = 'k'
-    expect(store.configured).toBe(true)
 
     store.activeProvider = 'pollinations'
-    expect(store.configured).toBe(true)
-
-    store.activeProvider = ''
     expect(store.configured).toBe(false)
-
-    store.activeProvider = 'unknown-provider'
-    expect(store.configured).toBe(true)
   })
 
   it('resetState resets all', () => {

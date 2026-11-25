@@ -422,7 +422,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -783,10 +782,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: Arte
-    subtitle: Generación visual y director autónomo
-    title: Creatividad y generación de arte
-    description: Dale a tu personaje la capacidad de pintar retratos, crear
-      autorretratos e ilustrar el escenario.
+    subtitle: Diario de imágenes (obsoleto)
+    title: El arte está obsoleto
+    description: La generación de imágenes se ha desactivado.
+    deprecatedTitle: La generación de imágenes está obsoleta
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% gratuito y sin configuración)
       comfyui: ComfyUI (Nodo local http://127.0.0.1:8188)

@@ -379,7 +379,6 @@ steps:
     failedToLoadAvatarValue: 'Failed to load avatar: {messageInvalidmodelfile}'
     invalidModelFile: Invalid model file
     visualStyleDescriptor: Visual style descriptor for AI-generated artwork
-    visualStyleHint: e.g., anime aesthetic, detailed illustration, soft lighting
     summary:
       selected: '{name} selected'
   consciousness:
@@ -724,9 +723,12 @@ steps:
     adjustLater: Adjust Later
   artistry:
     label: 艺术创作
-    subtitle: 画面生成与自主导演
-    title: 艺术创作与图像绘制
-    description: 赋予伴侣为彼此绘制自拍、肖像插画以及舞台演现场景的能力。
+    subtitle: 图像日志（已弃用）
+    title: 艺术创作已弃用
+    description: 图像生成已停用。
+    deprecatedTitle: 图像生成已弃用
+    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
     engines:
       pollinations: Pollinations AI (100% 免费免配置)
       comfyui: ComfyUI (本地节点 http://127.0.0.1:8188)

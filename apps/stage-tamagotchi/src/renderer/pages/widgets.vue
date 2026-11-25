@@ -199,8 +199,6 @@ const Registry: Record<string, any> = {
     loadingComponent: WeatherSkeleton,
   }),
   map: defineAsyncComponent(() => import('../widgets/map').then(m => m.Map)),
-  artistry: defineAsyncComponent(() => import('../widgets/artistry').then(m => m.Artistry)),
-  comfy: defineAsyncComponent(() => import('../widgets/artistry').then(m => m.Artistry)),
   sticker: defineAsyncComponent(() => import('../widgets/sticker').then(m => m.Sticker)),
 }
 
@@ -224,10 +222,13 @@ function resolveWidgetComponent(name: string) {
   if (!key)
     return GenericWidget
 
+  const normalized = key.toLowerCase()
+  if (normalized === 'artistry' || normalized === 'comfy')
+    return () => h('div', { class: 'h-full w-full flex items-center justify-center p-4 text-sm text-neutral-200/80' }, 'Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.')
+
   if (Registry[key])
     return Registry[key]
 
-  const normalized = key.toLowerCase()
   if (Registry[normalized])
     return Registry[normalized]
 

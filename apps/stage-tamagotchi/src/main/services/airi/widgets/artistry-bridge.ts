@@ -1,9 +1,6 @@
 import type { WidgetsWindowManager } from '../../../windows/widgets'
 import type { ArtistryProvider, ArtistryRequest } from './providers/base'
 
-import { Buffer } from 'node:buffer'
-import { createHash } from 'node:crypto'
-
 import { useLogg } from '@guiiai/logg'
 
 import { ComfyUIProvider } from './providers/comfyui'
@@ -34,38 +31,12 @@ function createRunId(widgetId: string) {
   return `${widgetId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
 }
 
-async function downloadImageAsBase64(url: string): Promise<string> {
-  if (url.startsWith('data:image/')) {
-    const commaIndex = url.indexOf(',')
-    return commaIndex >= 0 ? url.slice(commaIndex + 1) : url
-  }
-  try {
-    log.log(`[Artistry Bridge] Downloading image from: ${url}`)
-    const response = await fetch(url)
-    if (!response.ok)
-      throw new Error(`Failed to fetch image: ${response.statusText}`)
-    const bufferArray = await response.arrayBuffer()
-    return Buffer.from(bufferArray).toString('base64')
-  }
-  catch (error: any) {
-    log.error(`[Artistry Bridge] Failed to download image: ${error.message}`)
-    throw error
-  }
-}
-
 // Maintaining a registry of providers
 export const artistryProviders = new Map<string, ArtistryProvider>()
 artistryProviders.set('comfyui', new ComfyUIProvider())
 artistryProviders.set('replicate', new ReplicateProvider())
 artistryProviders.set('nanobanana', new NanoBananaProvider())
 artistryProviders.set('pollinations', new PollinationsProvider())
-
-// Deduplication map for headless requests
-const pendingHeadlessRequests = new Map<string, Promise<{ imageUrl?: string, base64?: string, error?: string }>>()
-
-// Concurrency cap: only one headless generation job at a time
-let activeHeadlessCount = 0
-const MAX_CONCURRENT_HEADLESS = 1
 
 export async function generateHeadless(params: {
   prompt: string
@@ -74,142 +45,11 @@ export async function generateHeadless(params: {
   options?: Record<string, any>
   globals?: any
 }): Promise<{ imageUrl?: string, base64?: string, error?: string }> {
-  // Create a fingerprint for deduplication
-  const fingerprint = JSON.stringify({
-    p: params.prompt,
-    m: params.model,
-    pr: params.provider,
-    o: params.options,
-    g: {
-      ...params.globals,
-      image: params.globals?.image
-        ? createHash('sha256').update(params.globals.image.slice(0, 1024)).digest('hex')
-        : undefined,
-    },
-  })
-
-  if (pendingHeadlessRequests.has(fingerprint)) {
-    log.log(`[Headless] Deduplicating identical request: ${params.prompt.slice(0, 30)}...`)
-    return pendingHeadlessRequests.get(fingerprint)!
-  }
-
-  if (activeHeadlessCount >= MAX_CONCURRENT_HEADLESS) {
-    log.log(`[Headless] Concurrency cap reached (${activeHeadlessCount}/${MAX_CONCURRENT_HEADLESS}). Dropping request.`)
-    return { error: 'Concurrency cap reached. A generation is already in progress.' }
-  }
-
-  const executionPromise = (async () => {
-    const requestedProvider = (params.provider || 'replicate').trim().toLowerCase()
-    const provider = artistryProviders.get(requestedProvider)
-    if (!provider) {
-      log.error(`[Headless] CRITICAL: Provider '${requestedProvider}' not found in registry!`)
-      throw new Error(`Provider '${requestedProvider}' not found.`)
-    }
-
-    // Initialize the provider if globals are provided
-    if (provider.initialize && params.globals) {
-      log.log(`[Headless] Initializing provider ${requestedProvider} with globals...`)
-      await provider.initialize(params.globals)
-    }
-
-    log.log(`[Headless] Globals keys: ${Object.keys(params.globals || {}).join(', ')}`)
-    if (params.globals?.image)
-      log.log(`[Headless] Source image length: ${params.globals.image.length}`)
-
-    const request: ArtistryRequest = {
-      prompt: params.prompt,
-      negativePrompt: params.options?.negativePrompt,
-      width: params.options?.width,
-      height: params.options?.height,
-      model: params.model,
-      extra: {
-        ...params.options,
-        image: params.globals?.image,
-        internalJobId: createRunId('headless'),
-      },
-    }
-
-    log.log(`[Headless] Starting generation with provider: ${requestedProvider}, model: ${params.model || 'default'}`)
-    const job = await provider.generate(request)
-    log.log(`[Headless] Job created: ${job.jobId}`)
-
-    // Polling/Wait for result
-    if (!('setJobCallback' in provider)) {
-      let isDone = false
-      let lastStatus: any = {}
-      const start = Date.now()
-      const timeout = 1000 * 60 * 10 // 10 minutes timeout
-
-      while (!isDone) {
-        if (Date.now() - start > timeout) {
-          log.error(`[Headless] Job ${job.jobId} timed out after 10 minutes.`)
-          throw new Error('Image generation timed out after 10 minutes.')
-        }
-
-        log.log(`[Headless] Polling status for job: ${job.jobId}...`)
-        lastStatus = await provider.getStatus(job.jobId)
-        log.log(`[Headless] Status for job ${job.jobId}: ${lastStatus.status}`)
-
-        if (lastStatus.status === 'succeeded' || lastStatus.status === 'failed') {
-          isDone = true
-        }
-        if (!isDone) {
-          await new Promise(resolve => setTimeout(resolve, 2000))
-        }
-      }
-
-      if (lastStatus.status === 'failed') {
-        log.error(`[Headless] Job ${job.jobId} failed: ${lastStatus.error || 'Unknown error'}`)
-        throw new Error(lastStatus.error || 'Generation failed')
-      }
-
-      log.log(`[Headless] Job ${job.jobId} succeeded. Image URL: ${lastStatus.imageUrl}`)
-      const base64 = lastStatus.imageUrl ? await downloadImageAsBase64(lastStatus.imageUrl) : undefined
-      return { imageUrl: lastStatus.imageUrl, base64 }
-    }
-    else {
-      // For providers with callbacks (like ComfyUI), we wait for the result via the callback
-      log.log(`[Headless] Using callback-based wait logic for provider: ${requestedProvider}`)
-      return new Promise<{ imageUrl?: string, base64?: string }>((resolve, reject) => {
-        const timeout = 1000 * 60 * 10 // 10 minutes timeout
-        const timer = setTimeout(() => {
-          reject(new Error('Image generation timed out after 10 minutes.'))
-        }, timeout)
-
-        ;(provider as any).setJobCallback(request.extra?.internalJobId, async (status: any) => {
-          if (status.status === 'succeeded') {
-            clearTimeout(timer)
-            try {
-              const base64 = status.imageUrl ? await downloadImageAsBase64(status.imageUrl) : undefined
-              resolve({ imageUrl: status.imageUrl, base64 })
-            }
-            catch (e) {
-              reject(e)
-            }
-          }
-          else if (status.status === 'failed') {
-            clearTimeout(timer)
-            reject(new Error(status.error || 'Generation failed'))
-          }
-        })
-      })
-    }
-  })()
-
-  activeHeadlessCount++
-  pendingHeadlessRequests.set(fingerprint, executionPromise)
-
-  try {
-    return await executionPromise
-  }
-  catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) }
-  }
-  finally {
-    activeHeadlessCount--
-    // Remove from map after completion so it can be re-triggered later
-    pendingHeadlessRequests.delete(fingerprint)
-  }
+  // Image generation is deprecated and disabled. This stub keeps the IPC contract
+  // and provider registry intact for backcompat, but never calls any provider.
+  // A future image-control integration will target an external SAI here.
+  log.warn(`[Headless] Generation request rejected (deprecated): provider=${params.provider || 'default'}`)
+  return { error: 'Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control will target an external SAI integration.' }
 }
 
 let cachedArtistryConfig: any = null
