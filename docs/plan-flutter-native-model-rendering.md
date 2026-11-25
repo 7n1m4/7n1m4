@@ -60,12 +60,14 @@ Update `docs/feature-parity-checklist.md:34-35`, `:53` and `:89`, and the Wave 3
 
 One spec table drives all four adapters, derived from `docs/research-emotion-mapping-reference.md` §2 (R3–R13): resolve explicit mapping → exact name → case-insensitive → fuzzy cluster → no-op; separate `kind` before touching morphs so a motion cue never becomes a facial morph; intensity multiplies a curated 0.7–0.8 target; fixed-duration ease-in-out-cubic; only previously-managed expressions fade; lip-sync is an independent additive channel that owns the vowel slots. The wire already carries `tag`, `kind`, `intensity`, `duration_ms`, `seq`, `ts_ms`, `actor_id` (`crates/anima-channel/src/wire.rs:819-840`); `StageExpressionCue` in `apps/flutter/lib/features/stage/model_expression.dart` needs `durationMs` added to reach hold-then-neutral parity. Keep the RMS→morph mapping from the shared smoothing fixture; do not invent a daemon-published audio stream — `docs/decision-bridge-scope.md` remains authoritative.
 
-## Decisions the maintainer must approve
+## Maintainer decisions (accepted 2026-11-25)
 
-1. **Display-model catalog ownership** — new daemon verb versus client-local catalog (Phase 1). Everything downstream of real cards waits on this.
-2. **GPU/rendering API for the plugin** — one API across four platforms versus per-platform backends (Phase 2). No rendering dependency exists in the workspace today, so this choice is open.
-3. **Desktop host targets and their timing** — creating `linux/`, `windows/`, `macos/` for `apps/flutter` is net-new scope, not a port.
-4. **Live2D legal gate** — who records the legal review and the user-fetch flow, and confirmation that 3D ships first (Phase 6).
-5. **Spine runtime line shipped** — 4.2 default versus multi-line, given `build.rs` compiles exactly one line into a binary while the Vue reference lazy-loads three.
-6. **MMD scope** — whether physics/IK and CP932 (absent from `crates/anima-mmd`) are in scope for parity or deferred.
-7. **Third-party licence notices** — approval of the notice set that must ship with the plugin (Spine Runtimes License requires the notice and each user's own Spine Editor licence; MMD assets stay user-supplied).
+- **Display-model catalog ownership**: daemon-owned catalog plus resolution verb.
+- **GPU/rendering API for the plugin**: one cross-platform render/texture contract with per-OS GPU backends and opaque Dart texture ids.
+- **Desktop host targets and timing**: create `linux/`, `windows/`, `macos/` for `apps/flutter` after the plugin contract and before the renderer phases; generation is not release validation.
+- **Live2D legal gate**: the maintainer owns legal/release approval and the Cubism user-fetch consent flow; Live2D stays hard-blocked until review; 3D ships before Live2D.
+- **Spine runtime line shipped**: single default runtime 4.2, with explicit rebuild/error handling for older lines.
+- **MMD scope**: first MMD renderer covers PMX rest pose/morphs plus VMD playback and vowel lip-sync; physics/IK and CP932 are deferred, and no full-parity claim is made.
+- **Third-party licence notices**: ship the Spine runtime notice/copyright plus the user editor-license notice, user-supplied asset notices, and plugin/GPL notices; Live2D notices remain gated.
+- **Implementation order**: keep Spine → VRM → MMD, with 3D-first meaning 3D ships before Live2D.
+- **Ownership**: airi-kxku owns the gates; airi-8dgb is umbrella integration/acceptance; airi-hxz1 is the accepted plan artifact / superseded plan bead. Exact verb/schema, notice files, host schedule, Spine migration policy, and MMD deferred-item beads are implementation details for the unblocked child beads.

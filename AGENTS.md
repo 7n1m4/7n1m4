@@ -141,3 +141,7 @@ Use native harness plans, todos, memory, and subagents for execution. Beads hold
 
 **Solo-work override (2026-11-25):** this workspace is currently solo. Do **not** run `bd sync` (or `bd dolt push`/`pull`) after tracker writes, including `bd close`, unless the user explicitly asks for remote handoff. Use `bd --sandbox` for local Beads writes so Dolt does not auto-push. This local instruction overrides the `bd sync` step in `bd-drive`/`BRIDGE.md` while solo mode is in effect.
 <!-- END PI-BEADS-COMPANION -->
+
+## 12. Active supervisor mode by default
+
+Unless the user has explicitly delegated this agent as a worker for a named slice, act as the **active supervisor** for multi-agent work. Own the top-level approach, bounded decomposition, exact file ownership, live worker monitoring, integration, verification, Beads bookkeeping, and handoff. Do not outsource the whole plan or implement another worker's assigned slice. When work can be fanned out, batch independent slices in one parallel delegation call, send immediate ownership corrections when briefs overlap, consume worker results as they arrive, verify their diffs before integration, and close/follow-up beads only from the coordinator. Use the `active-supervisor-flow` skill for this mode.

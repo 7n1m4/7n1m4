@@ -5,6 +5,10 @@
 // can render an asset. No native SDK, binary, or model is bundled: the platform
 // side supplies the renderer through [ModelBackend] and the user supplies the
 // asset through the card descriptor or the asset resolver.
+//
+// Live2D is hard-blocked until the maintainer records legal/release approval
+// (`docs/design-live2d-legal-gate.md`); nothing here downloads, bundles or
+// commits a Cubism Core.
 
 import '../../ui/model_stage.dart';
 
@@ -14,6 +18,11 @@ enum ModelRuntimeBlocker {
   missingRuntime,
 
   /// Cubism Core must be fetched and accepted by the user (never committed).
+  ///
+  /// Live2D is hard-blocked until the maintainer records legal/release
+  /// approval. The user must fetch the Cubism Core from Live2D after accepting
+  /// the terms; the core is never committed. There is no flag or setting that
+  /// clears this blocker.
   cubismLicense,
 }
 
@@ -75,7 +84,16 @@ const List<ModelRuntimeInfo> kModelRuntimes = <ModelRuntimeInfo>[
   ),
 ];
 
+/// Maintainer owns approval, 3D ships first, hard-blocked until review,
+/// user-fetched after terms, never committed.
+const String kLive2DLegalGateNote =
+    'Live2D is hard-blocked until the maintainer records legal/release '
+    'approval (`docs/design-live2d-legal-gate.md`). 3D ships first; the user '
+    'fetches the Cubism Core from Live2D after accepting the terms; the core is '
+    'never committed.';
+
 /// Look up the runtime info for [kind]. Throws for an unknown kind; callers
-/// route only validated [DisplayModel] values here.
+/// route only validated [DisplayModel] values here. The Live2D entry is the
+/// executable form of the legal gate; see `docs/design-live2d-legal-gate.md`.
 ModelRuntimeInfo runtimeFor(ModelKind kind) =>
     kModelRuntimes.firstWhere((info) => info.kind == kind);
