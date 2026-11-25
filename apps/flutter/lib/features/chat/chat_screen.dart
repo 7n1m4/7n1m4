@@ -8,6 +8,7 @@ import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
 import 'chat_composer_controller.dart';
 import 'genui_surface_controller.dart';
+import '../sessions/sessions_screen.dart';
 
 /// Minimal chat surface: sends `chat.send` RPCs and renders streamed
 /// `token.delta` events. View state only; the daemon owns sessions.
@@ -29,6 +30,11 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final List<_ChatMessage> _messages = <_ChatMessage>[];
+  List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
+  List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
+  String? _selectedCardId;
+  bool _sessionPanelOpen = false;
+  String? _contextError;
   final AiriGenUiSession _genUi = AiriGenUiSession();
   late final ChatComposerController _composer;
   String? _activeMessageId;
@@ -69,6 +75,8 @@ class _ChatScreenState extends State<ChatScreen> {
     if (initial != null && initial.isNotEmpty) {
       unawaited(_loadHistory());
     }
+    unawaited(_loadContext());
+    unawaited(_composer.loadContextSettings());
   }
 
   @override
@@ -250,6 +258,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _loadContext() async { try { final results = await Future.wait<List<Map<String, dynamic>>>(<Future<List<Map<String, dynamic>>>>[widget.client.sessionsList(), widget.client.cardsList()]); if (!mounted) return; setState(() { _sessions = results[0]; _cards = results[1]; _selectedCardId ??= _cards.isEmpty ? null : (_cards.first['id'] as String?); _contextError = null; }); } on Object catch (e) { if (mounted) setState(() => _contextError = e is DaemonClientException ? e.message : 'Could not load chat context: $e'); } }
+
+  void _resetTranscript() { _messages.clear(); _deltaBuffer.clear(); _activeMessageId = null; _assistantStreaming = false; _historyUnavailable = false; _cue = null; }
+  void _startNewSession() { _resetTranscript(); _composer.sessionId = null; setState(() => _sessionPanelOpen = false); }
+  Future<void> _openSession(String id) async { if (id.isEmpty || id == _composer.sessionId) { setState(() => _sessionPanelOpen = false); return; } setState(() { _resetTranscript(); _composer.sessionId = id; _sessionPanelOpen = false; }); await _loadHistory(); }
+  Future<void> _manageSessions() async { setState(() => _sessionPanelOpen = false); await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => SessionsScreen(client: widget.client))); if (mounted) await _loadContext(); }
+
   Future<_ChatMessage> _messageFromHistory(Map<String, dynamic> turn) async {
     final text = (turn['content'] as String?) ?? '';
     if (turn['role'] == 'user') return _ChatMessage.user(text);
@@ -293,8 +308,18 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _build(BuildContext context) {
     final sending = _composer.isComposing;
     final error = _composer.error;
-    return Column(
+    return Material(
+      child: Column(
       children: <Widget>[
+        Column(
+          children: <Widget>[
+            Padding(key: const Key('chat-context-bar'), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Row(children: <Widget>[ IconButton(key: const Key('chat-sessions-button'), icon: const Icon(Icons.forum_outlined), tooltip: 'Sessions', onPressed: () => setState(() => _sessionPanelOpen = !_sessionPanelOpen)), const SizedBox(width: 8), Expanded(child: Text(_composer.sessionId == null ? 'New chat' : 'Session ${_composer.sessionId}', overflow: TextOverflow.ellipsis)), const SizedBox(width: 8), DropdownButton<String?>(key: const Key('chat-character-dropdown'), value: _selectedCardId, hint: const Text('Character'), items: <DropdownMenuItem<String?>>[ const DropdownMenuItem<String?>(value: null, child: Text('No character')), for (final card in _cards) DropdownMenuItem<String?>(value: card['id'] as String?, child: Text((card['name'] as String?) ?? (card['id'] as String?) ?? '')), ], onChanged: (value) => setState(() => _selectedCardId = value)), ])),
+            if (_sessionPanelOpen)
+              SizedBox(height: 200, child: ListView(children: <Widget>[ ListTile(key: const Key('chat-new-session'), leading: const Icon(Icons.add), title: const Text('New chat'), onTap: _startNewSession), for (final s in _sessions) ListTile(title: Text((s['title'] as String?) ?? (s['id'] as String?) ?? ''), subtitle: Text((s['id'] as String?) ?? ''), onTap: () => unawaited(_openSession((s['id'] as String?) ?? ''))), ListTile(key: Key('chat-manage-sessions'), leading: Icon(Icons.settings_outlined), title: Text('Manage sessions'), onTap: _manageSessions), ])),
+            if (_contextError != null)
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Text(_contextError!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+          ],
+        ),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -371,6 +396,21 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: Text('Chat history unavailable for this session.'),
           ),
+        if (_composer.attachments.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 8,
+              children: <Widget>[
+                for (var i = 0; i < _composer.attachments.length; i++)
+                  Chip(
+                    key: Key('chat-attachment-$i'),
+                    label: Text(_composer.attachments[i].url),
+                    onDeleted: () => _composer.removeAttachmentAt(i),
+                  ),
+              ],
+            ),
+          ),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -397,7 +437,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ],
-    );
+    ),
+  );
   }
 }
 

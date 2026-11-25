@@ -15,6 +15,7 @@ class SessionsScreen extends StatefulWidget {
 
 class _SessionsScreenState extends State<SessionsScreen> {
   final TextEditingController _importController = TextEditingController();
+  final TextEditingController _filterController = TextEditingController();
   Map<String, dynamic>? _core;
   Map<String, dynamic>? _vault;
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
@@ -31,6 +32,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   @override
   void dispose() {
     _importController.dispose();
+    _filterController.dispose();
     super.dispose();
   }
 
@@ -152,13 +154,36 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
+  String get _query => _filterController.text.trim().toLowerCase();
+  List<Map<String, dynamic>> get _visibleSessions => _query.isEmpty
+      ? _sessions
+      : _sessions
+          .where((s) =>
+              ((s['title'] as String?) ?? '').toLowerCase().contains(_query) ||
+              ((s['id'] as String?) ?? '').toLowerCase().contains(_query))
+          .toList(growable: false);
+
+  Future<void> _newChat() async {
+    await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => ChatScreen(client: widget.client)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final chats = (_vault?['stats'] is Map<String, dynamic>)
         ? (_vault!['stats'] as Map<String, dynamic>)['chats']
         : null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Sessions')),
+      appBar: AppBar(
+        title: const Text('Sessions'),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('sessions-new-chat'),
+            icon: const Icon(Icons.add_comment),
+            tooltip: 'Start new chat',
+            onPressed: _newChat,
+          ),
+        ],
+      ),
       body: _busy
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -169,6 +194,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   if (_error != null)
                     Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   if (_status != null) Text(_status!),
+                  TextField(
+                    key: const Key('sessions-filter'),
+                    controller: _filterController,
+                    decoration: const InputDecoration(labelText: 'Filter sessions'),
+                    onChanged: (_) => setState(() {}),
+                  ),
                   ListTile(title: const Text('Session count (core)'), trailing: Text(_core?['sessionCount']?.toString() ?? '—')),
                   ListTile(title: const Text('Message count (core)'), trailing: Text(_core?['messageCount']?.toString() ?? '—')),
                   if (chats is Map<String, dynamic>) ...<Widget>[
@@ -185,10 +216,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     child: const Text('Import'),
                   ),
                   const ListTile(title: Text('Sessions'), dense: true),
-                  if (_sessions.isEmpty)
-                    const ListTile(title: Text('No sessions'), dense: true)
+                  if (_visibleSessions.isEmpty)
+                    ListTile(title: Text(_sessions.isEmpty ? 'No sessions' : 'No sessions match the filter'), dense: true)
                   else
-                    for (final s in _sessions)
+                    for (final s in _visibleSessions)
                       ListTile(
                         title: Text((s['title'] as String?) ?? (s['id'] as String?) ?? ''),
                         subtitle: Text((s['id'] as String?) ?? ''),

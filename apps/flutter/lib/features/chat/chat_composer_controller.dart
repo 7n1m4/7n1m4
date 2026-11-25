@@ -6,8 +6,7 @@ import '../../daemon_client/daemon_client.dart';
 
 /// A composer attachment.
 ///
-/// Placeholder in this slice: the controller owns the list so the "empty
-/// draft" rule matches the web composer, but no picker or preview UI ships yet.
+/// Local attachments queued for a send.
 class ChatComposerAttachment {
   const ChatComposerAttachment({required this.type, required this.url});
 
@@ -17,6 +16,8 @@ class ChatComposerAttachment {
 }
 
 /// Draft, send/stop state and error restore for the chat composer.
+///
+/// Attachments are local-only until the daemon wire contract supports them.
 ///
 /// Mirrors `useChatComposer` (packages/stage-ui/src/composables/use-chat-composer.ts)
 /// and `WhisperComposerBar.onSubmit`: the draft is cleared only once a send is
@@ -35,6 +36,12 @@ class ChatComposerController extends ChangeNotifier {
 
   /// The text field's controller: the view owns the widget, this owns the value.
   TextEditingController get input => _input;
+
+  /// Context settings loaded from daemon `settings.get('chat')`.
+  Map<String, dynamic> _contextSettings = <String, dynamic>{};
+
+  /// Context settings with `settings.get` semantics.
+  Map<String, dynamic> get contextSettings => _contextSettings;
 
   /// Attachments queued for the next send. Empty until the picker lands.
   final List<ChatComposerAttachment> attachments = <ChatComposerAttachment>[];
@@ -81,11 +88,35 @@ class ChatComposerController extends ChangeNotifier {
     _notify();
   }
 
+  /// Load context settings from the daemon. Ignores failures.
+  Future<void> loadContextSettings() async {
+    try {
+      _contextSettings = await _client.settingsGet('chat');
+      if (_disposed) return;
+      _notify();
+    } catch (_) {
+      // ignore
+    }
+  }
+
   /// The daemon's final delta (or a cancel): the turn is over, so Stop goes
   /// back to Send.
   void finishTurn() {
     if (!_sending) return;
     _sending = false;
+    _notify();
+  }
+
+  void addAttachment(String type, String url) {
+    if (!{'image', 'audio'}.contains(type)) return;
+    if (url.trim().isEmpty) return;
+    attachments.add(ChatComposerAttachment(type: type, url: url));
+    _notify();
+  }
+
+  void removeAttachmentAt(int index) {
+    if (index < 0 || index >= attachments.length) return;
+    attachments.removeAt(index);
     _notify();
   }
 
@@ -105,6 +136,8 @@ class ChatComposerController extends ChangeNotifier {
     _error = null;
     _sending = true;
     _input.clear();
+    final sentAttachments = List<ChatComposerAttachment>.from(attachments);
+    attachments.clear();
     onMessageCommitted?.call(text);
     _notify();
     try {
@@ -124,7 +157,7 @@ class ChatComposerController extends ChangeNotifier {
         return mid;
       }
       if (!reply.ok) {
-        _fail(reply.error?.message ?? 'chat.send failed', draft: text);
+        _fail(reply.error?.message ?? 'chat.send failed', draft: text, attachments: sentAttachments);
         return null;
       }
       return null;
@@ -132,6 +165,7 @@ class ChatComposerController extends ChangeNotifier {
       _fail(
         e is DaemonClientException ? e.message : 'Could not send message: $e',
         draft: text,
+        attachments: sentAttachments,
       );
       return null;
     }
@@ -159,10 +193,14 @@ class ChatComposerController extends ChangeNotifier {
     }
   }
 
-  void _fail(String message, {String? draft}) {
+  void _fail(String message, {String? draft, List<ChatComposerAttachment>? attachments}) {
     _error = message;
     _sending = false;
     if (draft != null) _input.text = draft;
+    if (attachments != null) {
+      this.attachments.clear();
+      this.attachments.addAll(attachments);
+    }
     _notify();
   }
 
@@ -174,6 +212,7 @@ class ChatComposerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    attachments.clear();
     _input.dispose();
     super.dispose();
   }
