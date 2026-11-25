@@ -393,10 +393,10 @@ AIRI includes documented real-world plugin designs demonstrating how to apply th
 
 | Area | File Path |
 |---|---|
-| **Protocol Contracts** | [`packages/plugin-protocol/src/types/events.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/plugin-protocol/src/types/events.ts) |
-| **Plugin SDK Core** | [`packages/plugin-sdk/src/plugin-host/core.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/plugin-sdk/src/plugin-host/core.ts) |
-| **Electron Plugin Host** | [`apps/stage-tamagotchi/src/main/services/airi/plugins/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/services/airi/plugins/index.ts) |
-| **DevTools Plugin UI** | [`packages/stage-pages/src/pages/devtools/plugin-host.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/devtools/plugin-host.vue) |
-| **WebSocket Hub Runtime** | [`packages/server-runtime/src/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/server-runtime/src/) |
-| **Twitch Proposal** | [`docs/proposal-twitch-plugin.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-twitch-plugin.md) |
-| **Destiny 2 Proposal** | [`docs/proposal-destiny2-plugin.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-destiny2-plugin.md) |
+| **Protocol Contracts** | [`packages/plugin-protocol/src/types/events.ts`](packages/plugin-protocol/src/types/events.ts) |
+| **Plugin SDK Core** | [`packages/plugin-sdk/src/plugin-host/core.ts`](packages/plugin-sdk/src/plugin-host/core.ts) |
+| **Electron Plugin Host** | [`apps/stage-tamagotchi/src/main/services/airi/plugins/index.ts`](apps/stage-tamagotchi/src/main/services/airi/plugins/index.ts) |
+| **DevTools Plugin UI** | [`packages/stage-pages/src/pages/devtools/plugin-host.vue`](packages/stage-pages/src/pages/devtools/plugin-host.vue) |
+| **WebSocket Hub Runtime** | [`packages/server-runtime/src/`](packages/server-runtime/src/) |
+| **Twitch Proposal** | [`docs/proposal-twitch-plugin.md`](docs/proposal-twitch-plugin.md) |
+| **Destiny 2 Proposal** | [`docs/proposal-destiny2-plugin.md`](docs/proposal-destiny2-plugin.md) |

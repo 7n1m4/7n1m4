@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Review Report: Root Cause Analysis Validation for `<|ACTOR:|>` Token Sync
 
 > **Reviewed document:** [`docs/design-journal-actor-token-sync.md`](./design-journal-actor-token-sync.md)

@@ -64,7 +64,7 @@ Depending on settings, the Director and Producer roles run in tandem or individu
 
 We will implement the **Gameshow Host** as a dedicated, stateless generation function inside the dating sim store. It will be called when launching a campaign if `gameMode === 'goal_driven'`.
 
-#### [MODIFY] [dating-sim.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/dating-sim.ts)
+#### [MODIFY] [dating-sim.ts](packages/stage-ui/src/stores/dating-sim.ts)
 *   Create a new function `generateInitialGoalDrivenChoices()` (the **Producer GD-IT**).
 *   **System Prompt Construct**:
     *   Inject the game rules (max turns, scores).
@@ -78,7 +78,7 @@ We will implement the **Gameshow Host** as a dedicated, stateless generation fun
 
 We will dynamically append the story parameters to the global prompt system to modify the character's behavior while the Dating Sim is active.
 
-#### [MODIFY] [airi-card.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/airi-card.ts)
+#### [MODIFY] [airi-card.ts](packages/stage-ui/src/stores/modules/airi-card.ts)
 *   Update `buildSystemPrompt` to check if `datingSimStore.enabled` and `datingSimStore.activeStoryline` exist.
 *   If enabled, inject the following context with preface glue:
     *   **Custom Premise**: *"The user wants to customize or tweak the premise of this encounter, please adjust to the text below: {customPremise}"*
@@ -86,7 +86,7 @@ We will dynamically append the story parameters to the global prompt system to m
     *   **Setting / Location**: *"The setting and location for this encounter is: {scene}"*
     *   **Terms of Encounter** (Subject to user feedback on question #1).
 
-#### [MODIFY] [artistry-autonomous.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/artistry-autonomous.ts)
+#### [MODIFY] [artistry-autonomous.ts](packages/stage-ui/src/stores/modules/artistry-autonomous.ts)
 *   When dating sim is enabled, dynamically append the `appearances` prompt tags of the active storyline directly to the generated image prompt prefix or final prompt to ensure ComfyUI respects the curated storyboard appearance.
 
 ---

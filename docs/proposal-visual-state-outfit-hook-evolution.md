@@ -1,6 +1,6 @@
 # Architectural Evolution: Scoped Actor State Setter
 
-This document outlines the architectural evolution of the **Production Studio** and **Active Concept Stack** (originally defined in [proposal-visual-state-outfit-hook.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-visual-state-outfit-hook.md)) to support **Scoped Visual State Persistence**.
+This document outlines the architectural evolution of the **Production Studio** and **Active Concept Stack** (originally defined in [proposal-visual-state-outfit-hook.md](docs/proposal-visual-state-outfit-hook.md)) to support **Scoped Visual State Persistence**.
 
 ---
 
@@ -20,13 +20,13 @@ To solve this, we split characters into explicit stateful outfit tokens (`actor_
 Instead of forcing the LLM to remember complex stateful prefix tokens, or running a heavy global search parser, we introduce a **reactive state-mutator hook** utilizing the existing parser's scoping capability.
 
 ### 2.1 The Scoping Agent: `markdown-renderer.vue`
-The chat streaming system parses incoming tokens line-by-line. In [`markdown-renderer.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/markdown/markdown-renderer.vue#L42-L78), paragraph blocks `<p>...</p>` are analyzed for actor tokens:
+The chat streaming system parses incoming tokens line-by-line. In [`markdown-renderer.vue`](packages/stage-ui/src/components/markdown/markdown-renderer.vue#L42-L78), paragraph blocks `<p>...</p>` are analyzed for actor tokens:
 * It looks for `[ACTOR: actor_id]` markers (which originate from the `<|ACTOR:actor_id|>` prompt notation).
 * When a marker is found, it updates the `activeActorId` variable context. All subsequent inner content (including inline `<|ACT:...|>` elements) is parsed **under the scope of this active actor ID** until a new block updates it.
 
 ### 2.2 The ACT Tag as a Registry Mutator
 Every `<|ACT:emotion="..."|>` tag maps directly to:
-* **Active Expressions Override:** In the concept configuration, expressions are saved under `manifestation.active_expressions` as a mutually exclusive configuration (e.g., `preset2` for a black dress or a specific accessory, as configured in the [`ConceptBuilderModal.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/ConceptBuilderModal.vue#L870-L896) editor).
+* **Active Expressions Override:** In the concept configuration, expressions are saved under `manifestation.active_expressions` as a mutually exclusive configuration (e.g., `preset2` for a black dress or a specific accessory, as configured in the [`ConceptBuilderModal.vue`](packages/stage-pages/src/pages/settings/airi-card/components/ConceptBuilderModal.vue#L870-L896) editor).
 
 When the LLM triggers an inline change:
 ```text

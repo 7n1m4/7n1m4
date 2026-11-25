@@ -1,6 +1,6 @@
 # AnimaDex Wizard — Pending Items Summary
 
-All items below are documented in [proposal-animadex-wizard.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-animadex-wizard.md). None are currently implemented unless marked ✅.
+All items below are documented in [proposal-animadex-wizard.md](docs/proposal-animadex-wizard.md). None are currently implemented unless marked ✅.
 
 ---
 
@@ -50,7 +50,7 @@ Blocked on a **schema gap** — must fix card schema before wiring wizard UI.
 
 ## 🔮 Future Phase: Dynamic Character Injection (Ad-hoc Cast Expansion)
 
-Planned as part of [proposal-animadex-new-characters.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-animadex-new-characters.md).
+Planned as part of [proposal-animadex-new-characters.md](docs/proposal-animadex-new-characters.md).
 
 | # | Item | Effort | Description |
 |---|------|--------|-------------|

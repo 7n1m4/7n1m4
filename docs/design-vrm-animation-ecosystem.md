@@ -63,28 +63,28 @@ Based on the criteria: **Seamless, Optional, and Prioritized**.
 ## Technical Implementation Plan (Phase 1)
 
 ### 1. Asset Exports
-**File**: [animations/index.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui-three/src/assets/vrm/animations/index.ts)
+**File**: [animations/index.ts](packages/stage-ui-three/src/assets/vrm/animations/index.ts)
 - Currently only exports `idleLoop`.
 - **Change**: Export all 11 `.vrma` files (e.g., `crab_dance`, `peace_sign`, etc.) as named constants.
 
 ### 2. State Management
-**File**: [model-store.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui-three/src/stores/model-store.ts)
+**File**: [model-store.ts](packages/stage-ui-three/src/stores/model-store.ts)
 - **Change**: Add `vrmIdleAnimation` (string) to `useModelStore`.
 - **Default**: `'idleLoop'` (mapped to `idle_loop.vrma`).
 - This ensures the setting is persisted via `useLocalStorage`.
 
 ### 3. Component Propagation
-**File**: [Stage.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/components/scenes/Stage.vue)
+**File**: [Stage.vue](packages/stage-ui/src/components/scenes/Stage.vue)
 - **Change**: Bind `vrmIdleAnimation` from the store to the `idle-animation` prop of `ThreeScene`.
 
 ### 4. Animation Loading Logic
-**File**: [VRMModel.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui-three/src/components/Model/VRMModel.vue)
+**File**: [VRMModel.vue](packages/stage-ui-three/src/components/Model/VRMModel.vue)
 - **Change**: Add a watcher for the `idleAnimation` prop.
 - **Logic**: When changed, load the new `.vrma`, strip facial expression tracks (to avoid overriding the expression system), and update the mixer.
 - **Transition**: Use `AnimationAction.crossFadeTo` or similar for "smooth as butter" transitions.
 
 ### 5. Settings UI
-**File**: [vrm.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/components/scenarios/settings/model-settings/vrm.vue)
+**File**: [vrm.vue](packages/stage-ui/src/components/scenarios/settings/model-settings/vrm.vue)
 - **Change**: Add a dropdown menu for "Default Idle Animation".
 - **Options**: Populated from the exported animation keys in `stage-ui-three`.
 

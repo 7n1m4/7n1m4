@@ -63,23 +63,23 @@ We have implemented the following features:
 The tags field is consumed or will be integrated in the following files:
 
 ### 1. Main Model Selector Dialog
-*   **Path**: [model-selector.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/model-selector/model-selector.vue)
+*   **Path**: [model-selector.vue](packages/stage-ui/src/components/scenarios/dialogs/model-selector/model-selector.vue)
     *   *Search filter logic*: lines 101-113
     *   *Tags filter Popover & toolbar*: lines 1008-1090
     *   *Tag count badge*: lines 1227-1236
 
 ### 2. Control Strip "Avatars" Panel
-*   **Path**: [ControlStrip.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue)
+*   **Path**: [ControlStrip.vue](packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue)
     *   *Search/filtering logic*: lines 36-65
     *   *Search input binding*: lines 2300-2308
 
 ### 3. Concept Builder Modal (Manifestation Tab)
-*   **Path**: [ConceptBuilderModal.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/ConceptBuilderModal.vue)
+*   **Path**: [ConceptBuilderModal.vue](packages/stage-pages/src/pages/settings/airi-card/components/ConceptBuilderModal.vue)
     *   *Search/filtering logic*: lines 196-215
     *   *Search input binding*: lines 502-506
 
 ### 4. Card Import Wizard (Visual Avatar step)
-*   **Path**: [CardImportWizard.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CardImportWizard.vue)
+*   **Path**: [CardImportWizard.vue](packages/stage-pages/src/pages/settings/airi-card/components/CardImportWizard.vue)
     *   *Model mapping & computed state*: lines 85-104
     *   *Model grid display*: lines 555-586
 

@@ -8,23 +8,31 @@ for the port and not a second active renderer. A blank cell = not implemented. R
 Rows marked **TS-core-remaining** have their full business logic in TypeScript with no
 daemon port yet — a gap to close, not a reason to reduce the renderer.
 
-| Capability | Flutter | Godot | Vue reference | Parity gap |
-|---|---|---|---|---|
-| `core.status` health probe | implemented | implemented | implemented | none |
-| `chat.send` / chat sessions | implemented | implemented | implemented | none |
-| chat streaming deltas | implemented | implemented | implemented | none |
-| `chat.cancel` / stop-generation | implemented | implemented | implemented | none |
-| settings get/set | implemented | implemented | implemented | none |
-| providers list | implemented | implemented | implemented | none |
-| vault status | implemented | implemented | implemented | none |
-| `stmm.list` / `stmm.rebuild` / `journal.append` / `journal.search` / `retrieval.status` | implemented (Flutter memory screen) | implemented (Godot C# DaemonRpc) | **TS-core-remaining** (TS short/long-term memory stores, not yet daemon RPC) | daemon RPC shipped; Vue store not yet migrated |
-| `cards.list` / `cards.get` / `cards.import` | **stub** — daemon returns "not implemented"; `cardsMetadataSet` works but is not card CRUD (`gateway.rs:1309-1325`; `cards_screen.dart:67-87`) | **stub** — same daemon error; `cards.metadata`/`.set` work but are not card CRUD (`godot/scripts/Net/DaemonRpc.cs:31-35`) | **TS-core-remaining** (card store in TypeScript) | **out-of-scope** — card management excluded from daemon port; tracked as remaining TS business logic |
-| `sessions.list` / `sessions.export` / `sessions.auto_title` | `sessions.list`/`.export` implemented (Flutter sessions screen); `sessions.auto_title` is not an RPC and has no client caller | `sessions.list`/`.export` implemented (Godot C# DaemonRpc); `sessions.auto_title` is not an RPC and has no client caller | **TS-core-remaining** (chat session store in TS) | daemon RPC shipped for list/export; `sessions.auto_title` is a daemon stub (`crates/anima-daemon/src/gateway.rs:1441-1444`) because auto-titling runs inside core after the first assistant reply (`crates/anima-core/src/chat.rs:604-615,635`) — no client implements or needs the verb; Vue store not yet migrated |
-| heartbeat keepalive | implemented | implemented | **TS-core-remaining** (in-app server heartbeat path) | daemon heartbeat wired; Vue store not yet migrated |
-| event subscription lane | implemented (Flutter subscribes `token.delta` per connection) | implemented (Godot subscribes via `DaemonEvents`) | implemented (Vue `useModsServerChannelStore` resolves the daemon gateway URL/token via mirrored localStorage keys and opens a `Client` with `onEvent` subscriptions; `channel-server.ts:49-91,149-243,334-348`) | none for the event lane; Vue still routes chat/memory/card state through TS stores (**TS-core-remaining**, see below) |
-| `emotion.tag` cues | consumed (Flutter `protocol.dart` `EventTopic.emotionTag`) | consumed (Godot `DaemonEvents.cs`) | **TS-core-remaining** (BeatSync BroadcastChannel; not yet daemon event) | daemon-published; Vue store not yet migrated |
-| dynamic generated widgets | implemented (Flutter GenUI 0.10.4 / A2UI v0.9 surfaces rendered from `token.delta` via `apps/flutter/lib/features/chat/genui_surface_controller.dart`; `genui` dependency pinned; invalid payloads leave plain text visible) | — | different sandbox widget system (`stage_widgets` + `packages/stage-ui/src/libs/sandbox/*`), not A2UI | **by design, not a gap**: distinct inline-presentation vs desktop-tool capabilities; see `docs/decision-cross-client-dynamic-widgets.md` (`airi-osn`) |
-| `lip_sync.rms` animation | **wired, generic renderer only** (Flutter `speech/` Piper/sherpa engines → `AmplitudeTap` → `LipSyncGenerator` frames → `main.dart` opt-in `LipSyncRenderer` scale/tint sink; no mouth mesh) | **wired, generic renderer only** (Godot `Main.cs` → `LocalSpeechPipeline` → tap → `GenericPetRenderer.SetLipSync` → node scale/tint/animation key + PCM playback; VRM/Live2D backends are **stub/planned** placeholders, not functional mouth backends) | — | **client-local only** — daemon does not publish it (`decision-bridge-scope.md`); see decision/guide below for setup and limits. Generic scale/tint renderers exist on both clients; real mouth backends remain outstanding. |
+Flutter must reach full Vue stage-UI feature parity: the Rust daemon owns all business logic
+and state, the client stays thin as no competing state writer, and the renderer feature
+surface is never reduced (user clarification 2026-11-25). That includes **native
+character/model rendering** (VRM, Live2D, MMD, Spine) inside Flutter — not a control/chat-only
+surface and not an external pet process. The Godot renderer was purged from the active
+architecture on 2026-11-25 and has no column here.
+
+| Capability | Flutter | Vue reference | Parity gap |
+|---|---|---|---|
+| `core.status` health probe | implemented | implemented | none |
+| `chat.send` / chat sessions | implemented | implemented | none |
+| chat streaming deltas | implemented | implemented | none |
+| `chat.cancel` / stop-generation | implemented | implemented | none |
+| settings get/set | implemented | implemented | none |
+| providers list | implemented | implemented | none |
+| vault status | implemented | implemented | none |
+| `stmm.list` / `stmm.rebuild` / `journal.append` / `journal.search` / `retrieval.status` | implemented (Flutter memory screen) | **TS-core-remaining** (TS short/long-term memory stores, not yet daemon RPC) | daemon RPC shipped; Vue store not yet migrated |
+| `cards.list` / `cards.get` / `cards.import` / `cards.create` / `cards.update` / `cards.delete` | **implemented** — daemon card CRUD (`gateway.rs:1301-1391`); `cardsMetadataSet` also works | **TS-core-remaining** (card store in TypeScript) | daemon CRUD shipped; Vue store not yet migrated; ownership contract in `docs/decision-card-ownership.md` |
+| `sessions.list` / `sessions.export` / `sessions.auto_title` | `sessions.list`/`.export` implemented (Flutter sessions screen); `sessions.auto_title` is not an RPC and has no client caller | **TS-core-remaining** (chat session store in TS) | daemon RPC shipped for list/export; `sessions.auto_title` is a daemon stub (`crates/anima-daemon/src/gateway.rs:1528-1533`) because auto-titling runs inside core after the first assistant reply (`crates/anima-core/src/chat.rs:604-615,635`) — no client implements or needs the verb; Vue store not yet migrated |
+| heartbeat keepalive | implemented | **TS-core-remaining** (in-app server heartbeat path) | daemon heartbeat wired; Vue store not yet migrated |
+| event subscription lane | implemented (subscribes `token.delta` per connection) | implemented (Vue `useModsServerChannelStore` resolves the daemon gateway URL/token via mirrored localStorage keys and opens a `Client` with `onEvent` subscriptions; `channel-server.ts:49-91,149-243,334-348`) | none for the event lane; Vue still routes chat/memory/card state through TS stores (**TS-core-remaining**, see below) |
+| `emotion.tag` cues | consumed (`protocol.dart` `EventTopic.emotionTag`) | **TS-core-remaining** (BeatSync BroadcastChannel; not yet daemon event) | daemon-published; Vue store not yet migrated |
+| dynamic generated widgets | implemented (Flutter GenUI 0.10.4 / A2UI v0.9 surfaces rendered from `token.delta` via `apps/flutter/lib/features/chat/genui_surface_controller.dart`; `genui` dependency pinned; invalid payloads leave plain text visible) | different sandbox widget system (`stage_widgets` + `packages/stage-ui/src/libs/sandbox/*`) | **by design, not a gap**: distinct inline-presentation vs desktop-tool capabilities; see `docs/decision-cross-client-dynamic-widgets.md` (`airi-osn`) |
+| `lip_sync.rms` animation | **wired, generic renderer only** (Flutter `speech/` Piper/sherpa engines → `AmplitudeTap` → `LipSyncGenerator` frames → `main.dart` opt-in `LipSyncRenderer` scale/tint sink; no mouth mesh yet) | — | **client-local only** — daemon does not publish it (`decision-bridge-scope.md`). Real mouth/morph backends on the Flutter model renderer remain outstanding. |
+| Native model rendering (VRM / Live2D / MMD / Spine) | **gap — the largest remaining parity item**: Flutter has no model stage yet; the Vue stage renderers are the reference (`packages/stage-ui-three`, `packages/stage-ui-live2d`, `RendererStage.vue`) | implemented (Vue stage renderers) | Flutter must render the card's display model natively; until then the Flutter surface is not full parity |
 
 ## Client-local TTS/PCM capability status
 
@@ -54,7 +62,7 @@ Final removal remains `airi-3cp`'s scope; this section is evidence, not authoriz
 | # | Criterion | Status | Dated evidence |
 |---|---|---|---|
 | 1 | Daemon logic — providers | **FAIL** | 2026-11-24 (`coordinator-wave5`): RPC registrations `crates/anima-daemon/src/gateway.rs:757,767,783`; save/delete/list core logic `crates/anima-daemon/src/core.rs:279-394`; secret stripping `crates/anima-core/src/providers.rs:24-62`; durable `StoredProvider` fields only id/kind/config/enabled/updated_at at `crates/anima-store/src/lib.rs:421-434` — no validation state, owner, soft-delete, or documented local-store migration. |
-| 2 | Daemon logic — characters | **FAIL** | 2026-11-24 (`coordinator-wave5`): `cards.list`/`.get`/`.import` still return "not implemented" at `crates/anima-daemon/src/gateway.rs:1309-1325`; no card CRUD verbs in `renderer_handlers`; `docs/design-flutter-godot-pivot.md:286,292` declares cards out of daemon scope without defining local-only ownership; business logic remains in `packages/stage-ui/src/stores/characters.ts:138,171,198,236,261`. |
+| 2 | Daemon logic — characters | **FAIL** | 2026-11-25: daemon card CRUD shipped (`cards.list`/`.get`/`.import`/`.create`/`.update`/`.delete` at `crates/anima-daemon/src/gateway.rs:1301-1391`); card ownership recorded in `docs/decision-card-ownership.md`; business logic still in `packages/stage-ui/src/stores/characters.ts:138,171,198,236,261`. |
 | 3 | Daemon logic — auth/session | **PASS** | 2026-11-24 (`coordinator-wave5`): decision accepted and ratified (`docs/decision-byos-identity.md:4-6,30-34,38`, bead `airi-79o`); default-off caller state confirmed at `packages/stage-ui/src/libs/auth.ts:8,17-30`, `packages/stage-ui/src/stores/auth.ts:13,24-37`, `packages/stage-ui/src/composables/use-local-first.ts:16,35`, `packages/stage-ui/src/stores/settings/general.ts:33`. Account-UX removal itself executes later via `airi-3cp`. |
 | 4 | Flutter client parity | **FAIL** | 2026-11-25: Flutter provider UI calls `providers.list`/`providers.save`/`providers.delete` (`apps/flutter/lib/features/providers/providers_screen.dart:96,170,186,196`), but the Flutter renderer still has no native model stage and no card CRUD client UI yet, so client parity is incomplete. |
 | 5 | Vue reference migration | **FAIL** | 2026-11-24 (`coordinator-wave5`): production `client.api.characters` callers at `packages/stage-ui/src/stores/characters.ts:138,171,198,236,261`; `client.api.providers` at `packages/stage-ui/src/stores/provider-catalog.ts:25,71,112,137`; remote branch at `packages/stage-ui/src/composables/use-local-first.ts:16,35`; better-auth client at `packages/stage-ui/src/libs/auth.ts:17`. |

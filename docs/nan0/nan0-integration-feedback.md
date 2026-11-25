@@ -11,13 +11,13 @@ This document outlines the architectural feedback and design requirements for in
 We reject the proposal to maintain a standalone Python process or sidecar to hoist Nan0's memory and cognition engines. Doing so introduces significant maintenance overhead, installer bloat, and breaks cross-platform desktop/web parity.
 
 ### Why a Python Subprocess is Rejected:
-* **Breaks Web Stage (`web-stage`)**: As indexed in [docs/rosetta-stone.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/rosetta-stone.md#L16), AIRI supports a browser-only deployment (`apps/stage-web`). A web browser cannot spawn a local Python subprocess. To ensure that `web-stage` can leverage the exact same features, the companion's cognition and memory must be written in native TypeScript/JavaScript.
+* **Breaks Web Stage (`web-stage`)**: As indexed in [docs/rosetta-stone.md](docs/rosetta-stone.md#L16), AIRI supports a browser-only deployment (`apps/stage-web`). A web browser cannot spawn a local Python subprocess. To ensure that `web-stage` can leverage the exact same features, the companion's cognition and memory must be written in native TypeScript/JavaScript.
 * **Installer Bloat & Distribution**: Packaging a Python environment, compiler tools, and native extensions inside an Electron app adds hundreds of megabytes to the final installer.
 * **Dependency Hell**: Spawning and managing a python subprocess on end-user machines (handling virtual environments and native library links) is fragile compared to clean, single-process npm dependencies.
 
 ### Why Porting is Highly Straightforward:
 The audit states that Nan0's memory skill uses Chroma DB for storing diary entries and episodic events. Porting this to AIRI is simple because AIRI **already implements browser-native vector search**:
-* **Vector Indexing & Storage**: As defined in Section 9 of the [Rosetta Stone](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/rosetta-stone.md#L249-L253), AIRI uses [layered-memory.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/layered-memory.ts), which manages an in-browser hybrid search index using **Orama** and **Transformers.js** (backed by IndexedDB).
+* **Vector Indexing & Storage**: As defined in Section 9 of the [Rosetta Stone](docs/rosetta-stone.md#L249-L253), AIRI uses [layered-memory.ts](packages/stage-ui/src/libs/search/layered-memory.ts), which manages an in-browser hybrid search index using **Orama** and **Transformers.js** (backed by IndexedDB).
 * **Actor & Relationship Schema**: The audit claims AIRI's memory system lacks actor semantics. However, AIRI’s `SearchDocumentMeta` and storage repositories use open schema payloads. Storing actor metadata is as simple as adding `actorId`, `targetActorId`, and `relationship` properties to the document objects during indexing:
   ```typescript
   // Simply feed diaries and episodic events into the existing indexer:
@@ -38,18 +38,18 @@ The audit states that Nan0's memory skill uses Chroma DB for storing diary entri
 
 ## 2. Discord Revamp Realignment
 
-The integration must adhere strictly to the design principles laid out in the [feat-discord-revamp.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/feat-discord-revamp.md) spec.
+The integration must adhere strictly to the design principles laid out in the [feat-discord-revamp.md](docs/feat-discord-revamp.md) spec.
 
 ### A. Restore `puppet` Mode (Default Local Playback)
-* **Reference**: [feat-discord-revamp.md: Voice Modes](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/feat-discord-revamp.md#L70-L74)
+* **Reference**: [feat-discord-revamp.md: Voice Modes](docs/feat-discord-revamp.md#L70-L74)
 * **Feedback**: The other agent's audit omitted the `puppet` mode entirely. `puppet` mode is the current default behavior: audio is played locally on the desktop app speaker system while the text interaction is routed to Discord.
 * **Importance**: For "home base" users who want the high-fidelity desktop speakers to play speech in their room while commanding the companion remotely, deleting this option breaks the core loop. It must remain an active option.
 
 ### B. Real-Time Voice Calls vs. Classic TTS
-* **Reference**: [design-gemini-live-api-integration.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md) and [arch-chat-stt-proactivity-pipelines.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/content/en/docs/advanced/architecture/arch-chat-stt-proactivity-pipelines.md)
+* **Reference**: [design-gemini-live-api-integration.md](docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md) and [arch-chat-stt-proactivity-pipelines.md](docs/content/en/docs/advanced/architecture/arch-chat-stt-proactivity-pipelines.md)
 * **Feedback on Gemini Live**: The other agent proposed a hybrid voice call where Gemini Live is routed through a manual `STT -> thought engine -> TTS` loop. This is architecturally flawed:
-  1. As documented in [design-gemini-live-api-integration.md: Overview](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md#L13-L20), Gemini Live processes raw audio and returns text transcriptions and audio output **simultaneously** with sub-second latency. Wrapping this in a serial STT-to-thought loop destroys the real-time nature of the connection.
-  2. The **Mandatory Audio Rule** ([design-gemini-live-api-integration.md: Line 21](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md#L21-L28)) dictates that Gemini Live requires the audio modality to stay active.
+  1. As documented in [design-gemini-live-api-integration.md: Overview](docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md#L13-L20), Gemini Live processes raw audio and returns text transcriptions and audio output **simultaneously** with sub-second latency. Wrapping this in a serial STT-to-thought loop destroys the real-time nature of the connection.
+  2. The **Mandatory Audio Rule** ([design-gemini-live-api-integration.md: Line 21](docs/content/en/docs/advanced/architecture/design-gemini-live-api-integration.md#L21-L28)) dictates that Gemini Live requires the audio modality to stay active.
   3. **High Cost**: Continuous WebSocket connections with Gemini Live are extremely expensive.
 * **Realignment**: Since Kyo wants to utilize Deepgram STT, a custom LLM (e.g., local/custom endpoints), and a custom TTS (rather than Gemini's native voice), the integration should **focus entirely on implementing the classic `tts` mode** (Discord Audio -> STT -> LLM -> TTS -> Discord Audio) and leave the Gemini Live option deferred.
 

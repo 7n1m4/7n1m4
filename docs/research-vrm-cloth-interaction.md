@@ -18,7 +18,7 @@ This document memorializes the architectural evolution of the AIRI VRM pipeline,
 ### 1. The Fuzzy Matcher (Surgical Precision)
 **Problem**: Three.js renames scene nodes (e.g., `Body` becomes `Body_1`) while the GLTF JSON keeps the original name.
 **Solution**: We implemented a **Dual-Layer Fuzzy Matcher**. It normalizes names, strips numeric suffixes, and checks both `node.name` AND `mesh.name` to find the exact GLTF index.
-**File**: [HackerPanel.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/components/scenarios/settings/model-settings/vrm-vhack/HackerPanel.vue) -> `getGltfNodeIndex()`
+**File**: [HackerPanel.vue](packages/stage-ui/src/components/scenarios/settings/model-settings/vrm-vhack/HackerPanel.vue) -> `getGltfNodeIndex()`
 
 ### 2. Primitive-Aware Surgery (The "Gura Fix")
 **Problem**: In merged models (Gura, Dragon Girls), hiding a "Sleeve" in the UI often hides the whole "Body" in the JSON because they share a node.
@@ -31,7 +31,7 @@ This document memorializes the architectural evolution of the AIRI VRM pipeline,
 ### 3. Megazord Discovery (The "Dynamic Unlock")
 **Problem**: Many modern models have 50+ expressions that standard VRM loaders ignore.
 **Solution**: A discovery loop inside the core loader that scans every mesh for "lost" morph targets and registers them as official `VRMExpression` objects on-the-fly.
-**File**: [core.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui-three/src/composables/vrm/core.ts) -> `loadVrm()`
+**File**: [core.ts](packages/stage-ui-three/src/composables/vrm/core.ts) -> `loadVrm()`
 
 ---
 

@@ -56,12 +56,14 @@ The five groups below organize navigation. Historical “Phase” labels do not 
 
 The catalog contains 71 discoverable skills. Desktop chatbox and interaction pipelines retain their entry points and load focused references; reference files are not additional skills.
 
+> **Renderer scope (2026-11-25):** Flutter (`apps/flutter`) is the primary and sole active renderer on desktop and mobile; Godot is retired. Skills whose key paths are `apps/stage-tamagotchi` / `packages/stage-ui` document the **Vue behaviour reference** that Flutter is porting to full parity — they are not a second active renderer, and their procedures still apply to the reference app while it is live.
+
 ### 🟢 Phase 1: Core Plumbing & Infrastructure
 
 #### 1.1 `airi-app-entry-wiring`
 - **Target Domain**: Application Bootstrap, Window Management, DI Composition Root (`injeca`).
 - **Key Paths**: `apps/stage-tamagotchi/src/main/index.ts`, `apps/stage-tamagotchi/src/main/windows/`, `apps/stage-web/src/App.vue`.
-- **Content**: Service injection via `injeca`, main process window manager lifecycles (Control Strip, Stage, Chat, Caption, Widgets, Settings), renderer routing via Vite, and web app entry.
+- **Content**: Service injection via `injeca`, main process window manager lifecycles (Control Strip, Stage, Chat, Caption, Widgets, Settings), renderer routing via Vite, and web app entry. Applies to the Vue/Electrobun behaviour reference; the Flutter client (`apps/flutter/lib/app.dart`, `lib/navigation/`) is the shipping renderer.
 
 #### 1.2 `airi-ipc-eventa`
 - **Target Domain**: Typed eventa IPC/RPC Contracts & Cross-Window Messaging.
@@ -350,7 +352,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 ### 🟠 Phase 5: Feature-Dense UI Surfaces
 
 #### 5.1 `airi-desktop-chatbox`
-- **Target Domain**: The desktop (stage-tamagotchi Electron) chat window as a whole: the `pages/chat.vue` hub, its hamburger Workspace Routes and the 9 sub-views (Chat View, Director's Monitor, World Bible, Studio, Media Library, Eternal Thread, Event Ledger, Notes, Rehearsal), the desktop composer host, chat message bubbles, toolbar strips, context menus, journal chips, grounding panel, ACT/Director-note bubbles — plus a concise map of the three (+1) distinct chatboxes (desktop, web/pocket portrait `MobileWhisperSheet`, web/pocket landscape `Layouts/InteractiveArea`, and WhisperDock as input-dock-only).
+- **Target Domain**: The desktop (stage-tamagotchi, Electrobun) chat window as a whole — the behaviour reference for the Flutter chat surface: the `pages/chat.vue` hub, its hamburger Workspace Routes and the 9 sub-views (Chat View, Director's Monitor, World Bible, Studio, Media Library, Eternal Thread, Event Ledger, Notes, Rehearsal), the desktop composer host, chat message bubbles, toolbar strips, context menus, journal chips, grounding panel, ACT/Director-note bubbles — plus a concise map of the three (+1) distinct chatboxes (desktop, web portrait `MobileWhisperSheet`, web landscape `Layouts/InteractiveArea`, and WhisperDock as input-dock-only).
 - **Key Paths**: `apps/stage-tamagotchi/src/renderer/pages/chat.vue`, `apps/stage-tamagotchi/src/renderer/components/chat/` (`chat_messages.vue`, `chat_director.vue`, `chat_world.vue`, `chat_studio.vue`, `chat_media.vue`, `chat_lifetime.vue`, `chat_event_log.vue`, `chat_notes.vue`, `chat_rehearsal.vue`), `apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue`, `packages/stage-ui/src/components/scenarios/chat/` (`history.vue`, `assistant-item.vue`, `user-item.vue`, `response-part.vue`, `tool-call-block.vue`, `DirectorNoteBubble.vue`, `WhisperDock.vue`, `WhisperComposerBar.vue`, `components/action-menu/index.vue`), `packages/stage-layouts/src/components/Widgets/ChatArea.vue`.
 - **Content**: Task-selected references for workspace navigation, composer, and transcript rendering. Covers both route arrays, wrapper refs, draft/attachment lifecycle, implemented Stop, suggestions, action-menu wiring, grounding, journal previews, actor-free rendering, and streaming performance. Domain execution stays in peer skills.
 

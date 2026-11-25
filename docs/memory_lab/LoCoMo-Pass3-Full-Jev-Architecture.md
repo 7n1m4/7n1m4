@@ -39,13 +39,13 @@ The entire 150-question benchmark executed in **128.37 seconds (~2.1 minutes)**,
 ### A. Batched Cross-Encoder Candidate Reranking
 In Pass 1, candidate scoring was bottlenecked by a sequential loop of individual ONNX forward passes on CPU ($10 \text{ candidates} \times 150 \text{ questions} = 1,500 \text{ calls}$, taking >7 minutes).
 
-In Pass 3, [`jev-rerank.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/jev-rerank.mjs) takes advantage of Jev's multi-question API contract:
+In Pass 3, [`jev-rerank.mjs`](scripts/tests/locomo-benchmark/jev-rerank.mjs) takes advantage of Jev's multi-question API contract:
 * All 10 hybrid text candidates are bundled into a single request (`cand_0` through `cand_9`).
 * Jev evaluates the entire batch in a single forward pass (~350 ms).
 * Fused scoring ($70\%$ normalized Jev relevance $+ 30\%$ initial BM25/BGE retrieval score) boosted Evidence Recall@3 to **57.14%**, surfacing subtle STMM observations into the top 3 slots.
 
 ### B. Hierarchical Place Resolution Tree
-To prevent brittle overfitting or massive ungrounded prompt lists, [`place-resolver.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/place-resolver.mjs) executes a dynamic, structured question tree:
+To prevent brittle overfitting or massive ungrounded prompt lists, [`place-resolver.mjs`](scripts/tests/locomo-benchmark/place-resolver.mjs) executes a dynamic, structured question tree:
 
 ```text
                      [ Entity: {place} ]
@@ -72,7 +72,7 @@ To prevent brittle overfitting or massive ungrounded prompt lists, [`place-resol
 * **Zero Hardcoded Regexes**: The Stamford/Connecticut cluster (Questions 6 & 7) scored $1.0\text{ F1}$ organically via graph attribute traversal.
 
 ### C. In-Memory Entity Ledger Traversal
-The [`entity-ledger.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/entity-ledger.mjs) graph tracks entities, claims, proof bundles, and temporal anchors. Multi-hop questions like *"What are the names of James's dogs?"* and *"How many pets does James have?"* were resolved by joining Session 1 (`Daisy`, `Max`) and Session 5 (`Ned`) directly into graph proof sets, achieving **30.05% F1** on C1.
+The [`entity-ledger.mjs`](scripts/tests/locomo-benchmark/entity-ledger.mjs) graph tracks entities, claims, proof bundles, and temporal anchors. Multi-hop questions like *"What are the names of James's dogs?"* and *"How many pets does James have?"* were resolved by joining Session 1 (`Daisy`, `Max`) and Session 5 (`Ned`) directly into graph proof sets, achieving **30.05% F1** on C1.
 
 ---
 

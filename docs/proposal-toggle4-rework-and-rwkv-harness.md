@@ -27,19 +27,19 @@ This approach has major flaws:
 To ensure zero wheel-spinning during research, here are the exact authoritative source paths for all relevant models, state handlers, workers, and repositories in AIRI:
 
 ### 2.1 CLIP & Vision Text Encoders
-* **CLIP Model Endpoint & Tokenizer**: [`packages/stage-ui/src/utils/flowmdm/clipEncoder.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/utils/flowmdm/clipEncoder.ts) (Loads `Xenova/clip-vit-base-patch32` via `@huggingface/transformers`, generating 512-dimensional text embeddings in `getClipEmbedding()`).
-* **Local Vision Inference Adapter**: [`packages/stage-ui/src/libs/inference/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/index.ts) (Local vision models `DEFAULT_LOCAL_VISION_MODEL`).
+* **CLIP Model Endpoint & Tokenizer**: [`packages/stage-ui/src/utils/flowmdm/clipEncoder.ts`](packages/stage-ui/src/utils/flowmdm/clipEncoder.ts) (Loads `Xenova/clip-vit-base-patch32` via `@huggingface/transformers`, generating 512-dimensional text embeddings in `getClipEmbedding()`).
+* **Local Vision Inference Adapter**: [`packages/stage-ui/src/libs/inference/index.ts`](packages/stage-ui/src/libs/inference/index.ts) (Local vision models `DEFAULT_LOCAL_VISION_MODEL`).
 
 ### 2.2 WebGPU RWKV Subsystem
-* **RWKV WebGPU Worker**: [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/web-rwkv/worker.ts) (Loads `@cryscan/web-rwkv-wasm`, executes `Session.from_reader()`, and manages `session.state_len()`).
-* **RWKV Stream Adapter**: [`packages/stage-ui/src/libs/inference/adapters/web-rwkv.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/adapters/web-rwkv.ts) (Eventa streaming contract handler).
-* **RWKV Store & Formatting**: [`packages/stage-ui/src/stores/providers/web-rwkv/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/web-rwkv/index.ts) & [`format.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/web-rwkv/format.ts) (`rwkv_vocab_v20230424.json`).
-* **RWKV UI Page**: [`packages/stage-pages/src/pages/settings/providers/chat/web-rwkv.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/chat/web-rwkv.vue).
+* **RWKV WebGPU Worker**: [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](packages/stage-ui/src/workers/web-rwkv/worker.ts) (Loads `@cryscan/web-rwkv-wasm`, executes `Session.from_reader()`, and manages `session.state_len()`).
+* **RWKV Stream Adapter**: [`packages/stage-ui/src/libs/inference/adapters/web-rwkv.ts`](packages/stage-ui/src/libs/inference/adapters/web-rwkv.ts) (Eventa streaming contract handler).
+* **RWKV Store & Formatting**: [`packages/stage-ui/src/stores/providers/web-rwkv/index.ts`](packages/stage-ui/src/stores/providers/web-rwkv/index.ts) & [`format.ts`](packages/stage-ui/src/stores/providers/web-rwkv/format.ts) (`rwkv_vocab_v20230424.json`).
+* **RWKV UI Page**: [`packages/stage-pages/src/pages/settings/providers/chat/web-rwkv.vue`](packages/stage-pages/src/pages/settings/providers/chat/web-rwkv.vue).
 
 ### 2.3 Grounding & Memory Repositories
-* **Toggle 4 Extractor**: [`packages/stage-ui/src/stores/chat/recent-topics.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/recent-topics.ts)
-* **Grounding UI Popover**: [`packages/stage-ui/src/components/scenarios/chat/ChatGroundingPopover.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/ChatGroundingPopover.vue)
-* **Echo Chips Repository**: [`packages/stage-ui/src/database/repos/echo-chips.repo.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/database/repos/echo-chips.repo.ts)
+* **Toggle 4 Extractor**: [`packages/stage-ui/src/stores/chat/recent-topics.ts`](packages/stage-ui/src/stores/chat/recent-topics.ts)
+* **Grounding UI Popover**: [`packages/stage-ui/src/components/scenarios/chat/ChatGroundingPopover.vue`](packages/stage-ui/src/components/scenarios/chat/ChatGroundingPopover.vue)
+* **Echo Chips Repository**: [`packages/stage-ui/src/database/repos/echo-chips.repo.ts`](packages/stage-ui/src/database/repos/echo-chips.repo.ts)
 
 ---
 

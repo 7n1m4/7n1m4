@@ -138,13 +138,13 @@ To integrate this system cleanly into AIRI without disrupting existing chat and 
 * **Smart Caching**: If the model decides to call `generate_vrma` for `"jumping_jacks"` in a future turn, the tool execution returns immediately by serving the cached buffer, avoiding redundant API round-trips.
 
 ### Option B: The Grounding Popover & Dual-LLM Pipeline (Act Token Injection)
-* **Concept**: Add a toggle for "Dynamic VRMA Generation" in the **Grounding Options Popover** (similar to the patterns in [proposal-dynamic-memory-rag-injection.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-dynamic-memory-rag-injection.md)).
+* **Concept**: Add a toggle for "Dynamic VRMA Generation" in the **Grounding Options Popover** (similar to the patterns in [proposal-dynamic-memory-rag-injection.md](docs/proposal-dynamic-memory-rag-injection.md)).
 * **Flow**:
   1. A fast classifier LLM or regex rule filters the user's incoming message to see if physical motion is requested.
   2. If detected, the system branches off:
      * A secondary model (like the text-to-vrma spec engine) designs and builds the `.vrma` binary immediately.
      * The compiled animation is played on the avatar.
-     * The character's system context is injected with a transient prompt (following [proposal-introspective-context-injection.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-introspective-context-injection.md)): *"You have just started doing {jumping jacks} because the user asked you to. React to this action in your response."*
+     * The character's system context is injected with a transient prompt (following [proposal-introspective-context-injection.md](docs/proposal-introspective-context-injection.md)): *"You have just started doing {jumping jacks} because the user asked you to. React to this action in your response."*
   3. The character LLM generates its text response matching this state.
 * **Pros**: Works with all models (no tool-calling capability needed), and routes the animation before text generation finishes.
 * **Cons**: Higher API cost (dual call) and increased latency on detection turns.

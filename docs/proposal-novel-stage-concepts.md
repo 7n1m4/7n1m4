@@ -27,7 +27,7 @@ Currently, the **Stage** (running Live2D/VRM) and the **Chatbox** exist as detac
 * **Technical Considerations:**
   * **Process Bridging:** The avatar is rendered in `apps/stage-tamagotchi/src/renderer/pages/index.vue` (the main Stage page) using WebGL/Canvas loops. To render it inside `apps/stage-tamagotchi/src/renderer/pages/chat.vue` (the Chat page), we must either mount a duplicate Three.js/Live2D context inside the chat process (which increases GPU/memory usage) or pipe the frames via an offscreen canvas stream.
   * **Camera Coordinates:** Tight camera cropping to focus on the face in a wide landscape profile.
-* **Component Path:** [chat.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/chat.vue) (view parent) / `chat_messages.vue` (history renderer).
+* **Component Path:** [chat.vue](apps/stage-tamagotchi/src/renderer/pages/chat.vue) (view parent) / `chat_messages.vue` (history renderer).
 
 ---
 
@@ -36,21 +36,21 @@ Currently, the **Stage** (running Live2D/VRM) and the **Chatbox** exist as detac
 * **Technical Considerations:**
   * **Camera Ratio:** Much easier than Concept 1, as standard portrait ratios (tall card) fit standard model ratios perfectly without extreme cropping.
   * **Process Restructuring:** Still requires bringing the rendering context (Three.js/Live2D loader and stores) inside the Chat window process or using a unified single-window layout.
-* **Component Path:** [chat.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/chat.vue) (implementing the panel adjacent to `interactiveAreaRef`).
+* **Component Path:** [chat.vue](apps/stage-tamagotchi/src/renderer/pages/chat.vue) (implementing the panel adjacent to `interactiveAreaRef`).
 
 ---
 
 ### Concept 3: Magic Wand Suggestions in Stage Whisper Dock
 * **Mechanics:** Adding a Magic Wand button directly inside the Stage's Whisper Dock (inline text input). Clicking it displays suggestion titles as floating buttons (pills) on the Stage. The suggestions auto-play in sequence, highlighting each pill and feeding into the Caption Window, and clicking a pill applies it to the input.
 * **Technical Considerations:**
-  * **UI Overlay:** WhisperDock is implemented in [WhisperDock.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue). We can add the pill buttons and wand toggle directly as Vue overlays in this component.
+  * **UI Overlay:** WhisperDock is implemented in [WhisperDock.vue](packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue). We can add the pill buttons and wand toggle directly as Vue overlays in this component.
   * **Direct Store Hookup:** We can import and watch `datingSimStore` (`packages/stage-ui/src/stores/dating-sim.ts` -> `choices`) to fetch the active choices without needing any cross-window IPC bridging for the data itself.
-  * **Caption Pipeline:** Triggering the suggestions will leverage the same `'airi-caption-overlay'` broadcast system we just implemented, updating [caption.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/caption.vue) in real-time.
+  * **Caption Pipeline:** Triggering the suggestions will leverage the same `'airi-caption-overlay'` broadcast system we just implemented, updating [caption.vue](apps/stage-tamagotchi/src/renderer/pages/caption.vue) in real-time.
   * **TTS Autoplay:** Sequential playback uses the same `speechStore.speech` engine built for `ProducerChoiceBubble.vue`.
 * **Component Paths:**
-  * UI Input: [WhisperDock.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue)
-  * Data/Choices Store: [dating-sim.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/dating-sim.ts)
-  * Captions Overlay: [caption.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/caption.vue)
+  * UI Input: [WhisperDock.vue](packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue)
+  * Data/Choices Store: [dating-sim.ts](packages/stage-ui/src/stores/dating-sim.ts)
+  * Captions Overlay: [caption.vue](apps/stage-tamagotchi/src/renderer/pages/caption.vue)
 
 ---
 
@@ -68,7 +68,7 @@ The Stage window (rendering Live2D/VRM) occupies significant screen space. The e
 
 ## Component Path
 
-- **Button group (drag handle + eye hide):** [actor.vue:630-656](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/actor.vue#L630-L656)
+- **Button group (drag handle + eye hide):** [actor.vue:630-656](apps/stage-tamagotchi/src/renderer/pages/actor.vue#L630-L656)
 - **Stage visibility store:** `useSettingsControlStrip` (`packages/stage-ui/src/stores/settings/control-strip.ts`)
 - **Window positioning store:** `usePositioningStore` (`packages/stage-ui/src/stores/settings/positioning.ts`)
 - **Electron IPC (window resize/bounds):** `electronStartDraggingWindow` (shared eventa contract)

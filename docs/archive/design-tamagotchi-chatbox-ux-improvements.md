@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Chat Experience UX Improvement Ideas (Finalized)
 
 ## Phase 1: Immediate UX Wins

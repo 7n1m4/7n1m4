@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Handoff Document: Live2D DSL Engine Phase 2 & Attention Ecology Dashboard
 
 **Commit Hash:** `77226abd8` (`feat(live2d-runtime): implement MotionEnable/MotionDisable toggle gating & intimacy store harness test (52/52 passed)`)

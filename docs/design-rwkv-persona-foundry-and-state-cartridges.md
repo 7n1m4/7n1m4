@@ -2,17 +2,17 @@
 
 **Status:** Proposed & Phased Blueprint Active
 **Authoritative Subsystems:**
-- Cleanroom Harness: [`scripts/tests/rwkv-harness/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/rwkv-harness/)
-- WebGPU Worker: [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/web-rwkv/worker.ts)
-- Card Creation Hub: [`packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue)
-- Card Schema & Store: [`packages/stage-ui/src/stores/modules/airi-card/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/airi-card/)
-- Prefab Model Constants: [`packages/stage-ui/src/libs/inference/constants.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/constants.ts)
+- Cleanroom Harness: [`scripts/tests/rwkv-harness/`](scripts/tests/rwkv-harness/)
+- WebGPU Worker: [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](packages/stage-ui/src/workers/web-rwkv/worker.ts)
+- Card Creation Hub: [`packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue`](packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue)
+- Card Schema & Store: [`packages/stage-ui/src/stores/modules/airi-card/`](packages/stage-ui/src/stores/modules/airi-card/)
+- Prefab Model Constants: [`packages/stage-ui/src/libs/inference/constants.ts`](packages/stage-ui/src/libs/inference/constants.ts)
 
 **Related Architecture Documents:**
-- [`docs/proposal-built-in-llm-webgpu.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-built-in-llm-webgpu.md) — Built-in WebGPU RWKV architecture & Eventa contracts
-- [`docs/design-web-rwkv-quantization-architecture.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/design-web-rwkv-quantization-architecture.md) — The `.prefab` offline CBOR quantization pipeline
-- [`docs/project-rwkv-cleanroom-harness-plan.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/project-rwkv-cleanroom-harness-plan.md) — RWKV benchmark phases & empirical test matrices
-- [`docs/content/en/docs/chronicles/roadmap.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/content/en/docs/chronicles/roadmap.md) — System Layer §2 (Local Runtimes & Desktop Automation)
+- [`docs/proposal-built-in-llm-webgpu.md`](docs/proposal-built-in-llm-webgpu.md) — Built-in WebGPU RWKV architecture & Eventa contracts
+- [`docs/design-web-rwkv-quantization-architecture.md`](docs/design-web-rwkv-quantization-architecture.md) — The `.prefab` offline CBOR quantization pipeline
+- [`docs/project-rwkv-cleanroom-harness-plan.md`](docs/project-rwkv-cleanroom-harness-plan.md) — RWKV benchmark phases & empirical test matrices
+- [`docs/content/en/docs/chronicles/roadmap.md`](docs/content/en/docs/chronicles/roadmap.md) — System Layer §2 (Local Runtimes & Desktop Automation)
 
 ---
 
@@ -42,7 +42,7 @@ A **Character State Cartridge** (often a 10–15 MB float buffer) acts as a **"C
 
 ## 2. The Empirical Zero-Bloat Invariants: Reality Audit (`rwkv.json` vs `nan0.json`)
 
-Comparing the real-world operational card configuration in [`personal_airi/rwkv.json`](file:///Users/richardpinedo/Projects.nosync/airi/personal_airi/rwkv.json) against a heavy LLM card like [`personal_airi/nan0.json`](file:///Users/richardpinedo/Projects.nosync/airi/personal_airi/nan0.json) exposes the exact empirical configuration boundary required for small local RWKV models to remain punchy, coherent, and drift-free.
+Comparing the real-world operational card configuration in [`personal_airi/rwkv.json`](personal_airi/rwkv.json) against a heavy LLM card like [`personal_airi/nan0.json`](personal_airi/nan0.json) exposes the exact empirical configuration boundary required for small local RWKV models to remain punchy, coherent, and drift-free.
 
 ### 2.1 The Seven Real-World Configuration Invariants
 
@@ -126,7 +126,7 @@ This guarantees TTS audio output never stutters or reads formatting brackets out
 ## 3. Product Vision: The 4th Creation Mode in Settings
 
 ### 3.1 UI Entry Point (`CreateModeSelectorDialog.vue`)
-Currently, [`CreateModeSelectorDialog.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue) offers three creation paths:
+Currently, [`CreateModeSelectorDialog.vue`](packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue) offers three creation paths:
 1. **Companion Wizard (Recommended)** — Guided 18-step onboarding flow.
 2. **Guided AI Creator (AnimaDex)** — Synthesis from the 36k character catalog.
 3. **Advanced Manual** — Raw form-based field entry.
@@ -264,7 +264,7 @@ interface AiriRwkvExtension {
 ```
 
 #### CardEditorForm Validation Exemption
-In [`CardEditorForm.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CardEditorForm.vue), cards possessing `extensions.airi.rwkv.stateCartridgeId` or utilizing `web-rwkv` are explicitly exempt from the legacy requirement that `systemPrompt` and `postHistoryInstructions` must be non-empty strings. For state cartridge cards, empty system prompts are first-class and required to prevent persona dilution.
+In [`CardEditorForm.vue`](packages/stage-pages/src/pages/settings/airi-card/components/CardEditorForm.vue), cards possessing `extensions.airi.rwkv.stateCartridgeId` or utilizing `web-rwkv` are explicitly exempt from the legacy requirement that `systemPrompt` and `postHistoryInstructions` must be non-empty strings. For state cartridge cards, empty system prompts are first-class and required to prevent persona dilution.
 
 ---
 
@@ -501,7 +501,7 @@ graph TD
 ```
 
 - **Phase 1 (UI-First Persona Foundry Flow)**:
-  - Add the 4th creation option in [`CreateModeSelectorDialog.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue):
+  - Add the 4th creation option in [`CreateModeSelectorDialog.vue`](packages/stage-pages/src/pages/settings/airi-card/components/CreateModeSelectorDialog.vue):
     - Title: **Persona Foundry (RWKV State)**
     - Description: *"Distill an existing companion's long chat history into an ultra-fast, zero-prompt recurrent state cartridge ($h_0$), or forge from curated archetype presets."*
   - Build `RwkvPersonaFoundryWizard.vue` supporting:

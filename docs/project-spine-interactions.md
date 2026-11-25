@@ -7,7 +7,7 @@ This document details the research findings, requirements, and implementation pl
 ## 1. Context & Research Summary
 
 ### A. Core Behavior in Trickcal Apostle Viewer
-Our reverse-engineering of the Apostle Viewer client bundle ([index-Og6eHUgx.js](file:///Users/richardpinedo/Projects.nosync/airi/personal_airi/butter_bee_outfit/project_trickal_dump/Trickcal Apostle Viewer_files/index-Og6eHUgx.js)) revealed that interactive bone stretching is implemented using a custom event loop overlay:
+Our reverse-engineering of the Apostle Viewer client bundle ([index-Og6eHUgx.js](personal_airi/butter_bee_outfit/project_trickal_dump/Trickcal Apostle Viewer_files/index-Og6eHUgx.js)) revealed that interactive bone stretching is implemented using a custom event loop overlay:
 1. **Event Capture:** Registers pointer down, move, and up events directly on the WebGL canvas.
 2. **Axis Projection:** Converts pointer positions into relative local-axis coordinates of target bones.
 3. **Elliptical Constraints:** Restricts the maximum drag displacement based on a custom ellipse equation (e.g. forward/backward stretching limits and perpendicular ratio).
@@ -16,8 +16,8 @@ Our reverse-engineering of the Apostle Viewer client bundle ([index-Og6eHUgx.js]
 
 ### B. Existing Spine Architecture in AIRI
 AIRI modularizes model rendering into formats under separate packages. The relevant Spine rendering components are:
-* **Orchestrator:** [Spine.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-spine/src/components/scenes/Spine.vue) (receives `interactionMode`)
-* **Renderer Canvas & Model:** [Model.vue (Spine)](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-spine/src/components/scenes/spine/Model.vue)
+* **Orchestrator:** [Spine.vue](packages/stage-ui-spine/src/components/scenes/Spine.vue) (receives `interactionMode`)
+* **Renderer Canvas & Model:** [Model.vue (Spine)](packages/stage-ui-spine/src/components/scenes/spine/Model.vue)
 
 Currently, the Spine package only supports basic **tap interactions** parsed from `model0.json` (running animation `tap_{bone_name}` and playing `.wav` files when a hit zone is clicked). It has **no support** for coordinate tracking, coordinate deforming, or physics springs.
 
@@ -80,7 +80,7 @@ To keep AIRI's Spine engine completely generic (decoupled from the Trickcal rost
 
 ## 4. Implementation Design Plan
 
-### Step 1: Extend [Model.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-spine/src/components/scenes/spine/Model.vue) State
+### Step 1: Extend [Model.vue](packages/stage-ui-spine/src/components/scenes/spine/Model.vue) State
 Create a reactive list of drag trackers derived from the loaded `model0.json` config:
 ```typescript
 interface PhysicsDragTracker {
@@ -95,7 +95,7 @@ interface PhysicsDragTracker {
 ```
 
 ### Step 2: Handle Pointer Drag Coordinates
-Expand the canvas listeners in [Model.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-spine/src/components/scenes/spine/Model.vue) to capture `pointerdown`, `pointermove`, and `pointerup` events when `interactionMode === 'tactile'`. Translate screen coordinates to local bone spaces.
+Expand the canvas listeners in [Model.vue](packages/stage-ui-spine/src/components/scenes/spine/Model.vue) to capture `pointerdown`, `pointermove`, and `pointerup` events when `interactionMode === 'tactile'`. Translate screen coordinates to local bone spaces.
 
 ### Step 3: Apply Bone Offsets in the Render Loop
 Modify the `update` callback of `SpineCanvas` in `Model.vue`:

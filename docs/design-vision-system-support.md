@@ -12,16 +12,16 @@ To integrate a local WebGPU vision provider without introducing regressions or d
 
 ### 1. Unified WebGPU Scheduling & Queuing
 WebGPU workloads (such as TTS speech generation and STT transcription) are single-threaded per context and prone to driver loss if executed concurrently. All local models route through a queue.
-- **File**: [coordinator.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/coordinator.ts)
+- **File**: [coordinator.ts](packages/stage-ui/src/libs/inference/coordinator.ts)
   - *Change*: Add VRAM estimates for vision models (`moondream2` ~700MB, `blip-1` ~250MB, `blip-2` ~1.5GB+) to `MODEL_VRAM_ESTIMATES`.
-- **File**: [gpu-executor.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/gpu-executor.ts)
+- **File**: [gpu-executor.ts](packages/stage-ui/src/libs/inference/gpu-executor.ts)
   - *Change*: Add task priorities (`MOONDREAM_PROCESS: 20`, `MOONDREAM_LOAD: 10`, `BLIP_PROCESS: 20`, `BLIP_LOAD: 10`) to the `GPU_PRIORITY` registry to ensure vision processing yields to active speech (TTS).
-- **File**: [constants.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/constants.ts)
+- **File**: [constants.ts](packages/stage-ui/src/libs/inference/constants.ts)
   - *Change*: Add model IDs and worker execution timeouts (`LOCAL_VLM_LOAD: 300_000`, `LOCAL_VLM_PROCESS: 120_000`) to `MODEL_IDS`, `MODEL_NAMES`, and `TIMEOUTS`.
 
 ### 2. IPC & Eventa Contract
 AIRI uses `@moeru/eventa` to coordinate messages between the main thread and background Web Workers.
-- **File**: [contract.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/contract.ts)
+- **File**: [contract.ts](packages/stage-ui/src/libs/inference/contract.ts)
   - *Change*: Define the events `moondreamLoadEvent`, `moondreamProcessEvent` (unary image processor + optional prompt), and `moondreamUnloadEvent`.
 - **Directory**: `packages/stage-ui/src/workers/`
   - *Change*: `moondream/worker.ts` importing `Moondream1ForConditionalGeneration` from `@huggingface/transformers` to run the model pipelines with `q8` vision encoder and `q4` decoder.
@@ -29,7 +29,7 @@ AIRI uses `@moeru/eventa` to coordinate messages between the main thread and bac
 ### 3. Provider Settings & Caching
 - **Files**: `packages/stage-ui/src/stores/providers/registry/local-engines.ts` and `stores/providers/moondream/index.ts`
   - *Change*: Register `'moondream-local'` with category `'vision'` and task `'chat'` (OpenAI `/chat/completions` interception), and `'blip-local'` (Waifu Diffusion Tagger).
-- **File**: [ModelCacheManager.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue)
+- **File**: [ModelCacheManager.vue](packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue)
   - *Change*: Add known vision model Hugging Face repository IDs (`Xenova/moondream2`) to the `knownModels` array.
 
 ---
@@ -78,8 +78,8 @@ Rather than attempting to build the entire system end-to-end (connecting to char
 
 ### Phase 2: The Vision Settings Playground
 1. Create custom configuration and testing playground components:
-   - [moondream-local.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/chat/moondream-local.vue) for Moondream2 VLM (image upload, custom question prompt, latency metrics).
-   - [blip-local.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/chat/blip-local.vue) for Waifu Diffusion Tagger (Danbooru tag extraction, threshold slider).
+   - [moondream-local.vue](packages/stage-pages/src/pages/settings/providers/chat/moondream-local.vue) for Moondream2 VLM (image upload, custom question prompt, latency metrics).
+   - [blip-local.vue](packages/stage-pages/src/pages/settings/providers/chat/blip-local.vue) for Waifu Diffusion Tagger (Danbooru tag extraction, threshold slider).
 2. Inside this page, build a **Vision Playground Widget**:
    - **Model Selector**: Dropdown to toggle between BLIP-1, BLIP-2, or custom ONNX paths.
    - **Upload/Drop Zone**: Drag-and-drop or file upload block to load test images.

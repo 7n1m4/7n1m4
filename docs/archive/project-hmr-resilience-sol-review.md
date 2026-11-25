@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 ## Verdict
 
 Conditional approval. The definitive architecture incorporates most first-pass corrections and is directionally sound, but I would **not execute Phase 0 exactly as written**. Four issues should be resolved first: multi-store HMR boundaries, accept/teardown sequencing, incomplete dependency coverage, and incompatible singleton-version handling.

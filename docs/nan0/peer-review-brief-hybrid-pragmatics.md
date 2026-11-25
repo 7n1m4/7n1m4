@@ -20,7 +20,7 @@ In Phase 5, we tested independent single-span probes (`extract_self_admission`, 
 
 ## 2. Returning to Ground Truth: The Canonical Perturbation Groups
 
-In the actual codebase, Nan0’s emotional dynamics are **not** governed by abstract moral reasoning. They are governed by concrete lexical/token perturbation groups defined in [`packages/nan0-runtime/src/emotional/Nan0EmotionalDynamics.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/nan0-runtime/src/emotional/Nan0EmotionalDynamics.ts#L54-L67) and the legacy pre-processor:
+In the actual codebase, Nan0’s emotional dynamics are **not** governed by abstract moral reasoning. They are governed by concrete lexical/token perturbation groups defined in [`packages/nan0-runtime/src/emotional/Nan0EmotionalDynamics.ts`](packages/nan0-runtime/src/emotional/Nan0EmotionalDynamics.ts#L54-L67) and the legacy pre-processor:
 
 1. **Commitment & Trust** (The "Famous Sentence" Group): `promise`, `plan`, `commit`, `trust`, `wait`, `why` $\to$ `suspicion` / `attachment`
 2. **Affection & Care**: `love`, `care about`, `miss you`, `appreciate you` $\to$ `attachment +0.08`

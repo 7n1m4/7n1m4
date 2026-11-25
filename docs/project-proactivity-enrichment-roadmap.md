@@ -115,13 +115,13 @@ To provide transparency and "peace of mind," each sensor will feature a circular
 
 | Component | Target File | Action |
 | :--- | :--- | :--- |
-| **Shared Contracts** | [sensors.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-shared/src/sensors.ts) | Add `SystemLoadAverages` and `ActiveWindowHistory` interfaces. |
-| **Electron Main** | [sensors/index.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/apps/stage-tamagotchi/src/main/services/sensors/index.ts) | Implement `sensorsGetSystemLoad` and logic for tracking active window history. |
-| **Proactivity Store** | [proactivity.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/proactivity.ts) | Implement hourly counters (TTS/STT/Chat), milestone tracking, and the prompt injection formatter. |
-| **TTS Counting** | [speech.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/modules/speech.ts) | Increment `ttsCount` within the `speech` action. |
-| **STT Counting** | [hearing.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/modules/hearing.ts) | Increment `sttCount` within the `transcription` action. |
-| **Chat Counting** | [chat.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/chat.ts) | Increment `chatCount` within `performSend`. |
-| **UI Settings** | [CardCreationDialog.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-pages/src/pages/settings/airi-card/components/CardCreationDialog.vue) | Refine labels/sub-text and add Circular `(?)` tooltips with sample payloads. |
+| **Shared Contracts** | [sensors.ts](packages/stage-shared/src/sensors.ts) | Add `SystemLoadAverages` and `ActiveWindowHistory` interfaces. |
+| **Electron Main** | [sensors/index.ts](apps/stage-tamagotchi/src/main/services/sensors/index.ts) | Implement `sensorsGetSystemLoad` and logic for tracking active window history. |
+| **Proactivity Store** | [proactivity.ts](packages/stage-ui/src/stores/proactivity.ts) | Implement hourly counters (TTS/STT/Chat), milestone tracking, and the prompt injection formatter. |
+| **TTS Counting** | [speech.ts](packages/stage-ui/src/stores/modules/speech.ts) | Increment `ttsCount` within the `speech` action. |
+| **STT Counting** | [hearing.ts](packages/stage-ui/src/stores/modules/hearing.ts) | Increment `sttCount` within the `transcription` action. |
+| **Chat Counting** | [chat.ts](packages/stage-ui/src/stores/chat.ts) | Increment `chatCount` within `performSend`. |
+| **UI Settings** | [CardCreationDialog.vue](packages/stage-pages/src/pages/settings/airi-card/components/CardCreationDialog.vue) | Refine labels/sub-text and add Circular `(?)` tooltips with sample payloads. |
 
 ## Verification Plan
 

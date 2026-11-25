@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # AIRI Onboarding V3 Proposal: Intent-Driven Hero Bundles, Persona-First Flow & Unified Subsystems
 
 > [!NOTE]
@@ -325,10 +327,10 @@ To provide a complete vision of AIRI's modular architecture, **all planned capab
 ## 7. Physical Vessel (Step 3): DiscoverCarousel Overhaul
 
 ### 5.1 The Friction in Current Vessel Selection
-In current V2 ([`step-5-vessel.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-5-vessel.vue)), clicking "Explore" opens an external links grid to third-party marketplaces (Hololive MMD, NicoNico, Reverse: 1999, etc.). Users are kicked out of the flow to download files manually.
+In current V2 ([`step-5-vessel.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-5-vessel.vue)), clicking "Explore" opens an external links grid to third-party marketplaces (Hololive MMD, NicoNico, Reverse: 1999, etc.). Users are kicked out of the flow to download files manually.
 
 ### 5.2 The Solution: Spotlight Coverflow Carousel
-Integrate the 3D coverflow carousel from [`packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue) as the **primary default view**:
+Integrate the 3D coverflow carousel from [`packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue`](packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue) as the **primary default view**:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -394,14 +396,14 @@ Replace the artificial "Everything is 100% prepared" claim with honest, multi-st
 
 | Layer / Component | File Location | Responsibility |
 | :--- | :--- | :--- |
-| **Wizard Orchestrator** | [`packages/stage-ui/.../onboarding/v2/onboarding-v2.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/onboarding-v2.vue) | Dynamic step rail computation based on active draft archetype/capabilities |
-| **Draft Store** | [`packages/stage-ui/.../onboarding/v2/draft-store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/draft-store.ts) | State management for `selectedHeroBundle`, `enabledCapabilities`, and step data |
-| **Step 0 Welcome** | [`.../onboarding/v2/steps/step-0-welcome.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-0-welcome.vue) | Hardware check + Phase 1 Language Selector mounting |
+| **Wizard Orchestrator** | [`packages/stage-ui/.../onboarding/v2/onboarding-v2.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/onboarding-v2.vue) | Dynamic step rail computation based on active draft archetype/capabilities |
+| **Draft Store** | [`packages/stage-ui/.../onboarding/v2/draft-store.ts`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/draft-store.ts) | State management for `selectedHeroBundle`, `enabledCapabilities`, and step data |
+| **Step 0 Welcome** | [`.../onboarding/v2/steps/step-0-welcome.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-0-welcome.vue) | Hardware check + Phase 1 Language Selector mounting |
 | **Step 1 Experience Picker** | `.../onboarding/v2/steps/step-1-experience.vue` (New) | 4 Hero Cards + Customizer toggles (active & coming-soon specs) |
-| **Step 2 Persona** | [`.../onboarding/v2/steps/step-4-persona.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-4-persona.vue) | Promoted to Step 2: Starter characters, anime catalog, card imports |
-| **Step 3 Vessel** | [`.../onboarding/v2/steps/step-5-vessel.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-5-vessel.vue) | Promoted to Step 3: DiscoverCarousel 3D coverflow starters + dropzone |
-| **Discover Carousel** | [`packages/stage-pages/.../models/components/DiscoverCarousel.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue) | Reusable coverflow component powering Step 3 avatar selection |
-| **Step Finale** | [`.../onboarding/v2/steps/step-7-calibration.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-7-calibration.vue) | Readiness honesty badges + real first live greeting call |
+| **Step 2 Persona** | [`.../onboarding/v2/steps/step-4-persona.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-4-persona.vue) | Promoted to Step 2: Starter characters, anime catalog, card imports |
+| **Step 3 Vessel** | [`.../onboarding/v2/steps/step-5-vessel.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-5-vessel.vue) | Promoted to Step 3: DiscoverCarousel 3D coverflow starters + dropzone |
+| **Discover Carousel** | [`packages/stage-pages/.../models/components/DiscoverCarousel.vue`](packages/stage-pages/src/pages/settings/models/components/DiscoverCarousel.vue) | Reusable coverflow component powering Step 3 avatar selection |
+| **Step Finale** | [`.../onboarding/v2/steps/step-7-calibration.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/steps/step-7-calibration.vue) | Readiness honesty badges + real first live greeting call |
 
 ---
 

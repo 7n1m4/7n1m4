@@ -1,8 +1,8 @@
 # Technical Documentation: BYOS Cloud Sync Audit Recon Tool (`project-audit-cloudsync.md`)
 
 **Status:** Confirmed / Operational
-**Script Location:** [`scripts/audit_backup_sync.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/audit_backup_sync.mjs)
-**Reference Specification:** [`docs/data-catalog.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/data-catalog.md)
+**Script Location:** [`scripts/audit_backup_sync.mjs`](scripts/audit_backup_sync.mjs)
+**Reference Specification:** [`docs/data-catalog.md`](docs/data-catalog.md)
 
 ---
 
@@ -126,7 +126,7 @@ Extracting full local IndexedDB & Localforage data catalog...
 
 ## 📝 Documenting Gaps for Collaborative Resolution
 
-This document serves as the living record for sync shortcomings flagged by the auditor. When new storage stores are added to [`docs/data-catalog.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/data-catalog.md), corresponding audit rules should be updated in `scripts/audit_backup_sync.mjs`.
+This document serves as the living record for sync shortcomings flagged by the auditor. When new storage stores are added to [`docs/data-catalog.md`](docs/data-catalog.md), corresponding audit rules should be updated in `scripts/audit_backup_sync.mjs`.
 
 ## Relevant Skills
 

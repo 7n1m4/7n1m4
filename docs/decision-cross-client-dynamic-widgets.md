@@ -1,7 +1,7 @@
 # Cross-client dynamic widgets: keep two systems
 
 - **Status:** accepted (2026-11-25; bead `airi-osn`)
-- **Scope:** dynamic generated widgets in Flutter, Godot, and the Vue reference app. Art/image-journal work stays separately tracked.
+- **Scope:** dynamic generated widgets in Flutter (the sole active renderer) and the Vue reference app. Art/image-journal work stays separately tracked. (Amended 2026-11-25: the Godot client is retired, so it has no widget surface at all.)
 
 ## Decision
 
@@ -15,7 +15,7 @@ A single protocol would force one of two bad outcomes: flatten the Vue tool to a
 
 ## Consequences
 
-- The feature-parity checklist records the difference explicitly rather than claiming parity: Flutter has inline A2UI surfaces; Vue has desktop sandbox windows; Godot has no equivalent.
+- The feature-parity checklist records the difference explicitly rather than claiming parity: Flutter has inline A2UI surfaces; Vue has desktop sandbox windows. Neither is a gap — they are different capabilities, and the retired Godot client had no equivalent.
 - A2UI support is not implied by `chat.send` support. Only `genUi: true` opts a turn into the instruction; Vue clients remain plain-text unless they implement their own A2UI renderer.
 - Keep generated component execution, external URLs, and arbitrary component names out of the Flutter catalog. Keep the Vue tool's Zod validation and sandbox boundary intact.
 - If a future product requires one shared widget language, open a new cross-client contract effort. Its acceptance must enumerate every lifecycle and capability lost by the migrated client; this decision is not a blocker to that future work, but no such migration is authorized here.

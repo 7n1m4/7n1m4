@@ -42,23 +42,13 @@ background bindings), `cognition`, `heartbeats`, `dreamState`,
 - **Live snapshot**: PNG export composites a live VRM/Live2D preview into a
   fixed framed canvas.
 
-| Component | Path | Description |
-| :--- | :--- | :--- |
-| **Card UI Page** | [`packages/stage-pages/src/pages/settings/airi-card/index.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/index.vue) | Main card management, drag-and-drop import, JSON/PNG export handlers |
-| **Import Wizard** | [`packages/stage-pages/src/pages/settings/airi-card/components/CardImportWizard.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CardImportWizard.vue) | Webview download import wizard modal |
-| **Card Store** | [`packages/stage-ui/src/stores/modules/airi-card.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/airi-card.ts) | Pinia store managing local IndexedDB persistence (`local:airi-cards`) |
-| **Card Schema & Types** | [`packages/stage-ui/src/types/card.schema.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/types/card.schema.ts) | Valibot runtime schema (`AiriCardSchema`) |
-| **Data Catalog Doc** | [`docs/data-catalog.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/data-catalog.md) | Storage layer reference detailing `AiriCard` and `AiriExtension` |
-| **Download Interceptor** | [`apps/stage-tamagotchi/src/main/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/index.ts) | Electron main process interceptor for webview card downloads |
-| **Upstream Import/Export Service** | Upstream-only `packages/stage-ui/src/services/airi-card-import-export.ts` (PR #1998, **not present in this fork** — only `services/speech/*` exists locally) | Upstream `moeru-ai/airi:main` ZIP package service. All `FORMAT` / `manifestSchema` / `sanitizeAiri` / `cardFromCharacterCard` / `MODEL_EXT` / `AiriCardPackageError` symbols below are upstream-claimed, zero local matches. Do not fetch `upstream` remote without explicit user authorization (fork safety). |
+## Related
 
 - Modular outfits & accessories: [`design-modular-outfits-system.md`](./design-modular-outfits-system.md)
 - Spine models: [`design-spine-model.md`](./design-spine-model.md)
 - Image journal storage: [`design-image-journal-storage.md`](./design-image-journal-storage.md)
 - Storage layer detail: [`data-catalog.md`](./data-catalog.md)
 
-The `AiriExtension` interface in [`packages/stage-ui/src/stores/modules/airi-card.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/airi-card.ts#L121) defines AIRI's rich capability set:
-In [`apps/stage-tamagotchi/src/main/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/index.ts#L235):
 ## Relevant Skills
 
 - [[airi-card-editor-wizard]]

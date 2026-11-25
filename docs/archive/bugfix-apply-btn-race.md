@@ -43,10 +43,10 @@ This produces two concurrent model-loading operations during Apply. The stage mo
 ### 1. Execution Flow Verification
 Based on a review of the codebase, the conflict occurs exactly as described when a new model is assigned to a character card:
 
-1. **Card Update**: The user selects a model and clicks **Assign Model** in [model-assignment-modal.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/model-assignment/model-assignment-modal.vue). This invokes `updateCard()`.
-2. **Reactivity Watcher**: The change to the active card triggers the `activeCard` watch in [airi-card.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/airi-card.ts#L1347-L1350), calling `syncCardState(newCard)`.
+1. **Card Update**: The user selects a model and clicks **Assign Model** in [model-assignment-modal.vue](packages/stage-ui/src/components/scenarios/dialogs/model-assignment/model-assignment-modal.vue). This invokes `updateCard()`.
+2. **Reactivity Watcher**: The change to the active card triggers the `activeCard` watch in [airi-card.ts](packages/stage-ui/src/stores/modules/airi-card.ts#L1347-L1350), calling `syncCardState(newCard)`.
 3. **Double Invocations**:
-   - In `syncCardState()`, setting `stageModelStore.stageModelSelected = newModelId` runs the setter in [stage-model.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/settings/stage-model.ts#L20-L22), modifying `stageModelSelectedState`. This schedules the Vue watcher `watch(stageModelSelectedState, ...)` to fire asynchronously on the next tick (**Call A**).
+   - In `syncCardState()`, setting `stageModelStore.stageModelSelected = newModelId` runs the setter in [stage-model.ts](packages/stage-ui/src/stores/settings/stage-model.ts#L20-L22), modifying `stageModelSelectedState`. This schedules the Vue watcher `watch(stageModelSelectedState, ...)` to fire asynchronously on the next tick (**Call A**).
    - Immediately after setting the property, `syncCardState()` calls `await stageModelStore.updateStageModel()` (**Call B**).
 4. **Sequence Cancellation Failure**:
    - **Call B** starts execution immediately, incrementing the sequence counter to `1`. It then yields at `await displayModelsStore.getDisplayModel(selectedModelId)`.

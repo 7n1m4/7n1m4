@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Sentence-Sync on Continuous Streaming TTS — Architecture Review & Recommendation
 
 **Scope:** `docs/design-contextual-streaming-tts-and-sentence-sync.md` (AIRI fork, commit `3b9167a`)

@@ -62,7 +62,7 @@ AIRI has a specific and deliberate guarantee: **tokenized marker format never re
 The speech pipeline works like this:
 1. The LLM streams tokens
 2. `chat.ts` runs `categorizeResponse` / `createStreamingCategorizer` which extracts only the `speech` portion
-3. The `speechOnly` text is emitted via the `onTokenLiteral` hook in [hooks.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/hooks.ts)
+3. The `speechOnly` text is emitted via the `onTokenLiteral` hook in [hooks.ts](packages/stage-ui/src/stores/chat/hooks.ts)
 4. TTS providers subscribe to `onTokenLiteral` and receive clean, human-readable speech text
 5. `<|ACT:...|>`, `<|EXPRESSION:...|>`, widget markers — all stripped before TTS ever sees them
 
@@ -77,7 +77,7 @@ This creates a fundamental conflict:
 
 ## Option D — Recommended: Audio Studio UST Extension
 
-The answer was in the existing architecture the whole time. AIRI already has a text transformation layer that sits **between the raw speech text and the TTS provider**: the **Universal Speech Transformer (UST)**, defined per voice profile in the Audio Studio ([feat-audio-studio.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/feat-audio-studio.md)).
+The answer was in the existing architecture the whole time. AIRI already has a text transformation layer that sits **between the raw speech text and the TTS provider**: the **Universal Speech Transformer (UST)**, defined per voice profile in the Audio Studio ([feat-audio-studio.md](docs/feat-audio-studio.md)).
 
 The UST already strips asterisks, mutes narrative brackets, replaces tildes, strips emojis — all before the text reaches the TTS engine. This is exactly the hook we need.
 

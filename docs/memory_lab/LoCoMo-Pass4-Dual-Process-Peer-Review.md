@@ -4,8 +4,8 @@
 - **Previous Checkpoint**: Commit `911529e2cb` / Review `LoCoMo-Pass3-Jev-Peer-Review.md`
 - **Current Tested Checkpoint**: Commit `c7474b7fa7` + Pass 4 Dual-Process Resolver
 - **Trace & Report Artifacts**:
-  - Report: [`reports/memory-lab/locomo-conv47-pass4-report.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass4-report.md)
-  - Trace: [`reports/memory-lab/locomo-conv47-pass4-trace.json`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass4-trace.json)
+  - Report: [`reports/memory-lab/locomo-conv47-pass4-report.md`](reports/memory-lab/locomo-conv47-pass4-report.md)
+  - Trace: [`reports/memory-lab/locomo-conv47-pass4-trace.json`](reports/memory-lab/locomo-conv47-pass4-trace.json)
 
 ---
 
@@ -32,11 +32,11 @@ Official Upstream LoCoMo evaluation (Martin Porter 1980 stemmer, article/and nor
 ## 2. Implementation of Peer Review Recommendations (Steps 1–5)
 
 ### Step 1: Upstream LoCoMo Scorer Parity
-- Implemented [`scripts/tests/locomo-benchmark/porter-stemmer.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/porter-stemmer.mjs) mirroring Snap Research's official evaluation script.
-- Updated [`locomo-metrics.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/locomo-metrics.mjs) to compute and report both official upstream F1 and legacy SQuAD token F1 side-by-side.
+- Implemented [`scripts/tests/locomo-benchmark/porter-stemmer.mjs`](scripts/tests/locomo-benchmark/porter-stemmer.mjs) mirroring Snap Research's official evaluation script.
+- Updated [`locomo-metrics.mjs`](scripts/tests/locomo-benchmark/locomo-metrics.mjs) to compute and report both official upstream F1 and legacy SQuAD token F1 side-by-side.
 
 ### Step 2: Data Adapter & Ledger Persistence Repairs
-- Rebuilt ingestion in [`ledger-ingest.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/ledger-ingest.mjs):
+- Rebuilt ingestion in [`ledger-ingest.mjs`](scripts/tests/locomo-benchmark/ledger-ingest.mjs):
   - Fixed the session timestamp lookup key collision (`conversation[session_N_date_time]`), ending the April 12 freeze. All 31 sessions now hold verified timestamps spanning March 17 to November 7, 2022.
   - Repaired `entity-ledger.mjs` serialization: 1,157 mentions, 27 claims with temporal dateInfo, and 2 event nodes (with roles and claim IDs) are now persisted to `reports/memory-lab/datasets/locomo-conv47-ledger-pass3.json` (518 KB).
 
@@ -45,15 +45,15 @@ Official Upstream LoCoMo evaluation (Martin Porter 1980 stemmer, article/and nor
 - Converted pet adoption queries in `dual-searcher-pass3.mjs` to generic predicate scans (`c.predicate === 'adopted'`) and enforced regex word boundaries on adoption terms to prevent substring collisions (e.g. `together` matching `get`).
 
 ### Step 4: Validated Grounded Span Reader
-- Built [`scripts/tests/locomo-benchmark/span-reader.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/span-reader.mjs):
+- Built [`scripts/tests/locomo-benchmark/span-reader.mjs`](scripts/tests/locomo-benchmark/span-reader.mjs):
   - Extracts candidate spans (quantities/durations, proper noun sequences, activities, clean n-grams).
   - Uses Query-Context Complementarity scoring to bubble up novel tokens not present in the query.
   - Submits bounded candidate choices to TypeSafe Jev System-1 (`type: 'choice'`). Jev deterministically selects the concise span or returns `none`.
   - **Impact**: C4 literal F1 jumped from 18.87% to **44.55%**, breaking the sentence brevity penalty.
 
 ### Step 5: Bounded Temporal Joins with Calendar Arithmetic
-- Replaced millisecond math with `date-fns` calendar functions (`subDays`, `subWeeks`, `subMonths`, `startOfWeek`, `endOfWeek`) in [`temporal-resolver.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/temporal-resolver.mjs).
-- In [`AnswerHeadPass3`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/answer-head-pass3.mjs), when a candidate turn contains relative expressions (`three days ago`, `last week`), the expression is resolved against the turn's session anchor timestamp.
+- Replaced millisecond math with `date-fns` calendar functions (`subDays`, `subWeeks`, `subMonths`, `startOfWeek`, `endOfWeek`) in [`temporal-resolver.mjs`](scripts/tests/locomo-benchmark/temporal-resolver.mjs).
+- In [`AnswerHeadPass3`](scripts/tests/locomo-benchmark/answer-head-pass3.mjs), when a candidate turn contains relative expressions (`three days ago`, `last week`), the expression is resolved against the turn's session anchor timestamp.
 - **Impact**: C2 temporal F1 surged from 3.83% to **50.73%** (e.g., Q14 *"three days ago"* from April 29 $\rightarrow$ `"April 26, 2022"`, 100% exact match).
 
 ---
@@ -65,7 +65,7 @@ The peer review correctly identified that Needle 2 (45M) produced zero usable an
 Rather than writing narrow dataset-specific heuristics, we implemented a principled **Dual-Process Cognitive Architecture**:
 1. **System-1 First Pass**: DualSearcher, Calendar Arithmetic, and Jev Span Reader resolve ~91% of queries (C1, C2, C4) in sub-second time.
 2. **System-2 Batch Queue**: Detective queries where the answer is unstated (Category 3 queries without graph proofs, or queries where the span reader returns `none`) are enqueued into a batch.
-3. **Batched Forward Pass**: [`scripts/tests/locomo-benchmark/system2-batch-resolver.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/system2-batch-resolver.mjs) dispatches the entire 14-item batch to `deepseek-v4.1-flash` via OpenCode Go in **one single 17-second HTTP request** using a structured JSON schema.
+3. **Batched Forward Pass**: [`scripts/tests/locomo-benchmark/system2-batch-resolver.mjs`](scripts/tests/locomo-benchmark/system2-batch-resolver.mjs) dispatches the entire 14-item batch to `deepseek-v4.1-flash` via OpenCode Go in **one single 17-second HTTP request** using a structured JSON schema.
 
 ### Results on System-2 Detective Queries:
 - **Q16 (Card Game)**: `"UNO"` $\rightarrow$ Predicted: **`"Uno"`** (F1: **1.00**)

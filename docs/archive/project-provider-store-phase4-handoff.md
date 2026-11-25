@@ -60,14 +60,14 @@ Phase 4 focuses on activating the multi-instance engine at runtime (`createProvi
 
 ## 4. Comprehensive Codebase File & Path Index
 
-- [`packages/stage-ui/src/stores/providers.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers.ts) — Main store entry point (`createProviderInstanceStore` live).
-- [`packages/stage-ui/src/stores/providers/runtime/instance-store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instance-store.ts) — Multi-instance engine implementation (`instanceId` keying + facade).
-- [`packages/stage-ui/src/stores/providers/runtime/models.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/models.ts) — Instance-aware model fetching (`instanceId` optional parameter).
-- [`packages/stage-ui/src/stores/providers/selectors/config.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/selectors/config.ts) — Config gating & credential presence checks.
-- [`packages/stage-ui/src/components/scenarios/providers/provider-instances-section.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/providers/provider-instances-section.vue) — Multi-instance controls component.
-- [`packages/stage-ui/src/components/scenarios/providers/provider-danger-zone.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/providers/provider-danger-zone.vue) — Danger zone confirmation dialog component.
-- [`packages/stage-ui/src/components/scenarios/providers/speech-playground.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/providers/speech-playground.vue) — Speech playground with SSML warning banner.
-- [`packages/i18n/src/locales/en/settings.yaml`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/i18n/src/locales/en/settings.yaml) — Translation keys managed via `scripts/yaml-manager.js`.
+- [`packages/stage-ui/src/stores/providers.ts`](packages/stage-ui/src/stores/providers.ts) — Main store entry point (`createProviderInstanceStore` live).
+- [`packages/stage-ui/src/stores/providers/runtime/instance-store.ts`](packages/stage-ui/src/stores/providers/runtime/instance-store.ts) — Multi-instance engine implementation (`instanceId` keying + facade).
+- [`packages/stage-ui/src/stores/providers/runtime/models.ts`](packages/stage-ui/src/stores/providers/runtime/models.ts) — Instance-aware model fetching (`instanceId` optional parameter).
+- [`packages/stage-ui/src/stores/providers/selectors/config.ts`](packages/stage-ui/src/stores/providers/selectors/config.ts) — Config gating & credential presence checks.
+- [`packages/stage-ui/src/components/scenarios/providers/provider-instances-section.vue`](packages/stage-ui/src/components/scenarios/providers/provider-instances-section.vue) — Multi-instance controls component.
+- [`packages/stage-ui/src/components/scenarios/providers/provider-danger-zone.vue`](packages/stage-ui/src/components/scenarios/providers/provider-danger-zone.vue) — Danger zone confirmation dialog component.
+- [`packages/stage-ui/src/components/scenarios/providers/speech-playground.vue`](packages/stage-ui/src/components/scenarios/providers/speech-playground.vue) — Speech playground with SSML warning banner.
+- [`packages/i18n/src/locales/en/settings.yaml`](packages/i18n/src/locales/en/settings.yaml) — Translation keys managed via `scripts/yaml-manager.js`.
 
 ---
 

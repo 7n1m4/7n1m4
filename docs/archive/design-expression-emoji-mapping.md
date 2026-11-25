@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Design: Expression Emoji Mapping & Quick-Trigger System
 
 **Status**: Deprecated / Shelved for Redesign

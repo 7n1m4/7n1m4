@@ -59,7 +59,7 @@ Once the MVP is verified, we will progressively implement the following:
 
 ### [Component] Core Logic & State
 
-#### [MODIFY] [vision.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/modules/vision.ts)
+#### [MODIFY] [vision.ts](packages/stage-ui/src/stores/modules/vision.ts)
 - Add MVP state: `isEnabled`, `status: 'idle' | 'active' | 'capturing'`.
 - Logic to pull the key from `useGoogleProvider`.
 
@@ -67,7 +67,7 @@ Once the MVP is verified, we will progressively implement the following:
 
 ### [Component] UI / Control Island
 
-#### [NEW] [VisionControl.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/apps/stage-tamagotchi/src/renderer/components/ControlIsland/VisionControl.vue)
+#### [NEW] [VisionControl.vue](apps/stage-tamagotchi/src/renderer/components/ControlIsland/VisionControl.vue)
 - Simple pulsing icon implementation.
 - Purple blink trigger on status: `capturing`.
 
@@ -75,7 +75,7 @@ Once the MVP is verified, we will progressively implement the following:
 
 ### [Component] Settings
 
-#### [NEW] [VisionModuleSettings.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-pages/src/pages/settings/modules/vision-witness.vue)
+#### [NEW] [VisionModuleSettings.vue](packages/stage-pages/src/pages/settings/modules/vision-witness.vue)
 - MVP Interface: A single switch and a status readout ("Connected to Gemini").
 
 ## Verification Plan

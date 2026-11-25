@@ -22,13 +22,13 @@ Instead of executing the DSL in the dark, AIRI runs a **static manifest introspe
 
 This design directly operationalizes and unifies the following AIRI research and specification documents:
 
-- [docs/research-live2d-special-sauce.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/research-live2d-special-sauce.md) — The empirical foundation: logs 25+ real-world Live2D packages, analyzing custom commands removed during WebGL crash-proofing.
-- [docs/design-live2d-dsl-interpreter-spec.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/design-live2d-dsl-interpreter-spec.md) — The formal VM specification: `VarFloats` Type 1 guards vs. Type 2 modifiers, glassmorphic choice overlays, delta ticking engine, and dating-sim staging.
-- [docs/design-live2d-multimoc-changecos.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/design-live2d-multimoc-changecos.md) — The zero-latency multi-`.moc3` costume hot-swapping pipeline.
-- [docs/design-live2d-change-cos-challenge.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/design-live2d-change-cos-challenge.md) — WebGL memory and texture atlas preservation across submodel switches.
-- [docs/handoff-live2d-dsl-phase2.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/handoff-live2d-dsl-phase2.md) — Phase 2 implementation handoff: dispatch opcodes and instruction pipelines.
-- [apps/stage-tamagotchi/src/renderer/pages/devtools/live2d.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/devtools/live2d.vue) — The active playground exposing `getDslState()`, `dispatchDsl()`, `varFloats` heap, and sandboxed intimacy.
-- [packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue) — The primary runtime rendering component hosting the Cubism model and ticker loop.
+- [docs/research-live2d-special-sauce.md](docs/research-live2d-special-sauce.md) — The empirical foundation: logs 25+ real-world Live2D packages, analyzing custom commands removed during WebGL crash-proofing.
+- [packages/live2d-runtime/src/dsl/README.md](packages/live2d-runtime/src/dsl/README.md) — VM specification: VarFloats, choice overlays, delta ticking, dating-sim staging.
+- [packages/stage-ui-live2d/src/runtime/README.md](packages/stage-ui-live2d/src/runtime/README.md) — zero-latency multi-.moc3 costume hot-swapping pipeline.
+- [packages/stage-ui-live2d/src/runtime/README.md](packages/stage-ui-live2d/src/runtime/README.md) — WebGL memory / texture atlas preservation across submodel switches.
+- [docs/handoff-live2d-dsl-phase2.md](docs/handoff-live2d-dsl-phase2.md) — Phase 2 implementation handoff: dispatch opcodes and instruction pipelines.
+- [apps/stage-tamagotchi/src/renderer/pages/devtools/live2d.vue](apps/stage-tamagotchi/src/renderer/pages/devtools/live2d.vue) — The active playground exposing `getDslState()`, `dispatchDsl()`, `varFloats` heap, and sandboxed intimacy.
+- [packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue](packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue) — The primary runtime rendering component hosting the Cubism model and ticker loop.
 
 ---
 

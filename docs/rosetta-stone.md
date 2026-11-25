@@ -40,6 +40,17 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 > - **`stage-tamagotchi`** — the Electron desktop app (NOT the legacy Tauri `crates/`). §14.
 > - **Window managers vs UI** — every window has a main-process *manager* (`main/windows/<name>/`) and a renderer *page/component*. §2 pairs them.
 
+## Migrated to code docs
+
+Architecture-only Markdown policy: this index and `docs/` keep architecture, decisions and history; per-feature technical detail lives beside the code it documents. The documents below are the source of truth — the `docs/` files that used to carry that detail are architecture pointers only.
+
+- Live2D DSL / runtime — [`packages/live2d-runtime/src/dsl/README.md`](../packages/live2d-runtime/src/dsl/README.md), [`packages/stage-ui-live2d/src/runtime/README.md`](../packages/stage-ui-live2d/src/runtime/README.md)
+- Captions & scenes / actor tokens — [`packages/stage-ui/src/components/scenes/README.md`](../packages/stage-ui/src/components/scenes/README.md), [`CAPTIONS.md`](../packages/stage-ui/src/components/scenes/CAPTIONS.md), [`README-actor-token-pipeline.md`](../packages/stage-ui/src/components/scenes/README-actor-token-pipeline.md)
+- TTS transformer (UST) — [`packages/stage-ui/src/stores/modules/README-speech-transformer.md`](../packages/stage-ui/src/stores/modules/README-speech-transformer.md)
+- Storage / providers / text journal — [`packages/stage-ui/src/database/README.md`](../packages/stage-ui/src/database/README.md), [`repos/README-text-journal.md`](../packages/stage-ui/src/database/repos/README-text-journal.md), [`packages/stage-ui/src/stores/providers/README.md`](../packages/stage-ui/src/stores/providers/README.md)
+- Cards / CCC / Spine / image journal — [`packages/stage-pages/src/pages/settings/airi-card/README.md`](../packages/stage-pages/src/pages/settings/airi-card/README.md), [`packages/ccc/README.md`](../packages/ccc/README.md), [`packages/stage-ui-spine/README.md`](../packages/stage-ui-spine/README.md), [`packages/stage-ui/src/types/image-journal.ts`](../packages/stage-ui/src/types/image-journal.ts)
+- Content manual stubs — [`docs/content/en/docs/manual/`](./content/en/docs/manual/) — short user-facing stubs that link out to the code-colocated documents above.
+
 ---
 
 
@@ -63,7 +74,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 | Concept | Path | Notes |
 | :--- | :--- | :--- |
 | `CoreService` (daemon-owned core) | `crates/anima-daemon/src/core.rs` | Clone, Arc<Mutex<CoreInner>>; ONLY place daemon touches core state. `open(profile)` fails closed; `snapshot()`; `status_reply()`. |
-| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core, &self.publisher, …)` (line 584) registers **33** `renderer.*` RPC handlers (insertions at 635–1482): **25** core/feature verbs — `core.status`, `providers.list`/`.save`/`.delete`/`.models` (`.models` is a stub), `settings.get`/`.set`, `vault.status`, `chat.send`/`.cancel`/`.history`, `stmm.list`/`.rebuild`, `journal.append`/`.search`, `retrieval.status`, `cards.list`/`.get`/`.import` (stubs) / `cards.metadata`/`.set`, `sessions.list`/`.export`/`.import`/`.auto_title` (`.auto_title` is a stub) — plus **4** `mcp.*` (`list_servers`, `tools_list`, `tools_call`, `call_tool`) and **4** `acp.*` (`run`, `prompt`, `list_agents` stub, `list_sessions`). `crates/anima-channel/src/dispatch.rs:299-304` separately registers **6** built-ins (`runtime.ping`, `runtime.status`, `gateway.config`, `gateway.auth`, `event.subscribe`, `event.unsubscribe`). |
+| `Gateway` (holds core) | `crates/anima-daemon/src/gateway.rs` | `renderer_handlers(&self.core, &self.publisher, …)` (line 680) registers **36** `renderer.*` RPC handlers (insertions at 735–1890): **28** core/feature verbs — `core.status`, `providers.list`/`.save`/`.delete`/`.models` (`.models` is a stub), `settings.get`/`.set`, `vault.status`, `chat.send`/`.cancel`/`.history`, `stmm.list`/`.rebuild`, `journal.append`/`.search`, `retrieval.status`, `cards.list`/`.get`/`.import`/`.create`/`.update`/`.delete` / `cards.metadata`/`.set`, `sessions.list`/`.export`/`.import`/`.auto_title` (`.auto_title` is a stub) — plus **4** `mcp.*` (`list_servers`, `tools_list`, `tools_call`, `call_tool`) and **4** `acp.*` (`run`, `prompt`, `list_agents` stub, `list_sessions`). `crates/anima-channel/src/dispatch.rs:299-304` separately registers **6** built-ins (`runtime.ping`, `runtime.status`, `gateway.config`, `gateway.auth`, `event.subscribe`, `event.unsubscribe`). |
 | `CoreStatusReply` (wire DTO) | `crates/anima-channel/src/wire.rs` | additive, read-only, no secrets. |
 | `core.status` (RPC action) | `crates/anima-channel/src/dispatch.rs` | resolves via renderer-handler registry by exact action name. |
 | `GatewayClient::core_status` | `crates/anima-channel/src/client.rs` | mirrors `runtime_status`. |

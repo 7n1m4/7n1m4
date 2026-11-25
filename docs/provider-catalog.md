@@ -159,7 +159,7 @@ The AIRI provider subsystem is organized across four distinct layers:
 
 ## 9. On-Device Model Cache Oversight (Local Models Registry)
 
-Managed by [`ModelCacheManager.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) at the bottom of **Settings > Inference Providers**.
+Managed by [`ModelCacheManager.vue`](packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) at the bottom of **Settings > Inference Providers**.
 
 ### 9.1 LLMs & Language Models
 | Model Identifier | Display Name | Runtime / Target | Storage Backend | Purpose |
@@ -201,16 +201,16 @@ Managed by [`ModelCacheManager.vue`](file:///Users/richardpinedo/Projects.nosync
 
 | Component / Layer | Source Path | Description |
 | :--- | :--- | :--- |
-| **Settings UI Root** | [`packages/stage-pages/src/pages/settings/providers/index.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/index.vue) | Main provider grid, filters, tab recommendations, and Model Cache Oversight mounting |
-| **Model Cache Widget** | [`packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) | UI component for inspecting and clearing on-device neural weight storage |
-| **Inference Constants** | [`packages/stage-ui/src/libs/inference/constants.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/constants.ts) | Model IDs, HuggingFace repos, timeouts, VRAM budgets, and catalog specs |
-| **Cache Utilities** | [`packages/stage-ui/src/libs/inference/cache-utils.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/cache-utils.ts) | Size calculation and cache-clearing logic for OPFS, CacheStorage, and Native CoreML |
-| **Provider Store** | [`packages/stage-ui/src/stores/providers.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers.ts) | Pinia store managing active instances, persistence, validation, and credentials |
-| **Unified Providers** | [`packages/stage-ui/src/libs/providers/providers/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/providers/providers/) | Modular provider definitions (Anthropic, OpenAI, DeepSeek, Google, etc.) |
-| **Speech Registry** | [`packages/stage-ui/src/stores/providers/registry/speech.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/speech.ts) | Speech provider metadata, voice catalogs (Pocket TTS, Kokoro, ElevenLabs, Azure, Polly) |
-| **Transcription Registry** | [`packages/stage-ui/src/stores/providers/registry/transcription.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/transcription.ts) | STT metadata, Whisper model definitions, Web Speech API, and Aliyun NLS |
-| **Local Engines Registry** | [`packages/stage-ui/src/stores/providers/registry/local-engines.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/local-engines.ts) | Web-RWKV, WebLLM, Moondream2 Local VLM, Waifu Diffusion Tagger (WD), and Apple Core AI adapters |
-| **Self-Hosted Registry** | [`packages/stage-ui/src/stores/providers/registry/chat-local.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/chat-local.ts) | vLLM and Player2 chat endpoints |
+| **Settings UI Root** | [`packages/stage-pages/src/pages/settings/providers/index.vue`](packages/stage-pages/src/pages/settings/providers/index.vue) | Main provider grid, filters, tab recommendations, and Model Cache Oversight mounting |
+| **Model Cache Widget** | [`packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue`](packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) | UI component for inspecting and clearing on-device neural weight storage |
+| **Inference Constants** | [`packages/stage-ui/src/libs/inference/constants.ts`](packages/stage-ui/src/libs/inference/constants.ts) | Model IDs, HuggingFace repos, timeouts, VRAM budgets, and catalog specs |
+| **Cache Utilities** | [`packages/stage-ui/src/libs/inference/cache-utils.ts`](packages/stage-ui/src/libs/inference/cache-utils.ts) | Size calculation and cache-clearing logic for OPFS, CacheStorage, and Native CoreML |
+| **Provider Store** | [`packages/stage-ui/src/stores/providers.ts`](packages/stage-ui/src/stores/providers.ts) | Pinia store managing active instances, persistence, validation, and credentials |
+| **Unified Providers** | [`packages/stage-ui/src/libs/providers/providers/`](packages/stage-ui/src/libs/providers/providers/) | Modular provider definitions (Anthropic, OpenAI, DeepSeek, Google, etc.) |
+| **Speech Registry** | [`packages/stage-ui/src/stores/providers/registry/speech.ts`](packages/stage-ui/src/stores/providers/registry/speech.ts) | Speech provider metadata, voice catalogs (Pocket TTS, Kokoro, ElevenLabs, Azure, Polly) |
+| **Transcription Registry** | [`packages/stage-ui/src/stores/providers/registry/transcription.ts`](packages/stage-ui/src/stores/providers/registry/transcription.ts) | STT metadata, Whisper model definitions, Web Speech API, and Aliyun NLS |
+| **Local Engines Registry** | [`packages/stage-ui/src/stores/providers/registry/local-engines.ts`](packages/stage-ui/src/stores/providers/registry/local-engines.ts) | Web-RWKV, WebLLM, Moondream2 Local VLM, Waifu Diffusion Tagger (WD), and Apple Core AI adapters |
+| **Self-Hosted Registry** | [`packages/stage-ui/src/stores/providers/registry/chat-local.ts`](packages/stage-ui/src/stores/providers/registry/chat-local.ts) | vLLM and Player2 chat endpoints |
 
 ---
 

@@ -12,8 +12,8 @@ To address this, we propose adding **Slash Commands** directly within the main C
 
 ## Scope & Constraints
 
-- **Primary Interface**: This mechanic will reside strictly within the main Chatbox's composer in [InteractiveArea.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue) (serving `#/chat`).
-- **Exclusion**: The [WhisperDock.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue) input overlay will **not** receive this mechanic. It is designed to remain a lean, light, distraction-free voice/text stage interface free of heavy widgets and developer-oriented commands.
+- **Primary Interface**: This mechanic will reside strictly within the main Chatbox's composer in [InteractiveArea.vue](apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue) (serving `#/chat`).
+- **Exclusion**: The [WhisperDock.vue](packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue) input overlay will **not** receive this mechanic. It is designed to remain a lean, light, distraction-free voice/text stage interface free of heavy widgets and developer-oriented commands.
 
 ---
 
@@ -48,8 +48,8 @@ We propose starting with the following baseline commands:
 
 ## Reference Implementation Paths
 
-- **UI Host Component**: [InteractiveArea.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue)
-- **Chat Orchestration**: [session-store.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/session-store.ts) or [chat.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts) to route slash-prefixed commands correctly if the user hits Send directly.
+- **UI Host Component**: [InteractiveArea.vue](apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue)
+- **Chat Orchestration**: [session-store.ts](packages/stage-ui/src/stores/chat/session-store.ts) or [chat.ts](packages/stage-ui/src/stores/chat.ts) to route slash-prefixed commands correctly if the user hits Send directly.
 
 ## Relevant Skills
 

@@ -2,7 +2,7 @@
 
 This proposal outlines the design, UI configuration, and backend execution flow for adding vision (screenshot) capabilities to the **Autonomous Proactivity** and **Manual Grounding** systems in AIRI.
 
-It directly integrates with and builds upon the core **Direct vs. Forward-to-LLM** vision paradigm detailed in the base design document [proposal-vlm-forward-to-llm.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-vlm-forward-to-llm.md), which establishes the pipeline for decoupling sight from voice.
+It directly integrates with and builds upon the core **Direct vs. Forward-to-LLM** vision paradigm detailed in the base design document [proposal-vlm-forward-to-llm.md](docs/proposal-vlm-forward-to-llm.md), which establishes the pipeline for decoupling sight from voice.
 
 ---
 

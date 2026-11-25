@@ -490,37 +490,37 @@ This complements **Web-RWKV 0.1B** (the background attention guard) by providing
 
 ---
 
-#### [MODIFY] [`package.json`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/package.json)
+#### [MODIFY] [`package.json`](packages/stage-ui/package.json)
 - Added `@mlc-ai/web-llm` (`^0.2.84`) to `dependencies`.
 
-#### [NEW] [`contract.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/web-llm/contract.ts)
+#### [NEW] [`contract.ts`](packages/stage-ui/src/workers/web-llm/contract.ts)
 - Defined Eventa RPC contract events (`webLlmLoadEvent`, `webLlmGenerateEvent`, `webLlmUnloadEvent`, `webLlmProgressEvent`).
 
-#### [NEW] [`worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/web-llm/worker.ts)
+#### [NEW] [`worker.ts`](packages/stage-ui/src/workers/web-llm/worker.ts)
 - Implemented Web Worker wrapping `@mlc-ai/web-llm`'s `CreateMLCEngine`.
 - Injected `prebuiltAppConfig.model_list` and dynamically appended custom HF model entries into `appConfig`.
 - Automatic pipeline `unload()` prior to reload for clean VRAM model swapping.
 - Streamed token generation via Eventa progress events.
 
-#### [NEW] [`web-llm.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/adapters/web-llm.ts)
+#### [NEW] [`web-llm.ts`](packages/stage-ui/src/libs/inference/adapters/web-llm.ts)
 - WebLLM Worker Host adapter enforcing execution turns via `getGpuExecutor().run()` and prechecking VRAM via `getGPUCoordinator().requestAllocation()`.
 
-#### [NEW] [`index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/web-llm/index.ts)
+#### [NEW] [`index.ts`](packages/stage-ui/src/stores/providers/web-llm/index.ts)
 - Implemented xsai `ChatProvider` SSE streaming shim (reusing `web-rwkv` formatters).
 
-#### [MODIFY] [`cache-utils.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/cache-utils.ts)
+#### [MODIFY] [`cache-utils.ts`](packages/stage-ui/src/libs/inference/cache-utils.ts)
 - Added `getWebLlmCacheSize()`, `clearWebLlmCache()`, and `isWebLlmModelCached()` for Cache Storage API (`webllm/model`, `webllm/wasm`, `webllm/config`) inspection and deletion.
 
-#### [MODIFY] [`constants.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/constants.ts)
+#### [MODIFY] [`constants.ts`](packages/stage-ui/src/libs/inference/constants.ts)
 - Added `WEB_LLM_MODELS` curated top-5 model catalog with exact VRAM footprints and WASM library URLs.
 
-#### [MODIFY] [`local-engines.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/local-engines.ts)
+#### [MODIFY] [`local-engines.ts`](packages/stage-ui/src/stores/providers/registry/local-engines.ts)
 - Added `'web-llm'` entry to `localEngineMetadata` with `category: 'chat'`, `requiresCredentials: false`, `isAvailableBy: () => isWebGPUSupported()`.
 
-#### [MODIFY] [`index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/index.ts)
+#### [MODIFY] [`index.ts`](packages/stage-ui/src/stores/providers/registry/index.ts)
 - Added `'web-llm'` to `createProviderRegistry` keep-list (`providerId !== 'web-rwkv' && providerId !== 'blip-local' && providerId !== 'web-llm'`).
 
-#### [MODIFY] [`ModelCacheManager.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue)
+#### [MODIFY] [`ModelCacheManager.vue`](packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue)
 - Added `WebLLM (Ministral 3 / Qwen 3.5 / Llama 3.2)` entry to `knownModels` array for 1-click cache visibility.
 
 ---
@@ -529,7 +529,7 @@ This complements **Web-RWKV 0.1B** (the background attention guard) by providing
 
 ---
 
-#### [NEW] [`web-llm.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/chat/web-llm.vue)
+#### [NEW] [`web-llm.vue`](packages/stage-pages/src/pages/settings/providers/chat/web-llm.vue)
 - Bespoke provider settings page under `settings/providers/chat/web-llm.vue` featuring Multi-Instance controls, top-5 curated model combobox, custom HuggingFace model repo input field, download progress bar, temperature/top-p sliders, and weight clear/Cache-API management buttons.
 
 ---
@@ -538,7 +538,7 @@ This complements **Web-RWKV 0.1B** (the background attention guard) by providing
 
 ---
 
-#### [MODIFY] [`en/settings.yaml`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/i18n/src/locales/en/settings.yaml)
+#### [MODIFY] [`en/settings.yaml`](packages/i18n/src/locales/en/settings.yaml)
 - Added translation strings for `settings.pages.providers.provider.web-llm.*` (title, description, model selector, custom HF repo input, download status).
 
 ---

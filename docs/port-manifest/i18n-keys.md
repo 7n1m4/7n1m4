@@ -5,14 +5,14 @@ Generated from `packages/i18n/src/locales/<locale>/**/*.yaml`. Leaf-key counts p
 Locale layout: `base.yaml` (prompt/edition/toaster), `settings.yaml`, `stage.yaml` (chat/speech), `onboarding.yaml`, `docs/*.yaml`, `tamagotchi/{settings,stage}.yaml`, `tamagotchi/electron/tray.yaml`, `server/*.yaml` (id only).
 
 Locales: **10** — en, es, fr, id, ja, ko, ru, vi, zh-Hans, zh-Hant
-English reference leaf-key count (mapping keys only): **2352**. Note: `anima-i18n` build.rs (serde_yaml flatten) reports 1329 keys for en because it also counts sequence items; the two counts differ by design and serve as a cross-check.
+English reference leaf-key count (mapping keys only): **2360**. Note: `anima-i18n` build.rs (serde_yaml flatten) reports 1329 keys for en because it also counts sequence items; the two counts differ by design and serve as a cross-check.
 
-- [ ] `en` — 10 YAML files, 2352 leaf keys
+- [ ] `en` — 10 YAML files, 2360 leaf keys
   - `base.yaml`: 8
   - `docs/theme.yaml`: 24
   - `docs/versions.yaml`: 20
   - `onboarding.yaml`: 729
-  - `settings.yaml`: 336
+  - `settings.yaml`: 344
   - `shell.yaml`: 1025
   - `stage.yaml`: 38
   - `tamagotchi/electron/tray.yaml`: 31

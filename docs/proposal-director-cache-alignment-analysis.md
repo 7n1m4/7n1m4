@@ -7,7 +7,7 @@ This document evaluates the feasibility, risks, and performance trade-offs of ap
 ## 1. Executive Summary
 
 While prefix cache alignment yields massive cost and latency savings for direct-response and automatic text subsystems, the **Director** operates under unique constraints:
-*   **Recommendation:** Exclude the Director from the standard [proposal-prefix-cache-alignment.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-prefix-cache-alignment.md) layout.
+*   **Recommendation:** Exclude the Director from the standard [proposal-prefix-cache-alignment.md](docs/proposal-prefix-cache-alignment.md) layout.
 *   **Primary Risk:** Force-fitting standard alignment structures exposes the Director to "Character Mode Leakage"—where the LLM slips out of its meta-analytical scripting role and begins replying in-character.
 *   **Secondary Obstacle:** The high-frequency modifications to the Director's state inputs (the visual scratchpad and active concepts) inherently invalidate downstream conversation history caching anyway.
 *   **Proposed Alternative:** Implement a partial cache alignment strategy that caches the static System Prompt instructions while keeping the observation transcript unaligned.
@@ -17,7 +17,7 @@ While prefix cache alignment yields massive cost and latency savings for direct-
 ## 2. Key Challenges & Risks of Force-Fitting Caching
 
 ### A. The "Character Mode" Leakage Risk (The Elephant in the Room)
-The standard cache alignment model defined in [proposal-prefix-cache-alignment.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-prefix-cache-alignment.md) formats history as sequential API messages with active roles:
+The standard cache alignment model defined in [proposal-prefix-cache-alignment.md](docs/proposal-prefix-cache-alignment.md) formats history as sequential API messages with active roles:
 ```json
 [
   { "role": "user", "content": "Hello!" },

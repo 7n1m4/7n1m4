@@ -40,7 +40,7 @@ Current expression and motion editing in AIRI has three pain points:
 
 ### 1. Core Integration Point (`ModelCustomizer.vue`)
 
-Main AIRI core provides a single, zero-friction extension mount point inside [`ModelCustomizer.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/settings/model-settings/ModelCustomizer.vue):
+Main AIRI core provides a single, zero-friction extension mount point inside [`ModelCustomizer.vue`](packages/stage-ui/src/components/scenarios/settings/model-settings/ModelCustomizer.vue):
 
 ```vue
 <!-- ModelCustomizer.vue -->

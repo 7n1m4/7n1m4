@@ -12,12 +12,6 @@ client integration rules now lives in
 Historical status: implemented and in use; the head-tethered in-scene plank is covered
 separately in `docs/design-head-tethered-captions.md`.
 
-*   **Caption Window Manager (Electron Main)**: [`apps/stage-tamagotchi/src/main/windows/caption/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/windows/caption/index.ts)
-*   **Caption Overlay Renderer (Vue UI Page)**: [`apps/stage-tamagotchi/src/renderer/pages/caption.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/pages/caption.vue)
-*   **Modular Caption Panel**: [`packages/stage-ui/src/components/scenes/CaptionPanel.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenes/CaptionPanel.vue)
-*   **Caption Settings Store (Pinia)**: [`packages/stage-ui/src/stores/settings/captions.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/settings/captions.ts)
-*   **Hardware/Coordination Host**: [`packages/stage-ui/src/components/scenes/ControlStripHost.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenes/ControlStripHost.vue)
-*   **IPC Eventa Contracts**: [`apps/stage-tamagotchi/src/shared/eventa.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/shared/eventa.ts)
 ## Relevant Skills
 
 - [[airi-caption-subsystem]]

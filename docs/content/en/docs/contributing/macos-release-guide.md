@@ -5,7 +5,11 @@ description: Contribute to Project Anima
 
 # macOS Desktop Build & Release
 
-> **[2026-11-13] iOS half superseded**: the Capacitor `apps/stage-pocket` app was purged — web tech on mobile was rejected in favor of a unified Rust native app (desktop + mobile from one screen-size-reactive Slint codebase). See `docs/proposal-unified-rust-native-app.md`. The macOS `.dmg` sections remain valid; the iOS `.ipa` sections are historical until the Rust native app has a packaging lane.
+There is currently **no macOS CI packaging lane** and no working macOS release script. Desktop
+releases of the Vue/Electrobun reference app are produced locally with the Hutch/Electrobun build
+and published by hand; the Flutter app (`apps/flutter`) is the shipping renderer and has its own
+build. The Capacitor iOS app (`apps/stage-pocket`) was purged on 2026-11-13; mobile distribution
+belongs to the Flutter app (`docs/decision-mobile-distribution-and-code-signing.md`).
 
 ## 1. Build
 
@@ -61,56 +65,10 @@ releases as an open action item, not an existing capability.
 
 ## 5. Authoritative Documents
 
-### Step 7: Manual Desktop Alternative / Verification
-If you need to run macOS desktop packaging manually:
-1. **Build macOS Executable**:
-   ```bash
-   pnpm -F @proj-anima/stage-tamagotchi run build:mac
-   ```
-2. **Publish to GitHub Releases**:
-   ```bash
-   GITHUB_TOKEN="" GH_SSL_NO_VERIFY="true" gh release upload v[version] apps/stage-tamagotchi/dist/Anima-[version]-darwin-arm64.dmg --repo dasilva333/airi --clobber
-   ```
-
----
-
-## 2. Platform Specific Considerations
-
-### Notarization & Entitlements
-- **macOS Desktop**: Entitlements are specified in `build/entitlements.mac.plist`. CI notarizes via `CSC_CONTENT` and `APPLE_ID`. Local builds require an Apple Developer certificate in your macOS Keychain.
-- **iOS Mobile**: Automatic code signing is set up via Xcode. Headless `xcodebuild` uses `-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic`.
-
-### Dynamic Hardware Permissions
-- **macOS (`apps/stage-tamagotchi/electron-builder.config.ts`)**: `extendInfo` must keep `NSMicrophoneUsageDescription` and `NSCameraUsageDescription`.
-- **iOS (`apps/stage-pocket/ios/App/App/Info.plist`)**: Must include `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` for audio pipelines and local transcription, along with `NSAllowsArbitraryLoads: true` for LAN HTTP access to local model runtimes.
-
-### Architecture Support
-- **macOS**: Supports `arm64` (Apple Silicon, default) and `x64` (Intel). Flags: `electron-builder --mac --arm64` or `--x64`.
-- **iOS**: Targets 64-bit ARM iOS devices (`generic/platform=iOS`, minimum deployment target iOS 18.0).
-
----
-
-## 3. Troubleshooting & Past Roadblocks
-
-### Node Version Mismatch
-- **Symptoms**: Engine check warnings or lockfile discrepancies during pnpm operations.
-- **Cause**: Strict `engines` requirement in root `package.json` (`>=20.14.0 <28.0.0`).
-- **Resolution**: Ensure the system Node.js version satisfies the declared range.
-
-### Strict TypeScript Errors (TS6133)
-- **Symptoms**: `pnpm run typecheck` or pre-build step crashes on unused imports or variables.
-- **Resolution**: Run `pnpm -F @proj-anima/stage-tamagotchi run typecheck` prior to release to identify and clean up any unused symbols.
-
-### Vue Template Compilation Errors
-- **Symptoms**: `[unplugin-vue-named-template-pre] Element is missing end tag.`
-- **Resolution**: Run `pnpm run typecheck:web` locally to locate and correct unmatched Vue template tags.
-
-### Xcode SPM Dependency or CoreAI Failures
-- **Symptoms**: `xcodebuild archive` fails resolving Swift Package Manager packages or complains about missing `CoreLLMKit`.
-- **Resolution**: Run `pnpm -F @proj-anima/stage-pocket run ios:resolve` to refresh SPM dependencies, or verify that `apps/stage-pocket/scripts/build-ipa.ts` successfully executed `patchSpmPackageForCoreAI()`.
-
-### iOS Simulator Blank White Screen (Missing `index.html`)
-- **Symptoms**: Simulator or device launches into a blank screen with error: `[DevBridge] Navigation failed: The file “index.html” couldn’t be opened because there is no such file.`
-- **Cause**: The Vite web bundle was never compiled into `apps/stage-pocket/dist` or synced to `apps/stage-pocket/ios/App/App/public`.
-- **Resolution**: Run `pnpm -F @proj-anima/stage-pocket run build && pnpm -F @proj-anima/stage-pocket exec cap sync ios` (or `pnpm run open:ios`), then re-run the scheme in Xcode.
-
+- `.github/workflows/release-linux-desktop.yml` — the only desktop release automation.
+- `apps/stage-tamagotchi/electrobun.config.ts` and `hutch.config.ts` — build definition.
+- `docs/design-electrobun-port.md` — port status and remaining packaging gaps for the Electrobun
+  reference app.
+- `apps/flutter/README.md` and `docs/decision-mobile-distribution-and-code-signing.md` — the
+  Flutter build and its Android/iOS signing lanes.
+- `docs/content/en/docs/contributing/windows-release-guide.md` — shared build/release lessons.

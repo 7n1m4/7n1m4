@@ -37,7 +37,7 @@ Nash's `core-agent` work is **3 commits, 46 files**, all in a new `packages/core
 - The context registry (#1819) is already implemented in this fork as `context-store.ts` with the same `ReplaceSelf`/`AppendSelf` semantics. His version adds `Map` over `Record` (prototype-pollution hardening) and bounded history (400 entries) — marginal improvements.
 - **One file is worth a direct copy:** `packages/core-agent/src/messages/context-prompt.ts` (~30 lines). The `formatContextPromptText()` function produces the `[Context]\n- sourceKey: text` bullet format that is exactly the injection block shape designed in `proposal-dynamic-memory-rag-injection.md`. Take this function, not the package.
 
-Full assessment documented in [`project-selective-upstream-sync-phase-a-buy-in.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/project-selective-upstream-sync-phase-a-buy-in.md).
+Full assessment documented in [`project-selective-upstream-sync-phase-a-buy-in.md`](docs/project-selective-upstream-sync-phase-a-buy-in.md).
 
 ---
 

@@ -6,39 +6,21 @@
 
 ## Where the truth lives
 
-### 1. Data Layer (The Schema)
-**File**: [packages/stage-ui/src/types/card.schema.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/types/card.schema.ts)
-- **Requirement**: Extend `AiriExtensionSchema` to include an `outfits` array.
-- **Structure**:
-```typescript
-export interface AiriOutfit {
-  id: string
-  name: string
-  icon: string // Iconify identifier
-  type: 'base' | 'overlay' // Base = Exclusive, Overlay = Additive
-  expressions: Record<string, number> // Weights for specific blendshapes
-}
-```
+| Concern | Canonical source |
+| :--- | :--- |
+| Outfit schema (`AiriOutfitSchema`) | [`packages/stage-ui/src/types/card.schema.ts`](packages/stage-ui/src/types/card.schema.ts) |
+| Runtime `AiriOutfit` interface + `applyOutfit(id)` (base-zeroing / overlay-toggle) | [`packages/stage-ui/src/stores/modules/airi-card.ts`](packages/stage-ui/src/stores/modules/airi-card.ts) |
+| Wardrobe editor UI | [`packages/stage-ui/src/components/scenarios/settings/model-settings/`](packages/stage-ui/src/components/scenarios/settings/model-settings) (`vrm-expressions.vue`, `ModelCustomizer.vue`) |
+| Island wardrobe view | [`packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue`](packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue) (wardrobe popover at line 2462, `wardrobeItems`/`triggerWardrobeItem`/`applyOutfit`) |
 
-### 2. State Logic (The Store)
-**File**: [packages/stage-ui/src/stores/modules/airi-card.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/stores/modules/airi-card.ts)
-- **Logic**: Implement `applyOutfit(id: string)`.
-- **Base Switch**: If `type === 'base'`, the store must iterate through the current `activeExpressions` and set any expression found in *other* base outfits back to 0 before applying the new values. This ensures that switching from "Dress" to "Suit" doesn't leave lingering blendshapes active.
-- **Overlay Switch**: If `type === 'overlay'`, it simply toggles the expressions on top of the current state.
+## Model (see JSDoc for fields)
 
-### 3. Management UI (The Settings Editor)
-**Primary Coordinator**: [packages/stage-ui/src/components/scenarios/settings/model-settings/index.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/components/scenarios/settings/model-settings/index.vue)
-**The Expression List**: [packages/stage-ui/src/components/scenarios/settings/model-settings/vrm-expressions.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/components/scenarios/settings/model-settings/vrm-expressions.vue)
-- **Addition**: Add a "Wardrobe Management" section at the top of the expressions tab.
-- **Interaction**: Allow expressions from the lists to be "Long Pressed" or "Dragged" into one of 9 destination slots to create a bundle.
+An outfit is a named bundle of blendshape weights (`expressions: Record<string, number>`)
+with `type: 'base' | 'overlay'`.
 
-### 4. Interactive UI (The Island)
-**File**: [apps/stage-tamagotchi/src/renderer/components/stage-islands/controls-island/index.vue](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/apps/stage-tamagotchi/src/renderer/components/stage-islands/controls-island/index.vue)
-- **State**: The `view` state is expanded to include `'wardrobe'`.
-- **Layout**: A 3x3 `overflow-y-auto` container followed by a fixed utility row for filtering.
-- **Visual Feedback**:
-  - `Base`: Solid amber background.
-  - `Overlay`: Blue ring/outline highlight.
+- **Base** outfits are *exclusive*: applying one zeroes the expressions of every
+  other base outfit first ("net zero"), preventing overlapping-clothes artifacts.
+- **Overlay** outfits are *additive*: they toggle on top of the current state.
 
 ## Related
 

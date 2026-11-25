@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # Handoff: Orbital Settings Topology Playground
 
 ## Status and intent

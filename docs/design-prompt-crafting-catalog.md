@@ -218,7 +218,7 @@ We will introduce a reusable **`FieldAiGeneratorModal.vue`** component and integ
 
 #### 1. Primitives Layer
 
-##### [MODIFY] [field-input.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/ui/src/components/form/field/field-input.vue)
+##### [MODIFY] [field-input.vue](packages/ui/src/components/form/field/field-input.vue)
 * Add a `sparkle` prop (boolean).
 * If `sparkle` is true, render a subtle sparkle icon (using `i-solar:sparkles-bold-duotone`) at the end of the field header line, next to the label.
 * Emit a custom `@sparkleClick` event when the icon is clicked.
@@ -246,7 +246,7 @@ We will introduce a reusable **`FieldAiGeneratorModal.vue`** component and integ
 
 #### 2. Editor Components Layer
 
-##### [NEW] [FieldAiGeneratorModal.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/FieldAiGeneratorModal.vue)
+##### [NEW] [FieldAiGeneratorModal.vue](packages/stage-pages/src/pages/settings/airi-card/components/FieldAiGeneratorModal.vue)
 Create a beautiful, premium modal using `reka-ui` and standard Tailwind/UnoCSS design systems.
 * **Prose Guidance Pane**: Explains what the field is, why it's critical to prompt generation, and what quality indicators to look for.
 * **Context Summary**: Displays a read-only badge indicating what context fields (e.g., Name, Description) were injected to inform the AI.
@@ -277,16 +277,16 @@ We will provide configurations matching the guidelines defined in the **Prompt C
 
 #### 3. Editor Tabs Layer
 
-##### [MODIFY] [CardCreationDialog.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/CardCreationDialog.vue)
+##### [MODIFY] [CardCreationDialog.vue](packages/stage-pages/src/pages/settings/airi-card/components/CardCreationDialog.vue)
 * Mount the single instance of `FieldAiGeneratorModal.vue` inside the dialog wrapper.
 * Manage states: `showGeneratorModal`, `generatorFieldId`, `generatorFieldLabel`, `generatorFieldValue`, and `generatorCardContext`.
 * Provide a callback that feeds the target field back when saved.
 
-##### [MODIFY] [CardCreationTabIdentity.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabIdentity.vue)
+##### [MODIFY] [CardCreationTabIdentity.vue](packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabIdentity.vue)
 * Enable `sparkle` prop on `cardDescription`, `cardSystemPrompt`, and `cardPostHistoryInstructions`.
 * Listen to `@sparkleClick` and trigger the modal with the current Core Set context.
 
-##### [MODIFY] [CardCreationTabArtistry.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabArtistry.vue)
+##### [MODIFY] [CardCreationTabArtistry.vue](packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabArtistry.vue)
 * Enable `sparkle` prop on the Artistry `selectedArtistryPromptPrefix` input.
 * Listen to `@sparkleClick` and trigger visual DNA prompt prefix generation using the character description and personality as context.
 

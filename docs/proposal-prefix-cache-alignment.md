@@ -28,32 +28,32 @@ For modern LLM providers supporting prefix caching (such as DeepSeek, OpenRouter
 We have identified distinct prompt-compilation flows that build overlapping context arrays.
 
 ### A. Proactivity Heartbeat
-* **Path:** [proactivity.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/proactivity.ts#L540-L602)
+* **Path:** [proactivity.ts](packages/stage-ui/src/stores/proactivity.ts#L540-L602)
 * **Default Context:** Historical context paired with volatile telemetry (CPU load, active windows, idle seconds).
 * **Caching Strategy:** Must leverage **Global Performance Controls** directly. Volatile telemetry is appended as a suffix block at the tail after the warm conversation history.
 
 ### B. Destiny 2 Event-Driven OCR Loop
-* **Path:** [proposal-destiny2-plugin.md](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/docs/proposal-destiny2-plugin.md)
+* **Path:** [proposal-destiny2-plugin.md](docs/proposal-destiny2-plugin.md)
 * **Default Context:** Tactical officer system prompts, active game state telemetry (HUD crop text recognition), and chat history.
 * **Caching Strategy:** Leverages **Global Performance Controls** directly. Game telemetry crops are appended at the tail of the message array.
 
 ### C. Producer Lite (Reply Suggestion Generator)
-* **Path:** [use-producer.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/composables/use-producer.ts#L151-L222)
+* **Path:** [use-producer.ts](packages/stage-ui/src/composables/use-producer.ts#L151-L222)
 * **Default Context:** Character system prompt, environment sensors, chat transcript, and reply generation instructions.
 * **Caching Strategy:** Uses **Tail Framing (Soft Slicing)**. The full conversation history prefix remains intact for cache hits, while a tail instruction directs the model: *"Focus suggestions strictly on the last N exchanges above."*
 
 ### D. Journal Moments
-* **Path:** [memory-text-journal.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/memory-text-journal.ts#L431-L501)
+* **Path:** [memory-text-journal.ts](packages/stage-ui/src/stores/memory-text-journal.ts#L431-L501)
 * **Default Context:** Active character system prompt, environmental context, and chat history.
 * **Caching Strategy:** Uses **Tail Framing (Soft Slicing)** with Per-Invocation Controls. To prevent character drift without breaking the prefix cache, the full history prefix is preserved and a tail directive explicitly bounds the reflection scope (e.g. *"Reflect and journal strictly about the last N turns / recent narrative arc above; ignore earlier topics"*).
 
 ### E. VLM "Forward to LLM" Pipeline
-* **Path:** [chat.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts)
+* **Path:** [chat.ts](packages/stage-ui/src/stores/chat.ts)
 * **Default Context:** When forwarding is enabled, user message history and the image are sent to the VLM to produce a description.
 * **Caching Strategy:** Maintains conversation history cleanly at the prefix so that repeated images/messages with identical history maximize cache hits, while volatile prompt-shims or image directives are kept at the tail.
 
 ### F. Primary Chat Ingestion & STMM / Lifetime Grounding
-* **Path:** [chat.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts) & [session-store.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/session-store.ts)
+* **Path:** [chat.ts](packages/stage-ui/src/stores/chat.ts) & [session-store.ts](packages/stage-ui/src/stores/chat/session-store.ts)
 * **Decoupled Architecture:** `messages[0]` is strictly reserved for the pure, immutable character persona system prompt (`buildSystemPrompt()`), preserving a 100% frozen prefix across all auxiliary subsystems (Proactivity, Suggestions, Journaling).
 * **Trailing System Stack:** Past daily continuity summaries (`[PAST CONTINUITY / DAILY SUMMARIES]`), relationship artifacts (`[LIFETIME RELATIONSHIP ARTIFACT]`), semantic RAG entries (`[GROUNDED LONG-TERM MEMORIES]`), live sensor telemetry (`[ENVIRONMENTAL AWARENESS]`), active topics (`[RECENT TOPICS]`), and director scratchpads (`[VISUAL STATE BOARD]`) are injected as dedicated trailing `role: 'system'` grounding blocks immediately before the active user prompt.
 * **Attention Recency Advantage:** Placing grounding context at the tail leverages transformer attention recency to prevent memory loss in long dialogues while keeping the shared prefix completely warm.
@@ -247,7 +247,7 @@ export function compileCacheAlignedPrompt(options: ContextBuilderOptions) {
 
 ## 6. Prefix Cache Validation & Empirical Tooling
 
-To ensure that prefix alignment remains intact across regressions and updates, the monorepo includes an empirical validator script at [`scripts/validate-prefix-cache.js`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/validate-prefix-cache.js).
+To ensure that prefix alignment remains intact across regressions and updates, the monorepo includes an empirical validator script at [`scripts/validate-prefix-cache.js`](scripts/validate-prefix-cache.js).
 
 ### Running Cache Alignment Audits
 ```bash

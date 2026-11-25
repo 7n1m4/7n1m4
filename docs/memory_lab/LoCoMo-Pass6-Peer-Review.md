@@ -7,11 +7,11 @@
   1. [`620b33938e`](https://github.com/dasilva333/airi/commit/620b33938e): *feat(memory-lab): implement Pass 5 autonomous dual-process architecture, verbatim hydration, and scorer parity*
   2. [`3d19ed06e9`](https://github.com/dasilva333/airi/commit/3d19ed06e9): *feat(memory-lab): implement Pass 6 cognitive triage, turn-window hydration, and prompt precision (49.13% F1)*
 - **Benchmark Artifacts**:
-  - Pass 5 Report: [`reports/memory-lab/locomo-conv47-pass5-report.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass5-report.md)
-  - Pass 5 Trace: [`reports/memory-lab/locomo-conv47-pass5-trace.json`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass5-trace.json)
-  - Pass 6 Report: [`reports/memory-lab/locomo-conv47-pass6-report.md`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass6-report.md)
-  - Pass 6 Trace: [`reports/memory-lab/locomo-conv47-pass6-trace.json`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/reports/memory-lab/locomo-conv47-pass6-trace.json)
-  - Parity Test Suite: [`scripts/tests/locomo-benchmark/evaluator-parity.test.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/evaluator-parity.test.mjs)
+  - Pass 5 Report: [`reports/memory-lab/locomo-conv47-pass5-report.md`](reports/memory-lab/locomo-conv47-pass5-report.md)
+  - Pass 5 Trace: [`reports/memory-lab/locomo-conv47-pass5-trace.json`](reports/memory-lab/locomo-conv47-pass5-trace.json)
+  - Pass 6 Report: [`reports/memory-lab/locomo-conv47-pass6-report.md`](reports/memory-lab/locomo-conv47-pass6-report.md)
+  - Pass 6 Trace: [`reports/memory-lab/locomo-conv47-pass6-trace.json`](reports/memory-lab/locomo-conv47-pass6-trace.json)
+  - Parity Test Suite: [`scripts/tests/locomo-benchmark/evaluator-parity.test.mjs`](scripts/tests/locomo-benchmark/evaluator-parity.test.mjs)
 
 ---
 
@@ -45,27 +45,27 @@ All metrics are scored against the official Snap Research evaluator (`task_eval/
 
 ### Finding 1: Scorer Parity (Correct Upstream F1: 41.89% vs 43.93%)
 - **Action Taken**:
-  - Rewrote [`porter-stemmer.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/porter-stemmer.mjs) with full NLTK extension rules (`NLTK_POOL`, 2-letter $vc$ patterns, vowel-preceded $y$ preservation). Tested across all 712 unique words in conv-47 with **0 mismatches** against Python `nltk.stem.PorterStemmer(mode='NLTK_EXTENSIONS')`.
-  - Updated [`locomo-metrics.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/locomo-metrics.mjs) to mirror `task_eval/evaluation.py`: multi-answer comma splitting is restricted strictly to C1; C2–C4 use single-answer F1; C3 pre-processes `;` delimiters.
+  - Rewrote [`porter-stemmer.mjs`](scripts/tests/locomo-benchmark/porter-stemmer.mjs) with full NLTK extension rules (`NLTK_POOL`, 2-letter $vc$ patterns, vowel-preceded $y$ preservation). Tested across all 712 unique words in conv-47 with **0 mismatches** against Python `nltk.stem.PorterStemmer(mode='NLTK_EXTENSIONS')`.
+  - Updated [`locomo-metrics.mjs`](scripts/tests/locomo-benchmark/locomo-metrics.mjs) to mirror `task_eval/evaluation.py`: multi-answer comma splitting is restricted strictly to C1; C2–C4 use single-answer F1; C3 pre-processes `;` delimiters.
   - Confirmed exact reproduction of historical checkpoints under the official evaluator: Pass 4 = **41.89%**, Pass 1 = **8.71%**, Baseline = **6.43%**.
-  - Added parity tests in [`evaluator-parity.test.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/evaluator-parity.test.mjs).
+  - Added parity tests in [`evaluator-parity.test.mjs`](scripts/tests/locomo-benchmark/evaluator-parity.test.mjs).
 
 ### Finding 2: Leaked Gold Category in System-2 Routing
 - **Action Taken**:
-  - Removed `goldCategory === 3` entirely from [`locomo-runner-pass3-jev.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/locomo-runner-pass3-jev.mjs). Dual-process routing is now 100% label-blind.
-  - Upgraded [`span-reader.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/span-reader.mjs) with sentence boundary isolation, verbatim substring validation against evidence, and a typed return contract `{ status: 'found' | 'abstain' | 'error', answer, confidence, choice }`.
-  - In [`answer-head-pass3.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/answer-head-pass3.mjs), when the reader abstains (`choice === 'none'`), it returns `'UNKNOWN'` instead of falling back to the entire raw paragraph. This triggers autonomous System-2 escalation naturally.
-  - Added unit test `label-Blind Routing Invariance` in [`evaluator-parity.test.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/evaluator-parity.test.mjs) verifying that changing gold category to `999` leaves inference requests and outputs unchanged.
+  - Removed `goldCategory === 3` entirely from [`locomo-runner-pass3-jev.mjs`](scripts/tests/locomo-benchmark/locomo-runner-pass3-jev.mjs). Dual-process routing is now 100% label-blind.
+  - Upgraded [`span-reader.mjs`](scripts/tests/locomo-benchmark/span-reader.mjs) with sentence boundary isolation, verbatim substring validation against evidence, and a typed return contract `{ status: 'found' | 'abstain' | 'error', answer, confidence, choice }`.
+  - In [`answer-head-pass3.mjs`](scripts/tests/locomo-benchmark/answer-head-pass3.mjs), when the reader abstains (`choice === 'none'`), it returns `'UNKNOWN'` instead of falling back to the entire raw paragraph. This triggers autonomous System-2 escalation naturally.
+  - Added unit test `label-Blind Routing Invariance` in [`evaluator-parity.test.mjs`](scripts/tests/locomo-benchmark/evaluator-parity.test.mjs) verifying that changing gold category to `999` leaves inference requests and outputs unchanged.
 
 ### Finding 3: EntityLedger Fresh Ingestion Indexing Bug
 - **Action Taken**:
-  - Fixed [`entity-ledger.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/entity-ledger.mjs) lines 91, 102, 110 where `addClaim()` indexed the input `claimId` (which is `null` on fresh ingestion) instead of the generated `id`.
-  - Added unit test `entityLedger Fresh Ingestion & Indexing Integrity` in [`evaluator-parity.test.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/evaluator-parity.test.mjs) verifying that `bySubjectPredicate` does not contain `null` and that queries succeed with identical results before and after JSON serialization.
+  - Fixed [`entity-ledger.mjs`](scripts/tests/locomo-benchmark/entity-ledger.mjs) lines 91, 102, 110 where `addClaim()` indexed the input `claimId` (which is `null` on fresh ingestion) instead of the generated `id`.
+  - Added unit test `entityLedger Fresh Ingestion & Indexing Integrity` in [`evaluator-parity.test.mjs`](scripts/tests/locomo-benchmark/evaluator-parity.test.mjs) verifying that `bySubjectPredicate` does not contain `null` and that queries succeed with identical results before and after JSON serialization.
 
 ### Finding 4: Verbatim Dialogue Hydration & Synthetic Noise
 - **Action Taken**:
-  - Updated [`dual-searcher-pass3.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/dual-searcher-pass3.mjs) so all candidates hydrate the verbatim dialogue turns (`speaker`, `session_date`, raw turn text) from `index.documents.get(canonicalId)`. This eliminated the synthetic observation noise that had hallucinated `"Among Us"` into D8:36.
-  - Added `"last year"` relative calendar math (`anchor.getFullYear() - 1`) to [`temporal-resolver.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/temporal-resolver.mjs) and [`answer-head-pass3.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/answer-head-pass3.mjs). Resolves Q13 (Italy visit) to **`"In 2021"`** with 1.00 F1.
+  - Updated [`dual-searcher-pass3.mjs`](scripts/tests/locomo-benchmark/dual-searcher-pass3.mjs) so all candidates hydrate the verbatim dialogue turns (`speaker`, `session_date`, raw turn text) from `index.documents.get(canonicalId)`. This eliminated the synthetic observation noise that had hallucinated `"Among Us"` into D8:36.
+  - Added `"last year"` relative calendar math (`anchor.getFullYear() - 1`) to [`temporal-resolver.mjs`](scripts/tests/locomo-benchmark/temporal-resolver.mjs) and [`answer-head-pass3.mjs`](scripts/tests/locomo-benchmark/answer-head-pass3.mjs). Resolves Q13 (Italy visit) to **`"In 2021"`** with 1.00 F1.
 
 ---
 
@@ -77,8 +77,8 @@ All metrics are scored against the official Snap Research evaluator (`task_eval/
   - Q131 (*"What did John use to play when he was younger...?"*): Output `"September 18, 2022"` (F1: 0.0).
   - Q139 (*"What sparked James' passion for gaming when he was a kid?"*): Output `"October 21, 2022"` (F1: 0.0).
 - **The Upgrade**:
-  - Extended [`jev-triage.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/jev-triage.mjs) with `temporal_subtype`: `calendar_date` vs `duration` vs `none`.
-  - In [`answer-head-pass3.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/answer-head-pass3.mjs), purged the regex override. If `temporalSubtype === 'none'`, the query bypasses date formatting completely.
+  - Extended [`jev-triage.mjs`](scripts/tests/locomo-benchmark/jev-triage.mjs) with `temporal_subtype`: `calendar_date` vs `duration` vs `none`.
+  - In [`answer-head-pass3.mjs`](scripts/tests/locomo-benchmark/answer-head-pass3.mjs), purged the regex override. If `temporalSubtype === 'none'`, the query bypasses date formatting completely.
   - **Results**:
     - Q130 $\rightarrow$ **`guitar`** (F1: **1.00**).
     - Q131 $\rightarrow$ **`Playing drums`** (F1: **0.67**).
@@ -87,7 +87,7 @@ All metrics are scored against the official Snap Research evaluator (`task_eval/
 ### Pocket 2: System-2 Prompt Precision & Slash Prohibition
 - **The Issue**: DeepSeek Flash appended conversational justifications and parentheticals (e.g. `"No; John says he doesn't have pets..."` dropped Q3 from 1.00 to 0.25 F1; `"Chess (the dialogue does not...)"` dropped Q106 to 0.20 F1; `"Coding/programming."` became `"codingprogramming"` under `remove_punc` and scored 0.0 F1 on Q118).
 - **The Upgrade**:
-  - In [`system2-batch-resolver.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/system2-batch-resolver.mjs), removed `"preserving qualifications"` and added explicit brevity directives:
+  - In [`system2-batch-resolver.mjs`](scripts/tests/locomo-benchmark/system2-batch-resolver.mjs), removed `"preserving qualifications"` and added explicit brevity directives:
     1. Minimal answer (1–4 words) without reasoning or citations.
     2. Strict `"Yes"` or `"No"` on polar questions.
     3. Prohibition of slashes (`'/'`).
@@ -99,7 +99,7 @@ All metrics are scored against the official Snap Research evaluator (`task_eval/
 ### Pocket 3: Conversational Turn-Window Hydration
 - **The Discovery**: Forensic analysis of Pass 5 revealed that **86.4% of retrieval misses were from the exact session retrieved**, and 50.0% were within $\pm 2$ turns.
 - **The Upgrade**:
-  - In [`dual-searcher-pass3.mjs`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/tests/locomo-benchmark/dual-searcher-pass3.mjs), implemented `getConversationalWindow()`: when candidate `D{s}:{t}` is retrieved, it hydrates `[D{s}:{t-1}, D{s}:{t}, D{s}:{t+1}]`.
+  - In [`dual-searcher-pass3.mjs`](scripts/tests/locomo-benchmark/dual-searcher-pass3.mjs), implemented `getConversationalWindow()`: when candidate `D{s}:{t}` is retrieved, it hydrates `[D{s}:{t-1}, D{s}:{t}, D{s}:{t+1}]`.
   - Both the span reader and System-2 now receive complete 3-turn conversational exchanges rather than isolated 1-turn fragments.
 - **Results**: Category 4 Literal F1 surged from **44.44% to 50.19%** (+5.75%).
 

@@ -66,7 +66,7 @@ export const useVisionStore = defineStore('vision', () => {
 
 ## 3. Settings UI Integration (`vision.vue`)
 
-We will modify [vision.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/vision.vue#L321-L352) to support the new strategy option and display helpful configuration warnings.
+We will modify [vision.vue](packages/stage-pages/src/pages/settings/modules/vision.vue#L321-L352) to support the new strategy option and display helpful configuration warnings.
 
 ### UI Modifications
 1.  **Enable Radio Options:** Remove the `:disabled="true"` and `[PLANNED]` badges from the "Forward to LLM" card.

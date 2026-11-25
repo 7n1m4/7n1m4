@@ -99,7 +99,7 @@ export function filterEntriesByAncestry<T extends { timelineId?: string, created
 These are the key frontend locations and daemons that must inherit from the new query/filtering methods:
 
 ### 3.1 The Input Composer / History Area
-- **File**: [InteractiveArea.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue)
+- **File**: [InteractiveArea.vue](apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue)
 - **UI Element**: `<!-- Echo Group (2-story Ticker) -->` (Line 750)
   - **Current**: Filters `echoesStore.getCharacterChips(activeCardId.value)`
   - **Update**: Filter `echoEntries` using the active session's `timelineId` ancestry.
@@ -114,30 +114,30 @@ These are the key frontend locations and daemons that must inherit from the new 
   - **Update**: Scope block check to blocks matching active timeline ancestry.
 
 ### 3.2 Search & Settings Modules
-- **File**: [InteractiveArea.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue) & [memory-long-term.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/memory-long-term.vue)
+- **File**: [InteractiveArea.vue](apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue) & [memory-long-term.vue](packages/stage-pages/src/pages/settings/modules/memory-long-term.vue)
 
 #### 3.2.1 Search Inputs / Dialogs (Keyword & Semantic)
 - **Current**: `textJournalStore.searchEntries` and the local filters query all entries for the active character globally.
 - **Update**: Pass the active `timelineId` into `searchEntries`. Ensure Orama search results and local regex matching filters post-filter against the active ancestry chain before rendering.
 
 #### 3.2.2 The Sacred Records Display Grid (LTMM Page)
-- **File**: [memory-long-term.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/memory-long-term.vue)
+- **File**: [memory-long-term.vue](packages/stage-pages/src/pages/settings/modules/memory-long-term.vue)
 - **Current**: `visibleEntries` filters items purely by `characterId`.
 - **Update**: Fetch the active timeline index for the character, and filter `entries` using `filterEntriesByAncestry`.
 
 #### 3.2.3 Daily Summary Blocks Grid (STMM Page)
-- **File**: [memory-short-term.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/memory-short-term.vue)
+- **File**: [memory-short-term.vue](packages/stage-pages/src/pages/settings/modules/memory-short-term.vue)
 - **Current**: Queries daily blocks for the character globally.
 - **Update**: Update the blocks query helper to filter the returned STMM array using the active timeline ancestry.
 
 ### 3.3 Stage Background Gallery Picker
-- **File**: [StageBackgroundPicker.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/stage-background-picker/StageBackgroundPicker.vue)
+- **File**: [StageBackgroundPicker.vue](packages/stage-ui/src/components/scenarios/dialogs/stage-background-picker/StageBackgroundPicker.vue)
 - **UI Element**: `Stage Background` Header & Selection Grid (Preset/Journal/Selfies)
   - **Current**: Pulls character backgrounds using `backgroundStore.availableBackgrounds` (all items where `characterId === activeCardId`).
-  - **Update**: Update `getCharacterBackgrounds` and `getCharacterJournalEntries` computed helpers inside [background.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/background.ts) to filter using the active timeline ancestry.
+  - **Update**: Update `getCharacterBackgrounds` and `getCharacterJournalEntries` computed helpers inside [background.ts](packages/stage-ui/src/stores/background.ts) to filter using the active timeline ancestry.
 
 ### 3.4 Chat Bubble Context Menu (Action Menu)
-- **File**: [action-menu/index.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/components/action-menu/index.vue)
+- **File**: [action-menu/index.vue](packages/stage-ui/src/components/scenarios/chat/components/action-menu/index.vue)
 - **UI Element**: Context Menu Options (Fork to Background, Fork & Switch, Trim Timeline)
   - **Update**:
     - **Fork to Background**: Creates a new session/timeline pointing to the parent timeline up to the message's `createdAt` timestamp, leaving the active view on the current chat window.
@@ -145,7 +145,7 @@ These are the key frontend locations and daemons that must inherit from the new 
     - **Trim Timeline**: Discards messages in the active session after the selected message's timestamp to prune dead ends.
 
 ### 3.5 Parallel Timelines Modal
-- **File**: [ChatSessionModal.vue](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/chat/ChatSessionModal.vue)
+- **File**: [ChatSessionModal.vue](packages/stage-ui/src/components/scenarios/chat/ChatSessionModal.vue)
 - **UI Element**: Parallel Timelines list view
   - **Layout**: Keep the UI layout as a flat listing of sessions to avoid complex nested tree hierarchy structures.
   - **Update**: For sessions/timelines that are branches, render a simple parent badge or metadata subtext line (e.g., `Parent: Playful Operation Stardust` or `Forked from Main Story at 6/12`) to provide structural context to the user.
@@ -155,12 +155,12 @@ These are the key frontend locations and daemons that must inherit from the new 
 ## 4. Background Processes & Prompt Construction
 
 ### 4.1 The Dreaming Daemon (Eternal Echoes Generation)
-- **File**: [proactivity.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/proactivity.ts#L357) (`evaluateDreamState`)
+- **File**: [proactivity.ts](packages/stage-ui/src/stores/proactivity.ts#L357) (`evaluateDreamState`)
 - **Current**: Calls `collectCharacterConversationMessages(characterId)` which merges raw messages from all character sessions globally to consolidate daily memories.
 - **Update**: Update the message collector to query the chat session index and grab session logs only if they are associated with the active timeline's ancestry. This ensures dreaming is isolated to its respective narrative timeline.
 
 ### 4.2 System Prompt Builder
-- **File**: [session-store.ts](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/session-store.ts)
+- **File**: [session-store.ts](packages/stage-ui/src/stores/chat/session-store.ts)
 - **UI Elements**:
   - `buildShortTermMemoryContext()` (Line 199)
     - **Update**: Slices daily STMM blocks using the ancestry-filtered array rather than character-wide summaries.

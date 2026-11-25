@@ -52,7 +52,7 @@ AIRI splits the computational workload to achieve hyperscale reasoning while mai
 | Layer | Implementation | Operational Profile |
 | :--- | :--- | :--- |
 | **Knowledge Graph Substrate** | In-memory `EntityLedger` (`byAlias`, `claims`, `entities`, `sources`) + IndexedDB persistence (`local:entity-ledger:{characterId}`) | 100% offline, zero API cost, 0ms exact relational & alias graph traversal. |
-| **Level 1 Search (Candidate Recall)** | In-memory BGE-small (`Xenova/bge-small-en-v1.5`) + BM25 via [`search.worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/workers/search/search.worker.ts) | 100% offline, zero API cost, <50ms lookup. |
+| **Level 1 Search (Candidate Recall)** | In-memory BGE-small (`Xenova/bge-small-en-v1.5`) + BM25 via [`search.worker.ts`](packages/stage-ui/src/libs/workers/search/search.worker.ts) | 100% offline, zero API cost, <50ms lookup. |
 | **Level 1 Booster (Triage & Precision Rerank)** | Local ONNX Coprocessor (Laya) or Cloud REST API (Jev) | Optional System 1 booster; executes zero-shot query triage (C1–C4) and cross-encoder candidate reranking, lifting top-1 precision from ~65% to >75%. |
 | **Level 2 Reasoning (Epistemic Deduction)** | Structured LLM Coprocessor (Configured User API or High-Tier Local LLM) | Dispatched conditionally for complex multi-hop or temporal contradictions. |
 | **Storage & Index Snapshotting** | Persistent IndexedDB (`airi-search-index`, `text-journal.repo`, `local:entity-ledger:*`) | Flat universe-keyed persistence; zero external database server required. |
@@ -85,14 +85,14 @@ Semantic search within AIRI is not a single monolith. It serves **four distinct 
 * **Interactive UI Presentation**:
   - **Triage Status Indicator**: When System 1 is configured, displays live category status chips derived from Pass 11 triage (e.g. `[PASS 11: C1 MULTI-HOP]`, `[PASS 11: C2 TEMPORAL]`, `[PASS 11: C4 LITERAL]`). When System 1 is disabled/offline, gracefully falls back to `[HYBRID RRF: BASELINE]`.
   - **Unified Card Rendering**:
-    - `[KNOWLEDGE GRAPH]`: Displays relational triples (`[Subject] ➔ [Predicate] ➔ [Object]`) with a 1-click trigger opening the [`EntityDetailModal`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) for full cognitive audit history and dialogue provenance.
+    - `[KNOWLEDGE GRAPH]`: Displays relational triples (`[Subject] ➔ [Predicate] ➔ [Object]`) with a 1-click trigger opening the [`EntityDetailModal`](packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) for full cognitive audit history and dialogue provenance.
     - `[JOURNAL]`: Verbatim episodic text notes created via `txt_journal`.
     - `[RECAP]`: Daily STMM memory blocks.
     - `[CHAT]`: Chronological dialogue turn sources.
   - **Smooth Reset**: Clearing the search input immediately restores the standard chronological journal records view.
 
 ### Consumer 2: In-Flight Chat Memory (Universe RAG Pre-Flight Grounding)
-* **Surface**: Live conversation ingestion in [`packages/stage-ui/src/stores/chat.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts).
+* **Surface**: Live conversation ingestion in [`packages/stage-ui/src/stores/chat.ts`](packages/stage-ui/src/stores/chat.ts).
 * **Execution Tier**: **Level 1 by default**, with **Conditional System-2 Escalation**.
 * **Default Flow**: Upon receiving user input, the engine extracts the focus query using Turn-1 anaphora resolution, fetches top candidates across layered memory (LTMM, STMM, Raw), applies reciprocal rank fusion (and Laya/Jev reranking if available), and formats an evidence block injected into the prompt context.
 * **Escalation Rules**: System-2 escalation occurs **only** when:
@@ -155,7 +155,7 @@ A critical requirement of AIRI is **universal zero-install portability**. The sy
 ```
 
 ### The Baseline Floor
-The foundation of the retrieval system is [`search.worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/workers/search/search.worker.ts):
+The foundation of the retrieval system is [`search.worker.ts`](packages/stage-ui/src/libs/workers/search/search.worker.ts):
 - Runs entirely inside a Web Worker using `@huggingface/transformers` (`Xenova/bge-small-en-v1.5`) compiled to WebGPU/WASM.
 - Maintains an in-memory BM25 inverted index alongside document embeddings.
 - Automatically persists index snapshots to IndexedDB (`airi-search-index`).
@@ -221,7 +221,7 @@ AIRI integrates the canonical Pass 11 **Triage-Driven Dual Search Engine** (`Dua
 ```
 
 ### 1. The Zero-Shot Triage Schema (`JEV_TRIAGE_SCHEMA`)
-Located in [`packages/stage-ui/src/stores/modules/system-one.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/system-one.ts), triage maps queries into three orthogonal dimensions:
+Located in [`packages/stage-ui/src/stores/modules/system-one.ts`](packages/stage-ui/src/stores/modules/system-one.ts), triage maps queries into three orthogonal dimensions:
 1. **`category`**:
    - `c1_multihop`: Requires joining, listing, counting, or aggregating multiple facts across different conversations (e.g. *"What pets does Asuka talk about?"*, *"List all the games we played"*).
    - `c2_temporal`: Asks when an event occurred, dates, duration, elapsed time, or sequence order (e.g. *"When did we go to Tokyo-3?"*).
@@ -363,11 +363,11 @@ Pass 11 established an all-time record score of **75.97% Upstream F1** on the Lo
 
 | Component | Status | Production Destination | Rationale |
 | :--- | :--- | :--- | :--- |
-| **Turn-1 Anaphora Resolution** | **Graduate** | [`packages/stage-ui/src/libs/search/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/) | Essential for natural dialogue pronoun resolution. |
-| **Date-Hook Candidate Quota** | **Graduate** | [`packages/stage-ui/src/libs/search/hybrid-scorer.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/hybrid-scorer.ts) | Prevents chronological fact loss in temporal queries. |
-| **Laya / Jev Reranking Booster** | **Graduate** | [`packages/stage-ui/src/libs/search/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/) | Optional Level-1 precision amplifier with fallback floor. |
-| **In-Memory Entity Ledger Substrate** | **Graduate** | [`packages/stage-ui/src/stores/entity-ledger.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/entity-ledger.ts) | Indexed secondary Maps for 0ms relational traversal and proof bundles. |
-| **Strict Fail-Closed Validation** | **Graduate** | [`packages/stage-ui/src/stores/chat.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts) | Prevents hallucinations when evidence is missing. |
+| **Turn-1 Anaphora Resolution** | **Graduate** | [`packages/stage-ui/src/libs/search/`](packages/stage-ui/src/libs/search/) | Essential for natural dialogue pronoun resolution. |
+| **Date-Hook Candidate Quota** | **Graduate** | [`packages/stage-ui/src/libs/search/hybrid-scorer.ts`](packages/stage-ui/src/libs/search/hybrid-scorer.ts) | Prevents chronological fact loss in temporal queries. |
+| **Laya / Jev Reranking Booster** | **Graduate** | [`packages/stage-ui/src/libs/search/`](packages/stage-ui/src/libs/search/) | Optional Level-1 precision amplifier with fallback floor. |
+| **In-Memory Entity Ledger Substrate** | **Graduate** | [`packages/stage-ui/src/stores/entity-ledger.ts`](packages/stage-ui/src/stores/entity-ledger.ts) | Indexed secondary Maps for 0ms relational traversal and proof bundles. |
+| **Strict Fail-Closed Validation** | **Graduate** | [`packages/stage-ui/src/stores/chat.ts`](packages/stage-ui/src/stores/chat.ts) | Prevents hallucinations when evidence is missing. |
 | **Hyper-Terse Answer Compression** | **Lab Only** | *Discarded* | LoCoMo rewards 2-word answers; companion dialogue requires natural character voice. |
 | **Dataset-Specific Category Hardcoding** | **Lab Only** | *Discarded* | Replaced by general query intent signals (`isTemporal`, `isMultiHop`). |
 | **Monolithic Joint Batch Prompting** | **Lab Only** | *Discarded* | Real conversations occur turn-by-turn, not in 150-question batches. |
@@ -377,7 +377,7 @@ Pass 11 established an all-time record score of **75.97% Upstream F1** on the Lo
 - **Phase 4.1: Knowledge Graph Substrate & System 1 Zero-Shot Classification** — ✅ **SHIPPED** (Commit `4f9434b4e7`):
   - Purged brittle regex dictionaries/hardcodes (`COMMON_ANIMALS`, `KNOWN_PLACES`, `KNOWN_PERSONS`, etc.).
   - Integrated System 1 (TypeSafe Jev / Local Laya) Zero-Shot Entity Classification (`JEV_ENTITY_CLASSIFIER_SCHEMA`) with taxonomy expansion (`person`, `animal`, `place`, `organization`, `activity`, `concept`, `unknown`) and conversational artifact pruning.
-  - Built [`EntityDetailModal.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) providing full cognitive audit visibility (model, confidence, logprob distribution, live re-evaluation), chronological dialogue provenance, connected relational triples, and noise deletion.
+  - Built [`EntityDetailModal.vue`](packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) providing full cognitive audit visibility (model, confidence, logprob distribution, live re-evaluation), chronological dialogue provenance, connected relational triples, and noise deletion.
   - Full IndexedDB persistence via `local:entity-ledger:{characterId}`.
 
 - **Phase 4.2: Consumer 1 - Search Archive Box & Dual-Channel Retrieval Engine** — 🔄 **ACTIVE / IN-PROGRESS**:
@@ -400,18 +400,18 @@ Pass 11 established an all-time record score of **75.97% Upstream F1** on the Lo
 
 | Subsystem | Canonical Path | Responsibility |
 | :--- | :--- | :--- |
-| **Knowledge Graph Ledger** | [`packages/stage-ui/src/libs/search/entity-ledger.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/entity-ledger.ts) | Normalized Maps (`entities`, `claims`, `sources`, `byAlias`, `byObjectPredicate`). |
-| **Knowledge Graph Store** | [`packages/stage-ui/src/stores/entity-ledger.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/entity-ledger.ts) | Ledger lifecycle, IndexedDB persistence, provenance lookups, reclassification. |
-| **Ledger Priming Engine** | [`packages/stage-ui/src/libs/search/ledger-priming.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/ledger-priming.ts) | Turn knowledge extraction, System 1 entity classifier, candidate mention proposal. |
-| **Entity Detail Inspector UI** | [`packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) | Cognitive audit modal, probability distribution, dialogue provenance, noise pruning. |
-| **Search Web Worker** | [`packages/stage-ui/src/libs/workers/search/search.worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/workers/search/search.worker.ts) | BGE-small embeddings + BM25 inverted index in Web Worker. |
-| **Layered Memory Adapter** | [`packages/stage-ui/src/libs/search/layered-memory.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/layered-memory.ts) | Cross-pillar query orchestration across LTMM, STMM, and Raw history. |
-| **Hybrid Scorer & Fusion** | [`packages/stage-ui/src/libs/search/hybrid-scorer.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/search/hybrid-scorer.ts) | RRF fusion, temporal weights, date-hook reservations, and MMR diversity. |
-| **System 1 Cognitive Store** | [`packages/stage-ui/src/stores/modules/system-one.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/system-one.ts) | Jev/Laya zero-shot triage (`runTriage`), rerank (`runRerank`), and entity classifier. |
-| **Search Archive UI (Consumer 1)**| [`packages/stage-pages/src/pages/settings/modules/memory-long-term.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/memory-long-term.vue) | Search Archive box, triage status chips, unified results view. |
-| **Chat Ingestion Orchestrator** | [`packages/stage-ui/src/stores/chat.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat.ts) | Ingestion pipeline, pre-flight grounding, and cognition dispatch. |
-| **Agent Tool Definition** | [`packages/stage-ui/src/stores/memory-text-journal.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/memory-text-journal.ts) | Exposes `text_journal.search` as pure Level 1 verbatim tool. |
-| **Cognition Pipeline Seam** | [`packages/stage-ui/src/stores/chat/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/) | Houses Standard, Nan0 Affective, and Universe RAG++ Epistemic dispatchers. |
+| **Knowledge Graph Ledger** | [`packages/stage-ui/src/libs/search/entity-ledger.ts`](packages/stage-ui/src/libs/search/entity-ledger.ts) | Normalized Maps (`entities`, `claims`, `sources`, `byAlias`, `byObjectPredicate`). |
+| **Knowledge Graph Store** | [`packages/stage-ui/src/stores/entity-ledger.ts`](packages/stage-ui/src/stores/entity-ledger.ts) | Ledger lifecycle, IndexedDB persistence, provenance lookups, reclassification. |
+| **Ledger Priming Engine** | [`packages/stage-ui/src/libs/search/ledger-priming.ts`](packages/stage-ui/src/libs/search/ledger-priming.ts) | Turn knowledge extraction, System 1 entity classifier, candidate mention proposal. |
+| **Entity Detail Inspector UI** | [`packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue`](packages/stage-pages/src/pages/settings/modules/components/EntityDetailModal.vue) | Cognitive audit modal, probability distribution, dialogue provenance, noise pruning. |
+| **Search Web Worker** | [`packages/stage-ui/src/libs/workers/search/search.worker.ts`](packages/stage-ui/src/libs/workers/search/search.worker.ts) | BGE-small embeddings + BM25 inverted index in Web Worker. |
+| **Layered Memory Adapter** | [`packages/stage-ui/src/libs/search/layered-memory.ts`](packages/stage-ui/src/libs/search/layered-memory.ts) | Cross-pillar query orchestration across LTMM, STMM, and Raw history. |
+| **Hybrid Scorer & Fusion** | [`packages/stage-ui/src/libs/search/hybrid-scorer.ts`](packages/stage-ui/src/libs/search/hybrid-scorer.ts) | RRF fusion, temporal weights, date-hook reservations, and MMR diversity. |
+| **System 1 Cognitive Store** | [`packages/stage-ui/src/stores/modules/system-one.ts`](packages/stage-ui/src/stores/modules/system-one.ts) | Jev/Laya zero-shot triage (`runTriage`), rerank (`runRerank`), and entity classifier. |
+| **Search Archive UI (Consumer 1)**| [`packages/stage-pages/src/pages/settings/modules/memory-long-term.vue`](packages/stage-pages/src/pages/settings/modules/memory-long-term.vue) | Search Archive box, triage status chips, unified results view. |
+| **Chat Ingestion Orchestrator** | [`packages/stage-ui/src/stores/chat.ts`](packages/stage-ui/src/stores/chat.ts) | Ingestion pipeline, pre-flight grounding, and cognition dispatch. |
+| **Agent Tool Definition** | [`packages/stage-ui/src/stores/memory-text-journal.ts`](packages/stage-ui/src/stores/memory-text-journal.ts) | Exposes `text_journal.search` as pure Level 1 verbatim tool. |
+| **Cognition Pipeline Seam** | [`packages/stage-ui/src/stores/chat/`](packages/stage-ui/src/stores/chat/) | Houses Standard, Nan0 Affective, and Universe RAG++ Epistemic dispatchers. |
 | **Cognitive Consolidation Worker** | `packages/stage-ui/src/libs/workers/memory/cognitive-worker.ts` | PCL consolidation, FSRS decay updates, and lifetime summarization. |
 
 ---

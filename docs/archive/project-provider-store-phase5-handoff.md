@@ -46,13 +46,13 @@ Direct inspection of `upstream/main` (`https://github.com/moeru-ai/airi.git` at 
 
 - **Fork Desynchronization Points Fixed**:
   1. **Storage Projection Fallback (`{}` vs `undefined`)**:
-     In [`instance-store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instance-store.ts), `providerCredentials.value` projection getter was updated so unconfigured providers resolve strictly to `undefined` rather than an empty `{}` object, matching upstream expectations.
+     In [`instance-store.ts`](packages/stage-ui/src/stores/providers/runtime/instance-store.ts), `providerCredentials.value` projection getter was updated so unconfigured providers resolve strictly to `undefined` rather than an empty `{}` object, matching upstream expectations.
   2. **Upstream Migration & Alias Normalization**:
-     In [`instance-store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instance-store.ts), `migrate()` was updated to normalize legacy `snake_case` aliases (`api_key` $\rightarrow$ `apiKey`, `base_url` $\rightarrow$ `baseUrl`) and discard empty/whitespace-only credential stubs during initial load.
+     In [`instance-store.ts`](packages/stage-ui/src/stores/providers/runtime/instance-store.ts), `migrate()` was updated to normalize legacy `snake_case` aliases (`api_key` $\rightarrow$ `apiKey`, `base_url` $\rightarrow$ `baseUrl`) and discard empty/whitespace-only credential stubs during initial load.
   3. **Credential Gauntlet Gating**:
-     In [`selectors/config.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/selectors/config.ts), `isProviderConfigured` was restored to strictly validate `apiKey?.trim()` or AWS key pairs, preventing unauthenticated 401 calls when only default `baseUrl` options are set.
+     In [`selectors/config.ts`](packages/stage-ui/src/stores/providers/selectors/config.ts), `isProviderConfigured` was restored to strictly validate `apiKey?.trim()` or AWS key pairs, preventing unauthenticated 401 calls when only default `baseUrl` options are set.
   4. **Fail-Fast Runtime Guard**:
-     In [`instances.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instances.ts), `getProviderInstance` rejects unconfigured credentialed providers before SDK instantiation with a client-side error.
+     In [`instances.ts`](packages/stage-ui/src/stores/providers/runtime/instances.ts), `getProviderInstance` rejects unconfigured credentialed providers before SDK instantiation with a client-side error.
 
 ---
 
@@ -69,10 +69,10 @@ All verification suites are 100% green:
 
 ## 3. Comprehensive File Index
 
-- [`packages/stage-ui/src/stores/providers/runtime/instance-store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instance-store.ts) — Storage projection fallback & upstream alias normalization migration.
-- [`packages/stage-ui/src/stores/providers/selectors/config.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/selectors/config.ts) — Strict credential presence check in `isProviderConfigured`.
-- [`packages/stage-ui/src/stores/providers/runtime/instances.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instances.ts) — Fail-fast client guard in `getProviderInstance`.
-- [`packages/stage-ui/src/stores/providers/runtime/instance-store.phase5.test.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/runtime/instance-store.phase5.test.ts) — 19 comprehensive Phase 5 unit tests.
+- [`packages/stage-ui/src/stores/providers/runtime/instance-store.ts`](packages/stage-ui/src/stores/providers/runtime/instance-store.ts) — Storage projection fallback & upstream alias normalization migration.
+- [`packages/stage-ui/src/stores/providers/selectors/config.ts`](packages/stage-ui/src/stores/providers/selectors/config.ts) — Strict credential presence check in `isProviderConfigured`.
+- [`packages/stage-ui/src/stores/providers/runtime/instances.ts`](packages/stage-ui/src/stores/providers/runtime/instances.ts) — Fail-fast client guard in `getProviderInstance`.
+- [`packages/stage-ui/src/stores/providers/runtime/instance-store.phase5.test.ts`](packages/stage-ui/src/stores/providers/runtime/instance-store.phase5.test.ts) — 19 comprehensive Phase 5 unit tests.
 
 ---
 

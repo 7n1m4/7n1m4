@@ -209,9 +209,9 @@ While HumanML3D feature vectors (263-dim) represent 3D body joint velocities and
 To ensure open-source maintainability and reproducibility, all Python scripts used to export, inspect, and validate the WebGPU ONNX binaries are committed to `scripts/motion-export/`.
 
 ### 5.1 Export Scripts Manifest (`scripts/motion-export/`)
-- [`scripts/motion-export/compile_onnx.py`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/motion-export/compile_onnx.py): Exports `flow_mdm.onnx` from the PyTorch checkpoint (`ZeyuLing/hftrainer-flowmdm-humanml3d`).
-- [`scripts/motion-export/inspect_sampler.py`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/motion-export/inspect_sampler.py): Extracts `alphas_cumprod` and DDPM/DDIM posterior variance coefficients to `diffusion_stats.json`.
-- [`scripts/motion-export/test_onnx_parity.py`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/scripts/motion-export/test_onnx_parity.py): Validates mathematical parity between PyTorch pipeline output and python-side `onnxruntime` 50-step DDIM execution.
+- [`scripts/motion-export/compile_onnx.py`](scripts/motion-export/compile_onnx.py): Exports `flow_mdm.onnx` from the PyTorch checkpoint (`ZeyuLing/hftrainer-flowmdm-humanml3d`).
+- [`scripts/motion-export/inspect_sampler.py`](scripts/motion-export/inspect_sampler.py): Extracts `alphas_cumprod` and DDPM/DDIM posterior variance coefficients to `diffusion_stats.json`.
+- [`scripts/motion-export/test_onnx_parity.py`](scripts/motion-export/test_onnx_parity.py): Validates mathematical parity between PyTorch pipeline output and python-side `onnxruntime` 50-step DDIM execution.
 
 ### 5.2 Key Export Workarounds & JIT Patches
 1. **WebGPU `Einsum` Type Mismatch Fix**:

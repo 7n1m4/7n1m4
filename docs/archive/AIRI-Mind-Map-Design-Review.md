@@ -1,3 +1,5 @@
+> **Superseded / historical record (2026-11-25)** — kept for historical reference only; not current guidance.
+
 # AIRI Mind Map — Design and Visualization Peer Review
 Target: dasilva333/airi @ 7bb7d0422a
 Review date: 2026-09-24

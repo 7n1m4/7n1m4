@@ -56,7 +56,7 @@ Because RWKV-7 is a text-only recurrent architecture, it cannot natively process
 ### 3.1 Canonical Codebase Primitive Index: FlowMDM CLIP Integration
 
 AIRI already includes a production-tested CLIP text encoder primitive in the codebase:
-* **Canonical CLIP Encoder Source**: [`packages/stage-ui/src/utils/flowmdm/clipEncoder.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/utils/flowmdm/clipEncoder.ts)
+* **Canonical CLIP Encoder Source**: [`packages/stage-ui/src/utils/flowmdm/clipEncoder.ts`](packages/stage-ui/src/utils/flowmdm/clipEncoder.ts)
 * **Model & Tokenizer**: Loads `Xenova/clip-vit-base-patch32` via `@huggingface/transformers` (`AutoTokenizer` + `CLIPTextModelWithProjection`).
 * **Shared Embedding Vector Space**: Generates 512-dimensional CLIP embeddings (`Float32Array`).
 

@@ -184,7 +184,7 @@ With Needle:
 2. **Topic Extraction:** Needle returns 2–4 active topics with normalized weights (e.g. `[{ topic: "kitty corn bakery", weight: 0.95 }, { topic: "unicorn mythology", weight: 0.80 }]`).
 3. **Storage:** Stored in volatile session state (`useRecentTopicsStore`)—**never polluting the character card YAML/JSON**.
 4. **Pre-Flight UI Preview:** Displayed in the amber **`PRE-FLIGHT GROUNDING ACTIVE`** popover box above the chat composer alongside sensor and salience telemetry.
-5. **Prompt Assembly:** Injected cleanly into the 6th grounding slot via `formatRecentTopicsBlock()` in [`grounding-assembler.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/chat/grounding-assembler.ts):
+5. **Prompt Assembly:** Injected cleanly into the 6th grounding slot via `formatRecentTopicsBlock()` in [`grounding-assembler.ts`](packages/stage-ui/src/stores/chat/grounding-assembler.ts):
    ```text
    [RECENT TOPICS]
    You have the following topics and conceptual threads active in your recent memory. Use them to maintain awareness of what has been discussed lately:

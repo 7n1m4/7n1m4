@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Analysis: Slint business-logic inventory for the big-bang cutover
 
-**Status:** survey · **Date:** 2026-11-21 · **Scope:** `crates/anima-slint/src/**` at HEAD `bad8fc69`
+**Status:** survey (historical — the Slint cutover shipped) · **Date:** 2026-11-21 · **Scope:** `crates/anima-slint/src/**` at HEAD `bad8fc69`
 
+> **Banner (2026-11-25):** this survey is a **historical record** of the Slint→daemon migration. The renderer that was to receive the CLIENT-LOCAL items is **Flutter only** — the Godot client named in the "Target daemon module" column below was purged on 2026-11-25, so every "Godot" target is superseded by "Flutter". Nothing here authorizes new work.
 
 **Owner:** E1-T1 / bead `airi-wxp.1` · **Read-only source survey** (this file is the only write)
 
@@ -15,7 +16,7 @@ instead of copies: [`design-daemon-gateway.md`](./design-daemon-gateway.md) (tra
 [`decision-audit-archive-retention.md`](./decision-audit-archive-retention.md) (no GUI delete path).
 
 **Legend.** **DAEMON** = business logic/state that must land in `anima-daemon` *before* the crate is
-deleted. **CLIENT-LOCAL** = belongs in Flutter/Godot; the daemon must not own it. **DROP** =
+deleted. **CLIENT-LOCAL** = belongs in Flutter (the sole active renderer); the daemon must not own it. **DROP** =
 Slint-only UI or test scaffold with no replacement, deleted in one cutover. "⚠" marks a
 second-writer hazard if the item is moved without also retiring its Slint owner.
 
@@ -40,7 +41,7 @@ second-writer hazard if the item is moved without also retiring its Slint owner.
 | R1 | `bridges/mod.rs:46-154` | **DAEMON** | Process statics `SMOKE`, `SETTINGS`, `PROFILE`, `PROFILE_EXPLICIT`, `PROVIDERS`, `DATABASE`, `RUNTIME` plus accessors; `load_section`/`save_section` (`:84-99`). | `services.rs` (extend `core.rs`): `struct Services { core: CoreService, settings: SettingsService, providers: ProviderService, cards: CardService, chat: ChatService, … }`, `Services::open(profile)`, one injected handle per task. `SMOKE` does **not** move. | M1. ⚠ Replacing statics with per-client mirrors recreates seven writers; inject one `Services` into every RPC handler. |
 | R2 | `main.rs:54-75` | **DAEMON** | Profile resolution, `Database::open("airi.sqlite")`, `SettingsStore`, `ProviderRepo`, Tokio runtime registration. | `services.rs::Services::open`: reuse `CoreService::open` path rules (`crates/anima-daemon/src/core.rs:44-55`) and register all repos on the same `Database`. | M1, depends R1. Preserve `<data>/airi-slint/airi.sqlite` path (`crates/anima-daemon/src/core.rs:44-55`); do not mint a second config path. |
 | R3 | `main.rs:34-52, 267-307` | **DROP** | CLI parse, `--smoke` tour, usage text. | — | Wave 6. Replace smoke checks with daemon WS probes (§10). |
-| R4 | `main.rs:100-241`, `main.rs:243-265` | **DROP** | `run_ui()` window wiring and `sync_chat_view` snapshot push. | — | Wave 6. Flutter/Godot own their view model (C5). |
+| R4 | `main.rs:100-241`, `main.rs:243-265` | **DROP** | `run_ui()` window wiring and `sync_chat_view` snapshot push. | — | Wave 6. Flutter owns its view model (C5). |
 | R5 | `lib.rs:1-11` | **DROP** | Module declarations + `slint::include_modules!()`. | — | Wave 6. |
 | R6 | `daemon_mode.rs:9-64` (tests `:66-123`) | **DROP** | `DaemonMode`/`SelectedMode`/`select_mode`; pure, default `Disabled`, never called. | — | Wave 6. Big-bang cutover has no `Local`/`Unavailable` branch to preserve. |
 | R7 | `bridges/shell.rs:6-41` | **DROP** | `ShellState` status/title/subtitle strings, `ready()`. | — | Window chrome; no client replacement beyond a status field fed by `status.changed` events. |
@@ -65,15 +66,15 @@ second-writer hazard if the item is moved without also retiring its Slint owner.
 |---|---|---|---|---|---|
 | S1 | `bridges/settings_general.rs:14-106` | **DAEMON** | `settings/general` mirror: language, transitions, remote-sync, WSS, `autostart` mirror. | `settings.rs`: `SettingsService::load::<GeneralSettings>() / save::<GeneralSettings>(...)`. | M2. ⚠ Mirror+persist pairs must become one RPC write. |
 | S2 | `bridges/settings_chat.rs:48-153` | **DAEMON** | `settings/chat` mirror; kebab-case wire modes, timeout clamp to ≥0, default 600_000. | `settings.rs` typed section + validation kept at the daemon boundary. | M2. |
-| S3 | `bridges/settings_sections.rs:62-601` | **DAEMON** | Six sections: `spine`, `mmd`, `live2d`, `positioning`, `audio-device`, `user-profile`; including `PositioningSettingsState::scale_for/save_scale/reset_all` (`:357-445`). | `settings.rs`: one `load/save/reset` triple per section; JSON-safe DTOs. | M2. Renderer never reads these directly in the new clients; Godot maps them locally. |
-| S4 | `bridges/settings_stage.rs:42-229, 274-300` | **DAEMON** | Persisted `stage-model` (`modelId`), `captions`, `stage-window` bounds/visibility, `control-strip` button flags; validation/clamps (`:35-39, 302-340`). | `settings.rs` typed sections; `settings.stage_model_id()` RPC for Godot to pick a model. | M2. Model *file* handling is S5. |
-| S5 | `bridges/settings_stage.rs:230-271, 342-418` | **CLIENT-LOCAL** | VRM discovery/import into `<profile>/models`, resolve path, dedupe copy helper. | Godot asset picker/import; daemon stores only the chosen id/path (S4). | M10. Keep the validated `import_model` helper (`:374`) as reference; do not write model files from the daemon. |
+| S3 | `bridges/settings_sections.rs:62-601` | **DAEMON** | Six sections: `spine`, `mmd`, `live2d`, `positioning`, `audio-device`, `user-profile`; including `PositioningSettingsState::scale_for/save_scale/reset_all` (`:357-445`). | `settings.rs`: one `load/save/reset` triple per section; JSON-safe DTOs. | M2. The renderer never reads these directly; Flutter maps them locally. |
+| S4 | `bridges/settings_stage.rs:42-229, 274-300` | **DAEMON** | Persisted `stage-model` (`modelId`), `captions`, `stage-window` bounds/visibility, `control-strip` button flags; validation/clamps (`:35-39, 302-340`). | `settings.rs` typed sections; `settings.stage_model_id()` RPC for Flutter to pick a model. | M2. Model *file* handling is S5. |
+| S5 | `bridges/settings_stage.rs:230-271, 342-418` | **CLIENT-LOCAL** | VRM discovery/import into `<profile>/models`, resolve path, dedupe copy helper. | Flutter asset picker/import; daemon stores only the chosen id/path (S4). | M10. Keep the validated `import_model` helper (`:374`) as reference; do not write model files from the daemon. |
 | S6 | `bridges/providers.rs:49-539` | **DAEMON** | 44-row registry merge, credential CRUD in `ProviderRepo`, `test_connection`, `list_models`, `drain_events`; secrets cross the Slint boundary today (`:10-23`). | `providers.rs::ProviderService::{rows, config_json, save_config, set_enabled, delete, test_connection, list_models, resolve_for_chat}`. | M3. ⚠ **Highest secret risk**: keys must never be returned over WS; replace "secrets cross as-is" with redacted DTOs. |
 | S7 | `bridges/speech.rs:56-515` | **DAEMON** | `settings/speech` blob, TTS provider catalog/defs JSON, sample synthesis writing one file under the profile; API key read from `ProviderRepo` (`:18-27, 216-221`). | `speech.rs::SpeechService::{settings, defs, select_provider, apply_voice/speed, synthesize_sample}`; keys stay daemon-side. | M3, depends S6. Kokoro download refusal (`:212-215`) preserved. In-app playback is not wired (`:41-44`) — that is pipeline work (M9). |
 | S8 | `bridges/hearing.rs:46-312` | **DAEMON** | `settings/hearing` blob (enabled, pttMode, hotkey string, deviceName); no capture/device enumeration (`:17-38, 256-282`). | `hearing.rs::HearingService::{settings, apply_enabled, apply_ptt_mode, apply_hotkey, apply_device, base_status}`; intent only until M9. | M2. ⚠ Global hotkey registration is CLIENT-LOCAL; only the stored string persists. Do not link `anima-stt` into the GUI — duplicate ggml symbols (`hearing.rs:256-262`). |
 | S9 | `bridges/theme.rs:13-89` | **DAEMON** | `settings/theme` hue/chroma/dark, corrupt-blob never-overwrite rule (`:71-88`). | `settings.rs` `ThemeSettings` section + `apply_*` RPC. Mirror fields are client-local view state. | M2. |
 | S10 | `bridges/i18n.rs:40-72` | **DAEMON** | Locale persistence into `settings/general.language`, validation via `anima_i18n::Locale`. | `settings.rs` (existing `GeneralSettings.language`); no new key. | M2. |
-| S11 | `bridges/i18n.rs:29-30, 53-57` | **CLIENT-LOCAL** | `CYCLE_LOCALES` and `tr(locale,key)` lookup; Slint `I18n` global. | Flutter/Godot localization bundles; daemon does not serve translations. | M10. |
+| S11 | `bridges/i18n.rs:29-30, 53-57` | **CLIENT-LOCAL** | `CYCLE_LOCALES` and `tr(locale,key)` lookup; Slint `I18n` global. | Flutter localization bundles; daemon does not serve translations. | M10. |
 | S12 | `bridges/settings_tests.rs:1-589` | **DROP** (rehome) | 14 round-trip tests (named at `:90,129,158,189,218,245,305,347,372,404,444,493,520`). | Copy assertions into `anima-daemon/src/settings.rs` tests against a temp `Database`. | M2. Golden for parity (§10). |
 
 ## 4. Cards, data vault and local sync
@@ -91,7 +92,7 @@ second-writer hazard if the item is moved without also retiring its Slint owner.
 | E1 | `bridges/daemon.rs:194-384, 492-562, 564-623` | **DAEMON** (pure logic) | Wake-briefing composer, duration/clock math, wake-edge step; digest reply classification; audit JSONL tail shaping. | Fold into existing `wake_facts.rs`, `screen.rs`, `audit.rs`: `compose_briefing`, `wake_edge_step`, `classify_digest`, `audit_tail_json`, `archive_audit`. | M8. State already daemon-owned — **port logic only**, never a second awareness state. |
 | E2 | `bridges/daemon.rs:125-139, 861-897` | **DAEMON** (privileged verb) | `clear_audit()` archive-by-rename (`.cleared-<ts>`), 64 KiB tail cap; no truncation. | `audit.rs::archive_audit()` exposed via D-Bus/privileged RPC; **no Flutter delete button** (retention policy). | M8. ⚠ Must not gain a GUI deletion path. Preserve `airi-slint/audit` path (`anima-channel/src/audit.rs:14-27`). |
 | E3 | `bridges/daemon.rs:77-102, 899-955` | **DAEMON** | Wake-briefing opt-in blob (`settings/awareness`), edge detector, notify-rust session-bus notification, first-observation priming. | `wake_facts.rs::{enabled, check_tick, notify}`; opt-in flag moves to `settings.rs`. | M8, depends M2/E1. Master pause switch wins (`:101-102`). |
-| E4 | `bridges/daemon.rs:109-150, 625-664, 664-994` | **DROP** | D-Bus client proxy, 1 s polling mirror, `DaemonState` fields, 800 ms timeouts. | Flutter/Godot call daemon over WS `rpc`/events; no D-Bus from clients. | M8/M10. Slint-only transport; logic survives in E1–E3. |
+| E4 | `bridges/daemon.rs:109-150, 625-664, 664-994` | **DROP** | D-Bus client proxy, 1 s polling mirror, `DaemonState` fields, 800 ms timeouts. | Flutter calls the daemon over WS `rpc`/events; no D-Bus from clients. | M8/M10. Slint-only transport; logic survives in E1–E3. |
 | E5 | `bridges/mcp.rs:41-686` | **DAEMON** | `airi/mcp.json` config, stdio/remote server CRUD, probe + tool calls; bearer token and sensitive headers redacted (`:23-28, 49-105`). | `integrations/mcp.rs::McpService::{servers, add, remove, set_enabled, probe, call_tool}`. | M8. ⚠ `REDACTED` sentinel round-trip (`:86-103`) must survive; never return tokens over WS. |
 | E6 | `bridges/acp.rs:43-812` | **DAEMON** | `airi/acp.json` config, agent spawn/stop, one-turn prompts, streaming transcript, permission queue and `Prompt` default policy (`:14-24, 400, 619-654`). | `integrations/acp.rs::AcpService::{agents, add_stdio, remove, start, stop, prompt, cancel, answer_permission, pump}`. | M8. ⚠ Permission answers are privileged; keep `fs/*` and `terminal/*` denied-by-policy contract. |
 | E7 | `bridges/discord.rs:37-497` | **DAEMON** | `discord.json` (0600, atomic), token verification, human-typed REST sends, gateway info display; token never returned (`:12-24`). | `integrations/discord.rs::DiscordService::{save_config, clear_config, verify_bot, send_test_message, gateway_info}`. | M8. ⚠ Token stays daemon-side; no auto-send, no token in status lines. |
@@ -113,9 +114,9 @@ It belongs in M9, not in a mechanical bridge port.
 
 | ID | Item (file:line) | Class | What it owns | Target daemon module + public API | Order / writer risk |
 |---|---|---|---|---|---|
-| U1 | `bridges/stage.rs:2-411` | **DROP** | VRM `StageState`, skin/vertex buffers, expression/lip-sync/gaze hooks, smoke tick counter. | Godot 4 renderer (decision A: Live2D GDCubism + 3D VRM/MMD); reusable algorithms stay in `crates/anima-render` (`vrm/engine.rs`, `vrm/lipsync.rs`). | Wave 6. No daemon state. |
-| U2 | `bridges/mmd.rs:2-351` | **DROP** | MMD rest-pose engine, buffers/materials/textures. | Godot MMD plugin; `anima_mmd` engine knowledge only. | Wave 6. |
-| U3 | `bridges/spine.rs:2-129` | **DROP** | `SpineControllerState` UI-facing model/skin/play/poke calls. | Godot plugin; `anima-render/src/spine/*` is the reusable core. | Wave 6. |
+| U1 | `bridges/stage.rs:2-411` | **DROP** | VRM `StageState`, skin/vertex buffers, expression/lip-sync/gaze hooks, smoke tick counter. | Flutter native model renderer (VRM / Live2D / MMD / Spine); reusable algorithms stay in `crates/anima-render` (`vrm/engine.rs`, `vrm/lipsync.rs`). The retired Godot renderer was the earlier target. | Wave 6. No daemon state. |
+| U2 | `bridges/mmd.rs:2-351` | **DROP** | MMD rest-pose engine, buffers/materials/textures. | Flutter MMD renderer; `anima_mmd` engine knowledge only. | Wave 6. |
+| U3 | `bridges/spine.rs:2-129` | **DROP** | `SpineControllerState` UI-facing model/skin/play/poke calls. | Flutter Spine renderer; `anima-render/src/spine/*` is the reusable core. | Wave 6. |
 | U4 | `spine_rt.rs:2-239` | **DROP** | Process-wide spine session, bundle load, tracks, smoke check. | Same as U3. | Wave 6. |
 | U5 | `spine_render.rs:2-372` | **DROP** | CPU rasterizer + `slint::Image::from_rgba8` adapter (`:326-334`). | Slint-specific; **not** the reusable renderer. | Wave 6. |
 | U6 | `ui/**/*.slint` — **1,728 lines** total | **DROP** | `bootstrap.slint` (54), `main.slint` (37), `I18n.slint` (22), `Theme.slint` (42), `SpineStage.slint` (34), `shell/{MainShell 188, ChatWindow 215, SettingsWindow 112, AboutWindow 163, Splash 78}`, `components/*` (16 files, 783). | Flutter widgets; Vue web app (`apps/stage-web`) is the behaviour reference, not this markup. | Wave 6. |
@@ -135,7 +136,7 @@ It belongs in M9, not in a mechanical bridge port.
 | M7 | V2, V3 | Vault + local-FS sync; privileged restore gating. |
 | M8 | E1–E3, E5–E9 | Awareness logic folded into existing daemon modules; integrations + update as library services. |
 | M9 | Net-new audio pipeline | Link `anima-stt`/`anima-llm`/`anima-speech` into the daemon; intent settings from M2/M3, events from M0. No Slint bridge survives. |
-| M10 | A1, C5, S5, S11, U7 + Flutter/Godot clients | Thin clients consume RPC + events; Vue web reference reconciliation (pivot Wave 5). |
+| M10 | A1, C5, S5, S11, U7 + the Flutter client | The thin client consumes RPC + events; Vue web reference reconciliation (pivot Wave 5). |
 | M11 | R3–R8, C6, S12, E4, U1–U6 + crate removal | **Big-bang delete**: `crates/anima-slint` from workspace, remove `anima-slint` dev-dep (`anima-daemon/Cargo.toml:29`), preserve audit archives, converge docs (pivot Wave 6). |
 
 ## 9. Risk list
@@ -144,7 +145,7 @@ It belongs in M9, not in a mechanical bridge port.
   MCP bearer tokens/sensitive headers require redaction round-trips (`mcp.rs:23-28, 49-105`); Discord
   tokens are file-only and never returned (`discord.rs:12-24`); ACP permission answers are policy-gated
   (`acp.rs:14-24, 619-654`); focus digests are personal data (`daemon.rs:47-57`). Every new WS DTO must
-  be secret-free — mirror the `core.status` discipline (`crates/anima-daemon/src/gateway.rs:908-914`).
+  be secret-free — mirror the `core.status` discipline (`crates/anima-daemon/src/gateway.rs:3030-3091`).
 - **Audit archives are not deletable content.** `clear_audit()` renames to `.cleared-<ts>` and never
   truncates (`daemon.rs:861-897`); path/retention contract is `anima-channel/src/audit.rs:14-27` and
   `decision-audit-archive-retention.md`. Wave 6 deletes the app, not the history.
@@ -175,7 +176,7 @@ It belongs in M9, not in a mechanical bridge port.
    journal/embed, and the known mid-stream-switch limit (`chat.rs:25-27`). Keep one golden JSONL of
    the assistant deltas and session list as a checked-in fixture.
 3. **Headless WS round-trips (no GUI).** settings/providers (redacted)/cards/sessions: read-write-read
-   through the gateway; `core.status` still green with no secrets (`crates/anima-daemon/src/gateway.rs:908-914`). Audit archive
+   through the gateway; `core.status` still green with no secrets (`crates/anima-daemon/src/gateway.rs:3030-3091`). Audit archive
    test must show a `.cleared-*` rename and no truncation.
 4. **Secret-leak assertions.** For every new DTO: no token, api key, bearer token, prompt, or absolute
    path (extend the `core.status` test pattern). MCP `REDACTED` sentinel must never persist.

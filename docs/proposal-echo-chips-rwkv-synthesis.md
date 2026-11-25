@@ -77,9 +77,9 @@ To evaluate whether a small 0.1B / 1.5B local RWKV model can reliably produce qu
 
 | Component | Path | Function |
 |---|---|---|
-| **Echo Chips Store** | [`packages/stage-ui/src/stores/echo-chips.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/echo-chips.ts) | `ChipSchema`, `ArtifactsSchema`, `synthesizeEchoChips()` logic |
-| **Echo Chips Repo** | [`packages/stage-ui/src/database/repos/echo-chips.repo.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/database/repos/echo-chips.repo.ts) | Storage client key `local:memory/echo-chips/{userId}` |
-| **RWKV Worker** | [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/web-rwkv/worker.ts) | WebGPU RWKV runner & tokenizer session |
+| **Echo Chips Store** | [`packages/stage-ui/src/stores/echo-chips.ts`](packages/stage-ui/src/stores/echo-chips.ts) | `ChipSchema`, `ArtifactsSchema`, `synthesizeEchoChips()` logic |
+| **Echo Chips Repo** | [`packages/stage-ui/src/database/repos/echo-chips.repo.ts`](packages/stage-ui/src/database/repos/echo-chips.repo.ts) | Storage client key `local:memory/echo-chips/{userId}` |
+| **RWKV Worker** | [`packages/stage-ui/src/workers/web-rwkv/worker.ts`](packages/stage-ui/src/workers/web-rwkv/worker.ts) | WebGPU RWKV runner & tokenizer session |
 | **Cleanroom Harness** | `scripts/tests/rwkv-harness/` | Node.js CLI experiment environment |
 
 ## Relevant Skills

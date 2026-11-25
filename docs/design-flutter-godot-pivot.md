@@ -250,9 +250,9 @@ as a daemon event (`decision-bridge-scope.md`). Wave 4 is retired with the Godot
 services; register read/write RPC verbs with sanitized replies; keep the D-Bus control plane
 for privileged verbs; adopt the existing config path rather than minting a second one.
 
-**Deviation (2026-11-21):** card management (`cards.*`) was explicitly declared **out-of-scope** for the daemon; the three card RPC verbs (`cards.list`, `cards.get`, `cards.import`) return "not implemented" and are not registered handlers in the ordinary sense — `crates/anima-daemon/src/gateway.rs:935-956`. The Slint GUI was deleted big-bang (decision 6, §2).
+**Note (2026-11-25):** card management (`cards.list`/`.get`/`.import`/`.create`/`.update`/`.delete`) is implemented in the daemon (`crates/anima-daemon/src/gateway.rs:1301-1391`). The Slint GUI was deleted big-bang (decision 6, §2). Ownership of cards is recorded in [`decision-card-ownership.md`](./decision-card-ownership.md).
 
-**Exit criteria:** daemon starts headless with no GUI attached; settings/providers/session RPC round-trips green; no Slint code is needed to read or write core state; `core.status` still passes its no-secrets test (`gateway.rs:908-914`). All met.
+**Exit criteria:** daemon starts headless with no GUI attached; settings/providers/session RPC round-trips green; no Slint code is needed to read or write core state; `core.status` still passes its no-secrets test (`gateway.rs:3030-3091`). All met.
 
 ### Wave 2 — Daemon-owned realtime pipeline — **SHIPPED (LLM stage; audio client-local)**
 

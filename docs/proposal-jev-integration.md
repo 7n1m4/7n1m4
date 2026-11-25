@@ -230,16 +230,16 @@ $$\text{Screen Frame} \xrightarrow[\text{Delta Check}]{\text{Stage 0: pHash}} \t
    - **`All (min(prob) >= threshold)`**: Composite mode requiring all active conditions to hold simultaneously.
 
 #### 3. Code Anchors & Integration Surface Map
-- **Character Card Proactivity Tab**: [`packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabProactivity.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabProactivity.vue)
+- **Character Card Proactivity Tab**: [`packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabProactivity.vue`](packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabProactivity.vue)
   - Section 3: Segmented control between `Trigger-Based (Tags & Keywords)` and `System-1 Cognitive Sentinel (Jev / Laya)`.
-  - Reuses the **Cognitive Engine Setup Control** from [`CognitionSubTabMemory.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/components/tabs/cognition/CognitionSubTabMemory.vue) (provider selector `typesafe-ai` / `openrouter-ai` / `laya-local` + Laya model download/cache indicator).
+  - Reuses the **Cognitive Engine Setup Control** from [`CognitionSubTabMemory.vue`](packages/stage-pages/src/pages/settings/airi-card/components/tabs/cognition/CognitionSubTabMemory.vue) (provider selector `typesafe-ai` / `openrouter-ai` / `laya-local` + Laya model download/cache indicator).
   - Exposes natural-language Question Manager (add/edit/delete questions, toggle active, per-question sensitivity).
-- **Vision Orchestrator Store**: [`packages/stage-ui/src/stores/modules/vision/orchestrator.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/vision/orchestrator.ts)
+- **Vision Orchestrator Store**: [`packages/stage-ui/src/stores/modules/vision/orchestrator.ts`](packages/stage-ui/src/stores/modules/vision/orchestrator.ts)
   - Method: `processCapture(payload: VisionCapturePayload)` (:240). Currently routes to `adapter.process(...)` with `payload.interestTags`.
   - Dispatches context promotions via `publishContext(summary, workloadId, sourceId)` (:209) and tracks promotion discipline via `recordPromotion()` (:202).
-- **Entity Ledger Store**: [`packages/stage-ui/src/stores/entity-ledger.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/entity-ledger.ts)
+- **Entity Ledger Store**: [`packages/stage-ui/src/stores/entity-ledger.ts`](packages/stage-ui/src/stores/entity-ledger.ts)
   - Provides semantic entity resolution to enrich visual chrono-logs with biographical and relational context.
-- **System 1 Decision Store**: [`packages/stage-ui/src/stores/modules/system-one.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/system-one.ts)
+- **System 1 Decision Store**: [`packages/stage-ui/src/stores/modules/system-one.ts`](packages/stage-ui/src/stores/modules/system-one.ts)
   - Composable: `useSystemOneStore()`. Evaluates `execute(state, questions)` via OpenRouter Decisions or TypeSafe direct.
 
 #### 4. Developer Blueprint: Wiring the Programmable Gate into `orchestrator.ts`
@@ -319,7 +319,7 @@ export async function evaluateJevVisualAttentionGate(
 
 ### Domain E: AnimaDex Wizard Fast Voice Matching & Acoustic Fine-Tuning [SHIPPED]
 *Relevant Docs: [`proposal-animadex-wizard.md`](./proposal-animadex-wizard.md), [`airi-animadex-wizard/SKILL.md`](../.agents/skills/airi-animadex-wizard/SKILL.md)*
-*Implementation: [`packages/stage-pages/src/pages/settings/airi-card/components/AutoVoiceConfigModal.vue`](file:///Users/richardpinedo/Projects.nosync/airi/packages/stage-pages/src/pages/settings/airi-card/components/AutoVoiceConfigModal.vue)*
+*Implementation: [`packages/stage-pages/src/pages/settings/airi-card/components/AutoVoiceConfigModal.vue`](packages/stage-pages/src/pages/settings/airi-card/components/AutoVoiceConfigModal.vue)*
 
 #### 1. The Bottleneck
 In the AnimaDex Guided Creation Wizard (`packages/stage-ui/src/pages/characters/guided.vue`), selecting a multi-character cast (e.g. "Beauty and the Beast" / Belle and Beast) requires binding each character to an installed voice profile and tuning speech acoustics.
@@ -366,18 +366,18 @@ When the user confirms their cast selection, the Step 1 $\rightarrow$ Step 2 tra
   - **Auto-Persistent Bindings**: Directly writes into `settings/airi-card/character-bindings` with pitch and speed modifiers pre-configured.
 
 #### 3. Code Anchors & Integration Surface Map
-- **Guided Creation Wizard**: [`packages/stage-pages/src/pages/settings/airi-card/guided.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/airi-card/guided.vue)
+- **Guided Creation Wizard**: [`packages/stage-pages/src/pages/settings/airi-card/guided.vue`](packages/stage-pages/src/pages/settings/airi-card/guided.vue)
   - Navigation Handler: `handleNext()` (:384). Navigates from Step 1 (character select) to Step 2 (voice/model bindings) and calls `prefillRosterBindings()`.
   - Prefill Hook: `prefillRosterBindings()` (:361). Reads `getBindingsMap()` and iterates through `selectedCharacters`. Currently does nothing if `binding.voice` is unset.
   - Voice Writeback: `writeBackVoiceBinding(characterId, voice)` (:156). Serializes assigned voice into `localStorage` under `settings/airi-card/character-bindings`.
-- **AnimaDex Wizard Store**: [`packages/stage-ui/src/stores/animadex-wizard.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/animadex-wizard.ts)
+- **AnimaDex Wizard Store**: [`packages/stage-ui/src/stores/animadex-wizard.ts`](packages/stage-ui/src/stores/animadex-wizard.ts)
   - Composable: `useAnimaDexWizardStore()`.
   - State: `boundVoices: ref<Record<string, { baseProvider: string, baseModel: string, baseVoice: string }>>` (:48).
   - Method: `bindVoiceToCharacter(characterId: string, voice: { baseProvider, baseModel, baseVoice })`.
-- **Speech Runtime Store**: [`packages/stage-ui/src/stores/modules/speech.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/speech.ts)
+- **Speech Runtime Store**: [`packages/stage-ui/src/stores/modules/speech.ts`](packages/stage-ui/src/stores/modules/speech.ts)
   - Composable: `useSpeechStore()`.
   - State: `availableVoices: refManualReset<Record<string, VoiceInfo[]>>` (:41), `savedVoiceProfiles: useLocalStorageManualReset<VoiceProfile[]>` (:46).
-- **System 1 Decision Store**: [`packages/stage-ui/src/stores/modules/system-one.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/system-one.ts)
+- **System 1 Decision Store**: [`packages/stage-ui/src/stores/modules/system-one.ts`](packages/stage-ui/src/stores/modules/system-one.ts)
   - Composable: `useSystemOneStore()`. Evaluates `execute(state, questions)` via Jev.
 
 #### 4. Developer Blueprint: Wiring Fast Voice Matching into `prefillRosterBindings()`
@@ -717,7 +717,7 @@ Because **OpenRouter already natively hosts `typesafe/jev-1.13` (and `typesafe/j
 
 ### 4.2 System-1 Universal Consumer Pattern (Developer Cookbook)
 
-When wiring any future subsystem or composable to TypeSafe Jev in AIRI, developers should use the canonical `useSystemOneStore` Pinia store located in [`packages/stage-ui/src/stores/modules/system-one.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/system-one.ts).
+When wiring any future subsystem or composable to TypeSafe Jev in AIRI, developers should use the canonical `useSystemOneStore` Pinia store located in [`packages/stage-ui/src/stores/modules/system-one.ts`](packages/stage-ui/src/stores/modules/system-one.ts).
 
 #### Step 1: Import the Store
 ```typescript

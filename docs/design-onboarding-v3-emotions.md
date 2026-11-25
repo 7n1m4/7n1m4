@@ -25,7 +25,7 @@ However, real-world avatar models come with messy, cryptic, or foreign blendshap
 
 ## 2. The 2-Pass Architecture
 
-Step 11 leverages and exposes the engine implemented in [`packages/stage-ui/src/composables/use-expression-curation.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/composables/use-expression-curation.ts).
+Step 11 leverages and exposes the engine implemented in [`packages/stage-ui/src/composables/use-expression-curation.ts`](packages/stage-ui/src/composables/use-expression-curation.ts).
 
 ```mermaid
 flowchart TD

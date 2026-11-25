@@ -53,32 +53,32 @@ Rather than explaining the confusion with static text, **this space should activ
 A robust fallback system requires realistic defaults that deliver delightful functionality out of the box without requiring credit cards, sign-ups, or unprompted multi-gigabyte downloads.
 
 ### 2.1 Mind (LLM): Xiaomi MiMo (`mimo-auto`) + WebLLM
-- **Code Reality**: Xiaomi MiMo is already fully implemented in [`packages/stage-ui/src/libs/providers/providers/mimo/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/providers/providers/mimo/index.ts).
+- **Code Reality**: Xiaomi MiMo is already fully implemented in [`packages/stage-ui/src/libs/providers/providers/mimo/index.ts`](packages/stage-ui/src/libs/providers/providers/mimo/index.ts).
 - **Mechanism**: Generates an anonymous device fingerprint (`mimo_fingerprint`), queries `https://api.xiaomimimo.com/api/free-ai/openai/chat`, and requires **zero API key and zero sign-up**.
 - **Role**: Primary zero-config cloud fallback. For offline capability on WebGPU-enabled machines, the system pairs with **WebLLM** / **RWKV**.
 
 ### 2.2 Artistry (Image Gen): Pollinations AI (`pollinations`) with Free Auto Router
-- **Code Reality**: Fully implemented in the desktop main process ([`artistry-bridge.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/services/airi/widgets/artistry-bridge.ts), [`providers/pollinations.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-tamagotchi/src/main/services/airi/widgets/providers/pollinations.ts)) and renderer ([`artistry.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/modules/artistry.vue)).
+- **Code Reality**: Fully implemented in the desktop main process ([`artistry-bridge.ts`](apps/stage-tamagotchi/src/main/services/airi/widgets/artistry-bridge.ts), [`providers/pollinations.ts`](apps/stage-tamagotchi/src/main/services/airi/widgets/providers/pollinations.ts)) and renderer ([`artistry.vue`](packages/stage-pages/src/pages/settings/modules/artistry.vue)).
 - **Mechanism**: Inspecting `providers/pollinations.ts:71`:
   `const modelParam = model ? `&model=${encodeURIComponent(model)}` : ''`
   When `model = ""` (empty string), Pollinations omits the model parameter and routes directly to the **Free Auto Router** on their unauthenticated public cluster without requiring a Pollen API key or registration. (Passing a specific model like `flux` routes to their metered Pollen tier).
 - **Role**: Replaces `comfyui` as the default Artistry engine with `model: ""` (`Free Auto Router`). New users generate journal polaroids, selfies, and background art instantly without installing local Python CUDA rigs.
 
 ### 2.3 Speech (TTS): Kokoro WebGPU (82MB) + Web Speech API
-- **Code Reality**: Kokoro WebGPU worker is in [`packages/stage-ui/src/workers/kokoro/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/kokoro/) and Web Speech API is in [`packages/stage-ui/src/libs/providers/providers/web-speech-api/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/providers/providers/web-speech-api/).
+- **Code Reality**: Kokoro WebGPU worker is in [`packages/stage-ui/src/workers/kokoro/`](packages/stage-ui/src/workers/kokoro/) and Web Speech API is in [`packages/stage-ui/src/libs/providers/providers/web-speech-api/`](packages/stage-ui/src/libs/providers/providers/web-speech-api/).
 - **Model Size Reality**: At **82 MB**, Kokoro ONNX is lightweight on modern broadband/fiber and produces natural, emotionally expressive TTS. We avoid downgrading users to robotic browser voices by default.
 - **Role**:
   - **Primary Local Default**: **Kokoro WebGPU** (82MB one-time cache into CacheStorage).
   - **Zero-Download Fail-Safe**: **Web Speech API** (built into Chromium/Electron; zero megabytes).
 
 ### 2.4 Hearing (STT): Whisper-Local Tiny (~39MB) + Web Speech API
-- **Code Reality**: Whisper worker is in [`packages/stage-ui/src/libs/workers/whisper/`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/workers/whisper/).
+- **Code Reality**: Whisper worker is in [`packages/stage-ui/src/libs/workers/whisper/`](packages/stage-ui/src/libs/workers/whisper/).
 - **Role**:
   - **Primary Local Default**: **Whisper Tiny** (~39MB download).
   - **Instant Zero-Download Fail-Safe**: **Web Speech API**.
 
 ### 2.5 Vision (Perception): SmilingWolf WD14 Tagger + Cloud VLM
-- **Code Reality**: In [`packages/stage-ui/src/workers/blip/worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/blip/worker.ts), the worker historically named `blip` actually loads the **SmilingWolf WD14 SwinV2/ConvNeXt tagger** (`SmilingWolf/wd-swinv2-tagger-v3` / `wd-v1-4-swinv2-tagger-v2`).
+- **Code Reality**: In [`packages/stage-ui/src/workers/blip/worker.ts`](packages/stage-ui/src/workers/blip/worker.ts), the worker historically named `blip` actually loads the **SmilingWolf WD14 SwinV2/ConvNeXt tagger** (`SmilingWolf/wd-swinv2-tagger-v3` / `wd-v1-4-swinv2-tagger-v2`).
 - **Role**:
   - **Local Tagging**: WD14 SwinV2 (~300MB–450MB) for Danbooru/anime visual element analysis.
   - **Cloud VLM**: When an OpenAI, Gemini, or OpenRouter key is present, vision forwards multimodal turns to the cloud VLM.

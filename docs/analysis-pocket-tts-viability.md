@@ -41,39 +41,39 @@ Pocket TTS is a 2-stage neural text-to-speech system optimized for low-latency C
 Every file involved in the Pocket TTS integration is mapped below with its specific responsibility:
 
 ### A. Inference Contract & Eventa RPC Layer
-- [`packages/stage-ui/src/libs/inference/contract.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/contract.ts)
+- [`packages/stage-ui/src/libs/inference/contract.ts`](packages/stage-ui/src/libs/inference/contract.ts)
   - Defines Eventa RPC contracts: `pocketTtsLoadEvent`, `pocketTtsGenerateEvent`, `pocketTtsUnloadEvent`.
   - Defines request/chunk types: `PocketTtsGenerateRequest` & `PocketTtsGenerateChunk`.
 
 ### B. Audio Conditioning & Adapter Layer
-- [`packages/stage-ui/src/stores/providers/pocket-audio-utils.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/pocket-audio-utils.ts)
+- [`packages/stage-ui/src/stores/providers/pocket-audio-utils.ts`](packages/stage-ui/src/stores/providers/pocket-audio-utils.ts)
   - Exposes `getPocketTtsAdapterInstance()` singleton accessor.
   - Implements `preprocessPocketReferenceAudio()` Web Audio pipeline for 24kHz resampling (the `mimi_encoder` input rate), silence threshold trimming, and peak normalization.
-- [`packages/stage-ui/src/libs/inference/adapters/pocket-tts.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/adapters/pocket-tts.ts)
+- [`packages/stage-ui/src/libs/inference/adapters/pocket-tts.ts`](packages/stage-ui/src/libs/inference/adapters/pocket-tts.ts)
   - Implements `createPocketTtsAdapter()` mutex-protected interface.
   - Controls Web Worker initialization, status updates (`downloading`, `ready`, `running`), WAV binary encoding, and `localforage` caching of `promptVoiceEmbedding` (`pocket-voice-profiles-metadata`).
 
 ### C. Web Worker & OPFS Engine Layer
-- [`packages/stage-ui/src/workers/pocket-tts/pocket_model_store.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/pocket-tts/pocket_model_store.ts)
+- [`packages/stage-ui/src/workers/pocket-tts/pocket_model_store.ts`](packages/stage-ui/src/workers/pocket-tts/pocket_model_store.ts)
   - OPFS model downloader targeting `KevinAHM/pocket-tts-onnx` Int8 quantized weights (`flow_lm_main_int8.onnx`, `flow_lm_flow_int8.onnx`, `mimi_decoder_int8.onnx`, `mimi_encoder_int8.onnx`, `text_conditioner_int8.onnx`, `tokenizer.model`, `bos_before_voice.npy`, `bundle.json`).
-- [`packages/stage-ui/src/workers/pocket-tts/worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/pocket-tts/worker.ts)
+- [`packages/stage-ui/src/workers/pocket-tts/worker.ts`](packages/stage-ui/src/workers/pocket-tts/worker.ts)
   - Web Worker entrypoint speaking the Eventa stream contract.
   - Orchestrates ONNX sessions, streams PCM audio chunks, and emits `voice-embedding` on initial voice clone runs.
-- [`packages/stage-ui/src/workers/pocket-tts/pocket_onnx_engine.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/workers/pocket-tts/pocket_onnx_engine.ts)
+- [`packages/stage-ui/src/workers/pocket-tts/pocket_onnx_engine.ts`](packages/stage-ui/src/workers/pocket-tts/pocket_onnx_engine.ts)
   - Faithful port of KevinAHM's reference runtime: SentencePiece text conditioning (WASM module loaded cross-origin from the HF demo space at runtime) → `flow_lm_main` voice/text prefill (empty `sequence`) → autoregressive frame loop (`sequence` = previous latent, NaN = BOS) → `flow_lm_flow` LSD flow-matching step (conditioning `[1,1024]` → 32-dim latent) → chunked `mimi_decoder` (`latent [1, F, 32]` time-major) at 24kHz.
 
 ### D. Provider Registry & Factory Layer
-- [`packages/stage-ui/src/stores/providers/registry/speech.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/registry/speech.ts)
+- [`packages/stage-ui/src/stores/providers/registry/speech.ts`](packages/stage-ui/src/stores/providers/registry/speech.ts)
   - Registers the `'pocket-tts-local'` speech provider.
   - Implements `speech()` provider factory routing `/v1/audio/speech` requests to the Pocket TTS worker.
   - Provides model variants (`english_2026-04`, `french_24l`, `spanish_24l`, `german_24l`, `portuguese_24l`, `italian_24l`) and predefined voices (see §5.1 catalog — English bundle defaults plus language-appropriate subsets via `POCKET_PREDEFINED_VOICES_BY_LANG`).
 
 ### E. Settings UI & User Experience Layer
-- [`packages/stage-pages/src/pages/settings/providers/speech/pocket-tts-local.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/providers/speech/pocket-tts-local.vue)
+- [`packages/stage-pages/src/pages/settings/providers/speech/pocket-tts-local.vue`](packages/stage-pages/src/pages/settings/providers/speech/pocket-tts-local.vue)
   - Dedicated provider settings view with zero-shot voice clone WAV uploader, voice profile manager, and language model selector.
-- [`packages/stage-pages/src/pages/settings/components/SettingsSearchBar.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-pages/src/pages/settings/components/SettingsSearchBar.vue)
+- [`packages/stage-pages/src/pages/settings/components/SettingsSearchBar.vue`](packages/stage-pages/src/pages/settings/components/SettingsSearchBar.vue)
   - Quick-navigation search bar entry under `Providers (Speech)`.
-- [`packages/i18n/src/locales/en/settings.yaml`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/i18n/src/locales/en/settings.yaml)
+- [`packages/i18n/src/locales/en/settings.yaml`](packages/i18n/src/locales/en/settings.yaml)
   - Localization keys for `pocket-tts-local` provider title & description.
 
 ---

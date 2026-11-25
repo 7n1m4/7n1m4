@@ -43,7 +43,7 @@ The engine operates under the **Unified WebGPU & Eventa Streaming Architecture**
 
 ## 2. Model Matrix & Hardware Profiles
 
-AIRI exposes 4 Whisper model tiers in [`packages/stage-ui/src/libs/inference/constants.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/constants.ts):
+AIRI exposes 4 Whisper model tiers in [`packages/stage-ui/src/libs/inference/constants.ts`](packages/stage-ui/src/libs/inference/constants.ts):
 
 | Shard ID | Model Tier | Download Size | VRAM Footprint | Multilingual | Primary Target |
 |---|---|---|---|---|---|
@@ -61,7 +61,7 @@ AIRI exposes 4 Whisper model tiers in [`packages/stage-ui/src/libs/inference/con
 
 ## 3. Core Architecture & Component Map
 
-### 3.1. Web Worker Implementation: [`worker.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/workers/worker.ts)
+### 3.1. Web Worker Implementation: [`worker.ts`](packages/stage-ui/src/libs/workers/worker.ts)
 * **Protocol**: Built on `@moeru/eventa` using webworker adapter contexts (`createContext()`).
 * **Server-Streaming Contract**:
   * `whisperLoadEvent`: Streams model weight download progress chunks (`{ percent, loaded, total, file }`), runs a 3000-frame dummy warm-up tensor, and emits the final `ready` state.
@@ -69,7 +69,7 @@ AIRI exposes 4 Whisper model tiers in [`packages/stage-ui/src/libs/inference/con
   * `whisperUnloadEvent`: Releases ONNX sessions and destroys GPU pipeline allocations.
 * **Resilience**: WebGPU feature detection with automatic fallback to WASM (CPU) when WebGPU device is unavailable.
 
-### 3.2. GPU Worker Host & Adapter: [`adapters/whisper.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/adapters/whisper.ts)
+### 3.2. GPU Worker Host & Adapter: [`adapters/whisper.ts`](packages/stage-ui/src/libs/inference/adapters/whisper.ts)
 * **Lifecycle Management**: Wrapped in `createGpuWorkerHost`, guaranteeing single-tenant worker lifecycle and serialized load/transcribe mutexes.
 * **Unified GPU Queuing**:
   * Registers with `getGpuExecutor()`.
@@ -77,12 +77,12 @@ AIRI exposes 4 Whisper model tiers in [`packages/stage-ui/src/libs/inference/con
   * Allocates estimated VRAM against `getGPUCoordinator()` (`MODEL_VRAM_ESTIMATES[MODEL_NAMES.WHISPER] = 800 MB`).
 * **Device Loss Promotion**: Tracks WebGPU crashes via `deviceLossCount`; proactively demotes to WASM if WebGPU contexts fail repeatedly.
 
-### 3.3. Cache Storage & Single-Tenant Eviction: [`cache-utils.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/libs/inference/cache-utils.ts)
+### 3.3. Cache Storage & Single-Tenant Eviction: [`cache-utils.ts`](packages/stage-ui/src/libs/inference/cache-utils.ts)
 * **Scope**: Browser `CacheStorage` API under `'transformers-cache'`.
 * **Single-Active-Shard Invariant**: When a model load completes in `whisper.ts`, `evictOtherWhisperModels(loadedModel)` is triggered. It scans all entries in `'transformers-cache'` and purges any Whisper files belonging to other model shards.
 * **Benefit**: Prevents multiple model shards (e.g. Tiny + Large) from accumulating gigabytes of dead storage in user browsers.
 
-### 3.4. Provider Bridge: [`stores/providers/whisper-local/index.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/providers/whisper-local/index.ts)
+### 3.4. Provider Bridge: [`stores/providers/whisper-local/index.ts`](packages/stage-ui/src/stores/providers/whisper-local/index.ts)
 * Implements the OpenAI-compatible `TranscriptionProvider` interface from `@xsai-ext/providers/utils`.
 * **Audio Resampling**: Intercepts multipart `FormData` uploads, instantiates an in-memory `AudioContext({ sampleRate: 16000 })` to downsample, averages stereo channels to mono `Float32Array`, and routes directly into the singleton Whisper adapter.
 * **Aborts**: Forwards `RequestInit.signal` to abort both ongoing shard downloads and active worker inference.

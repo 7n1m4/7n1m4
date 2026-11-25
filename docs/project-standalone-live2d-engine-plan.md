@@ -161,7 +161,7 @@ Parses `;`-delimited command chains from `Command`/`PostCommand` fields. **Lane/
 2. Verify backward compatibility with existing character cards and Cubism 4 models.
 
 ### Phase 4: Standalone Web Playground Page & Monorepo Alias Resolution
-1. **Integration Preservation Note**: The full AIRI stage integration work (wired in commits [`7727a13a6`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue) and [`c11bb292d`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui-live2d/src/stores/dsl-intimacy.ts)) remains safely recorded in Git history.
+1. **Integration Preservation Note**: The full AIRI stage integration work (wired in commits [`7727a13a6`](packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue) and [`c11bb292d`](packages/stage-ui-live2d/src/stores/dsl-intimacy.ts)) remains safely recorded in Git history.
 2. **Standalone Web Playground App**: Create an isolated web preview page (`apps/stage-live2d-playground` or `/devtools/live2d` route) dedicated exclusively to:
    - Picking or importing Live2D models via `ModelSelectorDialog` into a clean WebGL canvas runner.
    - Inspecting the `VarFloats` state heap in real-time.

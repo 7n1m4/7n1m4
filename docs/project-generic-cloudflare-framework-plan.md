@@ -42,7 +42,7 @@ AIRI manages a **suite of user-hosted serverless edge microservices, CORS proxie
 ## 2. Core Service Architecture & State Management
 
 ### 2.1 Unified Store: `useCloudflareStore`
-Location: [`packages/stage-ui/src/stores/modules/cloudflare.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/stores/modules/cloudflare.ts)
+Location: [`packages/stage-ui/src/stores/modules/cloudflare.ts`](packages/stage-ui/src/stores/modules/cloudflare.ts)
 
 The central Pinia store encapsulates all Cloudflare credentials, OAuth tokens, subdomain states, and edge actions:
 - **`cfOAuthTokens`**: Persisted in `settings/cloudflare/cfOAuthTokens` (`{ accessToken, refreshToken, expiresIn, accountId }`).
@@ -132,7 +132,7 @@ The central Pinia store encapsulates all Cloudflare credentials, OAuth tokens, s
 ## 5. Developer Tooling & CLI Utilities
 
 ### 5.1 KV Inspector with Auto-Refresh
-Location: [`apps/stage-edge/scripts/inspect-kv.ts`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/apps/stage-edge/scripts/inspect-kv.ts)
+Location: [`apps/stage-edge/scripts/inspect-kv.ts`](apps/stage-edge/scripts/inspect-kv.ts)
 
 Command:
 ```bash

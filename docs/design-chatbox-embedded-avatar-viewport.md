@@ -16,7 +16,7 @@ In upstream PR [#2663](https://github.com/moeru-ai/airi/pull/2663) (`feat(stage-
 In `dasilva333/airi`, we already completed the foundational architectural decoupling:
 1. **Decoupled Surfaces**: The **Actor Stage** (`windows/stage`, `RendererStage.vue`) and **Control Strip** (`windows/main`, `ControlStrip.vue`) are separate surfaces.
 2. **Unified Chat Architecture**: Our desktop chat window (`windows/chat`) features a dynamic, collapsible right-side drawer/panel used for contextual grounding, memory recall, and inspectable activity.
-3. **Proven Arbitrary-Page Avatar Embedding**: In [`packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue), we proved that `RendererStage.vue` can be mounted cleanly, reliably, and reactively into an arbitrary container layout with fallback static previews, transform controls, and zero disruption to the underlying model stores.
+3. **Proven Arbitrary-Page Avatar Embedding**: In [`packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue), we proved that `RendererStage.vue` can be mounted cleanly, reliably, and reactively into an arbitrary container layout with fallback static previews, transform controls, and zero disruption to the underlying model stores.
 
 By segmenting the dynamic right-side chat panel to host an embedded **Companion Stage**, we can provide an elegant, single-window "All-In-One" desktop experience without fragile multi-window OS-level tethering.
 
@@ -135,7 +135,7 @@ This guarantees:
 
 ## 6. Real-Time ACT Token Streaming & Emotion Synchronization
 
-Unlike [`step-finale.vue`](file:///Users/richardpinedo/Projects.nosync/airi/airi_dasilva333/packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue) (which was a static pre-flight preview for Turn 0 typewriter greeting), the **Desktop Chat embedded companion is live and reactive during conversation streaming**:
+Unlike [`step-finale.vue`](packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/steps/step-finale.vue) (which was a static pre-flight preview for Turn 0 typewriter greeting), the **Desktop Chat embedded companion is live and reactive during conversation streaming**:
 1. **Live Stream Parsing**: As LLM tokens stream into the chat history, markers like `<|ACT {"emotion":"joy", "motion":"nod"}|>` are intercepted by the response categoriser.
 2. **Instant Visual Feedback**: Because `useModelStore()` is shared across renderer modules, emotional blendshapes, eye blinks, and procedural or VRMA motions execute directly inside the chat panel in real time alongside the typing assistant bubble.
 3. **Audio Lip-Sync**: Spoken audio packets generated via `useSpeechStore()` drive the mouth visemes synchronously inside the panel.
