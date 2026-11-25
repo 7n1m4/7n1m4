@@ -194,5 +194,3 @@ export async function saveDaemonProvider(payload: Record<string, unknown>): Prom
 export async function deleteDaemonProvider(id: string): Promise<{ deleted: boolean }> {
   return rpc<{ deleted: boolean }>('providers.delete', { id })
 }
-
-export const hasDaemonRpc = hasDaemonCardMetadata

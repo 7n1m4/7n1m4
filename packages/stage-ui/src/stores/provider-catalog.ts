@@ -8,6 +8,20 @@ import { deleteDaemonProvider, hasDaemonCardMetadata, listDaemonProviders, saveD
 import { providersRepo } from '../database/repos/providers.repo'
 import { getDefinedProvider, listProviders } from '../libs/providers/providers'
 
+// Daemon ProviderKind is one of five canonical tags; local definition IDs are
+// much finer grained. Everything HTTP-compatible falls back to open-ai-compatible.
+function toDaemonProviderKind(definitionId: string): string {
+  if (definitionId === 'anthropic')
+    return 'anthropic'
+  if (definitionId === 'google-generative-ai')
+    return 'google-gemini'
+  if (definitionId === 'amazon-bedrock')
+    return 'aws-bedrock'
+  if (definitionId === 'ollama' || definitionId === 'lm-studio')
+    return 'local-server'
+  return 'open-ai-compatible'
+}
+
 export const useProviderCatalogStore = defineStore('provider-catalog', () => {
   const defs = computed(() => listProviders())
   const configs = ref<Record<string, ProviderCatalogProvider>>({})
@@ -69,7 +83,7 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       try {
         await saveDaemonProvider({
           id,
-          kind: definitionId,
+          kind: toDaemonProviderKind(definitionId),
           enabled: true,
           model: String(initialConfig.model ?? ''),
           baseUrl: String(initialConfig.baseUrl ?? ''),
@@ -116,6 +130,7 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       try {
         const payload: Record<string, any> = {
           id: providerId,
+          kind: toDaemonProviderKind(provider.definitionId),
           enabled: true,
           model: String(newConfig.model ?? ''),
           baseUrl: String(newConfig.baseUrl ?? ''),

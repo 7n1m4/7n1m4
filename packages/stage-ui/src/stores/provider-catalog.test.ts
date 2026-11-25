@@ -55,7 +55,7 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     const provider = await store.addProvider(providerOpenAICompatible.id, { model: 'gpt-test', baseUrl: 'http://local' })
     expect(mockSaveDaemonProvider).toHaveBeenCalledWith({
       id: provider.id,
-      kind: providerOpenAICompatible.id,
+      kind: 'open-ai-compatible',
       enabled: true,
       model: 'gpt-test',
       baseUrl: 'http://local',
@@ -83,6 +83,7 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     expect(store.configs[provider.id].config.apiKey).toBe('sk-test')
     expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
       id: provider.id,
+      kind: 'open-ai-compatible',
       enabled: true,
       model: 'gpt-test',
       baseUrl: 'http://local',
