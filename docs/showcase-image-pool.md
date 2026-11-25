@@ -6,7 +6,7 @@ This catalog tracks all ingested showcase screenshots, semantic filenames, resol
 
 ## Pool Directory
 All assets are stored in:
-`docs/content/public/showcase/` (accessible in VitePress via `/showcase/<filename>`)
+`docs/content/public/showcase/` (accessible in in-app docs via `/showcase/<filename>`)
 
 ---
 

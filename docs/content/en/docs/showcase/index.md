@@ -1,7 +1,3 @@
-<script setup>
-import { withBase } from 'vitepress'
-</script>
-
 # Feature Showcase
 
 A visual walkthrough of everything this fork adds to Project Anima. Click any feature card to explore comprehensive screenshots, technical architectures, and live interaction surfaces.
@@ -12,9 +8,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/11-onboarding-v3')" class="showcase-card">
+<a href="/en/docs/showcase/11-onboarding-v3" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/onboarding-v3-quick-start.avif')" alt="Onboarding V3 & Quick Start Cockpit" loading="lazy" />
+    <img src="/showcase/onboarding-v3-quick-start.avif" alt="Onboarding V3 & Quick Start Cockpit" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Onboarding V3 & Quick Start Cockpit</h3>
@@ -22,9 +18,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/12-settings-hub')" class="showcase-card">
+<a href="/en/docs/showcase/12-settings-hub" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-01-settings-hub.avif')" alt="Settings Hub & The Engine Room" loading="lazy" />
+    <img src="/showcase/hero-01-settings-hub.avif" alt="Settings Hub & The Engine Room" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Settings Hub & The Engine Room</h3>
@@ -40,9 +36,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/01-card-system')" class="showcase-card">
+<a href="/en/docs/showcase/01-card-system" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-01-card-system.avif')" alt="AIRI Card Character System" loading="lazy" />
+    <img src="/showcase/hero-01-card-system.avif" alt="AIRI Card Character System" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">AIRI Card Character System</h3>
@@ -50,9 +46,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/02-animadex-wizard')" class="showcase-card">
+<a href="/en/docs/showcase/02-animadex-wizard" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-02-animadex-wizard.avif')" alt="AnimaDex Guided Card Creator" loading="lazy" />
+    <img src="/showcase/hero-02-animadex-wizard.avif" alt="AnimaDex Guided Card Creator" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">AnimaDex Guided Card Creator</h3>
@@ -68,9 +64,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/03-model-selector')" class="showcase-card">
+<a href="/en/docs/showcase/03-model-selector" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-03-model-selector.avif')" alt="Avatars & Model Selector" loading="lazy" />
+    <img src="/showcase/hero-03-model-selector.avif" alt="Avatars & Model Selector" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Avatars & Model Selector</h3>
@@ -78,9 +74,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/04-live2d-system')" class="showcase-card">
+<a href="/en/docs/showcase/04-live2d-system" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/model-customizer-ai-curation.avif')" alt="Live2D Interactive Runtime & DSL" loading="lazy" />
+    <img src="/showcase/model-customizer-ai-curation.avif" alt="Live2D Interactive Runtime & DSL" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Live2D Interactive Runtime & DSL</h3>
@@ -96,19 +92,18 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/05-chatbox-redesign')" class="showcase-card">
+<a href="/en/docs/showcase/05-chatbox-redesign" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-05-chatbox-redesign.avif')" alt="3-Column Chat Workspace & Grounding" loading="lazy" />
+    <img src="/showcase/hero-05-chatbox-redesign.avif" alt="3-Column Chat Workspace & Grounding" loading="lazy" />
   </div>
-  <div class="showcase-card-body">
-    <h3 class="showcase-card-title">3-Column Chat Workspace & Grounding</h3>
+  <div class="showcase-card-body">    <h3 class="showcase-card-title">3-Column Chat Workspace & Grounding</h3>
     <p class="showcase-card-label">Navigation sidebar, pre-flight grounding panel, spoken highlights, mood-tagged bubbles, arcade backseat gaming, and event ledger.</p>
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/06-control-strip')" class="showcase-card">
+<a href="/en/docs/showcase/06-control-strip" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-06-control-strip.avif')" alt="Desktop Embodiment & Floating Control Strip" loading="lazy" />
+    <img src="/showcase/hero-06-control-strip.avif" alt="Desktop Embodiment & Floating Control Strip" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Desktop Embodiment & Control Strip</h3>
@@ -124,9 +119,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/07-producer-subsystem')" class="showcase-card">
+<a href="/en/docs/showcase/07-producer-subsystem" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/producer-directives-live-chat.avif')" alt="AI Producer Subsystem & Intimacy Engine" loading="lazy" />
+    <img src="/showcase/producer-directives-live-chat.avif" alt="AI Producer Subsystem & Intimacy Engine" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">AI Producer Subsystem & Intimacy Engine</h3>
@@ -134,9 +129,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/08-situational-awareness')" class="showcase-card">
+<a href="/en/docs/showcase/08-situational-awareness" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-08-situational-awareness.avif')" alt="Situational Awareness & Pacing" loading="lazy" />
+    <img src="/showcase/hero-08-situational-awareness.avif" alt="Situational Awareness & Pacing" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Situational Awareness & Pacing</h3>
@@ -152,9 +147,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
 
 <div class="grid-container">
 
-<a :href="withBase('/en/docs/showcase/09-artistry')" class="showcase-card">
+<a href="/en/docs/showcase/09-artistry" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-09-artistry-studio.avif')" alt="Production Studio & Autonomous Artistry" loading="lazy" />
+    <img src="/showcase/hero-09-artistry-studio.avif" alt="Production Studio & Autonomous Artistry" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Production Studio & Autonomous Artistry</h3>
@@ -162,9 +157,9 @@ A visual walkthrough of everything this fork adds to Project Anima. Click any fe
   </div>
 </a>
 
-<a :href="withBase('/en/docs/showcase/10-discord-integration')" class="showcase-card">
+<a href="/en/docs/showcase/10-discord-integration" class="showcase-card">
   <div class="showcase-card-img">
-    <img :src="withBase('/showcase/hero-10-discord-surfaces.avif')" alt="Discord Gateway & Connected Surfaces" loading="lazy" />
+    <img src="/showcase/hero-10-discord-surfaces.avif" alt="Discord Gateway & Connected Surfaces" loading="lazy" />
   </div>
   <div class="showcase-card-body">
     <h3 class="showcase-card-title">Discord Gateway & Connected Surfaces</h3>

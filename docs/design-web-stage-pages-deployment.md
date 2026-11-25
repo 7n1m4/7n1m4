@@ -6,7 +6,6 @@ AIRI hosts both its public documentation and a live client of **Web Stage** on G
 
 | Surface | Public URL | Build Source | Subpath / Base URL |
 | :--- | :--- | :--- | :--- |
-| **AIRI Docs** | `https://<owner>.github.io/<repo>/` (e.g. `https://dasilva333.github.io/airi/`) | `docs/` (VitePress) | `BASE_URL=/airi/` |
 | **AIRI Web Stage** | `https://<owner>.github.io/<repo>/web-stage/` (e.g. `https://dasilva333.github.io/airi/web-stage/`) | `apps/stage-web/` (Vue 3 + Vite) | `BASE_URL=/airi/web-stage/` |
 
 ---
@@ -34,10 +33,8 @@ To ensure `apps/stage-web` works seamlessly across different deployment targets 
 
 ### Bundling Pipeline
 When published:
-1. `docs/` builds to `docs/.vitepress/dist/`
-2. `apps/stage-web/` builds with `BASE_URL=/airi/web-stage/` to `apps/stage-web/dist/`
-3. `apps/stage-web/dist/` is copied into `docs/.vitepress/dist/web-stage/`
-4. The entire directory is uploaded as a single GitHub Pages artifact.
+1. `apps/stage-web/` builds with `BASE_URL=/airi/web-stage/` to `apps/stage-web/dist/`
+2. `apps/stage-web/dist/` is uploaded as the GitHub Pages artifact.
 
 ---
 
@@ -63,9 +60,7 @@ Key build steps in the workflow:
 - Uses `pnpm/action-setup@v4` (reading version directly from `package.json`'s `packageManager`).
 - Uses `pnpm install --no-frozen-lockfile` for CI build stability.
 - Runs `pnpm run build:packages`.
-- Builds Docs: `BASE_URL=/airi/ pnpm -F @proj-anima/docs run build`.
 - Builds Stage-Web: `BASE_URL=/airi/web-stage/ pnpm -F @proj-anima/stage-web run build`.
-- Bundles: `cp -r apps/stage-web/dist docs/.vitepress/dist/web-stage`.
 - Deploys to GitHub Pages via `actions/deploy-pages@v4`.
 
 ---
@@ -78,7 +73,7 @@ Convenience scripts are provided in root `package.json` and `apps/stage-web/pack
 ```bash
 pnpm run build:pages
 ```
-Runs `build:packages`, builds both docs and web-stage with their respective `BASE_URL`s, and bundles `apps/stage-web/dist` into `docs/.vitepress/dist/web-stage`.
+Runs `build:packages`, builds web-stage with `BASE_URL=/airi/web-stage/`.
 
 ### Web Stage Only (Pages subpath)
 ```bash

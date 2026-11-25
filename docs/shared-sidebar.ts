@@ -1,10 +1,5 @@
 /**
- * Canonical sidebar definition for Project AIRI documentation.
- * Both the VitePress standalone site and the in-app docs viewer consume this file.
- *
- * Each consumer transforms items for its own format:
- * - VitePress: wraps links with withBase('/en/docs/{link}')
- * - In-app docs: uses relative links as-is
+ * Canonical sidebar definition for the in-app docs viewer.
  */
 
 export interface SharedSidebarItem {

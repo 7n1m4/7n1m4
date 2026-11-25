@@ -60,7 +60,7 @@ Complete sovereignty over your companion's memory and state:
 
 ![In-App Documentation Viewer](/showcase/settings-in-app-documentation-viewer.avif)
 
-- **In-App Documentation Viewer**: Reads VitePress documentation directly inside the desktop client without switching windows.
+- **In-App Documentation Viewer**: Reads documentation directly inside the desktop client without switching windows.
 - **Upstream Comparison Inspector**: Visual diff breakdown comparing this fork's capabilities against upstream releases.
 
 ![Upstream Comparison Modal](/showcase/hero-01-settings-hub-upstream.avif)

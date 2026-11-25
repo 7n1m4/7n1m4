@@ -3,11 +3,6 @@ title: Versions
 description: Different versions of Anima and how to get them
 ---
 
-<script setup>
-import ReleaseDownloads from '../../../../.vitepress/components/ReleaseDownloads.vue'
-import ReleasesList from '../../../../.vitepress/components/ReleasesList.vue'
-</script>
-
 Anima offers multiple release channels to suit different needs. Whether you want the most stable experience or the latest features, we've got you covered.
 
 ## Stable Releases & Pre-releases
@@ -16,11 +11,9 @@ Official releases include both **stable** versions (thoroughly tested and recomm
 
 Pre-releases are tagged with `-beta.X` or `-alpha.X` suffixes (e.g., `v0.7.2-beta.3`).
 
-<ReleaseDownloads />
 
 ### Recent Stable & Pre-release Versions
 
-<ReleasesList type="releases" :limit="5" />
 
 [View all releases on GitHub →](https://github.com/moeru-ai/airi/releases)
 
@@ -55,6 +48,5 @@ Nightly builds run automatically at **00:00 UTC** every day. If you encounter an
 
 ### Recent Nightly Builds
 
-<ReleasesList type="nightly-builds" :limit="5" />
 
 [View all nightly builds →](https://github.com/moeru-ai/airi/actions/workflows/release-tamagotchi.yml)

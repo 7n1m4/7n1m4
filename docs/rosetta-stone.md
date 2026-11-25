@@ -613,7 +613,7 @@ Cross-window communication relies on named `BroadcastChannel` instances. This is
 | `scripts/` | Utility scripts (`yaml-manager.js`, `pr_summary.sh`) |
 | `crates/` | Rust runtime core: `anima-daemon` (owns state; hosts the WS/wss gateway via `anima-channel`), `anima-core`, and domain crates (stt / llm / speech / render / store / sync / ...). The Slint native shell was removed. |
 | `docs/` | Proposal docs, reference sheets, how-to guides |
-| `docs/content/en/docs/` | In-app manual content (vitepress) |
+| `docs/content/en/docs/` | In-app manual content |
 | `scripts/motion-export/` | ONNX texture-export lineage (`compile_onnx.py`, `inspect_sampler.py`, `test_onnx_parity.py`) |
 | `docs/proposal-echo-chips-rwkv-synthesis.md` | Echo chips synthesis proposal |
 | `docs/memory_lab/` | Memory-lab experimental docs (rich journal, activation, STMM/LTMM specs) |
