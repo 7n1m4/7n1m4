@@ -421,7 +421,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 
 #### 5.15 `airi-docs-site-maintenance`
 - **Target Domain**: Documentation Website Pipeline & Single-Source-of-Truth Sync.
-- **Key Paths**: `docs/shared-sidebar.ts`, `docs/.vitepress/config.ts`, `docs/content/en/`, `docs/content/ja/`.
+- **Key Paths**: `docs/shared-sidebar.ts`, `docs/.vitepress/config.ts`, `docs/content/en/`.
 - **Content**: VitePress documentation setup, `shared-sidebar.ts` single-source-of-truth syncing across web and in-app viewers, multi-locale synchronization, Markdown frontmatter standards, asset resolution rules, and strict separation between technical root docs (`docs/*.md`) and public user-facing guides (`docs/content/`).
 
 #### 5.16 `airi-ui-design-conventions`

@@ -98,7 +98,7 @@ Be honest about the gap; do not pretend the port is done.
 - **History**: `archive/` — completed handoffs, point-in-time model reviews, resolved
   bug investigations, superseded proposals, and the Qt→Slint port record
   (`archive/qt-port/`). The archive README indexes every entry.
-- **Docs website**: `.vitepress/` + `content/` (en / ja) build the public site
+- **Docs website**: `.vitepress/` + `content/` (en) build the public site
   (`srcDir: content` — the top-level engineering docs are not part of the site build).
   Site machinery (`package.json`, `netlify.toml`, `scripts/`, `shared-sidebar.ts`,
   `*.d.ts`, `uno.config.ts`, `tsconfig.json`) lives alongside.
