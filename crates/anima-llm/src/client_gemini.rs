@@ -24,6 +24,10 @@ use crate::types::{ChatChunk, ChatRequest, ModelInfo, Role};
 use crate::{ChatProvider, ChatStream, LlmError};
 
 /// Client for the Google Gemini native API.
+///
+/// The API key travels in the `x-goog-api-key` header, never the URL, and the
+/// `models/` prefix is stripped from ids returned by [`GoogleGeminiClient`]'s
+/// model listing.
 pub struct GoogleGeminiClient {
     /// Provider def from the registry.
     pub def: ProviderDef,

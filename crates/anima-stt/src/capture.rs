@@ -10,22 +10,39 @@
 //!
 //! ## Linux capture notes (ALSA / PulseAudio / PipeWire)
 //!
-//! `cpal` talks to ALSA directly. On modern desktops PulseAudio or PipeWire
-//! exposes an ALSA compatibility layer, so the device named `default`
-//! (or `sysdefault`) usually routes into the sound server and honours
-//! whichever microphone the user selected there. If you see
-//! `UnsupportedConfig`/`StreamTypeNotSupported`, check:
+//! `cpal` talks to ALSA directly. On modern desktops PulseAudio or PipeWire is
+//! exposed through ALSA plugins, so the sound server's device usually appears as
+//! `PulseAudio Sound Server` / `PipeWire Sound Server` and works with 16 kHz mono
+//! f32. [`AudioCapture::start`] **tries candidates in order** until one builds a
+//! working stream, because ALSA's `default` can be a null device that refuses to
+//! open, or advertise configs it cannot honour:
 //!
-//! - Device names with `arecord -l` (hardware, e.g. `hw:1,0`) vs `pactl list sources`
-//!   (Pulse, e.g. `alsa_input.usb-...`). cpal reports ALSA names.
-//! - 16 kHz mono is what this crate requests. Most ALSA/Pulse devices accept
-//!   it (Pulse resamples transparently). If a device truly cannot do 16 kHz,
-//!   [`CaptureError::UnsupportedSampleRate`] is returned — resampling is out
-//!   of scope for now (TODO: rubato-based resample fallback).
-//! - Permissions: with Pulse/PipeWire no special group membership is needed.
-//!   With raw ALSA the user may need to be in the `audio` group, or have a
-//!   Pulse/PipeWire session. In VMs/containers without `/dev/snd` capture
-//!   devices, [`AudioCapture::start`] errors and hardware-dependent tests skip.
+//! 1. An explicit [`CaptureConfig::device_name`] (exact match on the cpal device
+//!    `description().name()`; failure errors — there is no fallback).
+//! 2. `PulseAudio Sound Server`, then `PipeWire Sound Server` (they respect the
+//!    user's desktop mic selection).
+//! 3. Any device supporting 16 kHz mono f32 or i16 (null/discarding devices and
+//!    ALSA rate-converter plugins are excluded).
+//! 4. The host default device, whatever it is.
+//!
+//! Hard-won specifics of a PipeWire machine seen in the wild here:
+//!
+//! - ALSA's `default` ("Default Audio Device") may refuse to build a stream at
+//!   all — do not rely on it.
+//! - Raw hardware can use `dsnoop` and may fail on busy mics; the sound server
+//!   devices are more forgiving.
+//! - `arecord -l` lists raw hardware (`hw:…`); `pactl list sources` lists what
+//!   Pulse/PipeWire sees; the cpal names above look like
+//!   `HD-Audio Generic, ALC897 Analog` or `PulseAudio Sound Server`.
+//!
+//! Permissions: with Pulse/PipeWire no special group is required. With raw ALSA
+//! the user may need the `audio` group (or a Pulse/PipeWire session). In VMs or
+//! containers without capture devices, [`AudioCapture::start`] errors out and
+//! hardware-dependent tests skip gracefully instead of failing.
+//!
+//! 16 kHz mono is what this crate requests. A device that truly cannot do 16 kHz
+//! yields [`CaptureError::UnsupportedSampleRate`] — resampling is out of scope
+//! for now (TODO: rubato-based resample fallback).
 //!
 //! Capture is pull-free: the cpal callback thread pushes chunks into the
 //! broadcast channel; slow subscribers lag and drop chunks (capacity 64).

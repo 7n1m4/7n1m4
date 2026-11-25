@@ -16,6 +16,10 @@ use crate::types::{ChatRequest, ModelInfo};
 use crate::{ChatProvider, ChatStream, LlmError};
 
 /// Placeholder provider that always reports itself unsupported.
+///
+/// `build_client` returns this (rather than failing) so a UI can still render
+/// the registry row and its credential schema; the gap surfaces at call time as
+/// [`LlmError::UnsupportedProvider`] carrying the row's `compat.note`.
 pub struct UnsupportedChatClient {
     id: String,
     reason: String,

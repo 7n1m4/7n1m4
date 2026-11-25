@@ -119,7 +119,7 @@ impl AliyunNlsClient {
         }
         if config.token.trim().is_empty() {
             return Err(SttError::Config(
-                "aliyun NLS token must be configured (pre-issued; AK/SK exchange is out of scope, see README)".into(),
+                "aliyun NLS token must be configured (pre-issued; AK/SK exchange is out of scope, see the module docs)".into(),
             ));
         }
         if let Some(ms) = config.max_sentence_silence_ms {

@@ -22,6 +22,49 @@
 //! for all providers (see `client_openai` for the rationale). `data: [DONE]`
 //! terminates OpenAI streams; Anthropic `message_stop` and Gemini end-of-body
 //! terminate theirs.
+//!
+//! Client-module map:
+//! - `sse`: incremental `text/event-stream` parser (partial lines, `\r\n`).
+//! - `client_openai`: OpenAI-compatible wire.
+//!   Hand-rolled reqwest + SSE; also serves Ollama / LM Studio / Pollinations.
+//! - `client_anthropic`: native Anthropic Messages API wire.
+//! - `client_gemini`: native Google Gemini wire.
+//! - `client_stub`: [`UnsupportedChatClient`] for not-yet-wired kinds.
+//!
+//! Implemented vs stub status:
+//! - Live: `OpenAiCompatible`, `LocalServer` (ollama, lm-studio), `Anthropic`,
+//!   `GoogleGemini` — each with a real wire client and tests.
+//! - Stubbed via [`UnsupportedChatClient`] (`LlmError::UnsupportedProvider` from
+//!   `models()` / `stream()`, never a faked wire): `AwsBedrock` (SigV4), the
+//!   on-device `laya-local` / `openjev-local` engines, and `typesafe-ai` (a
+//!   System-1 decision engine, not a chat provider).
+//!
+//! ## Auth / key handling
+//!
+//! API keys are sent in HTTP headers only — never in URLs. Provider error
+//! payloads surface as [`LlmError::Provider`] with the response body truncated
+//! to 512 chars.
+//!
+//! ## Registry caveats
+//!
+//! - Azure uses a deployment-scoped base URL plus `?api-version=` passthrough not
+//!   implemented; front with a proxy or use `openai-compatible`.
+//! - BytePlus / Volcengine Ark are OpenAI-wire compatible; the manifest's
+//!   `OpenAI-compatible: no` reflects custom validators, not the protocol.
+//! - MiniMax defaults to the international endpoint; CN is an override
+//!   (`https://api.minimaxi.com/v1`).
+//! - Alibaba Cloud has no default `base_url` — endpoints are workspace-scoped.
+//! - Cloudflare Workers AI is account-scoped via its base URL
+//!   (`https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1`).
+//! - Pollinations is keyless by default.
+//! - Vision support is not represented in [`CompatFlags`] (per-model property,
+//!   not per-provider).
+//!
+//! # Testing
+//!
+//! Run `cargo test -p anima-llm --all-targets`. `tests/mock_provider.rs` spins
+//! up a mockito server asserting streamed deltas, finish reasons, `[DONE]`
+//! termination, and model-list parsing across the three wires.
 
 use std::pin::Pin;
 use std::sync::Arc;

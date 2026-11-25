@@ -5,11 +5,6 @@
 //! Covers `POST {base}/chat/completions` with `stream: true` and
 //! `GET {base}/models`. `data: [DONE]` terminates the stream. Both
 //! `delta.content` and `delta.reasoning_content` (DeepSeek-style) are surfaced.
-//!
-//! Why not `async-openai`: its typed request builder is rigid about provider
-//! quirks (non-standard delta fields, `[DONE]` sentinel, custom base URLs with
-//! path prefixes) and buys nothing over ~150 lines of reqwest here. Hand-rolling
-//! keeps every OpenAI-compatible provider a config row, per the crate design.
 
 use async_trait::async_trait;
 
@@ -20,6 +15,11 @@ use crate::types::{ChatChunk, ChatRequest, ModelInfo};
 use crate::{ChatProvider, ChatStream, LlmError};
 
 /// Client for OpenAI-compatible HTTP APIs.
+///
+/// One implementation serves every `OpenAiCompatible` / `LocalServer` registry
+/// row (OpenAI, Groq, Ollama, LM Studio, Pollinations, …): those are config
+/// rows, not new code. Construct it through [`crate::build_client`] so the
+/// registry's credential schema is honoured.
 pub struct OpenAiCompatibleClient {
     /// Provider def from the registry.
     pub def: ProviderDef,

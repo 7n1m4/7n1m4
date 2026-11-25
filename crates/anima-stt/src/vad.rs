@@ -24,6 +24,16 @@
 //!
 //! Outputs: `output` `[1, 1]` f32 probability and `stateN` `[2, 1, 128]` f32.
 //! The context resets along with the state (64 zeros).
+//!
+//! ## Model acquisition
+//!
+//! The ~2.3 MB model is downloaded from [`SILERO_MODEL_URL`] into
+//! [`SILERO_MODEL_REL_PATH`] under the platform data dir
+//! (`<data_dir>/airi-slint/models/silero_vad.onnx`) on first use. A cache hit
+//! needs no network. The download is written to a temp sibling and `rename`d
+//! into place, so a crash never leaves a truncated model at the cache path; the
+//! SHA-256 is computed and logged, and a suspiciously small body (<100 kB) is
+//! rejected. `SILERO_SKIP_DOWNLOAD=1` disables the download path entirely.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};

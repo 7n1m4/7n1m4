@@ -26,6 +26,10 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 /// Client for the Anthropic Messages API.
+///
+/// `system` is sent as a top-level field (not a message) and `max_tokens` is
+/// mandatory, so it defaults to 4096 when the request leaves it unset. Tool
+/// schemas are mapped to `input_schema`.
 pub struct AnthropicClient {
     /// Provider def from the registry.
     pub def: ProviderDef,

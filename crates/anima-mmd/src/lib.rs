@@ -35,7 +35,7 @@
 //! - **Display frames, rigid bodies and joints** — bytes after the morphs
 //!   section are never read.
 //! - **Physics / IK evaluation** — IK data is decoded and stored, never run.
-//! - **QDEF** deform type — reported as [`MmdError::UnsupportedDeformType`](4).
+//! - **QDEF** deform type — reported as [`MmdError::UnsupportedDeformType`].
 //! - **CP932 decoding** — VMD names are CP932 on the wire; this crate has no
 //!   encoding crate dependency and decodes ASCII-lossily, keeping raw bytes
 //!   in `name_raw` (see the VMD module docs).
@@ -51,6 +51,35 @@
 //!
 //! Allocation is capped on hostile input (see [`MAX_VERTICES`] and friends),
 //! and every read is bounds-checked; [`from_bytes`] never panics.
+//!
+//! # Live tests
+//!
+//! Env-gated and silently skipped when unset. No model is committed or
+//! downloaded — the user supplies one locally (MMD models are usually
+//! redistribution-restricted):
+//!
+//! ```sh
+//! AIRI_TEST_MMD_MODEL=/path/to/model.pmx cargo test -p anima-mmd live_
+//! AIRI_TEST_MMD_ZIP=/path/to/package.zip cargo test -p anima-mmd live_   # PMX inside a ZIP
+//! ```
+//!
+//! `AIRI_TEST_MMD_ZIP` extracts to a per-process temp directory
+//! (zip-slip-safe), parses the first `.pmx` found, and cleans up. The `zip`
+//! crate is a **dev-dependency only**.
+//!
+//! # Verification
+//!
+//! ```sh
+//! cargo test -p anima-mmd
+//! cargo clippy -p anima-mmd --all-targets -- -D warnings
+//! cargo fmt -p anima-mmd --check
+//! ```
+//!
+//! The suite iterates the 14 `.vmd` motions vendored in this repo
+//! (`apps/stage-tamagotchi/src/renderer/public/assets/mmd/animations/`) and
+//! asserts each parses; it fails if the directory is empty or missing. See
+//! `docs/archive/qt-port/p10-lane-mmd-m0.md` for the fixture strategy and
+//! honesty notes (what is verified vs assumed).
 //!
 //! # Example
 //!
