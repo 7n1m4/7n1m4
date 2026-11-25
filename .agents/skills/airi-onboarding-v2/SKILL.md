@@ -9,7 +9,7 @@ description: >-
 > [!CAUTION]
 > **DEPRECATED — DO NOT USE FOR ACTIVE DEVELOPMENT**
 > Onboarding V2 is retired and preserved solely for historical/reference purposes.
-> The active canonical implementation is **Onboarding V3** documented in `airi-onboarding-v3` and [`docs/design-onboarding-v3.md`](../../docs/design-onboarding-v3.md).
+> The active canonical implementation is **Onboarding V3** documented in `airi-onboarding-v3` and [`docs/design-onboarding-v3.md`](../../../docs/design-onboarding-v3.md).
 > All platforms (Desktop `/onboarding-v3`, Web) mount **`OnboardingV3`** (`packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/`).
 
 ## Legacy V2 Historical Reference

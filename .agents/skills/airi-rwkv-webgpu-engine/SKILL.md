@@ -105,6 +105,6 @@ Update `WEB_RWKV_MODELS` in `packages/stage-ui/src/libs/inference/constants.ts` 
 - **Audit Test Catalog**: `node scripts/audit-test-catalog.mjs`
 
 ### Authoritative Architecture Documents
-- [`docs/design-web-rwkv-quantization-architecture.md`](../../docs/design-web-rwkv-quantization-architecture.md) — Comprehensive empirical cleanroom matrix, WGSL kernel analysis, and prefab distribution design.
-- [`docs/project-rwkv-cleanroom-harness-plan.md`](../../docs/project-rwkv-cleanroom-harness-plan.md) — Phase 0–8 empirical test records.
-- [`docs/rosetta-stone.md`](../../docs/rosetta-stone.md) — Subsystem reference §6 and failure modes §16.
+- [`docs/design-web-rwkv-quantization-architecture.md`](../../../docs/design-web-rwkv-quantization-architecture.md) — Comprehensive empirical cleanroom matrix, WGSL kernel analysis, and prefab distribution design.
+- [`docs/project-rwkv-cleanroom-harness-plan.md`](../../../docs/project-rwkv-cleanroom-harness-plan.md) — Phase 0–8 empirical test records.
+- [`docs/rosetta-stone.md`](../../../docs/rosetta-stone.md) — Subsystem reference §6 and failure modes §16.

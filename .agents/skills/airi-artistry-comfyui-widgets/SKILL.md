@@ -75,15 +75,15 @@ description: >-
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-comfyui-image-generation-widget.md](../../docs/design-comfyui-image-generation-widget.md) — ComfyUI image generation widget design.
-- [docs/arch-comfyui-native-api-engine.md](../../docs/arch-comfyui-native-api-engine.md) — ComfyUI native API engine architecture.
-- [docs/design-flux-grid-slice-image-generation.md](../../docs/design-flux-grid-slice-image-generation.md) — Flux grid slice image generation design.
-- [docs/project-artistry-porting-report.md](../../docs/project-artistry-porting-report.md) — Artistry porting report.
-- [docs/design-ideogram-4-schema.md](../../docs/design-ideogram-4-schema.md) — Ideogram 4 schema.
-- [docs/project-widget-system-status-report.md](../../docs/project-widget-system-status-report.md) — Widget system status report.
-- [docs/proposal-comfyui-generative-music-dj-engine.md](../../docs/proposal-comfyui-generative-music-dj-engine.md) — Unified DJ/Music engine proposal (ComfyUI generative + Spotify catalog).
-- [docs/content/en/docs/showcase/09-artistry.md](../../docs/content/en/docs/showcase/09-artistry.md) — Artistry showcase.
-- [docs/rosetta-stone.md](../../docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa/IPC wiring, §13 BroadcastChannel registry.
+- [docs/design-comfyui-image-generation-widget.md](../../../docs/design-comfyui-image-generation-widget.md) — ComfyUI image generation widget design.
+- [docs/arch-comfyui-native-api-engine.md](../../../docs/arch-comfyui-native-api-engine.md) — ComfyUI native API engine architecture.
+- [docs/design-flux-grid-slice-image-generation.md](../../../docs/design-flux-grid-slice-image-generation.md) — Flux grid slice image generation design.
+- [docs/project-artistry-porting-report.md](../../../docs/project-artistry-porting-report.md) — Artistry porting report.
+- [docs/design-ideogram-4-schema.md](../../../docs/design-ideogram-4-schema.md) — Ideogram 4 schema.
+- [docs/project-widget-system-status-report.md](../../../docs/project-widget-system-status-report.md) — Widget system status report.
+- [docs/proposal-comfyui-generative-music-dj-engine.md](../../../docs/proposal-comfyui-generative-music-dj-engine.md) — Unified DJ/Music engine proposal (ComfyUI generative + Spotify catalog).
+- [docs/content/en/docs/showcase/09-artistry.md](../../../docs/content/en/docs/showcase/09-artistry.md) — Artistry showcase.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa/IPC wiring, §13 BroadcastChannel registry.
 
 ## Verification
 

@@ -53,8 +53,8 @@ For silence, distinguish suspended AudioContext, empty transformed text, synthes
 - [docs/proposal-higgs-audio-v3-tts-integration.md](../../../docs/proposal-higgs-audio-v3-tts-integration.md) — Higgs Audio V3 TTS integration proposal.
 - [docs/proposal-moss-tts-nano-provider-unified-webgpu.md](../../../docs/proposal-moss-tts-nano-provider-unified-webgpu.md) — MOSS TTS nano provider unified WebGPU proposal.
 - [docs/project-multimodal-audio-transport.md](../../../docs/project-multimodal-audio-transport.md) — Multimodal audio transport project.
-- [docs/tts.md](../../../docs/tts.md) — TTS research reference.
-- [docs/lipsync.md](../../../docs/lipsync.md) — Lipsync research reference.
+- [docs/research-tts.md](../../../docs/research-tts.md) — TTS research reference.
+- [docs/research-lipsync.md](../../../docs/research-lipsync.md) — Lipsync research reference.
 
 ## Verification
 

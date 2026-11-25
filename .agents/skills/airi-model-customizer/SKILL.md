@@ -158,4 +158,4 @@ All lists are driven by `getOrLoadModelCapabilities` output (model-file level), 
 - [docs/catalog-control-strip.md](../../../docs/catalog-control-strip.md) — Master catalog of control strip items and customizer rows.
 - [docs/project-control-strip-rfc.md](../../../docs/project-control-strip-rfc.md) — Control strip RFC.
 - [docs/design-stage-ui-context-bridge-control-island.md](../../../docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
-- [docs/bugfix-apply-btn-race.md](../../../docs/bugfix-apply-btn-race.md) — Apply-button race bugfix.
+- [docs/bugfix-apply-btn-race.md](../../../docs/archive/bugfix-apply-btn-race.md) — Apply-button race bugfix.

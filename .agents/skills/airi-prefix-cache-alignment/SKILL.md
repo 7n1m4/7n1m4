@@ -62,7 +62,7 @@ Stable prefix first, volatile tail last. The whole point is layout geometry: kee
 - [docs/proposal-prefix-cache-alignment.md](../../../docs/proposal-prefix-cache-alignment.md) — Prefix-cache alignment architectural spec.
 - [docs/proposal-director-cache-alignment-analysis.md](../../../docs/proposal-director-cache-alignment-analysis.md) — Director cache alignment risk analysis (do not force-fit).
 - [docs/design-token-usage-metrics.md](../../../docs/design-token-usage-metrics.md) — Token usage metrics.
-- [docs/journal-the-reasoning-content-bug.md](../../../docs/journal-the-reasoning-content-bug.md) — Reasoning-content bug journal (related prompt pipeline issue).
+- [docs/journal-the-reasoning-content-bug.md](../../../docs/archive/journal-the-reasoning-content-bug.md) — Reasoning-content bug journal (related prompt pipeline issue).
 
 ## Verification
 

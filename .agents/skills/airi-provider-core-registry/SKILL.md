@@ -21,11 +21,11 @@ This skill provides step-by-step instructions for implementing, extending, and m
 
 ### Crucial File Paths
 
-- [`packages/stage-ui/src/libs/providers/types.ts`](packages/stage-ui/src/libs/providers/types.ts) — Source of truth for `ProviderDefinition`, `ProviderInstance`, `ModelInfo`, and framework-agnostic `ProviderTranslationFn`.
-- [`packages/stage-ui/src/libs/providers/providers/registry.ts`](packages/stage-ui/src/libs/providers/providers/registry.ts) — Central registry mapping IDs to ProviderDefinitions.
-- [`packages/stage-ui/src/stores/providers/registry/local-engines.ts`](packages/stage-ui/src/stores/providers/registry/local-engines.ts) — Local in-browser ML engine metadata (Web-RWKV, WebLLM, Local Vision).
-- [`packages/stage-ui/src/libs/inference/cache-utils.ts`](packages/stage-ui/src/libs/inference/cache-utils.ts) — Multi-backend storage inspection, formatting, and cache eviction.
-- [`packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue`](packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) — Global model cache manager UI.
+- [`packages/stage-ui/src/libs/providers/types.ts`](../../../packages/stage-ui/src/libs/providers/types.ts) — Source of truth for `ProviderDefinition`, `ProviderInstance`, `ModelInfo`, and framework-agnostic `ProviderTranslationFn`.
+- [`packages/stage-ui/src/libs/providers/providers/registry.ts`](../../../packages/stage-ui/src/libs/providers/providers/registry.ts) — Central registry mapping IDs to ProviderDefinitions.
+- [`packages/stage-ui/src/stores/providers/registry/local-engines.ts`](../../../packages/stage-ui/src/stores/providers/registry/local-engines.ts) — Local in-browser ML engine metadata (Web-RWKV, WebLLM, Local Vision).
+- [`packages/stage-ui/src/libs/inference/cache-utils.ts`](../../../packages/stage-ui/src/libs/inference/cache-utils.ts) — Multi-backend storage inspection, formatting, and cache eviction.
+- [`packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue`](../../../packages/stage-ui/src/components/scenarios/settings/ModelCacheManager.vue) — Global model cache manager UI.
 
 ---
 
@@ -35,7 +35,7 @@ To ensure transparency and prevent silent multi-gigabyte disk usage, AIRI adhere
 
 ### 2.1 The Four On-Device Storage Scopes
 
-In [`cache-utils.ts`](packages/stage-ui/src/libs/inference/cache-utils.ts) and native bridges, local models are routed to their optimal storage engine:
+In [`cache-utils.ts`](../../../packages/stage-ui/src/libs/inference/cache-utils.ts) and native bridges, local models are routed to their optimal storage engine:
 
 | Storage Backend | Directory / Scope | Used By Engine | Model Types |
 | :--- | :--- | :--- | :--- |

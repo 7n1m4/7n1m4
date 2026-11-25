@@ -113,7 +113,7 @@ The shipped `flow_mdm.onnx` was produced and verified by committed Python toolin
 
 - [docs/proposal-text-to-vrma-system.md](../../../docs/proposal-text-to-vrma-system.md) — Text-to-VRMA system proposal.
 - [docs/design-text-to-motion.md](../../../docs/design-text-to-motion.md) — Text-to-motion architecture design.
-- [docs/text-to-motion.md](../../../docs/text-to-motion.md) — Text-to-motion research reference.
-- [docs/mocap.md](../../../docs/mocap.md) — Mocap research reference.
+- [docs/research-text-to-motion.md](../../../docs/research-text-to-motion.md) — Text-to-motion research reference.
+- [docs/research-mocap.md](../../../docs/research-mocap.md) — Mocap research reference.
 - [docs/design-vrm-animation-ecosystem.md](../../../docs/design-vrm-animation-ecosystem.md) — VRM animation ecosystem design.
 - [docs/proposal-emotion-motion-library.md](../../../docs/proposal-emotion-motion-library.md) — Emotion motion library proposal.

@@ -142,6 +142,6 @@ interface CloudRelayInstance {
 - [docs/superpowers/specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md](../../../docs/superpowers/specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md) — Provider data boundary design.
 - [docs/superpowers/specs/2026-07-04-phase-1-hard-block-design.md](../../../docs/superpowers/specs/2026-07-04-phase-1-hard-block-design.md) — Phase 1 hard block design.
 - [docs/superpowers/plans/2026-07-04-commercial-backend-phase-0-closure.md](../../../docs/superpowers/plans/2026-07-04-commercial-backend-phase-0-closure.md) — Commercial backend phase 0 closure plan.
-- [docs/superpowers/plans/2026-07-04-commercial-backend-phase-1-provider-data-boundary.md](../../../docs/superpowers/plans/2026-07-04-commercial-backend-phase-1-provider-data-boundary.md) — Provider data boundary plan.
+- [docs/superpowers/specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md](../../../docs/superpowers/specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md) — Provider data boundary design.
 - [docs/arch-gateway-security-hardening.md](../../../docs/arch-gateway-security-hardening.md) — Gateway security hardening architecture.
-- [docs/delivery/AIRI-customer-deployment-guide.zh-CN.md](../../../docs/delivery/AIRI-customer-deployment-guide.zh-CN.md) — AIRI customer deployment guide.
+- [docs/design-web-stage-pages-deployment.md](../../../docs/design-web-stage-pages-deployment.md) — Web stage and docs GitHub Pages deployment design.
