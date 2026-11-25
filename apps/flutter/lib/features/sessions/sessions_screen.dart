@@ -79,6 +79,45 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
+  Future<void> _delete(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Delete session?'),
+        content: Text('Delete "$id" and all of its messages? This cannot be undone.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final deleted = await widget.client.sessionsDelete(id);
+      if (!mounted) return;
+      // A missing session reports `false`; that is still success, so the row
+      // goes away either way instead of leaving a stale entry on screen.
+      setState(() => _status = deleted ? 'Deleted session $id' : 'Session $id was already gone');
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _import() async {
     final jsonl = _importController.text;
     if (jsonl.trim().isEmpty) return;
@@ -163,10 +202,20 @@ class _SessionsScreenState extends State<SessionsScreen> {
                             ),
                           ),
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.download),
-                          tooltip: 'Export session as JSONL',
-                          onPressed: () => _export((s['id'] as String?) ?? ''),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            IconButton(
+                              icon: const Icon(Icons.download),
+                              tooltip: 'Export session as JSONL',
+                              onPressed: () => _export((s['id'] as String?) ?? ''),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              tooltip: 'Delete session',
+                              onPressed: () => _delete((s['id'] as String?) ?? ''),
+                            ),
+                          ],
                         ),
                       ),
                 ],

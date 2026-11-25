@@ -36,6 +36,7 @@ void main() {
             ok: false,
             error: const RpcError(code: 'internal', message: 'boom'),
           );
+      client.emitStatus(DaemonConnectionState.connected);
       final controller = ChatComposerController(client: client);
       controller.input.text = 'hi';
       expect(await controller.handleSend(), isNull);
@@ -56,6 +57,7 @@ void main() {
                   }
                 : <String, dynamic>{},
           );
+      client.emitStatus(DaemonConnectionState.connected);
       final controller = ChatComposerController(client: client);
       controller.input.text = 'hi';
       expect(await controller.handleSend(), 'm-1');
@@ -78,6 +80,7 @@ void main() {
                   }
                 : <String, dynamic>{},
           );
+      client.emitStatus(DaemonConnectionState.connected);
       final controller = ChatComposerController(client: client);
       controller.input.text = 'hi';
       await controller.handleSend();
@@ -87,6 +90,7 @@ void main() {
 
       final failingClient = _FailingCancelClient();
       addTearDown(failingClient.dispose);
+      failingClient.emitStatus(DaemonConnectionState.connected);
       final controller2 = ChatComposerController(client: failingClient);
       controller2.input.text = 'hi';
       failingClient.onCall = (action, payload) => RpcReply(
