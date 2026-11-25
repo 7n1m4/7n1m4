@@ -781,8 +781,8 @@ steps:
     title: Творчество устарело
     description: Генерация изображений отключена.
     deprecatedTitle: Генерация изображений устарела
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: Генерация изображений устарела и отключена. Уже созданные изображения остаются доступными в журнале изображений; управление изображениями в будущем будет опираться на внешнюю интеграцию SAI.
+    deprecatedPreserved: Ваши существующие настройки Artistry сохранены и не были сброшены.
     engines:
       pollinations: Pollinations AI (100% бесплатно и без настроек)
       comfyui: ComfyUI (Локальный узел http://127.0.0.1:8188)

@@ -773,8 +773,8 @@ steps:
     title: Artistry sudah usang
     description: Pembuatan gambar telah dinonaktifkan.
     deprecatedTitle: Pembuatan gambar sudah usang
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: Pembuatan gambar sudah usang dan dinonaktifkan. Gambar yang sudah dibuat tetap tersedia di jurnal gambar; kontrol gambar di masa depan menargetkan integrasi SAI eksternal.
+    deprecatedPreserved: Pengaturan Artistry Anda yang ada tetap dipertahankan dan tidak diatur ulang.
     engines:
       pollinations: Pollinations AI (100% Free & Zero-Config)
       comfyui: ComfyUI (Local Node http://127.0.0.1:8188)

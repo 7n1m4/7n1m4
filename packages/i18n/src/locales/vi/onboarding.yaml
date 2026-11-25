@@ -780,8 +780,8 @@ steps:
     title: Nghệ thuật đã không còn được hỗ trợ
     description: Tạo ảnh đã bị tắt.
     deprecatedTitle: Tạo ảnh đã không còn được hỗ trợ
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: Tạo ảnh đã không còn được hỗ trợ và đã bị tắt. Các ảnh đã tạo trước đó vẫn còn trong nhật ký ảnh; tính năng điều khiển ảnh trong tương lai sẽ hướng tới tích hợp SAI bên ngoài.
+    deprecatedPreserved: Các thiết lập Artistry hiện có của bạn được giữ nguyên và không bị đặt lại.
     engines:
       pollinations: Pollinations AI (100% miễn phí & không cần cấu hình)
       comfyui: ComfyUI (Cụm máy chủ nội bộ http://127.0.0.1:8188)

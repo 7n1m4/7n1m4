@@ -727,8 +727,8 @@ steps:
     title: 艺术创作已弃用
     description: 图像生成已停用。
     deprecatedTitle: 图像生成已弃用
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: 图像生成已弃用并被禁用。已生成的图像仍保留在图像日志中；未来的图像控制将对接外部 SAI 集成。
+    deprecatedPreserved: 你现有的 Artistry 设置已被保留，未被重置。
     engines:
       pollinations: Pollinations AI (100% 免费免配置)
       comfyui: ComfyUI (本地节点 http://127.0.0.1:8188)

@@ -728,8 +728,8 @@ steps:
     title: アート生成は非推奨です
     description: 画像生成は無効化されました。
     deprecatedTitle: 画像生成は非推奨です
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: 画像生成は非推奨かつ無効化されています。すでに生成済みの画像は画像ジャーナルに残ります。今後の画像操作は外部の SAI 連携を対象にします。
+    deprecatedPreserved: 既存の Artistry 設定は保持されており、リセットされていません。
     engines:
       pollinations: Pollinations AI (100% 無料＆設定不要)
       comfyui: ComfyUI (ローカルノード http://127.0.0.1:8188)

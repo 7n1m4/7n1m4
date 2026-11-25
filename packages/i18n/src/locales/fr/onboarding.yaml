@@ -788,8 +788,8 @@ steps:
     title: L'art visuel est obsolète
     description: La génération d'images a été désactivée.
     deprecatedTitle: La génération d'images est obsolète
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: La génération d'images est obsolète et désactivée. Les images déjà générées restent disponibles dans le journal d'images ; le contrôle des images ciblera à l'avenir une intégration SAI externe.
+    deprecatedPreserved: Vos réglages Artistry existants sont conservés et n'ont pas été réinitialisés.
     engines:
       pollinations: Pollinations AI (100% gratuit et sans configuration)
       comfyui: ComfyUI (Instance locale http://127.0.0.1:8188)

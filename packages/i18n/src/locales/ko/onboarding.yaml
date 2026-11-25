@@ -733,8 +733,8 @@ steps:
     title: 예술 창작은 사용 중단되었습니다
     description: 이미지 생성이 비활성화되었습니다.
     deprecatedTitle: 이미지 생성은 사용 중단되었습니다
-    deprecatedNotice: Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
-    deprecatedPreserved: Your existing Artistry settings are preserved and were not reset.
+    deprecatedNotice: 이미지 생성은 사용 중단되었으며 비활성화되었습니다. 이미 생성된 이미지는 이미지 저널에 그대로 남아 있습니다. 향후 이미지 제어는 외부 SAI 연동을 대상으로 합니다.
+    deprecatedPreserved: 기존 Artistry 설정은 보존되었으며 초기화되지 않았습니다.
     engines:
       pollinations: Pollinations AI (100% 무료 & 설정 필요 없음)
       comfyui: ComfyUI (로컬 노드 http://127.0.0.1:8188)
