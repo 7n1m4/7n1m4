@@ -127,7 +127,7 @@ export type CoreStatusReply = {
  *  Broad class of an `emotion.tag` cue.
  *
  *  The TS host historically mis-routed a *motion* cue into a facial morph.
- *  Carrying the class on the wire lets every renderer (Godot, Vue, Flutter)
+ *  Carrying the class on the wire lets every renderer (Vue, Flutter)
  *  dispatch correctly without embedding morph names, `.exp3` paths, blend
  *  modes or DSL opcodes in the daemon protocol — those stay in card/model
  *  metadata. `motion` and `vfx` MUST NOT be treated as facial expressions.

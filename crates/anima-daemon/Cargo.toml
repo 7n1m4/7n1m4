@@ -15,6 +15,7 @@ name = "anima-daemon"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22"
 dbus = { workspace = true }
 dirs = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }

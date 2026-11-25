@@ -211,6 +211,11 @@ pub(crate) fn new_id() -> String {
     format!("{:x}{:x}-{:x}", n, std::process::id(), counter)
 }
 
+/// Mint a stable, roughly sortable id for a locally authored card.
+pub fn new_card_id() -> String {
+    new_id()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

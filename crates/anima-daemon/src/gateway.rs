@@ -1299,31 +1299,97 @@ impl Gateway {
                 }),
             );
         }
-        // Character cards are explicitly out of scope for the daemon port.
-        // Returning empty/null/`ok:true` here lied to thin clients: they had
-        // no way to tell "no cards yet" from "card management is unbuilt".
         {
+            let core = core.clone();
             m.insert(
                 "cards.list".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
-                    Err("cards.list is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
+                    let listed = core.card_list(limit + 1)?;
+                    let truncated = listed.len() > limit;
+                    let cards: Vec<_> = listed.into_iter().take(limit).collect();
+                    let reply = anima_channel::wire::CardListReply { cards, truncated };
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
         }
         {
+            let core = core.clone();
             m.insert(
                 "cards.get".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
-                    Err("cards.get is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let id = value
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| "missing id".to_string())?;
+                    let card = core.card_get(id)?;
+                    let reply = anima_channel::wire::CardGetReply { card };
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
         }
         {
+            let core = core.clone();
             m.insert(
                 "cards.import".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
-                    Err("cards.import is not implemented by the daemon: card management is out of scope for the daemon port".to_string())
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::CardImportRequest =
+                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                        let reply = core.card_import(&req)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "cards.create".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::CardCreateRequest =
+                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                        let reply = core.card_create(&req)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "cards.update".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::CardUpdateRequest =
+                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                        let reply = core.card_update(&req)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "cards.delete".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::CardDeleteRequest =
+                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                        let reply = core.card_delete(&req)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -3283,20 +3349,6 @@ mod tests {
     }
 
     #[test]
-    fn card_verbs_report_not_implemented() {
-        let (gateway, _tmp) = fresh_gateway();
-        let handlers = handlers(&gateway);
-        for method in ["cards.list", "cards.get", "cards.import"] {
-            let h = handlers
-                .get(method)
-                .unwrap_or_else(|| panic!("{method} must stay registered"));
-            let err = h(method, &serde_json::json!({ "id": "c1" }))
-                .expect_err("{method} must not claim success");
-            assert!(err.contains("not implemented"), "{method}: {err}");
-        }
-    }
-
-    #[test]
     fn card_metadata_rpc_persists_explicit_flags() {
         // Isolated store: `fresh_gateway()` intentionally uses the real
         // data dir, which another test run may have already written to.
@@ -3354,6 +3406,90 @@ mod tests {
             .is_err(),
             "non-boolean flags must be rejected"
         );
+    }
+
+    #[test]
+    fn cards_list_get_roundtrip_full_fidelity() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let create = handlers.get("cards.create").expect("cards.create registered");
+        let doc = serde_json::json!({
+            "spec": "chara_card_v2",
+            "data": {
+                "name": "Aria",
+                "description": "test",
+                "extensions": { "airi": { "model": "vrm" } },
+                "x_unknown": 42
+            }
+        });
+        let created = create("cards.create", &serde_json::json!({ "name": "Aria", "document": doc })).unwrap();
+        let id = created["id"].as_str().unwrap();
+        let list = handlers.get("cards.list").unwrap();
+        let listed = list("cards.list", &serde_json::json!({})).unwrap();
+        assert_eq!(listed["cards"][0]["id"], id);
+        assert_eq!(listed["cards"][0]["name"], "Aria");
+        let get = handlers.get("cards.get").unwrap();
+        let got = get("cards.get", &serde_json::json!({ "id": id })).unwrap();
+        assert_eq!(got["card"]["data"]["extensions"]["airi"]["model"], "vrm");
+        assert_eq!(got["card"]["data"]["x_unknown"], 42);
+    }
+
+    #[test]
+    fn cards_import_renames_on_collision() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let import = handlers.get("cards.import").expect("cards.import registered");
+        let doc = serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Bob" } });
+        let first = import("cards.import", &serde_json::json!({ "card": doc })).unwrap();
+        assert_eq!(first["renamed"], false);
+        let second = import("cards.import", &serde_json::json!({ "card": doc })).unwrap();
+        assert_eq!(second["renamed"], true);
+        assert_ne!(first["id"], second["id"]);
+    }
+
+    #[test]
+    fn cards_update_replaces_document() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let create = handlers.get("cards.create").unwrap();
+        let created = create("cards.create", &serde_json::json!({ "name": "Old", "document": { "spec": "chara_card_v2", "data": { "name": "Old" } } })).unwrap();
+        let id = created["id"].as_str().unwrap();
+        let update = handlers.get("cards.update").unwrap();
+        let new_doc = serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "New" } });
+        let updated = update("cards.update", &serde_json::json!({ "id": id, "document": new_doc })).unwrap();
+        assert_eq!(updated["updated"], true);
+        let get = handlers.get("cards.get").unwrap();
+        let got = get("cards.get", &serde_json::json!({ "id": id })).unwrap();
+        assert_eq!(got["card"]["data"]["name"], "New");
+    }
+
+    #[test]
+    fn cards_delete_is_idempotent() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let create = handlers.get("cards.create").unwrap();
+        let created = create("cards.create", &serde_json::json!({ "name": "Temp", "document": { "spec": "chara_card_v2", "data": { "name": "Temp" } } })).unwrap();
+        let id = created["id"].as_str().unwrap();
+        let delete = handlers.get("cards.delete").unwrap();
+        let first = delete("cards.delete", &serde_json::json!({ "id": id })).unwrap();
+        assert_eq!(first["deleted"], true);
+        let second = delete("cards.delete", &serde_json::json!({ "id": id })).unwrap();
+        assert_eq!(second["deleted"], false);
+    }
+
+    #[test]
+    fn card_write_verbs_are_gated() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        for verb in &["cards.create", "cards.update", "cards.delete", "cards.import"] {
+            let h = handlers.get(*verb).unwrap_or_else(|| panic!("{verb} registered"));
+            let err = h(verb, &serde_json::json!({})).expect_err("gated verb must deny");
+            assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{verb}: {err}");
+        }
     }
 
     #[test]

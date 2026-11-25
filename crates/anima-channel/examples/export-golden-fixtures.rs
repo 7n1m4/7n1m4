@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use anima_channel::wire::{
-    CardMetadataReply, CardMetadataSetRequest, CharacterStatsData, ChatSendRequest,
+    CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply, CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, CharacterStatsData, ChatSendRequest,
     CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply,
     EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
     HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
@@ -302,6 +302,74 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 id: "card-7".into(),
                 liked: true,
                 bookmarked: false,
+            })?,
+        ),
+        (
+            "cards.list.reply",
+            serde_json::to_value(CardListReply {
+                cards: vec![CardInfo { id: "card-7".into(), name: "Aria".into() }],
+                truncated: false,
+            })?,
+        ),
+        (
+            "cards.get.reply",
+            serde_json::to_value(CardGetReply {
+                card: Some(serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } })),
+            })?,
+        ),
+        (
+            "cards.import.request",
+            serde_json::to_value(CardImportRequest {
+                card: Some(serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } })),
+                png_base64: None,
+            })?,
+        ),
+        (
+            "cards.import.reply",
+            serde_json::to_value(CardImportReply {
+                id: "card-7".into(),
+                name: "Aria".into(),
+                renamed: false,
+            })?,
+        ),
+        (
+            "cards.create.request",
+            serde_json::to_value(CardCreateRequest {
+                name: "Aria".into(),
+                document: serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } }),
+            })?,
+        ),
+        (
+            "cards.create.reply",
+            serde_json::to_value(CardCreateReply {
+                id: "card-7".into(),
+                name: "Aria".into(),
+            })?,
+        ),
+        (
+            "cards.update.request",
+            serde_json::to_value(CardUpdateRequest {
+                id: "card-7".into(),
+                name: None,
+                document: serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } }),
+            })?,
+        ),
+        (
+            "cards.update.reply",
+            serde_json::to_value(CardUpdateReply {
+                updated: true,
+            })?,
+        ),
+        (
+            "cards.delete.request",
+            serde_json::to_value(CardDeleteRequest {
+                id: "card-7".into(),
+            })?,
+        ),
+        (
+            "cards.delete.reply",
+            serde_json::to_value(CardDeleteReply {
+                deleted: true,
             })?,
         ),
         (

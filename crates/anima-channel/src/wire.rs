@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Rust-canonical wire types for the `airi-channel` gateway protocol
+//! Rust-canonical wire types for the `anima-channel` gateway protocol
 //! (D2: Rust owns the schema; TS imports the generated definitions).
 //!
 //! These types describe every frame the channel server speaks today. They
 //! are load-bearing — [`crate::session`] serializes these instead of
 //! hand-built `json!` values — and they are exported to TypeScript by the
-//! `export-wire-types` example (`cargo run -p airi-channel --example export-wire-types`),
-//! which writes `packages/server-shared/src/types/generated/airi-channel.ts`.
+//! `export-wire-types` example (`cargo run -p anima-channel --example export-wire-types`),
+//! which writes `packages/server-shared/src/types/generated/anima-channel.ts`.
 //! The generated file is checked in; CI fails if it drifts from these types
 //! (`--check`).
 //!
@@ -407,6 +407,99 @@ pub struct CardInfo {
     pub name: String,
 }
 
+/// Reply of `cards.list`: full list of available cards (id + name).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardListReply {
+    /// Cards available locally.
+    pub cards: Vec<CardInfo>,
+    /// Whether the list was truncated.
+    pub truncated: bool,
+}
+
+/// Reply of `cards.get`: full-fidelity card document (opaque JSON).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct CardGetReply {
+    /// Card document, if found.
+    #[specta(type = specta_typescript::Unknown)]
+    pub card: Option<Value>,
+}
+
+/// Request of `cards.import`: import a card from JSON or base64 PNG.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CardImportRequest {
+    /// Card document (optional when importing from PNG).
+    #[specta(type = specta_typescript::Unknown)]
+    pub card: Option<Value>,
+    /// Base64-encoded PNG with embedded card (optional).
+    pub png_base64: Option<String>,
+}
+
+/// Reply of `cards.import`: id, name, whether renamed for uniqueness.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardImportReply {
+    /// Imported card id.
+    pub id: String,
+    /// Imported card name.
+    pub name: String,
+    /// Whether the name was renamed to avoid a collision.
+    pub renamed: bool,
+}
+
+/// Request of `cards.create`: create a new card from a document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct CardCreateRequest {
+    /// Card name.
+    pub name: String,
+    /// Card document.
+    #[specta(type = specta_typescript::Unknown)]
+    pub document: Value,
+}
+
+/// Reply of `cards.create`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardCreateReply {
+    /// Created card id.
+    pub id: String,
+    /// Created card name.
+    pub name: String,
+}
+
+/// Request of `cards.update`: update an existing card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CardUpdateRequest {
+    /// Card id.
+    pub id: String,
+    /// New name (optional).
+    pub name: Option<String>,
+    /// New document.
+    #[specta(type = specta_typescript::Unknown)]
+    pub document: Value,
+}
+
+/// Reply of `cards.update`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardUpdateReply {
+    /// Whether the update succeeded.
+    pub updated: bool,
+}
+
+/// Request of `cards.delete`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CardDeleteRequest {
+    /// Card id.
+    pub id: String,
+}
+
+/// Reply of `cards.delete`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CardDeleteReply {
+    /// Whether the deletion succeeded.
+    pub deleted: bool,
+}
+
 /// Reply of `cards.metadata` and `cards.metadata.set`.
 ///
 /// Local, daemon-owned flags for one card. No user identity, social graph,
@@ -440,6 +533,21 @@ pub struct CardMetadataSetRequest {
 pub struct SessionExportReply {
     /// JSONL export.
     pub jsonl: String,
+}
+
+/// Request payload for `sessions.delete`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDeleteRequest {
+    /// Session id to delete.
+    pub session_id: String,
+}
+
+/// Reply payload for `sessions.delete`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SessionDeleteReply {
+    /// Whether the session was deleted.
+    pub deleted: bool,
 }
 
 /// Wire-level status of a `sessions.import` reply.
@@ -628,7 +736,7 @@ impl std::str::FromStr for EventTopic {
 /// Broad class of an `emotion.tag` cue.
 ///
 /// The TS host historically mis-routed a *motion* cue into a facial morph.
-/// Carrying the class on the wire lets every renderer (Godot, Vue, Flutter)
+/// Carrying the class on the wire lets every renderer (Vue, Flutter)
 /// dispatch correctly without embedding morph names, `.exp3` paths, blend
 /// modes or DSL opcodes in the daemon protocol — those stay in card/model
 /// metadata. `motion` and `vfx` MUST NOT be treated as facial expressions.
@@ -1015,9 +1123,21 @@ pub fn type_collection() -> specta::Types {
         .register::<JournalEntry>()
         .register::<SessionInfo>()
         .register::<CardInfo>()
+        .register::<CardListReply>()
+        .register::<CardGetReply>()
+        .register::<CardImportRequest>()
+        .register::<CardImportReply>()
+        .register::<CardCreateRequest>()
+        .register::<CardCreateReply>()
+        .register::<CardUpdateRequest>()
+        .register::<CardUpdateReply>()
+        .register::<CardDeleteRequest>()
+        .register::<CardDeleteReply>()
         .register::<CardMetadataReply>()
         .register::<CardMetadataSetRequest>()
         .register::<SessionExportReply>()
+        .register::<SessionDeleteRequest>()
+        .register::<SessionDeleteReply>()
         .register::<SessionImportReply>()
         .register::<VaultStatsData>()
         .register::<DomainStatsData>()

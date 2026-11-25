@@ -15,7 +15,9 @@
 #[cfg(test)]
 mod golden_fixtures {
     use anima_channel::wire::{
-        CardMetadataReply, CardMetadataSetRequest, ChatSendRequest, CoreStatusReply,
+        CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
+        CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
+        CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest, CoreStatusReply,
         EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply,
         GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject,
         RuntimePingReply, RuntimeStatusReply, SessionImportReply, SettingsGetReply,
@@ -201,6 +203,51 @@ mod golden_fixtures {
         let set = load_json("cards.metadata.set.request");
         round_trip::<CardMetadataSetRequest>("cards.metadata.set.request", &set);
     }
+
+    #[test]
+    fn cards_list_reply_fixture() {
+        let reply = load_json("cards.list.reply");
+        round_trip::<CardListReply>("cards.list.reply", &reply);
+    }
+
+    #[test]
+    fn cards_get_reply_fixture() {
+        let reply = load_json("cards.get.reply");
+        round_trip::<CardGetReply>("cards.get.reply", &reply);
+    }
+
+    #[test]
+    fn cards_import_request_reply_fixtures() {
+        let request = load_json("cards.import.request");
+        round_trip::<CardImportRequest>("cards.import.request", &request);
+        let reply = load_json("cards.import.reply");
+        round_trip::<CardImportReply>("cards.import.reply", &reply);
+    }
+
+    #[test]
+    fn cards_create_request_reply_fixtures() {
+        let request = load_json("cards.create.request");
+        round_trip::<CardCreateRequest>("cards.create.request", &request);
+        let reply = load_json("cards.create.reply");
+        round_trip::<CardCreateReply>("cards.create.reply", &reply);
+    }
+
+    #[test]
+    fn cards_update_request_reply_fixtures() {
+        let request = load_json("cards.update.request");
+        round_trip::<CardUpdateRequest>("cards.update.request", &request);
+        let reply = load_json("cards.update.reply");
+        round_trip::<CardUpdateReply>("cards.update.reply", &reply);
+    }
+
+    #[test]
+    fn cards_delete_request_reply_fixtures() {
+        let request = load_json("cards.delete.request");
+        round_trip::<CardDeleteRequest>("cards.delete.request", &request);
+        let reply = load_json("cards.delete.reply");
+        round_trip::<CardDeleteReply>("cards.delete.reply", &reply);
+    }
+
 
     #[test]
     fn chat_send_request_fixture_locks_camel_case_session_id() {
