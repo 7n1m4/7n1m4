@@ -43,7 +43,7 @@
 		{"id":"33ab91923640c23d","x":3838,"y":1483,"width":400,"height":400,"type":"file","file":"docs/content/en/blog/DevLog-2025.03.05/assets/airi-build-dark.avif"},
 		{"id":"b353c6be876160ee","x":-167,"y":1928,"width":400,"height":400,"type":"file","file":"docs/content/zh-Hans/blog/DevLog-2025.03.05/assets/airi-build-light.avif"},
 		{"id":"6ec2cc5268759387","x":278,"y":1928,"width":400,"height":400,"type":"file","file":"docs/content/en/blog/DevLog-2025.03.05/assets/airi-build-light.avif"},
-		{"id":"6a8fdf3d42e92233","x":723,"y":1928,"width":400,"height":400,"type":"file","file":"docs/delivery/AIRI-customer-deployment-guide.zh-CN.md"},
+		{"id":"6a8fdf3d42e92233","x":723,"y":1928,"width":400,"height":400,"type":"file","file":"docs/design-daemon-gateway.md"},
 		{"id":"7af3a74df0eb6555","x":1168,"y":1928,"width":400,"height":400,"type":"file","file":"docs/content/zh-Hans/blog/DevLog-2025.08.05/assets/airi-demo-onboarding-dark.avif"},
 		{"id":"aad8ef961e7ac5be","x":1613,"y":1928,"width":400,"height":400,"type":"file","file":"docs/content/en/blog/DevLog-2025.08.05/assets/airi-demo-onboarding-dark.avif"},
 		{"id":"549f7d6da8fffad9","x":2058,"y":1928,"width":400,"height":400,"type":"file","file":"docs/content/zh-Hans/blog/DevLog-2025.08.05/assets/airi-demo-onboarding-light.avif"},
