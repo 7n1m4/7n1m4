@@ -4,8 +4,7 @@ import { nanoid } from 'nanoid'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { client } from '../composables/api'
-import { useLocalFirstRequest } from '../composables/use-local-first'
+import { deleteDaemonProvider, hasDaemonCardMetadata, listDaemonProviders, saveDaemonProvider } from '../composables/daemon-card-metadata'
 import { providersRepo } from '../database/repos/providers.repo'
 import { getDefinedProvider, listProviders } from '../libs/providers/providers'
 
@@ -14,35 +13,37 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
   const configs = ref<Record<string, ProviderCatalogProvider>>({})
 
   async function fetchList() {
-    return useLocalFirstRequest({
-      local: async () => {
-        const cached = await providersRepo.getAll()
-        if (Object.keys(cached).length > 0) {
-          configs.value = cached
-        }
-      },
-      remote: async () => {
-        const res = await client.api.providers.$get()
-        if (!res.ok) {
-          throw new Error('Failed to fetch providers')
-        }
-        const data = (await res.json()) as any[]
+    const cached = await providersRepo.getAll()
+    configs.value = cached
 
-        const newConfigs: Record<string, ProviderCatalogProvider> = {}
-        for (const item of data) {
-          newConfigs[item.id] = {
-            id: item.id,
-            definitionId: item.definitionId,
-            name: item.name,
-            config: item.config as Record<string, any>,
-            validated: item.validated,
-            validationBypassed: item.validationBypassed,
+    if (hasDaemonCardMetadata()) {
+      try {
+        const { providers: infos } = await listDaemonProviders()
+        const newConfigs = { ...configs.value }
+        for (const info of infos) {
+          const existing = newConfigs[info.id]
+          newConfigs[info.id] = {
+            id: info.id,
+            definitionId: existing?.definitionId ?? info.id,
+            name: existing?.name ?? info.id,
+            config: existing?.config ?? {},
+            validated: existing?.validated ?? false,
+            validationBypassed: existing?.validationBypassed ?? false,
+          }
+          if (info.model) {
+            newConfigs[info.id].config = { ...newConfigs[info.id].config, model: info.model }
+          }
+          if (info.baseUrl) {
+            newConfigs[info.id].config = { ...newConfigs[info.id].config, baseUrl: info.baseUrl }
           }
         }
         configs.value = newConfigs
         await providersRepo.saveAll(newConfigs)
-      },
-    })
+      }
+      catch (err) {
+        console.error('Failed to list daemon providers', err)
+      }
+    }
   }
 
   async function addProvider(definitionId: string, initialConfig: Record<string, any> = {}) {
@@ -61,41 +62,25 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       validationBypassed: false,
     }
 
-    return useLocalFirstRequest<ProviderCatalogProvider>({
-      local: async () => {
-        configs.value[id] = provider
-        await providersRepo.upsert(provider)
-        return provider
-      },
-      remote: async () => {
-        const res = await client.api.providers.$post({
-          json: {
-            id,
-            definitionId,
-            name: provider.name,
-            config: provider.config,
-            validated: provider.validated,
-            validationBypassed: provider.validationBypassed,
-          },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to add provider')
-        }
-        const item = await res.json() as ProviderCatalogProvider
-        const finalProvider: ProviderCatalogProvider = {
-          id: item.id,
-          definitionId: item.definitionId,
-          name: item.name,
-          config: item.config as Record<string, any>,
-          validated: item.validated,
-          validationBypassed: item.validationBypassed,
-        }
+    configs.value[id] = provider
+    await providersRepo.upsert(provider)
 
-        configs.value[item.id] = finalProvider
-        await providersRepo.upsert(finalProvider)
-        return item
-      },
-    })
+    if (hasDaemonCardMetadata()) {
+      try {
+        await saveDaemonProvider({
+          id,
+          kind: definitionId,
+          enabled: true,
+          model: String(initialConfig.model ?? ''),
+          baseUrl: String(initialConfig.baseUrl ?? ''),
+        })
+      }
+      catch (err) {
+        console.error('Failed to save daemon provider', err)
+      }
+    }
+
+    return provider
   }
 
   async function removeProvider(providerId: string) {
@@ -103,20 +88,17 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       return
     }
 
-    return useLocalFirstRequest({
-      local: async () => {
-        delete configs.value[providerId]
-        await providersRepo.remove(providerId)
-      },
-      remote: async () => {
-        const res = await client.api.providers[':id'].$delete({
-          param: { id: providerId },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to remove provider')
-        }
-      },
-    })
+    delete configs.value[providerId]
+    await providersRepo.remove(providerId)
+
+    if (hasDaemonCardMetadata()) {
+      try {
+        await deleteDaemonProvider(providerId)
+      }
+      catch (err) {
+        console.error('Failed to delete daemon provider', err)
+      }
+    }
   }
 
   async function commitProviderConfig(providerId: string, newConfig: Record<string, any>, options: { validated: boolean, validationBypassed: boolean }) {
@@ -125,36 +107,33 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       return
     }
 
-    return useLocalFirstRequest<ProviderCatalogProvider>({
-      local: async () => {
-        provider.config = { ...newConfig }
-        provider.validated = options.validated
-        provider.validationBypassed = options.validationBypassed
-        await providersRepo.upsert(provider)
-        return provider
-      },
-      remote: async () => {
-        const res = await client.api.providers[':id'].$patch({
-          param: { id: providerId },
-          // @ts-expect-error hono client typing misses json option for this route
-          json: {
-            config: newConfig,
-            validated: options.validated,
-            validationBypassed: options.validationBypassed,
-          },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to update provider config')
+    provider.config = { ...newConfig }
+    provider.validated = options.validated
+    provider.validationBypassed = options.validationBypassed
+    await providersRepo.upsert(provider)
+
+    if (hasDaemonCardMetadata()) {
+      try {
+        const payload: Record<string, any> = {
+          id: providerId,
+          enabled: true,
+          model: String(newConfig.model ?? ''),
+          baseUrl: String(newConfig.baseUrl ?? ''),
         }
-        const item = await res.json() as ProviderCatalogProvider
-        // Sync with server response just in case
-        provider.config = { ...item.config }
-        provider.validated = item.validated
-        provider.validationBypassed = item.validationBypassed
-        await providersRepo.upsert(provider)
-        return provider
-      },
-    })
+        if (typeof newConfig.apiKey === 'string') {
+          payload.apiKey = newConfig.apiKey
+          if (options.validated) {
+            payload.rotateSecrets = true
+          }
+        }
+        await saveDaemonProvider(payload)
+      }
+      catch (err) {
+        console.error('Failed to save daemon provider', err)
+      }
+    }
+
+    return provider
   }
 
   return {

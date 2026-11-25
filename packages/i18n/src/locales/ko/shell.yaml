@@ -206,7 +206,6 @@ general:
   disableTransitions: 모든 페이지 전환 비활성화
   usePageSpecificTransitions: 페이지별 전환 사용
   privacySection: 개인정보 및 네트워크
-  remoteSyncEnabled: 민감한 진단 정보를 원격으로 동기화 허용
   websocketSecureEnabled: 내장 WebSocket 서버에 wss:// 사용
   startupSection: 시작
   autostartEnabled: 로그인 시 자동 실행

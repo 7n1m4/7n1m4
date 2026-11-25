@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { all } from '@proj-anima/i18n'
 import { useSettings } from '@proj-anima/stage-ui/stores/settings'
-import { FieldCheckbox, FieldSelect, useTheme } from '@proj-anima/ui'
+import { FieldSelect, useTheme } from '@proj-anima/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -54,17 +54,6 @@ const languages = computed(() => {
       :label="t('settings.language.title')"
       :description="t('settings.language.description')"
       :options="languages as Array<{ value: string; label: string }>"
-    />
-
-    <FieldCheckbox
-      v-model="settings.remoteSyncEnabled"
-      v-motion
-      :initial="{ opacity: 0, y: 10 }"
-      :enter="{ opacity: 1, y: 0 }"
-      :duration="250 + (4 * 10)"
-      :delay="4 * 50"
-      :label="t('settings.privacy.remote-sync.title')"
-      :description="t('settings.privacy.remote-sync.description')"
     />
 
     <!-- Controls Island Icon Size -->

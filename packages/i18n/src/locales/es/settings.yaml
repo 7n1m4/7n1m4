@@ -1740,12 +1740,6 @@ providers:
       device_id: ID del dispositivo
       device_id_placeholder: Automático
       title: Navegador (Local)
-privacy:
-  remote-sync:
-    title: Habilitar sincronización en la nube
-    description: Desactivado por defecto. Cuando está deshabilitado, Anima permanece
-      exclusivamente local y no buscará sesiones remotas ni sincronizará el
-      historial de chat con airi-api.moeru.ai.
 groups:
   character:
     title: Personaje y escena

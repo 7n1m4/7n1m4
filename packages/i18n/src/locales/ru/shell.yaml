@@ -206,7 +206,6 @@ general:
   disableTransitions: Отключить все переходы страниц
   usePageSpecificTransitions: Использовать переходы для отдельных страниц
   privacySection: Конфиденциальность и сеть
-  remoteSyncEnabled: Разрешить удалённую синхронизацию конфиденциальной диагностики
   websocketSecureEnabled: Использовать wss:// для встроенного websocket-сервера
   startupSection: Запуск
   autostartEnabled: Запускать автоматически при входе в систему

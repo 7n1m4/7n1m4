@@ -1728,11 +1728,6 @@ providers:
       device_id: ID thiết bị
       device_id_placeholder: Tự động
       title: Trình duyệt (Cục bộ)
-privacy:
-  remote-sync:
-    title: Bật đồng bộ đám mây
-    description: Mặc định tắt. Khi tắt, Anima chỉ hoạt động cục bộ và sẽ không tìm
-      nạp phiên từ xa hoặc đồng bộ lịch sử trò chuyện với airi-api.moeru.ai.
 groups:
   character:
     title: Nhân vật & Cảnh

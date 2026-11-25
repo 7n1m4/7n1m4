@@ -9,7 +9,7 @@ import { useMemoryLifetimeStore } from './memory-lifetime'
 // is real; only its persistence and inference edges are stubbed.
 // ---------------------------------------------------------------------------
 const shared = vi.hoisted(() => ({
-  userId: 'test-user',
+  userId: 'local',
   provider: 'test-provider',
   model: 'test-model',
   cards: new Map<string, any>(),
@@ -26,10 +26,6 @@ const shared = vi.hoisted(() => ({
   systemOneConfigured: false,
   runLifetimeDayGate: vi.fn(),
   runWinnowTurnCompaction: vi.fn(async (windows: Array<{ id: string }>) => new Set(windows.map(w => w.id))),
-}))
-
-vi.mock('./auth', () => ({
-  useAuthStore: () => ({ userId: ref(shared.userId) }),
 }))
 
 vi.mock('./modules/airi-card', () => ({
@@ -118,17 +114,17 @@ const userMsg = (id: string, text: string, createdAt: number) => ({ id, role: 'u
 
 function sessionRecord(sessionId: string, messages: any[], universeId = 'global') {
   return {
-    meta: { sessionId, userId: 'test-user', characterId: 'char-1', universeId, title: 'Main', messageCount: messages.length, createdAt: at(8, 20), updatedAt: at(9, 13) },
+    meta: { sessionId, userId: 'local', characterId: 'char-1', universeId, title: 'Main', messageCount: messages.length, createdAt: at(8, 20), updatedAt: at(9, 13) },
     messages,
   }
 }
 
 function indexFor(sessions: Record<string, any>) {
-  return { userId: 'test-user', characters: { 'char-1': { activeSessionId: 's1', sessions } } }
+  return { userId: 'local', characters: { 'char-1': { activeSessionId: 's1', sessions } } }
 }
 
 function sessionMeta(sessionId: string, messageCount: number, universeId = 'global', title = 'Main') {
-  return { sessionId, userId: 'test-user', characterId: 'char-1', universeId, title, messageCount, createdAt: at(8, 20), updatedAt: at(9, 13) }
+  return { sessionId, userId: 'local', characterId: 'char-1', universeId, title, messageCount, createdAt: at(8, 20), updatedAt: at(9, 13) }
 }
 
 const FULL_PACK = {
@@ -301,7 +297,7 @@ describe('f-03 universe isolation', () => {
     shared.lifetime.set('char-1:cyberpunk-au', seedArtifact({ id: 'art-cyber', universeId: 'cyberpunk-au', version: 7 }))
     shared.sessions.set('s-cyber', sessionRecord('s-cyber', [userMsg('mc1', 'neon rain talk', at(9, 13))], 'cyberpunk-au'))
     shared.chatIndex = {
-      userId: 'test-user',
+      userId: 'local',
       characters: { 'char-1': { activeSessionId: 's-cyber', sessions: { 's-cyber': sessionMeta('s-cyber', 1, 'cyberpunk-au', 'Neon') } } },
     }
     shared.generate.mockResolvedValue(mergeResponse(false, FULL_PACK))
@@ -386,7 +382,7 @@ describe('f-03 universe isolation', () => {
 describe('f-05 multi-timeline collection', () => {
   it('keeps branch headers attached and repeated greetings across days', async () => {
     shared.sessions.set('s-long', {
-      meta: { sessionId: 's-long', userId: 'test-user', characterId: 'char-1', createdAt: at(8, 20) },
+      meta: { sessionId: 's-long', userId: 'local', characterId: 'char-1', createdAt: at(8, 20) },
       messages: [
         userMsg('trunk-1', 'Shared trunk hello', at(9, 12, 9)),
         userMsg('m-long-1', 'Good morning', at(9, 12, 10)),
@@ -395,7 +391,7 @@ describe('f-05 multi-timeline collection', () => {
       ],
     })
     shared.sessions.set('s-branch', {
-      meta: { sessionId: 's-branch', userId: 'test-user', characterId: 'char-1', createdAt: at(8, 21) },
+      meta: { sessionId: 's-branch', userId: 'local', characterId: 'char-1', createdAt: at(8, 21) },
       messages: [
         userMsg('trunk-1', 'Shared trunk hello', at(9, 12, 9)),
         userMsg('m-branch-1', 'Branch midnight idea', at(9, 12, 23)),

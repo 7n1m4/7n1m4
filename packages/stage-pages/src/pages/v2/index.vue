@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useAuthStore } from '@proj-anima/stage-ui/stores/auth'
 import { useCharacterStore } from '@proj-anima/stage-ui/stores/characters'
 import { Button } from '@proj-anima/ui'
 import { computed, onMounted } from 'vue'
 
 const characterStore = useCharacterStore()
-const authStore = useAuthStore()
 
 const coverImage = new URL('../../../../stage-ui/src/components/menu/relu.avif', import.meta.url).href
 const characterAvatarImage = new URL('../../../../stage-ui/src/assets/live2d/models/hiyori/preview.png', import.meta.url).href
@@ -56,8 +54,8 @@ const characters = computed(() => Array.from(characterStore.characters.values())
     forks: char.forksCount,
     // Daemon-owned flags hydrated into the local rows by the character
     // store; fall back to the local likes/bookmarks entries.
-    liked: char.likes?.some(l => l.userId === authStore.userId),
-    bookmarked: char.bookmarks?.some(b => b.userId === authStore.userId),
+    liked: char.likes?.some(l => l.userId === 'local'),
+    bookmarked: char.bookmarks?.some(b => b.userId === 'local'),
     priceCredit: char.priceCredit,
   }
 }))

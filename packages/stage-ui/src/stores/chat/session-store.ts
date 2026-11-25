@@ -14,7 +14,7 @@ import { shortTermMemoryRepo } from '../../database/repos/short-term-memory.repo
 import { textJournalRepo } from '../../database/repos/text-journal.repo'
 import { storage } from '../../database/storage'
 import { layeredMemory } from '../../libs/search/layered-memory'
-import { useAuthStore } from '../auth'
+import { LOCAL_USER_ID } from '../../local-user'
 import { useBackgroundStore } from '../background'
 import { useEchoesStore } from '../echo-chips'
 import { useMemoryLifetimeStore } from '../memory-lifetime'
@@ -28,7 +28,6 @@ import { updateRecentTopics } from './recent-topics'
 import { extractMessageContent, mergeLoadedSessionMessages } from './session-message-merge'
 
 export const useChatSessionStore = defineStore('chat-session', () => {
-  const { userId } = storeToRefs(useAuthStore())
   const { activeCardId, systemPrompt } = storeToRefs(useAiriCardStore())
   const shortTermMemory = useShortTermMemoryStore()
   const lifetimeMemory = useMemoryLifetimeStore()
@@ -80,7 +79,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
   const isEnsuringSession = ref(false)
 
   function getCurrentUserId() {
-    return userId.value || 'local'
+    return LOCAL_USER_ID
   }
 
   function getCurrentCharacterId() {
@@ -355,7 +354,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       void updateRecentTopics(
         updatedMeta.characterId,
         sessionId,
-        userId.value || 'default_user',
+        LOCAL_USER_ID,
         messages,
         stmBlocks,
         updatedMeta.universeId || 'global',
@@ -957,7 +956,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     const characterId = getCurrentCharacterId()
     const sessionIds = new Set<string>()
 
-    if (index.value?.userId === currentUserId) {
+    if (index.value && index.value.userId === currentUserId) {
       for (const character of Object.values(index.value.characters)) {
         for (const sessionId of Object.keys(character.sessions))
           sessionIds.add(sessionId)
@@ -1191,12 +1190,12 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     await ensureActiveSessionForCharacter()
   }
 
-  watch([userId, activeCardId], ([nextUserId, nextCardId], [prevUserId, prevCardId]) => {
+  watch([activeCardId], ([nextCardId], [prevCardId]) => {
     if (!ready.value)
       return
-    debug('[ChatSession] watcher:userId+activeCardId', {
-      prevUserId,
-      nextUserId,
+    debug('[ChatSession] watcher:activeCardId', {
+      prevUserId: LOCAL_USER_ID,
+      nextUserId: LOCAL_USER_ID,
       prevCardId,
       nextCardId,
       activeSessionId: activeSessionId.value,
@@ -1243,7 +1242,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       void updateRecentTopics(
         activeCardId.value || '',
         nextId,
-        userId.value || 'default_user',
+        LOCAL_USER_ID,
         messages,
         stmBlocks,
         sessionMetas.value[nextId]?.universeId || 'global',

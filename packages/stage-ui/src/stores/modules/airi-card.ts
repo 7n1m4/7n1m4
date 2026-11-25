@@ -30,8 +30,8 @@ import {
   STARTER_CHARACTERS,
 } from '../../constants/prompts/character-defaults'
 import { storage } from '../../database/storage'
+import { LOCAL_USER_ID } from '../../local-user'
 import { AiriCardSchema } from '../../types/card.schema'
-import { useAuthStore } from '../auth'
 import { useBackgroundStore } from '../background'
 import { useChatSessionStore } from '../chat/session-store'
 import { useDatingSimStore } from '../dating-sim'
@@ -829,7 +829,6 @@ export const useAiriCardStore = defineStore('airi-card', () => {
     // Resolve store instances synchronously before any await to preserve Vue setup context
     const sessionStore = useChatSessionStore()
     const stmStore = useShortTermMemoryStore()
-    const authStore = useAuthStore()
 
     await until(cardsLoading).toBe(false)
     const resolvedId = resolveMutationId(id)
@@ -860,7 +859,7 @@ export const useAiriCardStore = defineStore('airi-card', () => {
       const activeSessionId = sessionStore.activeSessionId
       const meta = sessionStore.getSessionMeta(activeSessionId)
       const universeId = meta?.universeId || 'global'
-      const userId = authStore.userId || 'default_user'
+      const userId = LOCAL_USER_ID
       const messages = sessionStore.getSessionMessages(activeSessionId)
       const stmBlocks = stmStore.getCharacterBlocks(resolvedId)
 

@@ -205,7 +205,6 @@ general:
   disableTransitions: 停用所有頁面轉場
   usePageSpecificTransitions: 使用依頁面特定的轉場
   privacySection: 隱私與網路
-  remoteSyncEnabled: 允許將敏感診斷資訊遠端同步
   websocketSecureEnabled: 內建 WebSocket 伺服器使用 wss://
   startupSection: 啟動
   autostartEnabled: 登入時自動啟動

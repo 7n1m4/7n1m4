@@ -9,7 +9,6 @@ vi.mock('../database/repos/lifetime-memory.repo', () => ({ lifetimeMemoryRepo: {
 vi.mock('../database/repos/provisioning-session.repo', () => ({ provisioningSessionRepo: {} }))
 vi.mock('../database/repos/short-term-memory.repo', () => ({ shortTermMemoryRepo: {} }))
 vi.mock('../database/repos/text-journal.repo', () => ({ textJournalRepo: {} }))
-vi.mock('./auth', () => ({ useAuthStore: () => ({}) }))
 vi.mock('./llm', () => ({ useLLM: () => ({}) }))
 vi.mock('./modules/airi-card', () => ({ useAiriCardStore: () => ({}) }))
 vi.mock('./modules/consciousness', () => ({ useConsciousnessStore: () => ({}) }))

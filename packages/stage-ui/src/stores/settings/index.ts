@@ -64,7 +64,6 @@ export const useSettings = defineStore('settings', () => {
     disableTransitions: toRef(general, 'disableTransitions'),
     usePageSpecificTransitions: toRef(general, 'usePageSpecificTransitions'),
     language: toRef(general, 'language'),
-    remoteSyncEnabled: toRef(general, 'remoteSyncEnabled'),
     websocketSecureEnabled: toRef(general, 'websocketSecureEnabled'),
     sendMode: toRef(chat, 'sendMode'),
     streamIdleTimeoutMs: toRef(chat, 'streamIdleTimeoutMs'),

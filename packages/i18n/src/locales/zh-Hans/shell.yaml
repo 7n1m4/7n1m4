@@ -205,7 +205,6 @@ general:
   disableTransitions: 禁用所有页面过渡
   usePageSpecificTransitions: 使用按页面定制的过渡
   privacySection: 隐私与网络
-  remoteSyncEnabled: 允许将敏感诊断信息远程同步
   websocketSecureEnabled: 内置 WebSocket 服务器使用 wss://
   startupSection: 启动
   autostartEnabled: 登录时自动启动

@@ -65,7 +65,6 @@ vi.mock('../libs/search/layered-memory', async () => {
 })
 
 const h = vi.hoisted(() => ({
-  userId: { r: null as any },
   cards: { r: null as any },
   activeCardId: { r: null as any },
   activeProvider: { r: null as any },
@@ -74,12 +73,6 @@ const h = vi.hoisted(() => ({
   configuredProviders: { r: { 'provider-1': {} } as unknown },
   providerInstance: { r: {} as unknown },
 }))
-
-vi.mock('./auth', async () => {
-  const { reactive, ref } = await import('vue')
-  h.userId.r = ref<string | null>('user-1')
-  return { useAuthStore: () => reactive({ userId: h.userId.r }) }
-})
 
 vi.mock('./modules/airi-card', async () => {
   const { reactive, ref } = await import('vue')

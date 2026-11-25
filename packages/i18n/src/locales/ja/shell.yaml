@@ -205,7 +205,6 @@ general:
   disableTransitions: すべてのページ遷移を無効にする
   usePageSpecificTransitions: ページごとの遷移を使う
   privacySection: プライバシーとネットワーク
-  remoteSyncEnabled: プライバシーに関わる診断情報のリモート同期を許可する
   websocketSecureEnabled: 内蔵 WebSocket サーバーに wss:// を使う
   startupSection: 起動
   autostartEnabled: ログイン時に自動起動する

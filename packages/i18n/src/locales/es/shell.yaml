@@ -206,7 +206,6 @@ general:
   disableTransitions: Desactivar todas las transiciones
   usePageSpecificTransitions: Usar transiciones específicas por página
   privacySection: Privacidad y red
-  remoteSyncEnabled: Permitir que los diagnósticos sensibles se sincronicen remotamente
   websocketSecureEnabled: Usar wss:// para el servidor websocket integrado
   startupSection: Inicio
   autostartEnabled: Iniciar automáticamente al iniciar sesión

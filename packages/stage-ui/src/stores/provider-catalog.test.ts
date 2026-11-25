@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { providersRepo } from '../database/repos/providers.repo'
 import { providerOpenAICompatible } from '../libs/providers/providers/openai-compatible'
 import { useProviderCatalogStore } from './provider-catalog'
 
@@ -13,47 +14,101 @@ vi.mock('../database/repos/providers.repo', () => ({
   },
 }))
 
-vi.mock('../composables/api', () => ({
-  client: {
-    api: {
-      providers: {
-        '$get': vi.fn(async () => ({ ok: true, json: async () => [] })),
-        '$post': vi.fn(async () => ({ ok: true, json: async () => ({ id: 'real-id', definitionId: 'openai-compatible', name: 'OpenAI Compatible', config: {}, validated: false, validationBypassed: false }) })),
-        ':id': {
-          $delete: vi.fn(async () => ({ ok: true })),
-          $patch: vi.fn(async () => ({ ok: true, json: async () => ({}) })),
-        },
-      },
-    },
-  },
+const mockHasDaemon = vi.fn()
+const mockListDaemonProviders = vi.fn()
+const mockSaveDaemonProvider = vi.fn()
+const mockDeleteDaemonProvider = vi.fn()
+
+vi.mock('../composables/daemon-card-metadata', () => ({
+  hasDaemonCardMetadata: () => mockHasDaemon(),
+  listDaemonProviders: (...args: unknown[]) => mockListDaemonProviders(...args),
+  saveDaemonProvider: (...args: unknown[]) => mockSaveDaemonProvider(...args),
+  deleteDaemonProvider: (...args: unknown[]) => mockDeleteDaemonProvider(...args),
 }))
 
-describe('store provider-catalog', () => {
+describe('store provider-catalog (local-first + daemon RPC)', () => {
   beforeEach(() => {
-    // creates a fresh pinia and makes it active
-    // so it's automatically picked up by any useStore() call
-    // without having to pass it to it: `useStore(pinia)`
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(providersRepo.getAll).mockResolvedValue({})
+    vi.mocked(providersRepo.saveAll).mockResolvedValue(undefined)
+    vi.mocked(providersRepo.upsert).mockResolvedValue(undefined)
+    vi.mocked(providersRepo.remove).mockResolvedValue(undefined)
+    mockHasDaemon.mockReturnValue(false)
+    mockListDaemonProviders.mockResolvedValue([])
+    mockSaveDaemonProvider.mockResolvedValue({ id: 'id' })
+    mockDeleteDaemonProvider.mockResolvedValue({ deleted: true })
   })
 
-  it('add', () => {
+  it('add persists locally without a daemon', async () => {
     const store = useProviderCatalogStore()
-    store.addProvider(providerOpenAICompatible.id)
-
-    expect(Object.values(store.configs)).toHaveLength(1)
-    expect(Object.values(store.configs)[0].id).toBeDefined()
-    expect(Object.values(store.configs)[0].definitionId).toBe(providerOpenAICompatible.id)
-    expect(Object.values(store.configs)[0].name).toBe('OpenAI Compatible')
-    expect(Object.values(store.configs)[0].config).toStrictEqual({})
+    await store.addProvider(providerOpenAICompatible.id)
+    const providers = Object.values(store.configs)
+    expect(providers).toHaveLength(1)
+    expect(providers[0].definitionId).toBe(providerOpenAICompatible.id)
+    expect(mockSaveDaemonProvider).not.toHaveBeenCalled()
   })
 
-  it('remove', () => {
+  it('add mirrors to the daemon when available', async () => {
+    mockHasDaemon.mockReturnValue(true)
     const store = useProviderCatalogStore()
-    store.addProvider(providerOpenAICompatible.id)
+    const provider = await store.addProvider(providerOpenAICompatible.id, { model: 'gpt-test', baseUrl: 'http://local' })
+    expect(mockSaveDaemonProvider).toHaveBeenCalledWith({
+      id: provider.id,
+      kind: providerOpenAICompatible.id,
+      enabled: true,
+      model: 'gpt-test',
+      baseUrl: 'http://local',
+    })
+  })
 
-    const providerId = Object.keys(store.configs)[0]
-    store.removeProvider(providerId)
-
+  it('remove deletes locally and through the daemon', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    await store.removeProvider(provider.id)
     expect(Object.values(store.configs)).toHaveLength(0)
+    expect(mockDeleteDaemonProvider).toHaveBeenCalledWith(provider.id)
+  })
+
+  it('commitProviderConfig persists the full local config and mirrors model fields', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    await store.commitProviderConfig(provider.id, {
+      model: 'gpt-test',
+      baseUrl: 'http://local',
+      apiKey: 'sk-test',
+    }, { validated: true, validationBypassed: false })
+    expect(store.configs[provider.id].config.apiKey).toBe('sk-test')
+    expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
+      id: provider.id,
+      enabled: true,
+      model: 'gpt-test',
+      baseUrl: 'http://local',
+      apiKey: 'sk-test',
+      rotateSecrets: true,
+    })
+  })
+
+  it('fetchList keeps local configs and merges daemon metadata', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ [provider.id]: provider })
+    mockListDaemonProviders.mockResolvedValueOnce({ providers: [{ id: provider.id, model: 'daemon-model' }] })
+    await store.fetchList()
+    expect(store.configs[provider.id].config.model).toBe('daemon-model')
+    expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
+  })
+
+  it('fetchList falls back to local configs when the daemon list fails', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ [provider.id]: provider })
+    mockListDaemonProviders.mockRejectedValueOnce(new Error('daemon unreachable'))
+    await store.fetchList()
+    expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
   })
 })

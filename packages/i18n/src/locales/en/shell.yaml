@@ -206,7 +206,6 @@ general:
   disableTransitions: Disable all page transitions
   usePageSpecificTransitions: Use page-specific transitions
   privacySection: Privacy & network
-  remoteSyncEnabled: Allow privacy-sensitive diagnostics to sync remotely
   websocketSecureEnabled: Use wss:// for the built-in websocket server
   startupSection: Startup
   autostartEnabled: Enable autostart on login

@@ -1758,12 +1758,6 @@ providers:
       device_id: ID du périphérique
       device_id_placeholder: Auto
       title: Navigateur (Local)
-privacy:
-  remote-sync:
-    title: Activer la synchronisation cloud
-    description: Désactivé par défaut. Si désactivé, Anima reste exclusivement local
-      et ne récupérera aucune session distante ni ne synchronisera l'historique
-      de discussion avec airi-api.moeru.ai.
 groups:
   character:
     title: Personnage et scène

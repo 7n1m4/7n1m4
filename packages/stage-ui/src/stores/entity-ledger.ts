@@ -9,7 +9,7 @@ import { entityLedgerRepo } from '../database/repos/entity-ledger.repo'
 import { textJournalRepo } from '../database/repos/text-journal.repo'
 import { EntityLedger } from '../libs/search/entity-ledger'
 import { collectUniqueCandidateMentions, extractTurnKnowledge } from '../libs/search/ledger-priming'
-import { useAuthStore } from './auth'
+import { LOCAL_USER_ID } from '../local-user'
 import { useChatSessionStore } from './chat/session-store'
 import { useSystemOneStore } from './modules/system-one'
 
@@ -51,8 +51,7 @@ export const useEntityLedgerStore = defineStore('entity-ledger', () => {
     availableCharacterKeys: [],
   })
 
-  const authStore = useAuthStore()
-  const currentUserId = computed(() => authStore.userId || authStore.user?.id || 'local')
+  const currentUserId = computed(() => LOCAL_USER_ID)
 
   const stats = computed(() => activeLedger.value.getSummaryStats())
   const entities = computed(() => Array.from(activeLedger.value.entities.values()))

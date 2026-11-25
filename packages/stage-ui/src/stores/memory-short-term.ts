@@ -13,7 +13,7 @@ import { computed, ref, watch } from 'vue'
 
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
 import { shortTermMemoryRepo } from '../database/repos/short-term-memory.repo'
-import { useAuthStore } from './auth'
+import { LOCAL_USER_ID } from '../local-user'
 import { extractMessageContent, mergeById } from './chat/session-message-merge'
 import { useChatSessionStore } from './chat/session-store'
 import { useLLM } from './llm'
@@ -138,7 +138,6 @@ function getYesterdayLocalDayKey() {
 }
 
 export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
-  const { userId } = storeToRefs(useAuthStore())
   const { cards, activeCardId } = storeToRefs(useAiriCardStore())
   const { activeProvider, activeModel } = storeToRefs(useConsciousnessStore())
   const providersStore = useProvidersStore()
@@ -166,7 +165,7 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
   })
 
   function getCurrentUserId() {
-    return userId.value || 'local'
+    return LOCAL_USER_ID
   }
 
   function getCharacterBlocks(characterId: string) {

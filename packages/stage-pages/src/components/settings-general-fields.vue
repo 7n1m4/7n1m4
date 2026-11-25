@@ -61,17 +61,6 @@ const sendModes = computed(() => [
       :options="sendModes"
     />
 
-    <FieldCheckbox
-      v-model="settings.remoteSyncEnabled"
-      v-motion
-      :initial="{ opacity: 0, y: 10 }"
-      :enter="{ opacity: 1, y: 0 }"
-      :duration="250 + (5 * 10)"
-      :delay="5 * 50"
-      :label="t('settings.privacy.remote-sync.title')"
-      :description="t('settings.privacy.remote-sync.description')"
-    />
-
     <slot name="additional-fields" />
 
     <div

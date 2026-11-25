@@ -14,7 +14,7 @@ import { lifetimeMemoryRepo } from '../database/repos/lifetime-memory.repo'
 import { provisioningSessionRepo } from '../database/repos/provisioning-session.repo'
 import { shortTermMemoryRepo } from '../database/repos/short-term-memory.repo'
 import { textJournalRepo } from '../database/repos/text-journal.repo'
-import { useAuthStore } from './auth'
+import { LOCAL_USER_ID } from '../local-user'
 import { useLLM } from './llm'
 import { useAiriCardStore } from './modules/airi-card'
 import { useConsciousnessStore } from './modules/consciousness'
@@ -630,7 +630,6 @@ export function renderDistilledArtifactMd(characterName: string, rawPack: Distil
 }
 
 export const useMemoryLifetimeStore = defineStore('memory-lifetime', () => {
-  const { userId } = storeToRefs(useAuthStore())
   const { cards } = storeToRefs(useAiriCardStore())
   const { activeProvider, activeModel } = storeToRefs(useConsciousnessStore())
   const providersStore = useProvidersStore()
@@ -670,7 +669,7 @@ export const useMemoryLifetimeStore = defineStore('memory-lifetime', () => {
   const incrementalError = ref<string | null>(null)
 
   function getCurrentUserId() {
-    return userId.value || 'local'
+    return LOCAL_USER_ID
   }
 
   // Which universe is currently mirrored into the legacy `artifacts` map.

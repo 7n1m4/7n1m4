@@ -1742,12 +1742,6 @@ providers:
       device_id: ID устройства
       device_id_placeholder: Авто
       title: Браузер (локально)
-privacy:
-  remote-sync:
-    title: Включить синхронизацию в облаке
-    description: По умолчанию выключено. Если отключено, Anima работает исключительно
-      локально и не будет запрашивать удаленные сессии или синхронизировать
-      историю чата с airi-api.moeru.ai.
 groups:
   character:
     title: Персонаж и сцена

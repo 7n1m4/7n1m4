@@ -36,17 +36,10 @@ vi.mock('../libs/search/layered-memory', async () => {
 // Shared mutable state holders — initialised to null, filled by the mock factories.
 // vi.hoisted ensures they exist before vi.mock factories run.
 const h = vi.hoisted(() => ({
-  userId: { r: null as null | { value: string | null } },
   activeCard: { r: null as null | { value: AiriCard | null } },
   activeCardId: { r: null as null | { value: string } },
   cards: { r: null as null | { value: Map<string, AiriCard> } },
 }))
-
-vi.mock('./auth', async () => {
-  const { reactive, ref } = await import('vue')
-  h.userId.r = ref<string | null>(null)
-  return { useAuthStore: () => reactive({ userId: h.userId.r }) }
-})
 
 vi.mock('./modules/airi-card', async () => {
   const { reactive, ref } = await import('vue')

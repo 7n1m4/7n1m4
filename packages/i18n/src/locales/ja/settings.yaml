@@ -1625,11 +1625,6 @@ providers:
       device_id: デバイス ID
       device_id_placeholder: 自動
       title: ブラウザ (ローカル)
-privacy:
-  remote-sync:
-    title: クラウド同期を有効化
-    description: デフォルトで無効です。無効の場合、Anima は完全にローカルのみで動作し、リモートセッションの取得や
-      airi-api.moeru.ai へのチャット履歴の同期は行いません。
 groups:
   character:
     title: キャラクター＆シーン

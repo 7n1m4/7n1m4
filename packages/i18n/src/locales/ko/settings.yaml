@@ -1621,11 +1621,6 @@ providers:
       device_id: 장치 ID
       device_id_placeholder: 자동
       title: 브라우저 (로컬)
-privacy:
-  remote-sync:
-    title: 클라우드 동기화 활성화
-    description: 기본적으로 꺼져 있습니다. 비활성화 시 Anima는 로컬에서만 작동하며 원격 세션을 가져오거나
-      airi-api.moeru.ai로 채팅 기록을 동기화하지 않습니다.
 groups:
   character:
     title: 캐릭터 및 장면

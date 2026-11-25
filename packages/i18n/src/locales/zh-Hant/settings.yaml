@@ -1636,10 +1636,6 @@ providers:
       device_id: 裝置 ID
       device_id_placeholder: 自動
       title: 瀏覽器（本機）
-privacy:
-  remote-sync:
-    title: 啟用雲端同步
-    description: 預設關閉。停用時，Anima 保持完全本機執行，不會取得遠端工作階段或向 airi-api.moeru.ai 同步聊天記錄。
 groups:
   character:
     title: 角色與場景

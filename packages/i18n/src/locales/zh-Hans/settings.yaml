@@ -1648,10 +1648,6 @@ providers:
       device_id: 设备 ID
       device_id_placeholder: 自动
       title: 浏览器（本地）
-privacy:
-  remote-sync:
-    title: 启用云端同步
-    description: 默认关闭。禁用时，Anima 保持完全本地运行，不会获取远程会话或向 airi-api.moeru.ai 同步聊天记录。
 groups:
   character:
     title: 角色与场景

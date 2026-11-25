@@ -7,16 +7,14 @@ import { parse } from 'valibot'
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 
-import { client } from '../composables/api'
-import { fetchDaemonCardMetadata, hasDaemonCardMetadata, setDaemonCardMetadata } from '../composables/daemon-card-metadata'
-import { useLocalFirstRequest } from '../composables/use-local-first'
+import { createDaemonCard, deleteDaemonCard, fetchDaemonCardMetadata, getDaemonCard, hasDaemonCardMetadata, listDaemonCards, setDaemonCardMetadata, updateDaemonCard } from '../composables/daemon-card-metadata'
 import { charactersRepo } from '../database/repos/characters.repo'
 import { CharacterWithRelationsSchema } from '../types/character'
-import { useAuthStore } from './auth'
 
 // Serialization per card for daemon metadata work (hydrate / like / bookmark).
 // A promise chain per id guarantees one in-flight daemon request per card.
 const daemonMetadataQueues = new Map<string, Promise<void>>()
+const LOCAL_USER_ID = 'local'
 
 function enqueueDaemonMetadata(cardId: string, task: () => Promise<void>): Promise<void> {
   const previous = daemonMetadataQueues.get(cardId) ?? Promise.resolve()
@@ -119,153 +117,135 @@ function buildLocalCharacter(userId: string, payload: CreateCharacterPayload) {
 export const useCharacterStore = defineStore('characters', () => {
   const characters = ref<Map<string, Character>>(new Map())
   const error = ref<string | null>(null)
-  const auth = useAuthStore()
+  async function fetchList() {
+    const cached = await charactersRepo.getAll()
+    characters.value.clear()
+    for (const char of cached) {
+      characters.value.set(char.id, char)
+    }
 
-  async function fetchList(all: boolean = false, allowRemote?: () => boolean | Promise<boolean>) {
-    const request = useLocalFirstRequest({
-      lazy: true,
-      allowRemote,
-      local: async () => {
-        const cached = await charactersRepo.getAll()
-        if (cached.length > 0) {
-          characters.value.clear()
-          for (const char of cached) {
-            characters.value.set(char.id, char)
+    if (hasDaemonCardMetadata()) {
+      try {
+        const listed = await listDaemonCards()
+        const parsedData: Character[] = []
+        for (const info of listed.cards) {
+          const { card } = await getDaemonCard(info.id)
+          if (!card)
+            continue
+          try {
+            parsedData.push(parse(CharacterWithRelationsSchema, card))
+          }
+          catch {
+            // Skip malformed daemon rows; the local cache stays authoritative for that card.
           }
         }
-      },
-      remote: async () => {
-        const res = await client.api.characters.$get({
-          query: { all: String(all) },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to fetch characters')
+        if (parsedData.length > 0) {
+          characters.value.clear()
+          for (const char of parsedData) {
+            characters.value.set(char.id, char)
+          }
+          await charactersRepo.saveAll(parsedData)
         }
-        const data = (await res.json()) as any[]
+      }
+      catch (err) {
+        console.error('[CharacterStore] Daemon card list unavailable; using local cache', err)
+      }
+    }
 
-        characters.value.clear()
-        const parsedData: Character[] = []
-        for (const char of data) {
-          const parsed = parse(CharacterWithRelationsSchema, char)
-          characters.value.set(char.id, parsed)
-          parsedData.push(parsed)
-        }
-        await charactersRepo.saveAll(parsedData)
-      },
-    })
-    await request.execute()
-    void loadDaemonMetadata(undefined, auth.userId)
-    return request
+    void loadDaemonMetadata()
   }
 
   async function fetchById(id: string) {
-    return useLocalFirstRequest({
-      local: async () => {
-        const cached = characters.value.get(id) ?? (await charactersRepo.getAll()).find(char => char.id === id)
-        if (cached) {
-          characters.value.set(cached.id, cached)
+    let character = characters.value.get(id) ?? (await charactersRepo.getAll()).find(char => char.id === id)
+    if (hasDaemonCardMetadata()) {
+      try {
+        const { card } = await getDaemonCard(id)
+        if (card) {
+          character = parse(CharacterWithRelationsSchema, card)
+          characters.value.set(character.id, character)
+          await charactersRepo.upsert(character)
+          await loadDaemonMetadata([character.id])
         }
-        return cached
-      },
-      remote: async () => {
-        const res = await client.api.characters[':id'].$get({
-          param: { id },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to fetch character')
-        }
-        const data = await res.json()
-        const character = parse(CharacterWithRelationsSchema, data)
-
-        characters.value.set(character.id, character)
-        await charactersRepo.upsert(character)
-        await loadDaemonMetadata([character.id], auth.userId)
-        return character
-      },
-    })
+      }
+      catch (err) {
+        console.error('[CharacterStore] Daemon card unavailable; using local cache', err)
+      }
+    }
+    if (character)
+      characters.value.set(character.id, character)
+    return character
   }
 
   async function create(payload: CreateCharacterPayload) {
-    let localCharacter: Character
-    return useLocalFirstRequest({
-      local: async () => {
-        localCharacter = buildLocalCharacter(auth.userId, payload)
-        characters.value.set(localCharacter.id, localCharacter)
-        await charactersRepo.upsert(localCharacter)
-        return localCharacter
-      },
-      remote: async () => {
-        const res = await client.api.characters.$post({
-          json: payload,
-        })
-        if (!res.ok) {
-          throw new Error('Failed to create character')
-        }
-        const data = await res.json()
-        const character = parse(CharacterWithRelationsSchema, data)
+    const character = buildLocalCharacter(LOCAL_USER_ID, payload)
+    characters.value.set(character.id, character)
+    await charactersRepo.upsert(character)
 
-        // Replace local temp character with remote data
-        characters.value.delete(localCharacter.id)
-        characters.value.set(character.id, character)
-        await charactersRepo.remove(localCharacter.id)
-        await charactersRepo.upsert(character)
-        return character
-      },
-    })
+    if (hasDaemonCardMetadata()) {
+      try {
+        const reply = await createDaemonCard(character.id, JSON.parse(JSON.stringify(character)))
+        if (reply.id !== character.id) {
+          characters.value.delete(character.id)
+          await charactersRepo.remove(character.id)
+          character.id = reply.id
+          characters.value.set(character.id, character)
+          await charactersRepo.upsert(character)
+        }
+      }
+      catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        error.value = message
+        console.error('[CharacterStore] Failed to write card to daemon; local copy retained', err)
+        toast.error(message)
+      }
+    }
+    return character
   }
 
   async function update(id: string, payload: UpdateCharacterPayload) {
-    return useLocalFirstRequest({
-      local: async () => {
-        const character = characters.value.get(id)
-        if (!character) {
-          return
-        }
-        if (payload.version !== undefined)
-          character.version = payload.version
-        if (payload.coverUrl !== undefined)
-          character.coverUrl = payload.coverUrl
-        if (payload.characterId !== undefined)
-          character.characterId = payload.characterId
-        character.updatedAt = new Date()
-        characters.value.set(character.id, character)
-        await charactersRepo.upsert(character)
-        return character
-      },
-      remote: async () => {
-        const res = await (client.api.characters[':id'].$patch)({
-          param: { id },
-          // @ts-expect-error FIXME: hono client typing misses json option for this route
-          json: payload,
-        })
-        if (!res.ok) {
-          throw new Error('Failed to update character')
-        }
-        const data = await res.json()
-        const character = parse(CharacterWithRelationsSchema, data)
+    const character = characters.value.get(id)
+    if (!character) {
+      return
+    }
+    if (payload.version !== undefined)
+      character.version = payload.version
+    if (payload.coverUrl !== undefined)
+      character.coverUrl = payload.coverUrl
+    if (payload.characterId !== undefined)
+      character.characterId = payload.characterId
+    character.updatedAt = new Date()
+    characters.value.set(character.id, character)
+    await charactersRepo.upsert(character)
 
-        characters.value.set(character.id, character)
-        await charactersRepo.upsert(character)
-        return character
-      },
-    })
+    if (hasDaemonCardMetadata()) {
+      try {
+        await updateDaemonCard(id, JSON.parse(JSON.stringify(character)))
+      }
+      catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        error.value = message
+        console.error('[CharacterStore] Failed to update card on daemon', err)
+        toast.error(message)
+      }
+    }
+    return character
   }
 
   async function remove(id: string) {
-    return useLocalFirstRequest({
-      local: async () => {
-        characters.value.delete(id)
-        await charactersRepo.remove(id)
-      },
-      remote: async () => {
-        const res = await client.api.characters[':id'].$delete({
-          param: { id },
-        })
-        if (!res.ok) {
-          throw new Error('Failed to remove character')
-        }
-      },
-    })
+    characters.value.delete(id)
+    await charactersRepo.remove(id)
+
+    if (hasDaemonCardMetadata()) {
+      try {
+        await deleteDaemonCard(id)
+      }
+      catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        error.value = message
+        console.error('[CharacterStore] Failed to delete card on daemon', err)
+        toast.error(message)
+      }
+    }
   }
 
   // Likes/bookmarks are one-local-user state owned by the daemon
@@ -278,14 +258,14 @@ export const useCharacterStore = defineStore('characters', () => {
     if (!character) {
       return
     }
-    const wasLiked = character.likes?.some(item => item.userId === auth.userId) ?? false
+    const wasLiked = character.likes?.some(item => item.userId === LOCAL_USER_ID) ?? false
     const nextLiked = !wasLiked
 
     // Optimistic local update, reverted below if the daemon write fails.
     const likes = character.likes ?? []
     character.likes = nextLiked
-      ? [...likes.filter(item => item.userId !== auth.userId), { userId: auth.userId, characterId: id }]
-      : likes.filter(item => item.userId !== auth.userId)
+      ? [...likes.filter(item => item.userId !== LOCAL_USER_ID), { userId: LOCAL_USER_ID, characterId: id }]
+      : likes.filter(item => item.userId !== LOCAL_USER_ID)
     character.likesCount = Math.max(0, character.likesCount + (nextLiked ? 1 : -1))
     character.updatedAt = new Date()
     characters.value.set(character.id, character)
@@ -296,9 +276,9 @@ export const useCharacterStore = defineStore('characters', () => {
     }
     await enqueueDaemonMetadata(id, async () => {
       try {
-        const bookmarked = character.bookmarks?.some(item => item.userId === auth.userId) ?? false
+        const bookmarked = character.bookmarks?.some(item => item.userId === LOCAL_USER_ID) ?? false
         const metadata = await setDaemonCardMetadata(id, { liked: nextLiked, bookmarked })
-        applyDaemonMetadata(character, metadata, auth.userId)
+        applyDaemonMetadata(character, metadata, LOCAL_USER_ID)
         await charactersRepo.upsert(character)
       }
       catch (err) {
@@ -322,13 +302,13 @@ export const useCharacterStore = defineStore('characters', () => {
     if (!character) {
       return
     }
-    const wasBookmarked = character.bookmarks?.some(item => item.userId === auth.userId) ?? false
+    const wasBookmarked = character.bookmarks?.some(item => item.userId === LOCAL_USER_ID) ?? false
     const nextBookmarked = !wasBookmarked
 
     const bookmarks = character.bookmarks ?? []
     character.bookmarks = nextBookmarked
-      ? [...bookmarks.filter(item => item.userId !== auth.userId), { userId: auth.userId, characterId: id }]
-      : bookmarks.filter(item => item.userId !== auth.userId)
+      ? [...bookmarks.filter(item => item.userId !== LOCAL_USER_ID), { userId: LOCAL_USER_ID, characterId: id }]
+      : bookmarks.filter(item => item.userId !== LOCAL_USER_ID)
     character.bookmarksCount = Math.max(0, character.bookmarksCount + (nextBookmarked ? 1 : -1))
     character.updatedAt = new Date()
     characters.value.set(character.id, character)
@@ -339,9 +319,9 @@ export const useCharacterStore = defineStore('characters', () => {
     }
     await enqueueDaemonMetadata(id, async () => {
       try {
-        const liked = character.likes?.some(item => item.userId === auth.userId) ?? false
+        const liked = character.likes?.some(item => item.userId === LOCAL_USER_ID) ?? false
         const metadata = await setDaemonCardMetadata(id, { liked, bookmarked: nextBookmarked })
-        applyDaemonMetadata(character, metadata, auth.userId)
+        applyDaemonMetadata(character, metadata, LOCAL_USER_ID)
         await charactersRepo.upsert(character)
       }
       catch (err) {
@@ -370,11 +350,10 @@ export const useCharacterStore = defineStore('characters', () => {
    * state; the daemon is the durable source of truth, the local row is the
    * optimistic mirror.
    */
-  async function loadDaemonMetadata(ids?: string[], userId?: string) {
+  async function loadDaemonMetadata(ids?: string[], userId: string = LOCAL_USER_ID) {
     if (!hasDaemonCardMetadata()) {
       return
     }
-    const actingUserId = userId ?? auth.userId
     const targets = ids ?? Array.from(characters.value.keys())
     const bulk = ids === undefined
     const pending = targets.map(async (id) => {
@@ -385,7 +364,7 @@ export const useCharacterStore = defineStore('characters', () => {
       await enqueueDaemonMetadata(id, async () => {
         try {
           const metadata = await fetchDaemonCardMetadata(id)
-          applyDaemonMetadata(character, metadata, actingUserId)
+          applyDaemonMetadata(character, metadata, userId)
           characters.value.set(character.id, character)
           await charactersRepo.upsert(character)
         }

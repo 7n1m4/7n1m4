@@ -1,12 +1,36 @@
-import type { CardMetadataReply } from '@proj-anima/server-shared/types'
+import type { CardMetadataReply, ProvidersListReply } from '@proj-anima/server-shared/types'
 
 import { isStageWeb } from '@proj-anima/stage-shared'
 
-// Local, daemon-owned card metadata (liked/bookmarked). These verbs live on the
-// WS data plane next to settings.set/providers.save — see
+// dist declarations lag the Rust-canonical generated source; keep shapes exact
+// per packages/server-shared/src/types/generated/anima-channel.ts.
+export interface CardInfo {
+  id: string
+  name: string
+}
+export interface CardListReply {
+  cards: CardInfo[]
+  truncated: boolean
+}
+export interface CardGetReply {
+  card: unknown
+}
+export interface CardCreateReply {
+  id: string
+  name: string
+}
+export interface CardUpdateReply {
+  updated: boolean
+}
+export interface CardDeleteReply {
+  deleted: boolean
+}
+
+// Daemon CRUD + card-metadata RPC client. These verbs live on the WS data
+// plane next to settings.set/providers.save — see
 // crates/anima-daemon/src/gateway.rs. D-Bus is reserved for gateway control.
-// A hosted community counter is intentionally not modelled: this is one-local-user
-// state, and the daemon's SQLite table is the source of truth.
+// Secret-free: no auth tokens or credentials are persisted here; the daemon's
+// SQLite store is the source of truth. Supports BYOS (bring-your-own-storage).
 export interface DaemonCardMetadata {
   liked: boolean
   bookmarked: boolean
@@ -138,3 +162,37 @@ export async function setDaemonCardMetadata(id: string, metadata: DaemonCardMeta
   })
   return parseCardMetadata(reply)
 }
+
+export async function listDaemonCards(): Promise<CardListReply> {
+  return rpc<CardListReply>('cards.list', {})
+}
+
+export async function getDaemonCard(id: string): Promise<CardGetReply> {
+  return rpc<CardGetReply>('cards.get', { id })
+}
+
+export async function createDaemonCard(name: string, document: unknown): Promise<CardCreateReply> {
+  return rpc<CardCreateReply>('cards.create', { name, document })
+}
+
+export async function updateDaemonCard(id: string, document: unknown, name?: string): Promise<CardUpdateReply> {
+  return rpc<CardUpdateReply>('cards.update', { id, document, ...(name !== undefined ? { name } : {}) })
+}
+
+export async function deleteDaemonCard(id: string): Promise<CardDeleteReply> {
+  return rpc<CardDeleteReply>('cards.delete', { id })
+}
+
+export async function listDaemonProviders(): Promise<ProvidersListReply> {
+  return rpc<ProvidersListReply>('providers.list', {})
+}
+
+export async function saveDaemonProvider(payload: Record<string, unknown>): Promise<{ id: string }> {
+  return rpc<{ id: string }>('providers.save', payload)
+}
+
+export async function deleteDaemonProvider(id: string): Promise<{ deleted: boolean }> {
+  return rpc<{ deleted: boolean }>('providers.delete', { id })
+}
+
+export const hasDaemonRpc = hasDaemonCardMetadata

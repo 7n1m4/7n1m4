@@ -19,8 +19,8 @@ import { shortTermMemoryRepo } from '../database/repos/short-term-memory.repo'
 import { textJournalRepo } from '../database/repos/text-journal.repo'
 import { LAST_INDEXED_TURN_KEY, layeredMemory } from '../libs/search/layered-memory'
 import { chunkTurnText } from '../libs/search/turn-chunker'
+import { LOCAL_USER_ID } from '../local-user'
 import { shouldDegradeBackgroundWork } from '../utils/memory-sentinel'
-import { useAuthStore } from './auth'
 import { CHAT_STREAM_CHANNEL_NAME } from './chat/constants'
 import { stageJournalIntrusion } from './chat/intrusion-staging'
 import { extractMessageContent, mergeById } from './chat/session-message-merge'
@@ -162,7 +162,6 @@ function isChatWindow(): boolean {
 }
 
 export const useTextJournalStore = defineStore('text-journal', () => {
-  const { userId } = storeToRefs(useAuthStore())
   const { activeCard, activeCardId, cards } = storeToRefs(useAiriCardStore())
 
   const { post: broadcastStreamEvent, data: incomingStreamEvent } = useBroadcastChannel<ChatStreamEvent, ChatStreamEvent>({ name: CHAT_STREAM_CHANNEL_NAME })
@@ -180,7 +179,7 @@ export const useTextJournalStore = defineStore('text-journal', () => {
   const lastSearchMode = ref<'pass11' | 'baseline'>('baseline')
 
   function getCurrentUserId() {
-    return userId.value || 'local'
+    return LOCAL_USER_ID
   }
 
   const sortedEntries = computed(() => {

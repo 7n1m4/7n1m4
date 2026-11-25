@@ -100,14 +100,6 @@ vi.mock('../database/repos/chat-sessions.repo', () => ({
   },
 }))
 
-const auth = vi.hoisted(() => ({ userId: null as null | { value: string | null } }))
-
-vi.mock('./auth', async () => {
-  const { reactive, ref } = await import('vue')
-  auth.userId = ref<string | null>('local')
-  return { useAuthStore: () => reactive({ userId: auth.userId }) }
-})
-
 vi.mock('./modules/airi-card', async () => {
   const { reactive, ref } = await import('vue')
   const activeCardId = ref<string>('card-1')

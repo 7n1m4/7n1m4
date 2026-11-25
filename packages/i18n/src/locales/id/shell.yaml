@@ -207,7 +207,6 @@ general:
   disableTransitions: Nonaktifkan semua transisi halaman
   usePageSpecificTransitions: Gunakan transisi khusus halaman
   privacySection: Privasi & jaringan
-  remoteSyncEnabled: Izinkan diagnostik sensitif privasi disinkronkan jarak jauh
   websocketSecureEnabled: Gunakan wss:// untuk server websocket bawaan
   startupSection: Startup
   autostartEnabled: Aktifkan mulai otomatis saat login

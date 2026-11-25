@@ -206,7 +206,6 @@ general:
   disableTransitions: Tắt mọi hiệu ứng chuyển trang
   usePageSpecificTransitions: Dùng hiệu ứng chuyển riêng cho từng trang
   privacySection: Quyền riêng tư & mạng
-  remoteSyncEnabled: Cho phép đồng bộ từ xa chẩn đoán nhạy cảm
   websocketSecureEnabled: Dùng wss:// cho máy chủ websocket tích hợp
   startupSection: Khởi động
   autostartEnabled: Tự động khởi động khi đăng nhập
