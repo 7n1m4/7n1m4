@@ -16,6 +16,23 @@ namespace AnimaPet.Tests;
 /// </summary>
 public sealed class LocalSpeechPipelineTests
 {
+    /// <summary>
+    /// xunit v2 resolves <see cref="FactAttribute.Skip"/> at discovery time.
+    /// Deriving the attribute lets the missing-asset case be reported as a
+    /// genuine skip with an opt-in reason, instead of a passing test that
+    /// returns before exercising real Piper.
+    /// </summary>
+    private sealed class RealPiperFactAttribute : FactAttribute
+    {
+        public RealPiperFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PIPER_MODEL")))
+            {
+                Skip = "Opt-in: set PIPER_MODEL (and optionally PIPER_PATH) to run the real-Piper pipeline test; no model or fake audio is used unless assets are supplied.";
+            }
+        }
+    }
+
     private static readonly CardRenderConfig RendererConfig =
         new(PetRenderBackend.Vrm, "res://models/test.vrm");
 
@@ -372,17 +389,10 @@ public sealed class LocalSpeechPipelineTests
         await AssertProcessGoneAsync(childPid);
     }
 
-    [Fact]
+    [RealPiperFact]
     public async Task RealPiper_TextToPcmToRenderer_WhenLocalAssetsArePresent()
     {
-        var modelPath = Environment.GetEnvironmentVariable("PIPER_MODEL");
-        if (string.IsNullOrWhiteSpace(modelPath))
-        {
-            // Static [Fact(Skip = ...)] cannot read env, and xunit v2 does not
-            // support runtime skip tokens; a clean return is an explicit no-op
-            // for an unavailable local asset, not a fake audio result.
-            return;
-        }
+        var modelPath = Environment.GetEnvironmentVariable("PIPER_MODEL")!;
         // PIPER_PATH is optional: PiperTtsEngine falls back to `piper` on PATH.
         var engine = new PiperTtsEngine(Environment.GetEnvironmentVariable("PIPER_PATH"), modelPath);
         var renderer = (GenericPetRenderer)PetRendererFactory.Create(RendererConfig);

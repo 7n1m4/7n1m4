@@ -20,8 +20,8 @@ use std::time::Duration;
 
 use anima_channel::ws::MAX_WS_PAYLOAD_BYTES;
 use anima_channel::{
-    accept_key, encode_frame, ChannelConfig, ChannelServer, Frame, FrameDecoder, RendererHandlers,
-    OP_CLOSE, OP_PING, OP_TEXT,
+    accept_key, encode_frame, ChannelConfig, ChannelServer, EventPayload, EventTopic, Frame,
+    FrameDecoder, GatewayEvent, LipSyncRmsData, RendererHandlers, OP_CLOSE, OP_PING, OP_TEXT,
 };
 
 const CLIENT_KEY: &str = "dGhlIHNhbXBsZSBub25jZQ==";
@@ -198,6 +198,75 @@ fn upgrade_auth_ping_pong_rpc_and_close() {
         .expect("send close");
     let frame = read_frame(&mut stream, &mut decoder);
     assert_eq!(frame.opcode, OP_CLOSE);
+
+    handle.stop();
+}
+
+#[test]
+fn stalled_subscriber_is_closed_on_write_timeout() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    let config = ChannelConfig {
+        hostname: "127.0.0.1".to_string(),
+        auth_token: TOKEN.to_string(),
+        tls_config: None,
+        allow_actions: None,
+    };
+    let server = ChannelServer::bind("127.0.0.1", test_port(), &config)
+        .expect("bind channel server")
+        .with_dead_peer_ttl(TEST_TTL)
+        .with_write_timeout(Duration::from_millis(10));
+    let bus = server.event_bus();
+    let handle = server.spawn().expect("spawn channel server");
+    let port = handle.port();
+
+    let mut stalled = tcp_connect(port);
+    let mut stalled_decoder = FrameDecoder::new(MAX_WS_PAYLOAD_BYTES);
+    let _ = http_upgrade(&mut stalled, port);
+    send_masked_text(
+        &mut stalled,
+        r#"{"type":"auth","authToken":"integration-test-token"}"#,
+    );
+    let auth = read_text_frame(&mut stalled, &mut stalled_decoder);
+    assert_eq!(auth, serde_json::json!({"type":"auth","ok":true}));
+    send_masked_text(
+        &mut stalled,
+        r#"{"type":"rpc","action":"event.subscribe","payload":{"topics":["lip_sync.rms"]},"id":"stall-sub"}"#,
+    );
+    let subscribed = read_text_frame(&mut stalled, &mut stalled_decoder);
+    assert_eq!(subscribed["type"], "rpc");
+    assert_eq!(subscribed["ok"], true);
+    assert_eq!(subscribed["id"], "stall-sub");
+
+    // Fill both socket buffers without reading from the stalled client. The
+    // server's next event write must time out and drop the connection.
+    let padding = vec![0u8; 64 * 1024 * 1024];
+    let frame = encode_frame(OP_TEXT, &padding, Some([0x55, 0x66, 0x77, 0x88]));
+    let _ = stalled.write_all(&frame);
+    std::thread::sleep(Duration::from_millis(100));
+    bus.publish(GatewayEvent::new(
+        EventTopic::LipSyncRms,
+        EventPayload::LipSyncRms(LipSyncRmsData {
+            actor_id: "stall".to_string(),
+            level: 0.9,
+            seq: 0,
+            ts_ms: 0,
+        }),
+    ));
+    std::thread::sleep(Duration::from_millis(100));
+
+    let mut chunk = vec![0u8; 64 * 1024 * 1024];
+    let mut drained = 0usize;
+    loop {
+        let n = stalled.read(&mut chunk).expect("read stalled connection");
+        if n == 0 {
+            break;
+        }
+        drained += n;
+        assert!(
+            drained <= padding.len() + 1024,
+            "server kept writing to a stalled peer: {drained} bytes"
+        );
+    }
 
     handle.stop();
 }

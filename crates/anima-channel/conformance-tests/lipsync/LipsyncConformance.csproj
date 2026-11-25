@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- C# leg of the lip-sync smoothing conformance fixture (airi-2z6). Runs
+       the Godot renderer's pure-managed smoother against the same f32 values
+       as crates/anima-render/tests/lipsync_conformance.rs. Run: dotnet test -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../../../godot/scripts/Renderers/LipSyncSmoother.cs" Link="Renderers/LipSyncSmoother.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../fixtures/lipsync/*.json" CopyToOutputDirectory="PreserveNewest" Link="lipsync/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

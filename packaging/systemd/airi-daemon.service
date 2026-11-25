@@ -36,9 +36,12 @@ ProtectSystem=strict
 # resolution; ProtectHome=inaccessible was rejected for the same write
 # reason; ProtectHome=false/yes rejected as broader than needed.)
 ProtectHome=read-only
-# The daemon now hosts the WS gateway (6121): the audit dir, plus the
-# server-channel dir (config + certs/) it owns outright.
-ReadWritePaths=%h/.local/share/anima-daemon/audit %h/.local/share/anima-daemon/server-channel
+# The daemon persists state under the legacy airi-slint data dir
+# (airi.sqlite + WAL/SHM, awareness-exclusions.json, audit/, server-channel/
+# with config + certs/) and keeps the newer anima-daemon dir for its audit
+# and gateway files. Both whole app dirs are allow-listed so every file the
+# daemon creates under them stays writable under ProtectHome/ProtectSystem.
+ReadWritePaths=%h/.local/share/airi-slint %h/.local/share/anima-daemon
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

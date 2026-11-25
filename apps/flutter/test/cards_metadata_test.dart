@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Card metadata (liked/bookmarked) is the only card verb surface wired in
-// Flutter. The CRUD stub banner must stay; these tests cover reading metadata,
-// toggling both flags via cards.metadata.set, and surfacing RPC failures
-// (including allowActions-gated denials) without pretending success.
+// Flutter. The CRUD stub banner must stay; these tests drive the production
+// cards screen and the real DaemonClient wrappers (through `call`, which every
+// typed wrapper uses) so they fail if either surface disappears.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,109 +23,42 @@ class _RecordingCardsClient extends FakeChatClient {
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     calls.add((action: action, payload: payload));
-    if (action == 'cards.list') {
+    if (action == 'cards.list' || action == 'cards.get') {
+      final card = <String, dynamic>{'id': 'card-1', 'name': 'Card One'};
       return RpcReply(
         action: action,
         ok: true,
         data: <String, dynamic>{
-          'cards': <Map<String, dynamic>>[
-            <String, dynamic>{'id': 'card-1', 'name': 'Card One'},
-          ],
+          if (action == 'cards.list')
+            'cards': <Map<String, dynamic>>[card]
+          else
+            'card': card,
         },
       );
     }
-    if (action == 'cards.get') {
-      return RpcReply(
-        action: action,
-        ok: true,
-        data: <String, dynamic>{
-          'card': <String, dynamic>{'id': 'card-1', 'name': 'Card One'},
-        },
-      );
-    }
-    if (action == 'cards.metadata') {
-      return RpcReply(
-        action: action,
-        ok: true,
-        data: <String, dynamic>{
-          'id': 'card-1',
-          'liked': liked,
-          'bookmarked': bookmarked
-        },
-      );
-    }
-    if (action == 'cards.metadata.set') {
-      if (setFails) {
-        return const RpcReply(
-          action: 'cards.metadata.set',
-          ok: false,
-          error: RpcError(code: 'actions_disabled', message: 'actions off'),
-        );
+    if (action == 'cards.metadata' || action == 'cards.metadata.set') {
+      if (action == 'cards.metadata.set') {
+        if (setFails) {
+          return const RpcReply(
+            action: 'cards.metadata.set',
+            ok: false,
+            error: RpcError(code: 'actions_disabled', message: 'actions off'),
+          );
+        }
+        liked = payload?['liked'] == true;
+        bookmarked = payload?['bookmarked'] == true;
       }
-      liked = payload?['liked'] == true;
-      bookmarked = payload?['bookmarked'] == true;
       return RpcReply(
         action: action,
         ok: true,
         data: <String, dynamic>{
           'id': 'card-1',
           'liked': liked,
-          'bookmarked': bookmarked
+          'bookmarked': bookmarked,
         },
       );
     }
     return RpcReply(action: action, ok: true, data: <String, dynamic>{});
-  }
-
-  @override
-  Future<List<Map<String, dynamic>>> cardsList() async {
-    final reply = await call('cards.list');
-    return (reply.data as Map<String, dynamic>)['cards']
-        as List<Map<String, dynamic>>;
-  }
-
-  @override
-  Future<Map<String, dynamic>?> cardsGet(String id) async {
-    final reply = await call('cards.get', payload: <String, dynamic>{'id': id});
-    return (reply.data as Map<String, dynamic>)['card'] as Map<String, dynamic>;
-  }
-
-  @override
-  Future<({String id, bool liked, bool bookmarked})> cardsMetadata(
-      String id) async {
-    final reply =
-        await call('cards.metadata', payload: <String, dynamic>{'id': id});
-    final data = reply.data as Map<String, dynamic>;
-    return (
-      id: data['id'] as String,
-      liked: data['liked'] as bool,
-      bookmarked: data['bookmarked'] as bool
-    );
-  }
-
-  @override
-  Future<({String id, bool liked, bool bookmarked})> cardsMetadataSet(
-    String id, {
-    required bool liked,
-    required bool bookmarked,
-  }) async {
-    final reply = await call('cards.metadata.set', payload: <String, dynamic>{
-      'id': id,
-      'liked': liked,
-      'bookmarked': bookmarked,
-    });
-    if (!reply.ok) {
-      throw DaemonClientException(
-        kind: DaemonFailureKind.rpc,
-        message: reply.error?.message ?? 'cards.metadata.set failed',
-      );
-    }
-    final data = reply.data as Map<String, dynamic>;
-    return (
-      id: data['id'] as String,
-      liked: data['liked'] as bool,
-      bookmarked: data['bookmarked'] as bool
-    );
   }
 }
 
@@ -133,46 +66,80 @@ Future<_RecordingCardsClient> _pump(tester) async {
   final client = _RecordingCardsClient();
   addTearDown(client.dispose);
   await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CardsScreen(client: client))));
+    MaterialApp(
+      home: Scaffold(body: CardsScreen(client: client)),
+    ),
+  );
   await tester.pump();
   return client;
 }
 
 Future<void> _openCard(tester) async {
-  tester.widget<ListTile>(find.widgetWithText(ListTile, 'Card One')).onTap!();
-  await tester.pump();
+  await tester.tap(find.widgetWithText(ListTile, 'Card One'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _toggle(tester, String label) async {
+  await tester.tap(find.widgetWithText(CheckboxListTile, label));
+  await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('card detail reads metadata from cards.metadata', (tester) async {
+  testWidgets('card detail reads metadata through the real client wrapper', (
+    tester,
+  ) async {
     final client = await _pump(tester);
 
     await _openCard(tester);
 
-    expect(
-      client.calls.where((c) => c.action == 'cards.metadata'),
-      hasLength(1),
-    );
+    final read = client.calls
+        .where((c) => c.action == 'cards.metadata')
+        .toList();
+    expect(read, hasLength(1));
+    expect(read.single.payload, <String, dynamic>{'id': 'card-1'});
     expect(find.widgetWithText(CheckboxListTile, 'Liked'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, 'Bookmarked'), findsOneWidget);
   });
 
-  testWidgets('toggling liked writes explicit liked + bookmarked flags',
-      (tester) async {
+  testWidgets('toggling liked writes explicit liked + bookmarked flags', (
+    tester,
+  ) async {
     final client = await _pump(tester);
     await _openCard(tester);
 
-    tester
-        .widget<CheckboxListTile>(
-            find.widgetWithText(CheckboxListTile, 'Liked'))
-        .onChanged!(true);
-    await tester.pump();
+    await _toggle(tester, 'Liked');
 
-    final setCall =
-        client.calls.firstWhere((c) => c.action == 'cards.metadata.set');
+    final setCall = client.calls.firstWhere(
+      (c) => c.action == 'cards.metadata.set',
+    );
     expect(setCall.payload, <String, dynamic>{
       'id': 'card-1',
       'liked': true,
       'bookmarked': false,
+    });
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, 'Liked'),
+          )
+          .value,
+      isTrue,
+    );
+  });
+
+  testWidgets('toggling bookmark writes the current liked flag', (tester) async {
+    final client = await _pump(tester);
+    await _openCard(tester);
+    await _toggle(tester, 'Liked');
+
+    await _toggle(tester, 'Bookmarked');
+
+    final setCalls =
+        client.calls.where((c) => c.action == 'cards.metadata.set').toList();
+    expect(setCalls.last.payload, <String, dynamic>{
+      'id': 'card-1',
+      'liked': true,
+      'bookmarked': true,
     });
   });
 
@@ -182,18 +149,14 @@ void main() {
     client.setFails = true;
     await _openCard(tester);
 
-    tester
-        .widget<CheckboxListTile>(
-            find.widgetWithText(CheckboxListTile, 'Liked'))
-        .onChanged!(true);
-    await tester.pump();
+    await _toggle(tester, 'Liked');
 
     expect(find.text('actions off'), findsOneWidget);
-    // The toggle was not applied locally either: no false success.
     expect(
       tester
           .widget<CheckboxListTile>(
-              find.widgetWithText(CheckboxListTile, 'Liked'))
+            find.widgetWithText(CheckboxListTile, 'Liked'),
+          )
           .value,
       isFalse,
     );

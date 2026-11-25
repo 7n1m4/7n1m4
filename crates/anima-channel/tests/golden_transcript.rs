@@ -65,6 +65,26 @@ mod golden_transcript {
     }
 
     #[test]
+    fn chat_cancel_request_fixture_locks_camel_case_ids() {
+        let value = load_json("chat.cancel.request");
+        round_trip::<ChatCancelRequest>(&value);
+        assert_eq!(
+            value.get("sessionId").and_then(|v| v.as_str()),
+            Some("sess-abc"),
+            "chat.cancel.request: camelCase `sessionId` must cross the wire"
+        );
+        assert_eq!(
+            value.get("requestId").and_then(|v| v.as_str()),
+            Some("r1"),
+            "chat.cancel.request: camelCase `requestId` must cross the wire"
+        );
+        assert!(
+            value.get("session_id").is_none() && value.get("request_id").is_none(),
+            "chat.cancel.request: snake_case ids are not the wire shape"
+        );
+    }
+
+    #[test]
     fn golden_token_delta_fixtures_round_trip() {
         for name in &["event.token_delta.partial", "event.token_delta.final"] {
             let value = load_json(name);

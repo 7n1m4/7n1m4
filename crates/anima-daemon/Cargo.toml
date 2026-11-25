@@ -27,6 +27,8 @@ anima-llm = { path = "../anima-llm" }
 anima-mcp = { path = "../anima-mcp" }
 anima-store = { path = "../anima-store" }
 tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["json"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

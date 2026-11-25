@@ -252,9 +252,8 @@ mod tests {
 
     #[test]
     fn append_redacts_before_write() {
-        let dir =
-            std::env::temp_dir().join(format!("airi-daemon-audit-test-{}", std::process::id()));
-        let path = dir.join("awareness-audit.jsonl");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("awareness-audit.jsonl");
         let log = AuditLog::open(path.clone());
         log.append(
             "media",
@@ -267,16 +266,12 @@ mod tests {
             "secret leaked into audit log"
         );
         assert!(contents.contains("resumed with ***"));
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn append_redacts_event_and_detail() {
-        let dir = std::env::temp_dir().join(format!(
-            "airi-daemon-audit-event-test-{}",
-            std::process::id()
-        ));
-        let path = dir.join("awareness-audit.jsonl");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("awareness-audit.jsonl");
         let log = AuditLog::open(path.clone());
         // Both free-form fields carry a sk- key and an apiKey value. Redaction
         // must apply to each field, not just `detail` (regression for F4).
@@ -303,18 +298,13 @@ mod tests {
                 "{field} leaked apiKey value"
             );
         }
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn audit_file_is_owner_only_after_append_and_prune() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!(
-            "airi-daemon-audit-mode-test-{}",
-            std::process::id()
-        ));
-        let path = dir.join("awareness-audit.jsonl");
-        fs::create_dir_all(&dir).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("awareness-audit.jsonl");
         // Pre-existing 0644 log: append must tighten it in place.
         fs::write(&path, "{}\n").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
@@ -335,15 +325,12 @@ mod tests {
         assert_eq!(log.prune_on_start(now), 1);
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "prune rewrite must not widen the log");
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn prune_on_start_roundtrip_drops_old_lines() {
-        let dir =
-            std::env::temp_dir().join(format!("airi-daemon-prune-test-{}", std::process::id()));
-        let path = dir.join("awareness-audit.jsonl");
-        fs::create_dir_all(&dir).expect("mkdirs");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("awareness-audit.jsonl");
         let now = 1_800_000_000_000u64;
         let eight_days = now - 8 * DAY_MS;
         fs::write(
@@ -359,6 +346,5 @@ mod tests {
         assert!(kept.contains("\"fresh\""));
         // Second prune is a no-op.
         assert_eq!(log.prune_on_start(now), 0);
-        let _ = fs::remove_dir_all(&dir);
     }
 }

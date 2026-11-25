@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
+import 'genui_surface_controller.dart';
 
 /// Minimal chat surface: sends `chat.send` RPCs and renders streamed
 /// `token.delta` events. View state only; the daemon owns sessions.
@@ -24,6 +25,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _input = TextEditingController();
   final List<_ChatMessage> _messages = <_ChatMessage>[];
+  final AiriGenUiSession _genUi = AiriGenUiSession();
   String? _sessionId;
   String? _activeMessageId;
   final StringBuffer _deltaBuffer = StringBuffer();
@@ -77,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _unsubscribeEvent?.call();
     _requestEventRpc('event.unsubscribe');
     _input.dispose();
+    _genUi.dispose();
     super.dispose();
   }
 
@@ -149,6 +152,29 @@ class _ChatScreenState extends State<ChatScreen> {
         _sending = false;
       }
     });
+    if (isFinal) _finishGenUiTurn();
+  }
+
+  /// Parse the fully accumulated turn once: GenUI handles split JSON tokens.
+  Future<void> _finishGenUiTurn() async {
+    final index = _messages.length - 1;
+    if (index < 0 || _messages[index].isUser) return;
+    final target = _messages[index];
+    final output = target.text;
+    if (output.isEmpty || target.surfaceIds.isNotEmpty || target.genUiFailed) {
+      return;
+    }
+    final turn = await _parseGenUi(output);
+    if (!mounted || index >= _messages.length || _messages.last.isUser) {
+      return;
+    }
+    setState(() {
+      _messages[index] = target.copyWith(
+        text: turn.text,
+        surfaceIds: turn.surfaceIds,
+        genUiFailed: turn.failed,
+      );
+    });
   }
 
   /// Decode `emotion.tag` defensively: only a well-typed tag/kind/intensity
@@ -193,6 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final reply = await widget.client.call('chat.send', payload: <String, dynamic>{
         'sessionId': _sessionId ?? '',
         'content': text,
+        'genUi': true,
       });
       if (!mounted) return;
       if (reply.ok && reply.data is Map<String, dynamic>) {
@@ -211,10 +238,12 @@ class _ChatScreenState extends State<ChatScreen> {
           _sending = false;
         });
       }
-    } on DaemonClientException catch (e) {
+    } on Object catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message;
+        _error = e is DaemonClientException
+            ? e.message
+            : 'Could not send message: $e';
         _sending = false;
       });
     }
@@ -247,11 +276,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (sid == null || sid.isEmpty) return;
     try {
       final turns = await widget.client.chatHistory(sid);
+      final messages = await Future.wait(turns.map(_messageFromHistory));
       if (!mounted) return;
       setState(() {
         _messages
           ..clear()
-          ..addAll(turns.map(_messageFromHistory));
+          ..addAll(messages);
         _historyUnavailable = false;
       });
     } on DaemonClientException {
@@ -260,11 +290,29 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  _ChatMessage _messageFromHistory(Map<String, dynamic> turn) {
+  Future<_ChatMessage> _messageFromHistory(Map<String, dynamic> turn) async {
     final text = (turn['content'] as String?) ?? '';
-    return turn['role'] == 'user'
-        ? _ChatMessage.user(text)
-        : _ChatMessage.assistant(text);
+    if (turn['role'] == 'user') return _ChatMessage.user(text);
+    // Persisted assistant turns are already final: parse their full text so
+    // replayed sessions show the same dynamic widgets as a live turn.
+    final parsed = await _parseGenUi(text);
+    return _ChatMessage.assistant(
+      parsed.text,
+      surfaceIds: parsed.surfaceIds,
+      genUiFailed: parsed.failed,
+    );
+  }
+
+  Future<AiriGenUiTurn> _parseGenUi(String output) async {
+    try {
+      return await _genUi.parseTurn(output);
+    } on Object {
+      return AiriGenUiTurn(
+        text: output,
+        surfaceIds: const <String>[],
+        failed: true,
+      );
+    }
   }
 
   @override
@@ -286,7 +334,22 @@ class _ChatScreenState extends State<ChatScreen> {
                       : AppTheme.surface,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(m.text.isEmpty ? '…' : m.text),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(m.text.isEmpty ? '…' : m.text),
+                        for (final surfaceId in m.surfaceIds)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _genUi.surfaceWidget(surfaceId),
+                          ),
+                        if (m.genUiFailed && m.surfaceIds.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text('A dynamic widget could not be displayed.'),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -391,15 +454,41 @@ class _EmotionCue {
 }
 
 class _ChatMessage {
-  const _ChatMessage({required this.isUser, required this.text});
+  const _ChatMessage({
+    required this.isUser,
+    required this.text,
+    this.surfaceIds = const <String>[],
+    this.genUiFailed = false,
+  });
+
   factory _ChatMessage.user(String t) =>
       _ChatMessage(isUser: true, text: t);
-  factory _ChatMessage.assistant(String t) =>
-      _ChatMessage(isUser: false, text: t);
+  factory _ChatMessage.assistant(
+    String t, {
+    List<String> surfaceIds = const <String>[],
+    bool genUiFailed = false,
+  }) =>
+      _ChatMessage(
+        isUser: false,
+        text: t,
+        surfaceIds: surfaceIds,
+        genUiFailed: genUiFailed,
+      );
 
   final bool isUser;
   final String text;
+  final List<String> surfaceIds;
+  final bool genUiFailed;
 
-  _ChatMessage copyWith({String? text}) =>
-      _ChatMessage(isUser: isUser, text: text ?? this.text);
+  _ChatMessage copyWith({
+    String? text,
+    List<String>? surfaceIds,
+    bool? genUiFailed,
+  }) =>
+      _ChatMessage(
+        isUser: isUser,
+        text: text ?? this.text,
+        surfaceIds: surfaceIds ?? this.surfaceIds,
+        genUiFailed: genUiFailed ?? this.genUiFailed,
+      );
 }

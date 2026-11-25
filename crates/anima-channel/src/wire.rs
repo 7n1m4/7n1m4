@@ -268,6 +268,11 @@ pub struct ChatSendRequest {
     pub session_id: String,
     /// User message content.
     pub content: String,
+    /// Whether the caller can render Flutter GenUI surfaces.
+    ///
+    /// Defaults to `false` so older clients keep plain-text turns.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gen_ui: bool,
 }
 
 /// Reply payload for `chat.send` (initial ack; deltas stream as events).

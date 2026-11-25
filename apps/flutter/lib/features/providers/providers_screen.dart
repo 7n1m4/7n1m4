@@ -13,7 +13,6 @@ class _ProviderRow {
     required this.model,
     required this.baseUrl,
     required this.enabled,
-    this.validation,
   });
 
   factory _ProviderRow.fromJson(Map<String, dynamic> json) => _ProviderRow(
@@ -22,7 +21,6 @@ class _ProviderRow {
         model: (json['model'] ?? '').toString(),
         baseUrl: (json['baseUrl'] ?? json['base_url'] ?? '').toString(),
         enabled: json['enabled'] == true,
-        validation: _validationState(json),
       );
 
   final String id;
@@ -30,28 +28,6 @@ class _ProviderRow {
   final String model;
   final String baseUrl;
   final bool enabled;
-
-  /// Validation state as reported by the daemon, never inferred locally.
-  final String? validation;
-}
-
-/// Preserves validation state returned by the daemon on either a list row or
-/// a save reply. Absence means "not reported", not "valid".
-String? _validationState(Object? data) {
-  if (data is! Map) return null;
-  final raw = data['validation'] ?? data['validationState'] ?? data['validationStatus'];
-  if (raw is String && raw.trim().isNotEmpty) return raw.trim();
-  if (raw is Map) {
-    final state = raw['state'] ?? raw['status'];
-    final message = raw['message'];
-    if (state is String && state.isNotEmpty) {
-      return message is String && message.isNotEmpty ? '$state: $message' : state;
-    }
-    if (message is String && message.isNotEmpty) return message;
-  }
-  final reported = data['isValid'] ?? data['valid'];
-  if (reported is bool) return reported ? 'valid' : 'invalid';
-  return null;
 }
 
 class ProvidersScreen extends StatefulWidget {
@@ -179,9 +155,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       if (_apiKey.text.isNotEmpty) 'apiKey': _apiKey.text,
     }, (data) {
       final savedId = (data is Map ? data['id'] : null)?.toString() ?? id;
-      final validation = _validationState(data);
-      _status = 'Saved provider $savedId'
-          '${validation == null ? '' : ' · Validation: $validation'}';
+      _status = 'Saved provider $savedId';
       _apiKey.clear();
     });
   }
@@ -324,11 +298,6 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                               ' · ${row.enabled ? 'enabled' : 'disabled'}',
                             ),
                           ),
-                          if (row.validation != null)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text('Validation: ${row.validation}'),
-                            ),
                           ButtonBar(
                             children: <Widget>[
                               TextButton(

@@ -22,11 +22,7 @@ pub const ENV_MODEL: &str = "AIRI_SLINT_MODEL";
 /// credentials out of thin-client replies (`toSafeSystemRow` in the TS
 /// reference) and to stop a PATCH from rotating a managed secret.
 pub fn is_secret_config_key(key: &str) -> bool {
-    let normalized: String = key
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect();
+    let normalized = normalize_config_key(key);
     const SUBSTRINGS: &[&str] = &[
         "apikey",
         "authheader",
@@ -39,6 +35,14 @@ pub fn is_secret_config_key(key: &str) -> bool {
     const SUFFIXES: &[&str] = &["token", "key"];
     SUBSTRINGS.iter().any(|s| normalized.contains(s))
         || SUFFIXES.iter().any(|s| normalized.ends_with(s))
+}
+
+/// Match wire (`apiKey`) and stored (`api_key`) spellings of the same key.
+fn normalize_config_key(key: &str) -> String {
+    key.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Recursively strip secret-shaped keys from a provider config value.
@@ -66,6 +70,43 @@ pub fn merge_config_preserving_secrets(
     let mut merged = incoming.clone();
     for (key, value) in existing {
         if is_secret_config_key(key) {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    serde_json::Value::Object(merged)
+}
+
+/// Merge an explicit rotation patch: an incoming secret-shaped key replaces
+/// the stored key with the same normalized name (wire camelCase and stored
+/// snake_case are the same key). Unmentioned credentials stay protected.
+pub fn merge_config_rotating_secrets(
+    existing: &serde_json::Map<String, serde_json::Value>,
+    incoming: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    // A rotation changes a known credential; it does not introduce a new one.
+    let mut merged: serde_json::Map<String, serde_json::Value> = incoming
+        .iter()
+        .filter(|(k, _)| {
+            !is_secret_config_key(k)
+                || existing
+                    .keys()
+                    .any(|stored| normalize_config_key(stored) == normalize_config_key(k))
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    for (key, value) in existing {
+        if !is_secret_config_key(key) {
+            continue;
+        }
+        let normalized = normalize_config_key(key);
+        if let Some((incoming_key, _)) = incoming.iter().find(|(k, v)| {
+            is_secret_config_key(k) && normalize_config_key(k) == normalized && !v.is_null()
+        }) {
+            // Keep the existing spelling so a rotation never creates a second
+            // secret field with a different name.
+            merged.remove(incoming_key);
+            merged.insert(key.clone(), incoming[incoming_key].clone());
+        } else {
             merged.insert(key.clone(), value.clone());
         }
     }
@@ -273,7 +314,10 @@ mod tests {
         assert!(!text.contains("ANOTHER-SECRET"));
         assert!(!text.contains("BEARER-SECRET"));
         assert_eq!(safe["base_url"], "https://example.test/v1");
-        assert!(safe["credentials"].is_null(), "secret container must be stripped wholesale");
+        assert!(
+            safe["credentials"].is_null(),
+            "secret container must be stripped wholesale"
+        );
         assert_eq!(safe["extra"][0]["maxTokens"], 100);
         assert_eq!(safe["maxTokens"], 500);
         assert_eq!(safe["tokenizer"], "cl100k");
@@ -309,14 +353,70 @@ mod tests {
     #[test]
     fn client_cannot_inject_secret_via_camelcase_key() {
         let existing = serde_json::json!({ "api_key": "STORED-SECRET" })
-            .as_object().unwrap().clone();
+            .as_object()
+            .unwrap()
+            .clone();
         let incoming = serde_json::json!({ "apiKey": "CLIENT-SECRET", "maxTokens": 200 })
-            .as_object().unwrap().clone();
+            .as_object()
+            .unwrap()
+            .clone();
         let merged = merge_config_preserving_secrets(&existing, &incoming);
         let safe = strip_secret_config_keys(&merged);
         assert_eq!(merged["api_key"], "STORED-SECRET");
         assert!(!safe.to_string().contains("CLIENT-SECRET"));
         assert!(!safe.to_string().contains("STORED-SECRET"));
         assert_eq!(safe["maxTokens"], 200);
+    }
+
+    #[test]
+    fn rotation_replaces_matching_secret_by_normalized_name_only() {
+        let existing = serde_json::json!({
+            "api_key": "OLD-KEY",
+            "access_token": "OLD-TOKEN",
+            "base_url": "https://old.test/v1",
+            "maxTokens": 100,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let incoming = serde_json::json!({
+            "apiKey": "NEW-KEY",
+            "baseUrl": "https://new.test/v1",
+            "maxTokens": 200,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let merged = merge_config_rotating_secrets(&existing, &incoming);
+        assert_eq!(merged["api_key"], "NEW-KEY");
+        assert!(
+            merged.get("apiKey").is_none(),
+            "no duplicate camelCase key survives"
+        );
+        assert_eq!(merged["access_token"], "OLD-TOKEN");
+        assert_eq!(merged["baseUrl"], "https://new.test/v1");
+        assert_eq!(merged["maxTokens"], 200);
+    }
+
+    #[test]
+    fn rotation_does_not_introduce_unknown_secret_keys() {
+        let existing = serde_json::json!({ "api_key": "OLD-KEY" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let incoming = serde_json::json!({
+            "apiKey": "NEW-KEY",
+            "authHeader": "EXTRA-SECRET",
+            "baseUrl": "https://new.test/v1",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let merged = merge_config_rotating_secrets(&existing, &incoming);
+        assert_eq!(merged["api_key"], "NEW-KEY");
+        assert!(merged.get("authHeader").is_none());
+        assert_eq!(merged["baseUrl"], "https://new.test/v1");
     }
 }

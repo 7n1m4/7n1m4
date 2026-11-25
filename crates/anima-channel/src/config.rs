@@ -59,7 +59,11 @@ pub struct ChannelConfig {
     /// `Some(true)` allows; anything else (absent, `false`, wrong type)
     /// fails closed. Re-read per call by the gateway; never used to
     /// authenticate. See `docs/design-daemon-gateway.md` (airi-f03).
-    #[serde(rename = "allowActions", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allowActions",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allow_actions: Option<bool>,
 }
 

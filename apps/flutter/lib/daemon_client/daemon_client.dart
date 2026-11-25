@@ -451,8 +451,15 @@ class DaemonClient {
     final id = ++_nextId;
     final completer = Completer<RpcReply>();
     _pending[id] = completer;
-    transport.send(RpcRequest(action: action, payload: payload, id: id).toWire());
     try {
+      try {
+        transport.send(RpcRequest(action: action, payload: payload, id: id).toWire());
+      } catch (e) {
+        throw DaemonClientException(
+          kind: DaemonFailureKind.transport,
+          message: 'Could not send RPC "$action": $e',
+        );
+      }
       return await completer.future.timeout(
         rpcTimeout,
         onTimeout: () => throw DaemonClientException(
@@ -628,6 +635,60 @@ class DaemonClient {
     if (data is! Map<String, dynamic>) return null;
     final card = data['card'];
     return card is Map<String, dynamic> ? card : null;
+  }
+
+  /// Daemon-owned local metadata (liked/bookmarked) for one card
+  /// (`cards.metadata`).
+  Future<({String id, bool liked, bool bookmarked})> cardsMetadata(
+    String id,
+  ) async {
+    final reply = await _callOk(
+      'cards.metadata',
+      payload: <String, dynamic>{'id': id},
+    );
+    return _cardMetadata(reply);
+  }
+
+  /// Explicitly set both local metadata flags for one card
+  /// (`cards.metadata.set`). Both flags are always sent: the daemon never
+  /// flips a bit on its own, so a stale client cannot cause an unintended
+  /// toggle.
+  Future<({String id, bool liked, bool bookmarked})> cardsMetadataSet(
+    String id, {
+    required bool liked,
+    required bool bookmarked,
+  }) async {
+    final reply = await _callOk(
+      'cards.metadata.set',
+      payload: <String, dynamic>{
+        'id': id,
+        'liked': liked,
+        'bookmarked': bookmarked,
+      },
+    );
+    return _cardMetadata(reply);
+  }
+
+  static ({String id, bool liked, bool bookmarked}) _cardMetadata(
+    RpcReply reply,
+  ) {
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.metadata reply.',
+      );
+    }
+    final id = data['id'];
+    final liked = data['liked'];
+    final bookmarked = data['bookmarked'];
+    if (id is! String || liked is! bool || bookmarked is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.metadata reply.',
+      );
+    }
+    return (id: id, liked: liked, bookmarked: bookmarked);
   }
 
   /// Import a character card (`cards.import`).

@@ -1,10 +1,10 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Decision: Remote-client trust for an internet-exposed daemon gateway
 
-- **Status:** proposed (design only; implementation tracked separately)
+- **Status:** proposed (design only; implementation tracked separately; not ratified)
 - **Bead:** `airi-py6`
 - **Depends on:** `airi-79o` (BYOS identity: device-and-token, no accounts/OAuth)
-- **Scope:** per-client identity, pairing, revocation, and rate limiting that must land before the daemon gateway is exposed to the open internet. LAN/VPN/tailnet deployments are **unaffected** and keep working under the existing single shared `authToken`.
+- **Scope:** per-client identity, pairing, revocation, and rate limiting that must land before the daemon gateway is exposed to the open internet. LAN/VPN/tailnet deployments bound to a private address are **unaffected** and keep working under the existing single shared `authToken`; wildcard binds (`0.0.0.0` / `::`) are public and require the `internetExposed` opt-in plus paired clients.
 
 ## Context (source-verified)
 
@@ -13,13 +13,15 @@
 - Current mechanics (`crates/anima-channel/src/session.rs:19-27,294-296`, `crates/anima-channel/src/config.rs:46-48`, `crates/anima-daemon/src/gateway.rs:153-155,476-506`):
   - One shared `authToken` (UUIDv4, 122 bits) in `server-channel/config.json` (0600).
   - Mandatory first-message handshake (`{"type":"auth","authToken"}` or `module:authenticate` with `data.token`); close 1008 on mismatch.
-  - `RegenerateGatewayToken` rotates the shared token and rebinds; live sessions keep their already-authenticated state (no force-close today).
+  - `RegenerateGatewayToken` rotates the shared token, persists it, and rebinds. Live sessions stay authenticated (no force-close); the rotation affects new connections only. It does not evict paired-client rows (none exist today).
   - Transport: `ws://` loopback only; `wss://` forced for any non-loopback hostname.
+  - The WS RPC `gateway.config` returns only `{ hostname, port }` (`crates/anima-channel/src/dispatch.rs:424-434`, `crates/anima-channel/src/wire.rs:520-530`); it never returns `authToken`. The D-Bus `GetGatewayConfig` verb does return the shared token, but only over the same-uid session bus (`crates/anima-channel/src/control.rs:18-45`, `crates/anima-daemon/src/gateway.rs:377-393`).
+  - Mutating/executing `renderer.*` verbs require literal `allowActions: true` in `config.json`; a non-loopback bind additionally requires literal `allowRemoteActions: true` (`crates/anima-daemon/src/gateway.rs:113-166`, tracked by `airi-i4i`). Absent, false, or wrong-typed flags fail closed; this is an action gate, not authorization for internet exposure.
 - Deployment vision (ratified 2026-11-24): daemon on an always-on desktop/VPS, thin Flutter/Vue/Godot clients connecting remotely over the internet. This design is the prerequisite for that.
 
 ## Decision
 
-1. **Keep the shared `authToken` as the bootstrap/legacy credential** for loopback and LAN. Do not break existing clients.
+1. **Keep the shared `authToken` as the bootstrap/legacy credential** for loopback and private LAN/VPN binds. Do not break existing clients on those addresses; wildcard/public binds are the hardened path.
 2. **Add per-client (device) credentials** issued through a pairing flow initiated from a locally trusted session. Each client gets its own revocable token; the daemon stores only a hash.
 3. **Wire protocol stays at version 1** (`design-daemon-gateway.md:91`, `design-daemon-client.md:17`). All changes are additive fields on the existing auth handshake and D-Bus control verbs.
 4. **Revocation is per-client** (`RevokeGatewayClient`) plus an evict-all (`RevokeAllGatewayClients`); the existing `RegenerateGatewayToken` keeps its current "rotate shared secret" semantics and is not overloaded.
@@ -30,8 +32,8 @@
 
 Pairing is initiated by a **locally trusted** caller (same-uid D-Bus session, 0600 config reader, or the settings UI), never by an unauthenticated network peer.
 
-1. **Local issuance of a pairing code.** A trusted caller invokes a new D-Bus verb `CreatePairingCode(label, clientKind?)`. The daemon mints a short-lived, single-use code (128-bit entropy, base32, ~5 minute TTL) and returns `{ code, expiresAt, pairingId }`. The code is never persisted in plaintext beyond its TTL; only a hash is held in memory.
-2. **Out-of-band delivery.** The code is shown as text/QR in the local UI (or printed by `busctl`). The remote client operator enters it (or scans the QR). Optionally the client also presents a `fingerprint` (hash of a client-generated public key / device id) in the same step; the local UI displays both for confirmation before the code is consumed ("compare these two strings").
+1. **Local issuance of a pairing code.** A trusted caller invokes a new D-Bus verb `CreatePairingCode(label, clientKind?)`. The daemon mints a short-lived, single-use code (128-bit entropy, base32, ~5 minute TTL) and returns `{ code, expiresAt, pairingId, caFingerprint }`. `caFingerprint` is the lowercase hex SHA-256 of the DER bytes of `websocket-ca-cert.pem` (the CA in `GetGatewayConfig.caCertPath`), or `null` when no CA exists yet (loopback-only plaintext binds). The code is never persisted in plaintext beyond its TTL; only a hash is held in memory.
+2. **Out-of-band delivery.** The code is shown as text/QR in the local UI (or printed by `busctl`). The remote client operator enters it (or scans the QR). The local UI also displays `caFingerprint` when present and the operator confirms that the client's pinned CA fingerprint matches before the code is consumed. The optional client `fingerprint` (hash of a client-generated public key / device id) is displayed alongside for a second "compare these two strings" confirmation; it is not a substitute for CA pinning.
 3. **Exchange over the network.** The client opens a `wss://` connection and sends an auth frame carrying the pairing code instead of a token:
    ```json
    { "type": "auth", "pairingCode": "<code>", "client": { "label": "...", "kind": "flutter|godot|vue|script", "fingerprint": "..." } }
@@ -64,6 +66,7 @@ Backward compatibility: a connection presenting the shared `authToken` from `con
 - Auth reply gains optional `clientId` (and `authToken` only on successful pairing).
 - RPC error frames gain an optional `retryAfter` (seconds) on `rate_limited` errors.
 - No new frame types, no version bump, no change to `ping`/`pong`/`heartbeat`/`rpc`/`event`.
+- `gateway.config` RPC keeps its current secret-free `{ hostname, port }` shape on both loopback and non-loopback binds; no token is ever added. The local D-Bus `GetGatewayConfig` keeps returning `authToken` to same-uid callers only.
 
 ## Server-side credential store
 
@@ -78,7 +81,8 @@ CREATE TABLE gateway_clients (
     token_hash    TEXT NOT NULL,           -- SHA-256(token), hex; lookup key
     client_kind   TEXT,                    -- flutter | godot | vue | script | other
     device_id     TEXT,                    -- optional stable device id
-    fingerprint   TEXT,                    -- optional out-of-band fingerprint
+    fingerprint   TEXT,                    -- optional out-of-band client fingerprint
+    ca_fingerprint TEXT,                   -- SHA-256(CA DER) pinned at pairing time
     scopes        TEXT NOT NULL DEFAULT '["rpc"]',  -- JSON array of verb scopes
     created_at    INTEGER NOT NULL,
     last_used_at  INTEGER,
@@ -93,6 +97,7 @@ CREATE INDEX idx_gateway_clients_revoked ON gateway_clients(revoked_at);
 - Only the **hash** is persisted; the plaintext token is returned once at issuance.
 - An in-memory `HashMap<token_hash, ClientCredential>` cache is loaded at daemon start and invalidated on issue/revoke, so the handshake stays O(1) and does not hit SQLite per connection.
 - `scopes` defaults to `["rpc"]` (full RPC access matching today's single token). Future scoping can restrict verb subsets without a schema change.
+- `ca_fingerprint` records what the operator confirmed at pairing time; it changes only via a new explicit re-pair, never silently when the CA is re-minted.
 
 ## Revocation
 
@@ -100,7 +105,7 @@ CREATE INDEX idx_gateway_clients_revoked ON gateway_clients(revoked_at);
 - **Per-client metadata updates:** `RenameGatewayClient(id, label)` and `TouchGatewayClient(id)` (last_used) are optional convenience verbs.
 - **List/inspect:** `ListGatewayClients() -> [{ id, label, clientKind, createdAt, lastUsedAt, revokedAt }]` (never returns tokens or hashes).
 - **Evict-all (per-client):** `RevokeAllGatewayClients()` revokes every row and closes all per-client sessions. The shared bootstrap token is untouched.
-- **Existing `RegenerateGatewayToken`:** unchanged semantics — rotates the shared `config.json` token and rebinds. It does **not** touch per-client credentials, so a panic rotation of the shared secret does not wipe paired devices. Operators who want a full wipe call both `RegenerateGatewayToken` and `RevokeAllGatewayClients`.
+- **Existing `RegenerateGatewayToken`:** unchanged semantics — generates a new UUIDv4 shared token, persists `config.json`, and rebinds the listener to the new effective config; a failed rebind is reported `ok:false`. It does **not** close live sessions (they keep their already-authenticated state) and does **not** touch per-client credentials, so a panic rotation of the shared secret does not wipe paired devices. Operators who want a full wipe call both `RegenerateGatewayToken` and `RevokeAllGatewayClients`.
 - Live-session kill-on-revoke is a new capability; today's "live sessions keep their authenticated state" note (`design-daemon-gateway.md:166-168`) is relaxed only for explicit per-client revocation.
 
 ## Rate limiting at the gateway
@@ -122,34 +127,38 @@ On exceed: reply with an RPC error frame `{ "ok": false, "error": { "code": "rat
 
 ## Internet-exposure policy
 
-A new opt-in flag `internetExposed` (stored in `ChannelConfig` / reported by `GetGatewayConfig`) gates the stricter posture:
+A new opt-in flag `internetExposed` (stored in `ChannelConfig` / reported by `GetGatewayConfig`) gates the stricter posture. A **public bind** is either a wildcard bind (`0.0.0.0` / `::`) or a non-loopback hostname that is not a private LAN/VPN address (RFC1918, unique-local, or a tailnet DNS name).
 
-- When `false` (default): current behavior — shared token accepted from any bind, rate limiting advisory/best-effort, LAN/VPN/tailnet as today.
+- When `false` (default): current behavior — shared token accepted on LAN/VPN/tailnet binds, rate limiting advisory/best-effort. Public binds are refused.
 - When `true`:
+  - Public binds are permitted; the bind is treated as internet-exposed.
   - Shared `authToken` is **not** accepted from non-loopback peers; only paired per-client tokens authenticate.
   - Rate limiting is enforced (not advisory).
   - `RegenerateGatewayToken` additionally warns that it does not revoke paired clients.
   - Audit logging records pairing/revocation/rate-limit events.
 
-The flag is set via `ApplyGatewayConfig` (new optional `internetExposed` field, additive) or a dedicated D-Bus verb. Binding to a public interface without the flag is allowed but logs a warning ("internet exposure without per-client enforcement").
+The flag is set via `ApplyGatewayConfig` (new optional `internetExposed` field, additive) or a dedicated D-Bus verb. **Fail-closed public binds:** a public bind MUST be rejected unless `internetExposed: true` is already set in the effective config at bind time. Today code only forces `wss://`, logs a warning, and still binds; the warning is not a gate. This design changes that: `load_or_heal`, `Gateway::apply`, and the rebinding `RegenerateGatewayToken` path refuse to persist/bind a public config with the flag absent or false (only literal `true` counts; invalid values fail closed). On startup refusal the gateway stays unbound with `lastError` explaining the missing opt-in; no listener is opened, and no config is silently rewritten to loopback. LAN/VPN/tailnet binds keep working under the existing shared-token policy without the flag.
+
+Mutating verbs on a non-loopback bind remain a separate, fail-closed gate: literal `allowActions: true` plus the explicit `allowRemoteActions: true` opt-in (tracked in `airi-i4i`) are required; absence, `false`, or a wrong type denies every mutating/executing verb even for an authenticated paired client. `internetExposed` alone never enables actions, and `gateway.config` over WS never returns any secret.
 
 ## D-Bus control surface (growth)
 
 Existing verbs unchanged. New verbs (all same-uid trusted, no polkit, consistent with `design-daemon-gateway.md:76-84`):
 
-- `CreatePairingCode(label: s, clientKind: s) -> s` (JSON `{ pairingId, code, expiresAt }`)
+- `CreatePairingCode(label: s, clientKind: s) -> s` (JSON `{ pairingId, code, expiresAt, caFingerprint }`; fingerprint is null when no CA exists)
 - `ListGatewayClients() -> s` (JSON array, no secrets)
 - `RevokeGatewayClient(id: s) -> s` (`{ ok, revoked }`)
 - `RevokeAllGatewayClients() -> s`
 - `RenameGatewayClient(id: s, label: s) -> s`
 - `ApplyGatewayConfig` gains optional `internetExposed` (boolean) and keeps existing fields.
+- `ApplyGatewayConfig` gains `allowRemoteActions` (boolean strict opt-in) per `airi-i4i`; absent/false/wrong type is treated as false.
 
 No sender authorization is added; same-uid trust posture is unchanged. If stronger control-plane auth is wanted later, that is a separate policy decision, not this design.
 
 ## Migration / compatibility
 
-- No forced migration: existing shared-token clients keep working on loopback/LAN.
-- `gateway.config` RPC and `GetGatewayConfig` continue to return the shared `authToken` for local trusted callers, so the settings UI and local pairing UX are unchanged.
+- No forced migration: existing shared-token clients keep working on loopback and private LAN/VPN addresses; wildcard binds are public and need the opt-in.
+- `gateway.config` RPC continues to return only `{ hostname, port }` for every caller, including remote paired clients. `GetGatewayConfig` (same-uid D-Bus only) continues to return the shared `authToken` so the settings UI and local pairing UX are unchanged; WS clients must use the local config file or the pairing UX to obtain a bootstrap token.
 - Old clients that never pair continue to use the shared token; they are treated as the implicit bootstrap client and remain subject to the internet-exposure policy.
 - Schema migration is additive (new table only); no existing table changes. `SCHEMA_VERSION` 6 → 7.
 
@@ -169,10 +178,16 @@ must remain green; new tests are additive.
 **Unit (crates/anima-channel, crates/anima-daemon, crates/anima-store):**
 - Pairing code: single-use (second consume fails), TTL expiry, 128-bit entropy,
   base32 round-trip, hash-only persistence (plaintext never stored).
+- Pairing response: `caFingerprint` equals SHA-256(CA DER) when the CA exists,
+  and is `null` for a loopback plaintext bind; the fingerprint is displayed in
+  the local UI before the code is consumed.
 - Token hash: SHA-256 round-trip, constant-time comparison, no plaintext in DB.
 - Per-token auth handshake: issued token authenticates; revoked token rejected
   with close 1008; unknown token rejected; bootstrap shared token accepted only
   under the policy defined in "Internet-exposure policy".
+- `RegenerateGatewayToken`: new token persisted and listener rebound; live
+  sessions remain connected; paired-client rows unchanged; failed rebind
+  returns `ok:false`.
 - Revocation evicts exactly one client: `RevokeGatewayClient(id)` closes only
   sessions authenticated with that credential; other paired clients and the
   bootstrap token (where permitted) remain connected.
@@ -184,6 +199,11 @@ must remain green; new tests are additive.
   for unknown methods.
 - Schema: SCHEMA_VERSION 6→7 migration is additive (new table only); existing
   tables/columns unchanged; rollback leaves shared-token path functional.
+- Public bind: a wildcard bind (`0.0.0.0`/`::`) or a public-routable non-loopback
+  hostname with `internetExposed` absent/false is refused at startup, by
+  `ApplyGatewayConfig`, and by the token-rotation rebind; no listener opens,
+  `lastError` names the missing opt-in, and loopback/private LAN binds remain
+  unaffected.
 
 **Integration:**
 - End-to-end pairing over `wss://` against a real `ChannelServer`: mint code →
@@ -193,16 +213,22 @@ must remain green; new tests are additive.
 - Rate-limit trip: exceed a bucket, confirm `rate_limited` RPC error with
   `retryAfter`, confirm connection close after repeated violations.
 - Internet-exposure toggle: with `internetExposed=true`, bootstrap shared token
-  rejected from a non-loopback peer; with `false`, accepted (regression of
-  current behavior).
+  rejected from a non-loopback peer; with `false`, bootstrap shared token remains
+  accepted for private LAN/VPN peers, but a wildcard/public bind is refused.
+- `gateway.config` over WS returns only `{ hostname, port }` on both loopback
+  and non-loopback binds; D-Bus `GetGatewayConfig` still returns `authToken` to
+  same-uid callers only.
 
 **D-Bus smoke (dbus-run-session bus):**
 - `CreatePairingCode` / `ListGatewayClients` (no secrets in output) /
   `RevokeGatewayClient` / `RevokeAllGatewayClients` / `RenameGatewayClient`.
-- `ApplyGatewayConfig` accepts the new optional `internetExposed` field;
-  absent means keep.
+- `ApplyGatewayConfig` accepts the new optional `internetExposed` field and
+  strict `allowRemoteActions`; absent means keep for `internetExposed`, false
+  for `allowRemoteActions`.
 - `RegenerateGatewayToken` still rotates only the shared token; paired rows
   survive.
+- `GetGatewayConfig` returns `authToken` over the session bus; WS `gateway.config`
+  does not.
 
 **Conformance fixtures:**
 - Add golden fixtures for the new auth shapes (`pairingCode`/`client` request,
@@ -226,7 +252,8 @@ exposure. Implementation lands in separate beads/tickets that must cite this doc
 and pass the verification above. Internet exposure of a daemon gateway remains
 **out of scope and unsupported** until an implementation bead closes with the
 evidence listed here; LAN/VPN/tailnet deployments are the only supported
-remote-access shape today.
+remote-access shape today. The fail-closed public-bind rule above is a proposed
+design requirement, not current code behavior.
 
 ## Threat model update (remote internet adversary)
 
@@ -242,7 +269,8 @@ posture.
   every client and cannot be surgically revoked. Per-client tokens localize
   blast radius to one device; `RevokeGatewayClient` removes it without
   disturbing others. The bootstrap shared token is therefore **disabled for
-  non-loopback peers** once `internetExposed` is true.
+  non-loopback peers** once `internetExposed` is true, and a public bind without
+  that flag is refused outright.
 - **Token-in-flight.** `wss://` is already forced for any non-loopback hostname
   (`design-daemon-gateway.md:37-43`); internet exposure keeps this and adds
   HSTS-equivalent "always wss" enforcement plus rejection of plaintext upgrades.
@@ -276,10 +304,7 @@ distribution is a UX step not yet designed").
   (`caCertPath` from `GetGatewayConfig`), mkcert-style.
 - **Remote internet clients** cannot be assumed to share a filesystem with the
   host. Distribution options, in preference order:
-  1. **Fingerprint pinning at pairing time.** `CreatePairingCode` returns a
-     SHA-256 fingerprint of the CA cert alongside the code; the client operator
-     compares it during pairing (same OOB channel as the code) and pins it.
-     No file transfer needed; works for any client.
+  1. **Fingerprint pinning at pairing time (required first cut).** `CreatePairingCode` returns a `caFingerprint` (SHA-256 hex of the CA certificate DER) alongside the code, sourced from the same CA file that `caCertPath` names. The operator confirms the fingerprint in the local UI/out-of-band channel and the client pins it before consuming the code; the pinned value is stored with the client row and checked on every reconnect. No file transfer needed; works for any client. `caFingerprint` is `null` only for loopback plaintext binds with no minted CA, which are not internet-exposed.
   2. **Out-of-band CA download.** The daemon serves the CA cert over a
      short-lived, pairing-code-gated HTTPS-ish endpoint OR the operator copies
      `caCertPath` out. Lower preference (extra surface).
@@ -290,7 +315,8 @@ distribution is a UX step not yet designed").
      design's first cut**; recorded as the eventual VPS path.
 - **Decision:** pairing-time fingerprint pinning is the required mechanism for
   the first internet-capable release; CA-file distribution remains the LAN
-  mechanism. No client trusts the minted CA by default.
+  mechanism. No client trusts the minted CA by default. A changed CA fingerprint
+  is a hard failure requiring explicit re-pairing; no silent TOFU upgrade.
 
 ## CSRF / origin for any future HTTP surface
 
@@ -308,7 +334,7 @@ distribution is a UX step not yet designed").
 - Extend the daemon's existing audit JSONL writer (redacted) with events:
   `pairing_code_created`, `pairing_code_consumed`, `client_issued`,
   `client_revoked`, `client_renamed`, `revoke_all`, `rate_limited`,
-  `internet_exposed_toggled`.
+  `internet_exposed_toggled`, `public_bind_refused`.
 - Fields: timestamp, event, credential id, label, source IP, outcome. **Never**
   the token, token hash, or pairing code.
 - Retention follows existing audit policy; no new storage.
@@ -328,11 +354,11 @@ preserve `authToken`. This design reuses it:
    token and are treated as the bootstrap client.
 3. **Gradual hardening.** Setting `internetExposed=true` disables the bootstrap
    token for non-loopback peers, forcing pairing. Loopback peers may still use
-   it (local trusted context).
+   it (local trusted context); a wildcard/public bind without the flag is refused.
 4. **Revocation safety.** `RegenerateGatewayToken` continues to rotate the
    shared token and rebind; it does not touch per-client rows, so a panic
-   rotation no longer wipes paired devices (today it evicts everything —
-   `design-daemon-gateway.md:166-168`). Operators wanting a full wipe call both
+   rotation no longer wipes paired devices (today it affects new connections
+   only and keeps live sessions authenticated — `design-daemon-gateway.md:166-168`). Operators wanting a full wipe call both
    `RegenerateGatewayToken` and `RevokeAllGatewayClients`.
 5. **Rollback.** Per-client tables are additive (new table only, SCHEMA 6→7);
    removing the feature leaves the shared-token path fully functional. No
@@ -346,7 +372,7 @@ account, user owns the host.
 
 | Alternative | Verdict | Why |
 |---|---|---|
-| **Keep shared token + VPN-only** (status quo) | Rejected for internet | No per-client identity, no revocation, no rate limiting. A single leak compromises all clients and requires full rotation. Acceptable for LAN/VPN/tailnet (kept as default); insufficient for hostile networks. This is the baseline this design extends, not replaces. |
+| **Keep shared token + VPN-only** (status quo) | Rejected for internet | No per-client identity, no revocation, no rate limiting. A single leak compromises all clients and requires full rotation. Acceptable for private LAN/VPN/tailnet binds (kept as default); insufficient for hostile networks or wildcard binds. This is the baseline this design extends, not replaces. |
 | **Full OAuth/OIDC proxy** (better-auth-style) | Rejected | Contradicts `airi-79o`: introduces accounts, sessions, a hosted identity provider, and custody the architecture explicitly excludes. Duplicates better-auth for a single-owner deployment; retirement gate (`airi-3cp`) would never pass. The daemon would have to become an identity server, which it must not be. |
 | **mTLS device certificates** | Rejected (for now) | Strong device identity and no bearer-token leakage, but: (a) CA issuance/rotation/renewal is heavy for a personal daemon; (b) mobile/Flutter and browser/Electrobun clients have uneven client-cert UX; (c) revocation requires CRL/OCSP infrastructure we do not want to operate. Recorded as a future hardening option if bearer-token incidents occur; pairing-time fingerprint pinning achieves most of the benefit at far lower cost. |
 | **Hosted relay / community backend** | Rejected | Out of scope per `decision-server-endpoints.md`; no hosted custody. |

@@ -67,28 +67,90 @@ const RPC_MAX_LIMIT: usize = 500;
 /// Hard ceiling on rows the in-daemon journal search is willing to scan.
 /// `JournalRepo` has no query pushdown yet; see the store-side follow-up.
 const JOURNAL_SEARCH_SCAN_CAP: usize = 100_000;
+/// Hard ceiling on the total `content` bytes one in-daemon journal search
+/// pulls into memory. The scan is row-bounded by
+/// [`JOURNAL_SEARCH_SCAN_CAP`] and byte-bounded here, so a handful of huge
+/// entries cannot turn the search into an unbounded allocation.
+const JOURNAL_SEARCH_MAX_SCAN_BYTES: u64 = 8 * 1024 * 1024;
+/// Default page size for list RPCs that take a client `limit`
+/// (`sessions.list` today), clamped by [`RPC_MAX_LIMIT`].
+const DEFAULT_LIST_LIMIT: usize = 50;
 
 /// Prefix recognized by `anima-channel`'s RPC dispatch as `rpc_actions_disabled`.
 const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
 
-/// Strict per-call check for the `allowActions` opt-in in `config.json`,
-/// AND for a loopback bind hostname.
+/// Hard cap on a single MCP tool call or short ACP RPC, independent of any
+/// client-supplied `timeout`. Keeps a hung tool server from holding an RPC
+/// handler thread. ACP prompts use `ACP_PROMPT_DEADLINE` instead: a real LLM
+/// turn can take minutes (client default 300 s).
+const MCP_ACP_DEADLINE: Duration = Duration::from_secs(30);
+const ACP_PROMPT_DEADLINE: Duration = Duration::from_secs(320);
+
+/// Run an MCP/ACP handler under a mandatory server-side deadline.
+/// `anima-channel` already runs every registered handler off the connection
+/// reader; this second bound ensures direct callers cannot wait forever.
+fn with_mcp_acp_deadline<F>(deadline: Duration, f: F) -> Result<serde_json::Value, String>
+where
+    F: FnOnce() -> Result<serde_json::Value, String> + Send + 'static,
+{
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("airi-daemon-mcp-acp".to_string())
+        .spawn(move || {
+            let _ = tx.send(f());
+        })
+        .map_err(|e| format!("failed to start MCP/ACP handler: {e}"))?;
+    match rx.recv_timeout(deadline) {
+        Ok(result) => result,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(format!(
+            "MCP/ACP handler exceeded {deadline:?} server deadline"
+        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err("MCP/ACP handler worker died".to_string())
+        }
+    }
+}
+
+/// Clamp a client-supplied timeout to the server deadline.
+fn rpc_deadline(value: &serde_json::Value) -> Duration {
+    value
+        .get("timeout")
+        .and_then(|v| v.as_u64())
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(5))
+        .min(MCP_ACP_DEADLINE)
+}
+
+/// Client-supplied ACP prompt timeout, bounded by the server deadline.
+fn acp_prompt_deadline(value: &serde_json::Value) -> Duration {
+    value
+        .get("prompt_timeout")
+        .and_then(|v| v.as_u64())
+        .map(Duration::from_secs)
+        .unwrap_or(anima_acp::DEFAULT_PROMPT_TIMEOUT)
+        .min(ACP_PROMPT_DEADLINE)
+}
+
+/// Per-call check for mutating-verb opt-ins in `config.json`.
 ///
 /// Reads the file on every call so a live disable takes effect immediately.
-/// The gate requires both:
-/// - `allowActions` is literal JSON `true` (missing file, missing key,
-///   wrong type, invalid JSON all fail closed), and
-/// - the bound hostname is loopback (`is_loopback_hostname`).
-///
-/// This means upgrading a healed config to a LAN/non-loopback hostname
-/// does NOT keep mutating verbs enabled — the operator must re-enable
-/// after moving back to loopback, or the gate stays closed. The error
-/// text names the flag and path, never the config contents or auth token.
+/// Requires literal JSON `true` for `allowActions`; missing file/key, wrong
+/// type, and invalid JSON all fail closed. Loopback binds need no second
+/// flag. Non-loopback binds (LAN/VPN/tailnet) additionally require literal
+/// JSON `true` for `allowRemoteActions`: a remote client is trusted for
+/// mutating verbs only when a local operator has explicitly opted in on that
+/// bind. Authentication is separate — the shared `authToken` still gates the
+/// connection — and this flag alone does not authorize internet exposure
+/// (see `docs/decision-remote-client-trust.md`). Error text names flags and
+/// the config path, never credentials.
 fn require_actions(config_path: &Path, hostname: &str) -> Result<(), String> {
-    let enabled = fs::read_to_string(config_path)
+    let value = fs::read_to_string(config_path)
         .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|value| value.get("allowActions")?.as_bool())
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+    let enabled = value
+        .as_ref()
+        .and_then(|v| v.get("allowActions"))
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     if !enabled {
         return Err(format!(
@@ -97,10 +159,17 @@ fn require_actions(config_path: &Path, hostname: &str) -> Result<(), String> {
         ));
     }
     if !is_loopback_hostname(hostname) {
-        return Err(format!(
-            "{ACTIONS_DISABLED_PREFIX}: gateway actions require a loopback hostname (bound: {})",
-            hostname
-        ));
+        let remote_enabled = value
+            .as_ref()
+            .and_then(|v| v.get("allowRemoteActions"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if !remote_enabled {
+            return Err(format!(
+                "{ACTIONS_DISABLED_PREFIX}: gateway actions require \"allowRemoteActions\": true for a non-loopback hostname in {}",
+                config_path.display()
+            ));
+        }
     }
     Ok(())
 }
@@ -288,6 +357,10 @@ impl Gateway {
         // 2. Load/heal the persisted config, then bind.
         match load_or_heal(&gateway.config_path) {
             Ok(config) => {
+                if let Err(err) = validate_hostname(&config.hostname) {
+                    gateway.set_error(format!("config load/heal failed: {err}"));
+                    return gateway;
+                }
                 gateway.bind_once(&config);
                 let inner = gateway.inner.lock().unwrap_or_else(|e| e.into_inner());
                 if inner.bound {
@@ -360,7 +433,15 @@ impl Gateway {
         };
         if do_retry {
             match load_or_heal(&self.config_path) {
-                Ok(config) => self.bind_once(&config),
+                Ok(config) => {
+                    if let Err(err) = validate_hostname(&config.hostname) {
+                        // Consume the cooldown like any other failed attempt so
+                        // the poll loop does not hammer the config file.
+                        self.set_error(format!("config load/heal failed: {err}"));
+                    } else {
+                        self.bind_once(&config);
+                    }
+                }
                 Err(err) => {
                     // Failure must also consume the cooldown, otherwise the
                     // poll loop hammers the config file at ~50 reads/s.
@@ -411,6 +492,14 @@ impl Gateway {
             if !h.is_empty() {
                 hostname = h.to_string();
             }
+        }
+
+        // Reject wildcard binds before persisting: a wildcard is not a DNS
+        // name and would force TLS with a cert that covers no dialable address.
+        if let Err(err) = validate_hostname(&hostname) {
+            let message = format!("invalid gateway hostname: {err}");
+            inner.last_error = Some(message.clone());
+            return serde_json::json!({ "ok": false, "error": message }).to_string();
         }
 
         let auth_token = match patch.auth_token.as_deref() {
@@ -541,17 +630,24 @@ impl Gateway {
             fs::create_dir_all(parent)?;
         }
         let tmp = path.with_extension("json.tmp");
-        // D-Bus config rewrites must preserve the live `allowActions` opt-in:
+        // D-Bus config rewrites must preserve the live action opt-ins:
         // `apply`/`regenerate_token` pass `allow_actions: None`, so carry the
-        // current file's value forward (fail-closed if the file is gone).
+        // current file's values forward (fail-closed if the file is gone).
+        // `allowRemoteActions` is outside ChannelConfig (it is a gateway-side
+        // trust flag), so it is carried here too; otherwise a token rotation
+        // would silently revoke remote actions.
         let mut value = serde_json::to_value(config)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         if config.allow_actions.is_none() {
             let previous = fs::read_to_string(path)
                 .ok()
                 .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
-            if let Some(allow) = previous.and_then(|p| p.get("allowActions").cloned()) {
-                value["allowActions"] = allow;
+            if let Some(previous) = previous {
+                for key in ["allowActions", "allowRemoteActions"] {
+                    if let Some(flag) = previous.get(key).cloned() {
+                        value[key] = flag;
+                    }
+                }
             }
         }
         let json = serde_json::to_string_pretty(&value)
@@ -603,12 +699,15 @@ impl Gateway {
         }
 
         // Wrap a mutating/executing handler in a strict, live `allowActions`
-        // + loopback-hostname check. The verb stays registered so clients get
-        // a typed `rpc_actions_disabled` reply instead of `rpc_unknown_method`.
-        // `hostname` is the effective bind hostname captured at bind time.
-        fn gated<F>(config_path: &Path, hostname: &str, f: F) -> Box<
-            dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync,
-        >
+        // check (plus `allowRemoteActions` on a non-loopback bind). The verb
+        // stays registered so clients get a typed `rpc_actions_disabled` reply
+        // instead of `rpc_unknown_method`. `hostname` is the effective bind
+        // hostname captured at bind time.
+        fn gated<F>(
+            config_path: &Path,
+            hostname: &str,
+            f: F,
+        ) -> Box<dyn Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String> + Send + Sync>
         where
             F: Fn(&str, &serde_json::Value) -> Result<serde_json::Value, String>
                 + Send
@@ -624,7 +723,8 @@ impl Gateway {
         }
 
         // NOTICE: mutating and process-spawning verbs are gated on the strict
-        // `allowActions: true` opt-in in `config.json` (fail-closed per call).
+        // `allowActions: true` opt-in in `config.json` (fail-closed per call),
+        // plus `allowRemoteActions: true` when bound beyond loopback.
         // This covers thin-client user-data writes and the MCP/ACP execution
         // surfaces. Read-only verbs stay ungated; gateway control verbs stay
         // on D-Bus only.
@@ -665,26 +765,34 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "providers.save".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let id = core.providers_save(value).map_err(|e| e.to_string())?;
-                    // Secret-free: the apiKey is written through ProviderRepo
-                    // but never echoed back on the wire.
-                    Ok(serde_json::json!({ "ok": true, "id": id }))
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let id = core.providers_save(value).map_err(|e| e.to_string())?;
+                        // Secret-free: the apiKey is written through ProviderRepo
+                        // but never echoed back on the wire.
+                        Ok(serde_json::json!({ "ok": true, "id": id }))
+                    },
+                ),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "providers.delete".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    if id.is_empty() {
-                        return Err("missing id".to_string());
-                    }
-                    let deleted = core.providers_delete(id).map_err(|e| e.to_string())?;
-                    Ok(serde_json::json!({ "ok": true, "deleted": deleted }))
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        if id.is_empty() {
+                            return Err("missing id".to_string());
+                        }
+                        let deleted = core.providers_delete(id).map_err(|e| e.to_string())?;
+                        Ok(serde_json::json!({ "ok": true, "deleted": deleted }))
+                    },
+                ),
             );
         }
         {
@@ -705,18 +813,22 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "settings.set".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let section = value
-                        .get("section")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| "missing section".to_string())?;
-                    let settings = value
-                        .get("settings")
-                        .cloned()
-                        .ok_or_else(|| "missing settings".to_string())?;
-                    let reply = core.settings_set(section, settings)?;
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let section = value
+                            .get("section")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "missing section".to_string())?;
+                        let settings = value
+                            .get("settings")
+                            .cloned()
+                            .ok_or_else(|| "missing settings".to_string())?;
+                        let reply = core.settings_set(section, settings)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -734,161 +846,189 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.send".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let req: anima_channel::wire::ChatSendRequest =
-                        serde_json::from_value(value.clone())
-                            .map_err(|e| e.to_string())?;
-                    if req.content.is_empty() {
-                        return Err("empty content".to_string());
-                    }
-                    let session_id = if req.session_id.is_empty() {
-                        anima_channel::uuid::uuid_v4()
-                    } else {
-                        req.session_id.clone()
-                    };
-                    let content = req.content.clone();
-                    let svc = core.chat_service();
-                    let Some(svc) = svc else {
-                        return Err("core unavailable".to_string());
-                    };
-                    // Create the session row (no user-turn insert) so
-                    // `send_message(Some(&sid), …)` honours that exact id.
-                    // Previously the user turn was inserted here with a
-                    // *different* session id while the generator ran with
-                    // `None`, splitting the ack from the stream and making
-                    // `chat.cancel` flag a session with no generation.
-                    // `send_message` writes the single user turn itself.
-                    core.ensure_chat_session(&session_id)?;
-                    // A fresh flag per turn: a stale cancel from an earlier
-                    // turn in this session must not cancel this one.
-                    let cancel_flag = core.chat_cancel_flag(&session_id);
-                    let pub_clone = publisher.clone();
-                    let err_pub = publisher.clone();
-                    let sid = session_id.clone();
-                    let content_clone = content.clone();
-                    let assistant_message_id = anima_channel::uuid::uuid_v4();
-                    let assistant_message_id_for_reply = assistant_message_id.clone();
-                    let rows = core.provider_rows().unwrap_or_default();
-                    let core_for_send = core.clone();
-                    std::thread::spawn(move || {
-                        let rt = match tokio::runtime::Runtime::new() {
-                            Ok(r) => r,
-                            Err(_) => return,
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::ChatSendRequest =
+                            serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+                        if req.content.is_empty() {
+                            return Err("empty content".to_string());
+                        }
+                        let session_id = if req.session_id.is_empty() {
+                            anima_channel::uuid::uuid_v4()
+                        } else {
+                            req.session_id.clone()
                         };
-                        rt.block_on(async move {
-                            let resolution = anima_core::providers::resolve_provider(
-                                |k| std::env::var(k).ok(),
-                                &rows,
-                            );
-                            let Some(resolution) = resolution else {
-                                // No provider configured: do not silently drop
-                                // the user's turn. Persist it so a reload can
-                                // show it, then end the stream honestly.
-                                let _ = core_for_send.chat_send(&sid, &content_clone);
-                                let _ = pub_clone.token_delta(
-                                    sid.clone(),
-                                    String::new(),
-                                    String::new(),
-                                    0,
-                                    true,
-                                    None,
+                        let content = req.content.clone();
+                        let gen_ui = req.gen_ui;
+                        let svc = core.chat_service();
+                        let Some(svc) = svc else {
+                            return Err("core unavailable".to_string());
+                        };
+                        // Create the session row (no user-turn insert) so
+                        // `send_message(Some(&sid), …)` honours that exact id.
+                        // Previously the user turn was inserted here with a
+                        // *different* session id while the generator ran with
+                        // `None`, splitting the ack from the stream and making
+                        // `chat.cancel` flag a session with no generation.
+                        // `send_message` writes the single user turn itself.
+                        core.ensure_chat_session(&session_id)?;
+                        // One flag per turn, registered before the background
+                        // turn starts. A cancel arriving right after the ack
+                        // flags the exact Arc the generation will poll.
+                        let cancel_flag =
+                            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                        svc.register_cancel(&session_id, &cancel_flag);
+                        let pub_clone = publisher.clone();
+                        let err_pub = publisher.clone();
+                        let sid = session_id.clone();
+                        let content_clone = content.clone();
+                        let assistant_message_id = anima_channel::uuid::uuid_v4();
+                        let assistant_message_id_for_reply = assistant_message_id.clone();
+                        let rows = core.provider_rows().unwrap_or_default();
+                        let core_for_send = core.clone();
+                        std::thread::spawn(move || {
+                            // One process-wide Tokio runtime for every chat
+                            // turn: `Runtime::new()` per turn built (and tore
+                            // down) a whole multi-thread reactor per message.
+                            chat_runtime().block_on(async move {
+                                let resolution = anima_core::providers::resolve_provider(
+                                    |k| std::env::var(k).ok(),
+                                    &rows,
                                 );
-                                return;
-                            };
-                            let mut rx = svc.subscribe();
-                            let pump_sid = sid.clone();
-                            let pump = tokio::spawn(async move {
-                                // Real zero-based token index per assistant
-                                // message (wire: `token.delta.index`). A `0`
-                                // on every delta makes clients de-duplicate or
-                                // overwrite earlier tokens of the same turn.
-                                let mut indices: std::collections::HashMap<String, u64> =
-                                    std::collections::HashMap::new();
-                                while let Some(ev) = recv_chat_event(&mut rx).await {
-                                    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                                        break;
-                                    }
-                                    // The bus is shared by every in-flight turn;
-                                    // never relay another session's tokens.
-                                    if chat_event_session(&ev) != pump_sid.as_str() {
-                                        continue;
-                                    }
-                                    match ev {
-                                        anima_core::chat::ChatEvent::Delta {
-                                            session,
-                                            message,
-                                            delta,
-                                        } => {
-                                            let slot = indices.entry(message.clone()).or_insert(0);
-                                            let index = *slot;
-                                            *slot += 1;
-                                            pub_clone.token_delta(
-                                                session, message, delta, index, false, None,
-                                            );
-                                        }
-                                        anima_core::chat::ChatEvent::MessageDone {
-                                            session,
-                                            message,
-                                        } => {
-                                            // The terminal marker follows the
-                                            // last token; carry its next index.
-                                            let index = indices.remove(&message).unwrap_or(0);
-                                            pub_clone.token_delta(
-                                                session,
-                                                message,
-                                                String::new(),
-                                                index,
-                                                true,
-                                                None,
-                                            );
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            });
-                            let result = svc
-                                .send_message_with_assistant_id(
-                                    Some(&sid),
-                                    &resolution.id,
-                                    resolution.config,
-                                    &resolution.model,
-                                    &content_clone,
-                                    Some(&assistant_message_id),
-                                )
-                                .await;
-                            pump.abort();
-                            match result {
-                                Ok(_) => {}
-                                Err(err) => {
-                                    let _ = err;
-                                    let _ = err_pub.token_delta(
+                                let Some(resolution) = resolution else {
+                                    // No provider configured: do not silently drop
+                                    // the user's turn. Persist it so a reload can
+                                    // show it, then end the stream honestly.
+                                    // The terminal marker carries the real
+                                    // assistant message id from the ack: an empty
+                                    // id makes clients key the bubble on a
+                                    // stream-active flag instead of the turn.
+                                    let _ = core_for_send.chat_send(&sid, &content_clone);
+                                    let _ = pub_clone.token_delta(
                                         sid.clone(),
-                                        String::new(),
+                                        assistant_message_id.clone(),
                                         String::new(),
                                         0,
                                         true,
                                         None,
                                     );
+                                    return;
+                                };
+                                let mut rx = svc.subscribe();
+                                let pump_sid = sid.clone();
+                                let pump_cancel = cancel_flag.clone();
+                                let pump = tokio::spawn(async move {
+                                    // Real zero-based token index per assistant
+                                    // message (wire: `token.delta.index`). A `0`
+                                    // on every delta makes clients de-duplicate or
+                                    // overwrite earlier tokens of the same turn.
+                                    let mut indices: std::collections::HashMap<String, u64> =
+                                        std::collections::HashMap::new();
+                                    while let Some(ev) = recv_chat_event(&mut rx).await {
+                                        if pump_cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                                            break;
+                                        }
+                                        // The bus is shared by every in-flight turn;
+                                        // never relay another session's tokens.
+                                        if chat_event_session(&ev) != pump_sid.as_str() {
+                                            continue;
+                                        }
+                                        match ev {
+                                            anima_core::chat::ChatEvent::Delta {
+                                                session,
+                                                message,
+                                                delta,
+                                            } => {
+                                                let slot =
+                                                    indices.entry(message.clone()).or_insert(0);
+                                                let index = *slot;
+                                                *slot += 1;
+                                                pub_clone.token_delta(
+                                                    session, message, delta, index, false, None,
+                                                );
+                                            }
+                                            anima_core::chat::ChatEvent::MessageDone {
+                                                session,
+                                                message,
+                                            } => {
+                                                // The terminal marker follows the
+                                                // last token; carry its next index.
+                                                let index = indices.remove(&message).unwrap_or(0);
+                                                pub_clone.token_delta(
+                                                    session,
+                                                    message,
+                                                    String::new(),
+                                                    index,
+                                                    true,
+                                                    None,
+                                                );
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                });
+                                let result = if gen_ui {
+                                    svc.send_message_with_a2ui(
+                                        Some(&sid),
+                                        &resolution.id,
+                                        resolution.config,
+                                        &resolution.model,
+                                        &content_clone,
+                                        Some(&assistant_message_id),
+                                        cancel_flag,
+                                    )
+                                    .await
+                                } else {
+                                    svc.send_message_with_assistant_id(
+                                        Some(&sid),
+                                        &resolution.id,
+                                        resolution.config,
+                                        &resolution.model,
+                                        &content_clone,
+                                        Some(&assistant_message_id),
+                                        cancel_flag,
+                                    )
+                                    .await
+                                };
+                                pump.abort();
+                                match result {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        // Same honest terminal marker as the
+                                        // no-provider path: real assistant id,
+                                        // never an empty message_id.
+                                        let _ = err;
+                                        let _ = err_pub.token_delta(
+                                            sid.clone(),
+                                            assistant_message_id.clone(),
+                                            String::new(),
+                                            0,
+                                            true,
+                                            None,
+                                        );
+                                    }
                                 }
-                            }
-                            // Disconnect behavior: this handler returns the chat.send ack before the
-                            // stream completes, and the pump runs in a background thread that is not
-                            // tied to the WebSocket connection lifetime. If a client disconnects
-                            // mid-stream, deltas continue to be published on the event bus; with no
-                            // subscriber they are dropped by the bus, and the persisted user turn
-                            // remains honest. The supported way to stop an in-flight turn is
-                            // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
-                            // stops the generation; late events do not resurrect a cancelled turn.
-                            let _ = sid;
+                                // Disconnect behavior: this handler returns the chat.send ack before the
+                                // stream completes, and the pump runs in a background thread that is not
+                                // tied to the WebSocket connection lifetime. If a client disconnects
+                                // mid-stream, deltas continue to be published on the event bus; with no
+                                // subscriber they are dropped by the bus, and the persisted user turn
+                                // remains honest. The supported way to stop an in-flight turn is
+                                // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
+                                // stops the generation; late events do not resurrect a cancelled turn.
+                                let _ = sid;
+                            });
                         });
-                    });
-                    let reply = anima_channel::wire::ChatSendReply {
-                        session_id: session_id.clone(),
-                        message_id: assistant_message_id_for_reply,
-                        accepted: true,
-                    };
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                }),
+                        let reply = anima_channel::wire::ChatSendReply {
+                            session_id: session_id.clone(),
+                            message_id: assistant_message_id_for_reply,
+                            accepted: true,
+                        };
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -896,26 +1036,30 @@ impl Gateway {
             let publisher = publisher.clone();
             m.insert(
                 "chat.cancel".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let session_id = value
-                        .get("session_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let cancelled = core.chat_cancel(&session_id);
-                    if cancelled {
-                        publisher.token_delta(
-                            session_id.clone(),
-                            String::new(),
-                            String::new(),
-                            0,
-                            true,
-                            None,
-                        );
-                    }
-                    let reply = anima_channel::wire::ChatCancelReply { cancelled };
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let session_id = value
+                            .get("session_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let cancelled = core.chat_cancel(&session_id);
+                        if cancelled {
+                            publisher.token_delta(
+                                session_id.clone(),
+                                String::new(),
+                                String::new(),
+                                0,
+                                true,
+                                None,
+                            );
+                        }
+                        let reply = anima_channel::wire::ChatCancelReply { cancelled };
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -966,43 +1110,51 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "stmm.rebuild".to_string(),
-                gated(config_path, hostname, move |_method: &str, _value: &serde_json::Value| {
-                    // `summarize_day` needs a day key, session bucket, and a
-                    // provider/model, none of which this verb carries, so
-                    // 'rebuild' is scoped to pruning stale blocks here.
-                    let pruned = core
-                        .stmm_service()
-                        .and_then(|svc| svc.prune().ok())
-                        .unwrap_or(0);
-                    Ok(serde_json::json!({ "ok": true, "pruned": pruned }))
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, _value: &serde_json::Value| {
+                        // `summarize_day` needs a day key, session bucket, and a
+                        // provider/model, none of which this verb carries, so
+                        // 'rebuild' is scoped to pruning stale blocks here.
+                        let pruned = core
+                            .stmm_service()
+                            .and_then(|svc| svc.prune().ok())
+                            .unwrap_or(0);
+                        Ok(serde_json::json!({ "ok": true, "pruned": pruned }))
+                    },
+                ),
             );
         }
         {
             let core = core.clone();
             m.insert(
                 "journal.append".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let content = value
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    if content.is_empty() {
-                        return Err("empty content".to_string());
-                    }
-                    let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("note");
-                    let svc = core
-                        .journal_service()
-                        .ok_or_else(|| "core unavailable".to_string())?;
-                    let id = match kind {
-                        "milestone" => svc.append_milestone(&content),
-                        "dream" => svc.append_dream_gate_outcome(&content),
-                        _ => svc.append_note(&content),
-                    }
-                    .map_err(|e| e.to_string())?;
-                    Ok(serde_json::json!({ "id": id }))
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let content = value
+                            .get("content")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if content.is_empty() {
+                            return Err("empty content".to_string());
+                        }
+                        let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("note");
+                        let svc = core
+                            .journal_service()
+                            .ok_or_else(|| "core unavailable".to_string())?;
+                        let id = match kind {
+                            "milestone" => svc.append_milestone(&content),
+                            "dream" => svc.append_dream_gate_outcome(&content),
+                            _ => svc.append_note(&content),
+                        }
+                        .map_err(|e| e.to_string())?;
+                        Ok(serde_json::json!({ "id": id }))
+                    },
+                ),
             );
         }
         {
@@ -1017,23 +1169,82 @@ impl Gateway {
                         .to_string();
                     let limit = rpc_limit(value, 50);
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
-                    let repo = anima_store::JournalRepo::new(db);
                     // Scan the whole journal, not just the newest 1000 rows —
                     // otherwise old matches silently disappear. The store has
-                    // no query-pushdown method yet, so this is a bounded scan
-                    // sized by the real row count, never by the client's limit.
-                    let total = repo.count().map_err(|e| e.to_string())? as usize;
-                    let scan = total.min(JOURNAL_SEARCH_SCAN_CAP);
-                    let entries = repo.list_recent(scan).map_err(|e| e.to_string())?;
+                    // no query-pushdown method yet, so the scan is bounded
+                    // here: by row count and by the total `content` bytes
+                    // pulled into memory. `list_recent` would also deserialize
+                    // every `embedding` blob (potentially the largest column
+                    // by far) just to be dropped, so the content-only columns
+                    // are read directly through the same connection.
+                    let scan_cap = i64::try_from(JOURNAL_SEARCH_SCAN_CAP).unwrap_or(i64::MAX);
+                    // One connection borrow for both statements: the count
+                    // and the page must see the same snapshot.
+                    let (entries, truncated) = db
+                        .with_connection(|conn| {
+                            let total: i64 = conn
+                                .query_row("select count(*) from journal_entries", [], |row| {
+                                    row.get(0)
+                                })?;
+                            let truncated =
+                                total > i64::try_from(JOURNAL_SEARCH_SCAN_CAP).unwrap_or(i64::MAX);
+                            let mut stmt = conn.prepare(
+                                "select id, kind, content, created_at, updated_at \
+                                 from journal_entries \
+                                 order by created_at desc, rowid desc \
+                                 limit ?1",
+                            )?;
+                            let rows = stmt.query_map([scan_cap], |row| {
+                                Ok((
+                                    row.get::<_, String>(0)?,
+                                    row.get::<_, String>(1)?,
+                                    row.get::<_, String>(2)?,
+                                    row.get::<_, i64>(3)?,
+                                    row.get::<_, i64>(4)?,
+                                ))
+                            })?;
+                            let mut out = Vec::new();
+                            let mut scanned_bytes = 0u64;
+                            for row in rows {
+                                let (id, kind, content, created_at, updated_at) = row?;
+                                scanned_bytes = scanned_bytes.saturating_add(
+                                    u64::try_from(content.len()).unwrap_or(u64::MAX),
+                                );
+                                if scanned_bytes > JOURNAL_SEARCH_MAX_SCAN_BYTES {
+                                    // Byte cap reached: stop pulling rows and
+                                    // report the result as truncated.
+                                    return Ok((out, true));
+                                }
+                                // Field names match the previous
+                                // `StoredJournalEntry` serialization so
+                                // existing clients keep reading timestamps;
+                                // only `embedding` is gone, by design.
+                                out.push(serde_json::json!({
+                                    "id": id,
+                                    "kind": kind,
+                                    "content": content,
+                                    "created_at": created_at,
+                                    "updated_at": updated_at,
+                                }));
+                            }
+                            Ok((out, truncated))
+                        })
+                        .map_err(|e| e.to_string())?;
                     let q = query.to_lowercase();
                     let filtered: Vec<_> = entries
                         .into_iter()
-                        .filter(|e| q.is_empty() || e.content.to_lowercase().contains(&q))
+                        .filter(|e| {
+                            q.is_empty()
+                                || e.get("content")
+                                    .and_then(|v| v.as_str())
+                                    .map(|c| c.to_lowercase().contains(&q))
+                                    .unwrap_or(false)
+                        })
                         .take(limit)
                         .collect();
                     Ok(serde_json::json!({
                         "entries": filtered,
-                        "truncated": total > JOURNAL_SEARCH_SCAN_CAP,
+                        "truncated": truncated,
                     }))
                 }),
             );
@@ -1092,17 +1303,21 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "cards.metadata.set".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    // Decode the wire DTO at the RPC boundary. The core setter
-                    // consumes the typed DTO, so a flag of the wrong type is a
-                    // boundary failure instead of a per-field `as_bool` that
-                    // cannot tell a missing key from a misspelled one.
-                    let req: anima_channel::wire::CardMetadataSetRequest =
-                        serde_json::from_value(value.clone())
-                            .map_err(|_| "invalid request".to_string())?;
-                    let reply = core.card_metadata_set(&req)?;
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        // Decode the wire DTO at the RPC boundary. The core setter
+                        // consumes the typed DTO, so a flag of the wrong type is a
+                        // boundary failure instead of a per-field `as_bool` that
+                        // cannot tell a missing key from a misspelled one.
+                        let req: anima_channel::wire::CardMetadataSetRequest =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
+                        let reply = core.card_metadata_set(&req)?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -1117,11 +1332,19 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "sessions.list".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
+                handler(move |_method: &str, value: &serde_json::Value| {
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                    // `SessionRepo::list()` is unbounded; page it here so one
+                    // RPC cannot materialize the whole sessions table.
+                    let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
                     let repo = anima_store::SessionRepo::new(db);
-                    let sessions = repo.list().map_err(|e| e.to_string())?;
-                    Ok(serde_json::json!({ "sessions": sessions }))
+                    let listed = repo.list().map_err(|e| e.to_string())?;
+                    let truncated = listed.len() > limit;
+                    let sessions: Vec<_> = listed.into_iter().take(limit).collect();
+                    Ok(serde_json::json!({
+                        "sessions": sessions,
+                        "truncated": truncated,
+                    }))
                 }),
             );
         }
@@ -1146,16 +1369,20 @@ impl Gateway {
             let core = core.clone();
             m.insert(
                 "sessions.import".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let jsonl = value
-                        .get("jsonl")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| "missing jsonl".to_string())?;
-                    let reply = core
-                        .session_import_jsonl(jsonl)
-                        .map_err(|e| e.to_string())?;
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
-                }),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let jsonl = value
+                            .get("jsonl")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| "missing jsonl".to_string())?;
+                        let reply = core
+                            .session_import_jsonl(jsonl)
+                            .map_err(|e| e.to_string())?;
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -1170,158 +1397,122 @@ impl Gateway {
         {
             m.insert(
                 "mcp.list_servers".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let base_url = value
-                        .get("base_url")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(anima_mcp::DEFAULT_REGISTRY_BASE_URL);
-                    let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                    let limit = rpc_limit(value, 50);
-                    let entries = anima_mcp::list_registry_servers(base_url, query, limit)
-                        .map_err(|e| e.to_string())?;
-                    let servers: Vec<serde_json::Value> = entries
-                        .into_iter()
-                        .map(|e| {
-                            serde_json::json!({
-                                "name": e.name,
-                                "description": e.description,
-                                "url": e.url,
-                                "version": e.version,
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let base_url = value
+                            .get("base_url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(anima_mcp::DEFAULT_REGISTRY_BASE_URL);
+                        let query = value.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                        let limit = rpc_limit(value, 50);
+                        let entries = anima_mcp::list_registry_servers(base_url, query, limit)
+                            .map_err(|e| e.to_string())?;
+                        let servers: Vec<serde_json::Value> = entries
+                            .into_iter()
+                            .map(|e| {
+                                serde_json::json!({
+                                    "name": e.name,
+                                    "description": e.description,
+                                    "url": e.url,
+                                    "version": e.version,
+                                })
                             })
-                        })
-                        .collect();
-                    Ok(serde_json::json!({ "servers": servers }))
-                }),
+                            .collect();
+                        Ok(serde_json::json!({ "servers": servers }))
+                    },
+                ),
             );
         }
         {
             m.insert(
                 "mcp.tools_list".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let value = value.clone();
+                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                            let value = &value;
+                            let transport = value
+                                .get("transport")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("stdio");
+                            let mut client = build_mcp_client(value, transport)?;
+                            client.set_timeout(rpc_deadline(value));
+                            client.initialize()?;
+                            let tools = client.tools_list()?;
+                            let tools: Vec<serde_json::Value> = tools
+                                .into_iter()
+                                .map(|t| {
+                                    serde_json::json!({
+                                        "name": t.name,
+                                        "description": t.description,
+                                        "inputSchema": t.input_schema,
+                                    })
+                                })
+                                .collect();
+                            client.close();
+                            Ok(serde_json::json!({ "tools": tools }))
+                        })
+                    },
+                ),
+            );
+        }
+        // `mcp.call_tool` is the historical spelling of the same operation;
+        // both names run the one implementation below instead of two copies
+        // that can drift apart.
+        for method in ["mcp.tools_call", "mcp.call_tool"] {
+            m.insert(
+                method.to_string(),
                 gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let transport = value
-                        .get("transport")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("stdio");
-                    let mut client = build_mcp_client(value, transport)?;
-                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
-                        client.set_timeout(std::time::Duration::from_secs(t));
-                    }
-                    client.initialize()?;
-                    let tools = client.tools_list()?;
-                    let tools: Vec<serde_json::Value> = tools
-                        .into_iter()
-                        .map(|t| {
-                            serde_json::json!({
-                                "name": t.name,
-                                "description": t.description,
-                                "inputSchema": t.input_schema,
+                    let value = value.clone();
+                    with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                        let value = &value;
+                        let transport = value
+                            .get("transport")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("stdio");
+                        let tool_name = value
+                            .get("tool")
+                            .or_else(|| value.get("name"))
+                            .or_else(|| value.get("tool_name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if tool_name.is_empty() {
+                            return Err("missing tool name (tool/name/tool_name)".to_string());
+                        }
+                        let arguments = value
+                            .get("arguments")
+                            .or_else(|| value.get("args"))
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        let mut client = build_mcp_client(value, transport)?;
+                        client.set_timeout(rpc_deadline(value));
+                        client.initialize()?;
+                        let result = client.tools_call(tool_name, arguments)?;
+                        let text = result.text();
+                        let content: Vec<serde_json::Value> = result
+                            .content
+                            .into_iter()
+                            .map(|c| match c {
+                                anima_mcp::McpToolContent::Text(t) => {
+                                    serde_json::json!({ "type": "text", "text": t })
+                                }
+                                anima_mcp::McpToolContent::Other { content_type, raw } => {
+                                    serde_json::json!({ "type": content_type, "raw": raw })
+                                }
                             })
-                        })
-                        .collect();
-                    client.close();
-                    Ok(serde_json::json!({ "tools": tools }))
-                }),
-            );
-        }
-        {
-            m.insert(
-                "mcp.tools_call".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let transport = value
-                        .get("transport")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("stdio");
-                    let tool_name = value
-                        .get("tool")
-                        .or_else(|| value.get("name"))
-                        .or_else(|| value.get("tool_name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if tool_name.is_empty() {
-                        return Err("missing tool name (tool/name/tool_name)".to_string());
-                    }
-                    let arguments = value
-                        .get("arguments")
-                        .or_else(|| value.get("args"))
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    let mut client = build_mcp_client(value, transport)?;
-                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
-                        client.set_timeout(std::time::Duration::from_secs(t));
-                    }
-                    client.initialize()?;
-                    let result = client.tools_call(tool_name, arguments)?;
-                    let text = result.text();
-                    let content: Vec<serde_json::Value> = result
-                        .content
-                        .into_iter()
-                        .map(|c| match c {
-                            anima_mcp::McpToolContent::Text(t) => {
-                                serde_json::json!({ "type": "text", "text": t })
-                            }
-                            anima_mcp::McpToolContent::Other { content_type, raw } => {
-                                serde_json::json!({ "type": content_type, "raw": raw })
-                            }
-                        })
-                        .collect();
-                    client.close();
-                    Ok(serde_json::json!({
-                        "text": text,
-                        "content": content,
-                        "structuredContent": result.structured_content.unwrap_or(serde_json::Value::Null),
-                        "isError": result.is_error,
-                    }))
-                }),
-            );
-        }
-        {
-            m.insert(
-                "mcp.call_tool".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let transport = value
-                        .get("transport")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("stdio");
-                    let tool_name = value
-                        .get("tool")
-                        .or_else(|| value.get("name"))
-                        .or_else(|| value.get("tool_name"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if tool_name.is_empty() {
-                        return Err("missing tool name (tool/name/tool_name)".to_string());
-                    }
-                    let arguments = value
-                        .get("arguments")
-                        .or_else(|| value.get("args"))
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    let mut client = build_mcp_client(value, transport)?;
-                    if let Some(t) = value.get("timeout").and_then(|v| v.as_u64()) {
-                        client.set_timeout(std::time::Duration::from_secs(t));
-                    }
-                    client.initialize()?;
-                    let result = client.tools_call(tool_name, arguments)?;
-                    let text = result.text();
-                    let content: Vec<serde_json::Value> = result
-                        .content
-                        .into_iter()
-                        .map(|c| match c {
-                            anima_mcp::McpToolContent::Text(t) => {
-                                serde_json::json!({ "type": "text", "text": t })
-                            }
-                            anima_mcp::McpToolContent::Other { content_type, raw } => {
-                                serde_json::json!({ "type": content_type, "raw": raw })
-                            }
-                        })
-                        .collect();
-                    client.close();
-                    Ok(serde_json::json!({
-                        "text": text,
-                        "content": content,
-                        "structuredContent": result.structured_content.unwrap_or(serde_json::Value::Null),
-                        "isError": result.is_error,
-                    }))
+                            .collect();
+                        client.close();
+                        Ok(serde_json::json!({
+                            "text": text,
+                            "content": content,
+                            "structuredContent": result.structured_content.unwrap_or(serde_json::Value::Null),
+                            "isError": result.is_error,
+                        }))
+                    })
                 }),
             );
         }
@@ -1329,139 +1520,169 @@ impl Gateway {
         {
             m.insert(
                 "acp.run".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                    if command.is_empty() {
-                        return Err("missing command".to_string());
-                    }
-                    let args: Vec<String> = value
-                        .get("args")
-                        .and_then(|v| v.as_array())
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(|v| v.as_str().map(str::to_string))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    let env = parse_env(value);
-                    let policy_str = value
-                        .get("permission_policy")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("auto-all");
-                    let policy = match policy_str {
-                        "auto-read" => anima_acp::PermissionPolicy::AutoRead,
-                        _ => anima_acp::PermissionPolicy::AutoAll,
-                    };
-                    let prompt_text = value
-                        .get("prompt")
-                        .or_else(|| value.get("text"))
-                        .or_else(|| value.get("content"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if prompt_text.is_empty() {
-                        return Err("missing prompt/text/content".to_string());
-                    }
-                    let cwd_path = value
-                        .get("cwd")
-                        .and_then(|v| v.as_str())
-                        .map(std::path::PathBuf::from);
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let value = value.clone();
+                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move || {
+                            let value = &value;
+                            let command =
+                                value.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                            if command.is_empty() {
+                                return Err("missing command".to_string());
+                            }
+                            let args: Vec<String> = value
+                                .get("args")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|v| v.as_str().map(str::to_string))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                            let env = parse_env(value);
+                            let policy_str = value
+                                .get("permission_policy")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("auto-all");
+                            let policy = match policy_str {
+                                "auto-read" => anima_acp::PermissionPolicy::AutoRead,
+                                _ => anima_acp::PermissionPolicy::AutoAll,
+                            };
+                            let prompt_text = value
+                                .get("prompt")
+                                .or_else(|| value.get("text"))
+                                .or_else(|| value.get("content"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if prompt_text.is_empty() {
+                                return Err("missing prompt/text/content".to_string());
+                            }
+                            let cwd_path = value
+                                .get("cwd")
+                                .and_then(|v| v.as_str())
+                                .map(std::path::PathBuf::from);
 
-                    let client =
-                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                            let client = anima_acp::AcpAgentClient::spawn(
+                                command,
+                                &args_refs,
+                                env.as_deref(),
+                            )
                             .map_err(|e| e.to_string())?;
-                    client.set_permission_policy(policy);
-                    let init = client.initialize().map_err(|e| e.to_string())?;
-                    let session_id = client
-                        .new_session(cwd_path.as_deref())
-                        .map_err(|e| e.to_string())?;
-                    let result = client
-                        .prompt(&session_id, prompt_text)
-                        .map_err(|e| e.to_string())?;
-                    client.close();
-                    let updates: Vec<serde_json::Value> = result
-                        .updates
-                        .iter()
-                        .map(|u| {
-                            serde_json::json!({
-                                "kind": u.update_kind(),
-                                "text": u.agent_text(),
-                            })
+                            let mut client = client;
+                            client.set_timeout(rpc_deadline(value));
+                            client.set_prompt_timeout(acp_prompt_deadline(value));
+                            client.set_permission_policy(policy);
+                            let init = client.initialize().map_err(|e| e.to_string())?;
+                            let session_id = client
+                                .new_session(cwd_path.as_deref())
+                                .map_err(|e| e.to_string())?;
+                            let result = client
+                                .prompt(&session_id, prompt_text)
+                                .map_err(|e| e.to_string())?;
+                            client.close();
+                            let updates: Vec<serde_json::Value> = result
+                                .updates
+                                .iter()
+                                .map(|u| {
+                                    serde_json::json!({
+                                        "kind": u.update_kind(),
+                                        "text": u.agent_text(),
+                                    })
+                                })
+                                .collect();
+                            Ok(serde_json::json!({
+                                "protocolVersion": init.protocol_version,
+                                "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
+                                "sessionId": result.session_id,
+                                "stopReason": result.stop_reason.as_str(),
+                                "finalText": result.final_text,
+                                "updateCount": result.updates.len(),
+                                "updates": updates,
+                            }))
                         })
-                        .collect();
-                    Ok(serde_json::json!({
-                        "protocolVersion": init.protocol_version,
-                        "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
-                        "sessionId": result.session_id,
-                        "stopReason": result.stop_reason.as_str(),
-                        "finalText": result.final_text,
-                        "updateCount": result.updates.len(),
-                        "updates": updates,
-                    }))
-                }),
+                    },
+                ),
             );
         }
         {
             m.insert(
                 "acp.prompt".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                    if command.is_empty() {
-                        return Err("missing command".to_string());
-                    }
-                    let args: Vec<String> = value
-                        .get("args")
-                        .and_then(|v| v.as_array())
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(|v| v.as_str().map(str::to_string))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    let env = parse_env(value);
-                    let policy = match value
-                        .get("permission_policy")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("auto-all")
-                    {
-                        "auto-read" => anima_acp::PermissionPolicy::AutoRead,
-                        _ => anima_acp::PermissionPolicy::AutoAll,
-                    };
-                    let prompt_text = value
-                        .get("prompt")
-                        .or_else(|| value.get("text"))
-                        .or_else(|| value.get("content"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if prompt_text.is_empty() {
-                        return Err("missing prompt/text/content".to_string());
-                    }
-                    let cwd_path = value
-                        .get("cwd")
-                        .and_then(|v| v.as_str())
-                        .map(std::path::PathBuf::from);
-                    let client =
-                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let value = value.clone();
+                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move || {
+                            let value = &value;
+                            let command =
+                                value.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                            if command.is_empty() {
+                                return Err("missing command".to_string());
+                            }
+                            let args: Vec<String> = value
+                                .get("args")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|v| v.as_str().map(str::to_string))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                            let env = parse_env(value);
+                            let policy = match value
+                                .get("permission_policy")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("auto-all")
+                            {
+                                "auto-read" => anima_acp::PermissionPolicy::AutoRead,
+                                _ => anima_acp::PermissionPolicy::AutoAll,
+                            };
+                            let prompt_text = value
+                                .get("prompt")
+                                .or_else(|| value.get("text"))
+                                .or_else(|| value.get("content"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if prompt_text.is_empty() {
+                                return Err("missing prompt/text/content".to_string());
+                            }
+                            let cwd_path = value
+                                .get("cwd")
+                                .and_then(|v| v.as_str())
+                                .map(std::path::PathBuf::from);
+                            let client = anima_acp::AcpAgentClient::spawn(
+                                command,
+                                &args_refs,
+                                env.as_deref(),
+                            )
                             .map_err(|e| e.to_string())?;
-                    client.set_permission_policy(policy);
-                    let init = client.initialize().map_err(|e| e.to_string())?;
-                    let session_id = client
-                        .new_session(cwd_path.as_deref())
-                        .map_err(|e| e.to_string())?;
-                    let result = client
-                        .prompt(&session_id, prompt_text)
-                        .map_err(|e| e.to_string())?;
-                    client.close();
-                    Ok(serde_json::json!({
-                        "protocolVersion": init.protocol_version,
-                        "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
-                        "sessionId": result.session_id,
-                        "stopReason": result.stop_reason.as_str(),
-                        "finalText": result.final_text,
-                        "updateCount": result.updates.len(),
-                    }))
-                }),
+                            let mut client = client;
+                            client.set_timeout(rpc_deadline(value));
+                            client.set_prompt_timeout(acp_prompt_deadline(value));
+                            client.set_permission_policy(policy);
+                            let init = client.initialize().map_err(|e| e.to_string())?;
+                            let session_id = client
+                                .new_session(cwd_path.as_deref())
+                                .map_err(|e| e.to_string())?;
+                            let result = client
+                                .prompt(&session_id, prompt_text)
+                                .map_err(|e| e.to_string())?;
+                            client.close();
+                            Ok(serde_json::json!({
+                                "protocolVersion": init.protocol_version,
+                                "agentName": init.agent_info.as_ref().map(|i| i.name.clone()),
+                                "sessionId": result.session_id,
+                                "stopReason": result.stop_reason.as_str(),
+                                "finalText": result.final_text,
+                                "updateCount": result.updates.len(),
+                            }))
+                        })
+                    },
+                ),
             );
         }
         {
@@ -1475,41 +1696,55 @@ impl Gateway {
         {
             m.insert(
                 "acp.list_sessions".to_string(),
-                gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
-                    let command = value.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                    if command.is_empty() {
-                        return Err("missing command".to_string());
-                    }
-                    let args: Vec<String> = value
-                        .get("args")
-                        .and_then(|v| v.as_array())
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(|v| v.as_str().map(str::to_string))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    let env = parse_env(value);
-                    let client =
-                        anima_acp::AcpAgentClient::spawn(command, &args_refs, env.as_deref())
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let value = value.clone();
+                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                            let value = &value;
+                            let command =
+                                value.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                            if command.is_empty() {
+                                return Err("missing command".to_string());
+                            }
+                            let args: Vec<String> = value
+                                .get("args")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|v| v.as_str().map(str::to_string))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                            let env = parse_env(value);
+                            let client = anima_acp::AcpAgentClient::spawn(
+                                command,
+                                &args_refs,
+                                env.as_deref(),
+                            )
                             .map_err(|e| e.to_string())?;
-                    client.initialize().map_err(|e| e.to_string())?;
-                    let sessions = client.list_sessions().map_err(|e| e.to_string())?;
-                    client.close();
-                    let sessions: Vec<serde_json::Value> = sessions
-                        .into_iter()
-                        .map(|s| {
-                            serde_json::json!({
-                                "sessionId": s.session_id,
-                                "cwd": s.cwd,
-                                "title": s.title,
-                                "updatedAt": s.updated_at,
-                            })
+                            let mut client = client;
+                            client.set_timeout(rpc_deadline(value));
+                            client.initialize().map_err(|e| e.to_string())?;
+                            let sessions = client.list_sessions().map_err(|e| e.to_string())?;
+                            client.close();
+                            let sessions: Vec<serde_json::Value> = sessions
+                                .into_iter()
+                                .map(|s| {
+                                    serde_json::json!({
+                                        "sessionId": s.session_id,
+                                        "cwd": s.cwd,
+                                        "title": s.title,
+                                        "updatedAt": s.updated_at,
+                                    })
+                                })
+                                .collect();
+                            Ok(serde_json::json!({ "sessions": sessions }))
                         })
-                        .collect();
-                    Ok(serde_json::json!({ "sessions": sessions }))
-                }),
+                    },
+                ),
             );
         }
         m
@@ -1629,6 +1864,25 @@ impl Gateway {
         }
         emit_presence(inner.bound);
     }
+}
+
+/// Reject wildcard bind hostnames (`0.0.0.0`, `::`).
+///
+/// A wildcard is not a DNS name: [`hostname_sans`] deliberately drops it from
+/// the certificate SAN list, so a wildcard bind would force TLS (non-loopback)
+/// with a certificate that covers none of the addresses a client actually
+/// dials. There is no legitimate use — the daemon already forces wss for any
+/// non-loopback hostname — so refuse it with a clear error at both config
+/// `apply` and config `load` instead of silently minting an unusable cert.
+fn validate_hostname(hostname: &str) -> Result<(), String> {
+    let trimmed = hostname.trim();
+    if trimmed == "0.0.0.0" || trimmed == "::" {
+        return Err(format!(
+            "hostname '{trimmed}' is a wildcard bind address and is not allowed; \
+             use a concrete loopback or LAN/tailnet hostname"
+        ));
+    }
+    Ok(())
 }
 
 fn hostname_sans(hostname: &str) -> Vec<String> {
@@ -1800,6 +2054,22 @@ fn parse_env(value: &serde_json::Value) -> Option<Vec<(String, String)>> {
     }
 }
 
+/// The process-wide Tokio runtime every background chat turn runs on.
+///
+/// A multi-thread runtime is a whole reactor (worker threads, I/O driver,
+/// timer wheel); building one per `chat.send` turn made every message pay
+/// for it twice (create + tear down). One lazily built runtime is shared by
+/// all turns; `block_on` is callable from many threads at once.
+fn chat_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("daemon chat runtime")
+    })
+}
+
 fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
     value
         .get("limit")
@@ -1948,8 +2218,22 @@ mod tests {
 
     /// Write `config.json` so the `allowActions` gate permits mutating verbs.
     fn enable_actions(gateway: &Gateway) {
+        enable_actions_with_remote(gateway, None);
+    }
+
+    /// Write `config.json` with a chosen `allowRemoteActions` value. `None`
+    /// omits the key entirely (the fail-closed default for non-loopback).
+    fn enable_actions_with_remote(gateway: &Gateway, remote: Option<serde_json::Value>) {
         let mut value = serde_json::to_value(ChannelConfig::healed()).unwrap();
         value["allowActions"] = serde_json::json!(true);
+        match remote {
+            Some(remote) => {
+                value["allowRemoteActions"] = remote;
+            }
+            None => {
+                value.as_object_mut().unwrap().remove("allowRemoteActions");
+            }
+        }
         fs::create_dir_all(gateway.config_path.parent().unwrap()).unwrap();
         fs::write(
             &gateway.config_path,
@@ -2121,6 +2405,80 @@ mod tests {
     }
 
     #[test]
+    fn chat_send_gen_ui_capability_routes_to_a2ui_only_when_requested() {
+        use std::sync::{mpsc, Arc};
+
+        struct RecordingMock {
+            systems: mpsc::Sender<Option<String>>,
+        }
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for RecordingMock {
+            fn id(&self) -> &str {
+                "gen-ui-capture"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                let _ = self.systems.send(req.system.clone());
+                Ok(Box::pin(futures_util::stream::iter(vec![Ok(
+                    anima_llm::ChatChunk::finish("stop"),
+                )])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let (tx, rx) = mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "gen-ui-capture".to_string(),
+            Arc::new(RecordingMock { systems: tx }),
+        );
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "gen-ui-capture".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        send(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "plain", "content": "plain" }),
+        )
+        .unwrap();
+        let plain_system = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            plain_system.is_none(),
+            "default chat.send must stay ungated"
+        );
+
+        // Only start the second generation after the provider has recorded the
+        // first; concurrent background turns can otherwise arrive in either
+        // order and make a fixed-index assertion flake.
+        send(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "widget", "content": "widget", "genUi": true }),
+        )
+        .unwrap();
+        let a2ui = rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .expect("genUi: true must opt into the A2UI system prompt");
+        assert!(a2ui.contains("v0.9"));
+        assert!(a2ui.contains("unique, stable, slug-like surfaceId"));
+    }
+
+    #[test]
     fn chat_send_without_provider_persists_user_turn() {
         let (gateway, _tmp) = isolated_gateway();
         let handlers = handlers(&gateway);
@@ -2231,7 +2589,10 @@ mod tests {
             &serde_json::json!({"session_id":"cancel-session"}),
         )
         .expect("ok");
-        assert_eq!(reply["cancelled"], true, "an accepted cancel must report cancelled=true");
+        assert_eq!(
+            reply["cancelled"], true,
+            "an accepted cancel must report cancelled=true"
+        );
     }
 
     #[test]
@@ -2252,26 +2613,83 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
+        // Enable TLS explicitly on a loopback host: deterministic across
+        // hosts (a concrete non-loopback IP is not always bindable).
         let reply = gateway.handle(&GatewayRequest::Apply(
-            r#"{"hostname": "0.0.0.0"}"#.to_string(),
+            r#"{"hostname": "127.0.0.1", "tlsConfig": {}}"#.to_string(),
         ));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
-        assert_eq!(v["hostname"], "0.0.0.0");
+        assert_eq!(v["hostname"], "127.0.0.1");
         assert_eq!(v["authToken"], before);
 
-        // Transport policy: non-loopback is wss-only, even with the flag unset.
         let after = get_json(&gateway);
-        assert_eq!(after["hostname"], "0.0.0.0");
+        assert_eq!(after["hostname"], "127.0.0.1");
         assert_eq!(after["tlsEnabled"], true);
         assert_eq!(after["bound"], true, "TLS must bind after minting certs");
 
-        // Back to loopback: plaintext by default again.
+        // Disable TLS: plaintext is restored on loopback.
         gateway.handle(&GatewayRequest::Apply(
-            r#"{"hostname": "127.0.0.1"}"#.to_string(),
+            r#"{"websocketTlsConfig": null}"#.to_string(),
         ));
         let after = get_json(&gateway);
         assert_eq!(after["tlsEnabled"], false);
         assert_eq!(after["bound"], true);
+    }
+
+    #[test]
+    fn apply_rejects_wildcard_hostname() {
+        let (gateway, _tmp) = fresh_gateway();
+        let before = get_json(&gateway);
+        let before_hostname = before["hostname"].as_str().unwrap().to_string();
+        for raw in [
+            r#"{"hostname": "0.0.0.0"}"#,
+            r#"{"hostname": "::"}"#,
+            r#"{"hostname": "  0.0.0.0  "}"#,
+        ] {
+            let reply = gateway.handle(&GatewayRequest::Apply(raw.to_string()));
+            let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(v["ok"], false, "wildcard {raw} must be rejected");
+            let err = v["error"].as_str().unwrap();
+            assert!(err.contains("wildcard"), "clear error expected, got {err}");
+        }
+        // The live config is unchanged: no wildcard was persisted or bound.
+        let after = get_json(&gateway);
+        assert_eq!(after["hostname"], before_hostname);
+        assert!(!after["lastError"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn load_rejects_wildcard_hostname_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("server-channel");
+        fs::create_dir_all(&dir).unwrap();
+        let gateway = test_gateway(dir.clone(), dir.join(CERTS_DIR));
+        // A persisted config with a wildcard hostname must not bind. The
+        // gateway starts unbound with a stale last_attempt (see test_gateway),
+        // so `maybe_retry` exercises the public load/heal path.
+        let mut config = ChannelConfig::healed();
+        config.hostname = "0.0.0.0".to_string();
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        fs::write(&gateway.config_path, json).unwrap();
+
+        gateway.maybe_retry();
+
+        let after = get_json(&gateway);
+        assert_eq!(after["bound"], false, "wildcard config must not bind");
+        let err = after["lastError"].as_str().unwrap();
+        assert!(err.contains("wildcard"), "clear load error expected, got {err}");
+    }
+
+    #[test]
+    fn validate_hostname_rejects_only_wildcards() {
+        assert!(validate_hostname("0.0.0.0").is_err());
+        assert!(validate_hostname("::").is_err());
+        assert!(validate_hostname("  0.0.0.0  ").is_err());
+        assert!(validate_hostname("127.0.0.1").is_ok());
+        assert!(validate_hostname("::1").is_ok());
+        assert!(validate_hostname("localhost").is_ok());
+        assert!(validate_hostname("host.tailnet.ts.net").is_ok());
+        assert!(validate_hostname("192.168.1.10").is_ok());
     }
 
     #[test]
@@ -2290,8 +2708,9 @@ mod tests {
         gateway.bind_once(&config);
         assert_eq!(get_json(&gateway)["bound"], true);
 
+        // Explicit tlsConfig forces a TLS rebind, which hits the cert blocker.
         let reply = gateway.handle(&GatewayRequest::Apply(
-            r#"{"hostname": "0.0.0.0"}"#.to_string(),
+            r#"{"tlsConfig": {}}"#.to_string(),
         ));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(v["ok"], false, "failed rebind must surface ok:false");
@@ -2713,17 +3132,30 @@ mod tests {
     }
 
     #[test]
+    fn mcp_acp_handler_enforces_server_deadline() {
+        let start = Instant::now();
+        let err = with_mcp_acp_deadline(Duration::from_millis(200), || {
+            std::thread::sleep(Duration::from_secs(60));
+            Ok(serde_json::json!({}))
+        })
+        .expect_err("handler must be bounded by the server deadline");
+        assert!(err.contains("server deadline"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
     fn apply_reply_reports_bound_tls_not_persisted_flag() {
         anima_channel::install_default_crypto_provider();
         let (gateway, _tmp) = fresh_gateway();
-        // Non-loopback forces TLS even though tlsConfig is unset: the reply
-        // must say `{}`, not `null`, or clients fall back to ws://.
-        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"hostname":"0.0.0.0"}"#.into()));
+        // TLS enabled: the reply must say `{}`, not `null`, or clients fall
+        // back to ws://. Use an explicit flag on loopback so the test is
+        // deterministic across hosts (no reliance on a bindable LAN IP).
+        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"tlsConfig":{}}"#.into()));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(v["websocketTlsConfig"], serde_json::json!({}));
         assert_eq!(get_json(&gateway)["tlsEnabled"], true);
-        // Back to loopback: plaintext is restored and reported as null.
-        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"hostname":"127.0.0.1"}"#.into()));
+        // Disable TLS: plaintext is restored and reported as null.
+        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"websocketTlsConfig":null}"#.into()));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert!(v["websocketTlsConfig"].is_null());
         assert_eq!(get_json(&gateway)["tlsEnabled"], false);
@@ -2982,6 +3414,179 @@ mod tests {
         assert_eq!(after.config["model"], "gpt-y");
     }
 
+    // Contract: a PATCH that names only a non-secret field must leave every
+    // unmentioned stored config entry alone, and must not disturb `enabled`
+    // when the payload omits it.
+    #[test]
+    fn providers_save_partial_update_preserves_unrelated_config_and_enabled() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let save = handlers.get("providers.save").unwrap();
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "partial",
+                "kind": "open-ai-compatible",
+                "model": "gpt-initial",
+                "baseUrl": "https://initial.test/v1",
+                "enabled": false,
+            }),
+        )
+        .unwrap();
+
+        let db = gateway.core.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        let mut seeded = repo.get("partial").unwrap().unwrap();
+        seeded.config["account_id"] = serde_json::json!("acct-7");
+        repo.upsert(&seeded).unwrap();
+
+        let reply = save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "partial",
+                "kind": "open-ai-compatible",
+                "model": "gpt-patched",
+            }),
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["id"], "partial");
+
+        let stored = repo.get("partial").unwrap().unwrap();
+        assert_eq!(stored.config["model"], "gpt-patched");
+        assert_eq!(stored.config["base_url"], "https://initial.test/v1");
+        assert_eq!(stored.config["account_id"], "acct-7");
+        assert!(
+            !stored.enabled,
+            "an omitted `enabled` must keep the stored flag, not default to true"
+        );
+
+        // The projection reports the same state on the wire.
+        let list = handlers.get("providers.list").unwrap();
+        let listed = list("providers.list", &serde_json::json!({})).unwrap();
+        let row = listed["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == "partial")
+            .expect("saved provider must be listed");
+        assert_eq!(row["model"], "gpt-patched");
+        assert_eq!(row["baseUrl"], "https://initial.test/v1");
+        assert_eq!(row["enabled"], false);
+    }
+
+    // Contract: the same PATCH+rotate sequence over one stored credential —
+    // a client-sent apiKey is inert without the opt-in, and replaces the
+    // stored secret only with literal `rotateSecrets: true`.
+    #[test]
+    fn providers_save_secret_rotation_contract() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let save = handlers.get("providers.save").unwrap();
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "creds",
+                "kind": "open-ai-compatible",
+                "model": "gpt-v1",
+                "apiKey": "STORED-KEY",
+            }),
+        )
+        .unwrap();
+
+        let db = gateway.core.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+
+        // No opt-in: the stored credential wins over the incoming one.
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "creds",
+                "kind": "open-ai-compatible",
+                "apiKey": "CLIENT-KEY",
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            repo.get("creds").unwrap().unwrap().config["api_key"],
+            "STORED-KEY"
+        );
+
+        // Explicit opt-in: the incoming credential replaces it, keeping the
+        // stored key spelling so no second secret field appears.
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "creds",
+                "kind": "open-ai-compatible",
+                "model": "gpt-v2",
+                "apiKey": "ROTATED-KEY",
+                "rotateSecrets": true,
+            }),
+        )
+        .unwrap();
+        let stored = repo.get("creds").unwrap().unwrap();
+        assert_eq!(stored.config["api_key"], "ROTATED-KEY");
+        assert_eq!(stored.config["model"], "gpt-v2");
+        assert!(
+            stored.config.get("apiKey").is_none(),
+            "rotation must not leave a camelCase duplicate"
+        );
+        assert!(!stored.config.to_string().contains("CLIENT-KEY"));
+
+        // Neither the stored nor the rotated credential reaches the wire.
+        let list = handlers.get("providers.list").unwrap();
+        let listed = list("providers.list", &serde_json::json!({})).unwrap();
+        let text = listed.to_string();
+        assert!(!text.contains("ROTATED-KEY"), "{text}");
+        assert!(!text.contains("STORED-KEY"), "{text}");
+    }
+
+    // Contract: delete reports whether a row was actually removed, and a
+    // second delete of the same id reports `false` instead of failing.
+    #[test]
+    fn providers_delete_reports_whether_a_row_was_removed() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let save = handlers.get("providers.save").unwrap();
+        save(
+            "providers.save",
+            &serde_json::json!({
+                "id": "gone",
+                "kind": "open-ai-compatible",
+                "model": "gpt-x",
+            }),
+        )
+        .unwrap();
+
+        let delete = handlers.get("providers.delete").unwrap();
+        let reply = delete("providers.delete", &serde_json::json!({ "id": "gone" })).unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["deleted"], true);
+
+        let db = gateway.core.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        assert!(repo.get("gone").unwrap().is_none(), "row must be gone");
+
+        let reply = delete("providers.delete", &serde_json::json!({ "id": "gone" })).unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(
+            reply["deleted"], false,
+            "deleting an unknown id must report false, not fail"
+        );
+
+        let list = handlers.get("providers.list").unwrap();
+        let listed = list("providers.list", &serde_json::json!({})).unwrap();
+        assert_eq!(listed["providers"].as_array().unwrap().len(), 0);
+        assert!(
+            delete("providers.delete", &serde_json::json!({})).is_err(),
+            "a delete without an id must fail"
+        );
+    }
+
     #[test]
     fn general_settings_roundtrip_via_rpc() {
         let (gateway, _tmp) = isolated_gateway();
@@ -3064,7 +3669,9 @@ mod tests {
 
         let mut indices = Vec::new();
         let mut final_index = None;
-        for _ in 0..200 {
+        // The turn runs on a background thread with its own Tokio runtime;
+        // under parallel test load its terminal event can exceed 1s.
+        for _ in 0..2000 {
             for event in lane.drain() {
                 if let anima_channel::EventPayload::TokenDelta(d) = event.data {
                     if d.session_id == "idx-session" {
@@ -3147,22 +3754,147 @@ mod tests {
         assert_eq!(reply["truncated"], false);
     }
 
+    // Contract: the no-provider terminal marker carries the assistant message
+    // id minted for the turn (the same id the `chat.send` ack returns), so a
+    // client keys the error bubble on the turn instead of an anonymous
+    // stream-active flag.
+    #[test]
+    fn chat_send_without_provider_finalizes_with_the_ack_message_id() {
+        let (gateway, _tmp) = isolated_gateway();
+        let lane = gateway.publisher().bus().new_lane();
+        lane.subscribe(anima_channel::EventTopic::ALL);
+        gateway.publisher().bus().register_lane(&lane);
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let reply = send(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "no-provider", "content": "hi" }),
+        )
+        .unwrap();
+        let ack_id = reply["messageId"].as_str().unwrap().to_string();
+        assert!(!ack_id.is_empty(), "ack must carry an assistant id");
+
+        let mut terminal = None;
+        for _ in 0..400 {
+            for event in lane.drain() {
+                if let anima_channel::EventPayload::TokenDelta(d) = event.data {
+                    if d.session_id == "no-provider" && d.final_ {
+                        terminal = Some(d);
+                    }
+                }
+            }
+            if terminal.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let terminal = terminal.expect("no-provider turn must end with a terminal delta");
+        assert_eq!(terminal.message_id, ack_id);
+        assert!(terminal.delta.is_empty());
+    }
+
+    // Contract: both MCP tool-call spellings run one implementation, so a
+    // missing tool name is the same boundary error on either verb.
+    #[test]
+    fn mcp_tool_call_verbs_share_one_implementation() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        for method in ["mcp.tools_call", "mcp.call_tool"] {
+            let handler = handlers
+                .get(method)
+                .unwrap_or_else(|| panic!("{method} must stay registered"));
+            let err = handler(method, &serde_json::json!({ "transport": "stdio" }))
+                .expect_err("a call without a tool name must fail");
+            assert_eq!(err, "missing tool name (tool/name/tool_name)");
+        }
+    }
+
+    // Contract: `sessions.list` pages with a default of 50 and clamps a
+    // client-supplied limit to `RPC_MAX_LIMIT`.
+    #[test]
+    fn sessions_list_is_bounded_by_default_and_clamped_limit() {
+        let (gateway, _tmp) = isolated_gateway();
+        let repo = anima_store::SessionRepo::new(gateway.core.db().unwrap());
+        for i in 0..(DEFAULT_LIST_LIMIT + 5) {
+            repo.create(&format!("s{i}"), "title").unwrap();
+        }
+        let handlers = handlers(&gateway);
+        let list = handlers.get("sessions.list").unwrap();
+
+        let default = list("sessions.list", &serde_json::json!({})).unwrap();
+        assert_eq!(
+            default["sessions"].as_array().unwrap().len(),
+            DEFAULT_LIST_LIMIT
+        );
+        assert_eq!(default["truncated"], true);
+
+        let clamped = list(
+            "sessions.list",
+            &serde_json::json!({ "limit": u64::MAX }),
+        )
+        .unwrap();
+        assert_eq!(
+            clamped["sessions"].as_array().unwrap().len(),
+            DEFAULT_LIST_LIMIT + 5,
+            "a huge limit clamps to RPC_MAX_LIMIT, above the row count here"
+        );
+        assert_eq!(clamped["truncated"], false);
+    }
+
+    // Contract: the journal scan reads content-only columns, so a large
+    // embedding blob is never pulled into memory or deserialized on a search.
+    #[test]
+    fn journal_search_ignores_embedding_payloads() {
+        let (gateway, _tmp) = isolated_gateway();
+        let repo = anima_store::JournalRepo::new(gateway.core.db().unwrap());
+        let embedding = vec![0.25f32; 4096];
+        repo.append("note", "needle-with-embedding", Some(&embedding))
+            .unwrap();
+        repo.append("note", "plain filler", None).unwrap();
+
+        let handlers = handlers(&gateway);
+        let search = handlers.get("journal.search").unwrap();
+        let reply = search(
+            "journal.search",
+            &serde_json::json!({ "query": "needle-with-embedding", "limit": 5 }),
+        )
+        .unwrap();
+        let entries = reply["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["content"], "needle-with-embedding");
+        assert_eq!(entries[0]["kind"], "note");
+        assert!(
+            entries[0]["created_at"].is_i64(),
+            "stored timestamp field names are unchanged"
+        );
+        assert!(
+            entries[0].get("embedding").is_none(),
+            "search rows are content-only"
+        );
+        assert_eq!(reply["truncated"], false);
+    }
+
     #[test]
     fn mutating_verbs_are_denied_without_actions_opt_in() {
         let (gateway, _tmp) = isolated_gateway();
         // No allowActions key: mutating verbs must fail with the actions-
         // disabled prefix, and read-only verbs must still work.
         let handlers = handlers(&gateway);
-        for method in ["settings.set", "journal.append", "stmm.rebuild", "chat.send"] {
+        for method in [
+            "settings.set",
+            "journal.append",
+            "stmm.rebuild",
+            "chat.send",
+        ] {
             let h = handlers
                 .get(method)
                 .unwrap_or_else(|| panic!("{method} must stay registered"));
             let err = h(method, &serde_json::json!({}))
                 .expect_err("mutating verb must be denied by default");
-            assert!(
-                err.starts_with(ACTIONS_DISABLED_PREFIX),
-                "{method}: {err}"
-            );
+            assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{method}: {err}");
         }
         let read = handlers.get("core.status").unwrap();
         read("core.status", &serde_json::json!({}))
@@ -3172,7 +3904,7 @@ mod tests {
     #[test]
     fn actions_gate_maps_to_typed_rpc_error_and_allows_when_opted_in() {
         let (gateway, _tmp) = isolated_gateway();
-        let handlers = handlers(&gateway);
+        let handlers = std::sync::Arc::new(handlers(&gateway));
 
         // Disabled: the daemon returns the actions-disabled prefix, and the
         // channel dispatch maps it to the stable `rpc_actions_disabled` code.
@@ -3214,45 +3946,124 @@ mod tests {
         )
         .unwrap();
         let handlers = handlers(&gateway);
-        let err = handlers
-            .get("journal.append")
-            .unwrap()("journal.append", &serde_json::json!({ "content": "hi" }))
-            .expect_err("string \"true\" must not enable actions");
+        let err = handlers.get("journal.append").unwrap()(
+            "journal.append",
+            &serde_json::json!({ "content": "hi" }),
+        )
+        .expect_err("string \"true\" must not enable actions");
         assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
     }
 
     #[test]
     fn persist_preserves_allow_actions_flag() {
         let (gateway, _tmp) = isolated_gateway();
-        enable_actions(&gateway);
+        enable_actions_with_remote(&gateway, Some(serde_json::json!(true)));
         let raw = fs::read_to_string(&gateway.config_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(value["allowActions"], serde_json::json!(true));
-        // A D-Bus-style rewrite (e.g. token rotation) must not drop the flag.
-        let config = ChannelConfig::healed();
+        assert_eq!(value["allowRemoteActions"], serde_json::json!(true));
+        // A D-Bus-style rewrite (e.g. token rotation) must not drop either flag.
+        // ChannelConfig rewrites pass `allow_actions: None`, like `apply` and
+        // `regenerate_token` do.
+        let mut config = ChannelConfig::healed();
+        config.allow_actions = None;
         Gateway::persist(&gateway.config_path, &config).unwrap();
         let raw = fs::read_to_string(&gateway.config_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(value["allowActions"], serde_json::json!(true));
+        assert_eq!(value["allowRemoteActions"], serde_json::json!(true));
+        // After the rewrite, a non-loopback bind still permits mutating verbs.
+        let handlers = handlers_with_hostname(&gateway, "192.168.1.10");
+        handlers.get("journal.append").unwrap()(
+            "journal.append",
+            &serde_json::json!({ "content": "after rotation" }),
+        )
+        .expect("persist must keep the remote actions opt-in");
     }
 
     #[test]
-    fn actions_gate_denies_mutating_verbs_on_non_loopback_host() {
-        // A LAN/non-loopback bind must NOT keep mutating verbs enabled even
-        // when allowActions is true (the documented property: the gate
-        // requires both the opt-in AND a loopback hostname).
+    fn actions_gate_denies_mutating_verbs_on_non_loopback_host_without_remote_opt_in() {
+        // A LAN/non-loopback bind must NOT keep mutating verbs enabled just
+        // because allowActions is true: the bind-specific trust opt-in is
+        // required too.
         let (gateway, _tmp) = isolated_gateway();
         enable_actions(&gateway);
         let handlers = handlers_with_hostname(&gateway, "192.168.1.10");
-        let err = handlers
-            .get("settings.set")
-            .unwrap()("settings.set", &serde_json::json!({ "section": "chat", "settings": {} }))
-            .expect_err("LAN hostname must deny mutating verbs");
+        let err = handlers.get("settings.set").unwrap()(
+            "settings.set",
+            &serde_json::json!({ "section": "chat", "settings": {} }),
+        )
+        .expect_err("LAN hostname must deny mutating verbs");
         assert!(
             err.starts_with(ACTIONS_DISABLED_PREFIX),
             "LAN denial must use the actions-disabled prefix: {err}"
         );
-        assert!(err.contains("loopback"), "error should name the reason: {err}");
+        assert!(
+            err.contains("allowRemoteActions"),
+            "error should name the missing opt-in: {err}"
+        );
+        assert!(
+            !err.contains("authToken"),
+            "error must never expose a credential"
+        );
+    }
+
+    #[test]
+    fn actions_gate_allows_mutating_verbs_on_non_loopback_host_with_remote_opt_in() {
+        // An authenticated non-loopback client can mutate once the operator
+        // has explicitly opted in to actions on that bind.
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions_with_remote(&gateway, Some(serde_json::json!(true)));
+        let handlers = handlers_with_hostname(&gateway, "192.168.1.10");
+        handlers.get("journal.append").unwrap()(
+            "journal.append",
+            &serde_json::json!({ "content": "remote hi" }),
+        )
+        .expect("non-loopback + both opt-ins must allow mutating verbs");
+    }
+
+    #[test]
+    fn actions_gate_rejects_non_boolean_remote_opt_in() {
+        // Only literal JSON true enables remote actions: false, a string, a
+        // number, and null all fail closed.
+        for remote in [
+            serde_json::json!(false),
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::Value::Null,
+        ] {
+            let (gateway, _tmp) = isolated_gateway();
+            enable_actions_with_remote(&gateway, Some(remote.clone()));
+            let handlers = handlers_with_hostname(&gateway, "192.168.1.10");
+            let err = handlers.get("journal.append").unwrap()(
+                "journal.append",
+                &serde_json::json!({ "content": "hi" }),
+            )
+            .expect_err("non-boolean remote opt-in must deny mutating verbs");
+            assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn remote_actions_opt_in_never_enables_actions_without_allow_actions() {
+        let (gateway, _tmp) = isolated_gateway();
+        let mut value = serde_json::to_value(ChannelConfig::healed()).unwrap();
+        value["allowActions"] = serde_json::json!(false);
+        value["allowRemoteActions"] = serde_json::json!(true);
+        fs::write(
+            &gateway.config_path,
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        for hostname in ["127.0.0.1", "192.168.1.10"] {
+            let handlers = handlers_with_hostname(&gateway, hostname);
+            let err = handlers.get("journal.append").unwrap()(
+                "journal.append",
+                &serde_json::json!({ "content": "hi" }),
+            )
+            .expect_err("remote opt-in must not override allowActions");
+            assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
+        }
     }
 
     #[test]
@@ -3260,9 +4071,10 @@ mod tests {
         let (gateway, _tmp) = isolated_gateway();
         enable_actions(&gateway);
         let handlers = handlers_with_hostname(&gateway, "127.0.0.1");
-        handlers
-            .get("journal.append")
-            .unwrap()("journal.append", &serde_json::json!({ "content": "hi" }))
-            .expect("loopback + opt-in must allow mutating verbs");
+        handlers.get("journal.append").unwrap()(
+            "journal.append",
+            &serde_json::json!({ "content": "hi" }),
+        )
+        .expect("loopback + opt-in must allow mutating verbs");
     }
 }

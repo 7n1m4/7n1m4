@@ -220,9 +220,7 @@ impl Database {
                     .all(|c| canonical.iter().any(|(n, t)| n == &c.0 && t == &c.1));
             if !shape_ok {
                 if table_exists {
-                    tx.execute_batch(
-                        "alter table card_metadata rename to card_metadata_legacy;",
-                    )?;
+                    tx.execute_batch("alter table card_metadata rename to card_metadata_legacy;")?;
                 }
                 tx.execute_batch(
                     r#"
@@ -825,10 +823,12 @@ impl MessageRepo {
         row.map(row_to_message).transpose()
     }
 
-    /// Insert a message and touch session updated_at.
+    /// Insert a message and touch session updated_at atomically.
     pub fn insert(&self, msg: &StoredMessage) -> Result<()> {
-        let conn = self.db.conn.lock().expect("database mutex poisoned");
-        conn.execute(
+        let metadata = serde_json::to_string(&msg.metadata)?;
+        let mut conn = self.db.conn.lock().expect("database mutex poisoned");
+        let tx = conn.transaction()?;
+        tx.execute(
             "insert into messages (id, session_id, role, content, created_at, metadata)
              values (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -837,13 +837,14 @@ impl MessageRepo {
                 msg.role,
                 msg.content,
                 msg.created_at,
-                serde_json::to_string(&msg.metadata)?
+                metadata
             ],
         )?;
-        conn.execute(
+        tx.execute(
             "update sessions set updated_at = ?1 where id = ?2",
             params![msg.created_at, msg.session_id],
         )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1536,6 +1537,58 @@ mod tests {
         assert!(sessions.delete("s1").unwrap());
         assert!(sessions.get("s1").unwrap().is_none());
         assert!(messages.list("s1").unwrap().is_empty());
+    }
+
+    // ROOT CAUSE:
+    //
+    // `MessageRepo::insert` inserted the message in one autocommit statement and
+    // touched `sessions.updated_at` in a second. If the touch failed, the
+    // message survived without the revision bump, corrupting session ordering
+    // and LWW conflict decisions.
+    #[test]
+    fn message_insert_rolls_back_when_session_touch_fails() {
+        let db = test_db();
+        let sessions = SessionRepo::new(db.clone());
+        let messages = MessageRepo::new(db.clone());
+
+        let session = sessions.create("s1", "Test").unwrap();
+        // Fault injection at the persistence boundary: abort the session touch
+        // after the message insert has had a chance to commit on its own.
+        db.with_connection(|conn| {
+            conn.execute_batch(
+                "create trigger block_session_touch before update on sessions
+                 begin
+                     select raise(abort, 'session touch blocked');
+                 end;",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let err = messages
+            .insert(&StoredMessage {
+                id: "m1".to_string(),
+                session_id: "s1".to_string(),
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+                created_at: session.updated_at + 1_000,
+                metadata: serde_json::json!({}),
+            })
+            .expect_err("session touch failure must propagate");
+        assert!(
+            err.to_string().contains("session touch blocked"),
+            "unexpected error: {err:#}"
+        );
+
+        assert!(
+            messages.get("m1").unwrap().is_none(),
+            "message must not survive a failed session touch"
+        );
+        assert_eq!(
+            sessions.get("s1").unwrap().unwrap().updated_at,
+            session.updated_at,
+            "session revision must not change when the touch fails"
+        );
     }
 
     #[test]

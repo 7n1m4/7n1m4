@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import 'connection_error.dart';
 import 'connection_settings.dart';
 
 /// Gateway connection form. Mirrors the behaviour of the Vue reference
@@ -73,7 +74,9 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     try {
       await widget.onConnect(_settings());
     } catch (e) {
-      if (mounted) setState(() => _connectError = e.toString());
+      if (mounted) {
+        setState(() => _connectError = userSafeConnectionError(e, context: 'connect:'));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -87,7 +90,9 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     try {
       await widget.onDisconnect();
     } catch (e) {
-      if (mounted) setState(() => _connectError = e.toString());
+      if (mounted) {
+        setState(() => _connectError = userSafeConnectionError(e, context: 'disconnect:'));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

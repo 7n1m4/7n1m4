@@ -117,6 +117,15 @@ public sealed class DaemonClient : IDisposable
     /// <summary>Application-level heartbeat cadence. Defaults to <see cref="DefaultHeartbeatInterval"/>.</summary>
     public TimeSpan HeartbeatInterval { get; set; } = DefaultHeartbeatInterval;
 
+    /// <summary>Default maximum time to wait for any single RPC reply.</summary>
+    public static readonly TimeSpan DefaultSendRpcTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Maximum time to wait for one RPC reply. A daemon that accepts a frame
+    /// but never answers must not leave the caller (and the renderer) stuck.
+    /// </summary>
+    public TimeSpan SendRpcTimeout { get; set; } = DefaultSendRpcTimeout;
+
     /// <summary>Default maximum time to wait for a pong reply to one ping round.</summary>
     public static readonly TimeSpan DefaultHeartbeatTimeout = TimeSpan.FromSeconds(10);
 
@@ -482,14 +491,19 @@ public sealed class DaemonClient : IDisposable
             throw new ArgumentException("RPC method is required", nameof(method));
         EnsureConnected();
 
+        var timeout = SendRpcTimeout > TimeSpan.Zero ? SendRpcTimeout : DefaultSendRpcTimeout;
+        using var rpcCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        rpcCts.CancelAfter(timeout);
+        var rpcToken = rpcCts.Token;
+
         var id = Interlocked.Increment(ref _rpcId);
-        await SendJsonAsync(DaemonRpc.Frame(method, payload, id), cancellationToken)
+        await SendJsonAsync(DaemonRpc.Frame(method, payload, id), rpcToken)
             .ConfigureAwait(false);
 
         // The event pump, heartbeat and other probes share this one socket.
         // ReceiveJsonAsync keeps reading until a frame with OUR id arrives,
         // parking a pong or another call's reply for its rightful owner.
-        var reply = await ReceiveJsonAsync(cancellationToken, replyId: id).ConfigureAwait(false);
+        var reply = await ReceiveJsonAsync(rpcToken, replyId: id).ConfigureAwait(false);
         if (reply.ValueKind == JsonValueKind.Undefined)
             throw new InvalidOperationException($"{method}: daemon closed the connection before replying");
         if (DaemonRpc.IsError(reply) || DaemonRpc.IsFailedReply(reply))
@@ -566,6 +580,18 @@ public sealed class DaemonClient : IDisposable
     /// <summary>cards.import</summary>
     public Task<JsonElement> CardsImportAsync(object card, CancellationToken cancellationToken = default) =>
         SendRpc(DaemonRpc.CardsImport, DaemonRpc.CardsImportPayload(card), cancellationToken);
+
+    /// <summary>
+    /// cards.metadata and cards.metadata.set. Godot has no card browser UI
+    /// yet; these typed wrappers are the entry point for one (or for a future
+    /// card metadata probe).
+    /// </summary>
+    public Task<JsonElement> CardsMetadataAsync(string id, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CardsMetadata, DaemonRpc.CardMetadataPayload(id), cancellationToken);
+
+    public Task<JsonElement> CardsMetadataSetAsync(
+        string id, bool liked, bool bookmarked, CancellationToken cancellationToken = default) =>
+        SendRpc(DaemonRpc.CardsMetadataSet, DaemonRpc.CardMetadataSetPayload(id, liked, bookmarked), cancellationToken);
 
     /// <summary>sessions.list</summary>
     public Task<JsonElement> SessionsListAsync(CancellationToken cancellationToken = default) =>

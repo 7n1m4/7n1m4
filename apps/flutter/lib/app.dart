@@ -9,9 +9,12 @@ import 'navigation/navigation_shell.dart';
 import 'theme/app_theme.dart';
 
 class AnimaApp extends StatelessWidget {
-  const AnimaApp({super.key, required this.client});
+  const AnimaApp({super.key, required this.client, this.lipSync = const SizedBox.shrink()});
 
   final DaemonClient client;
+
+  /// Optional renderer surface wired at app entry (client-local lip_sync).
+  final Widget lipSync;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +29,12 @@ class AnimaApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const <Locale>[Locale('en')],
-      home: NavigationShell(client: client),
+      home: Column(
+        children: <Widget>[
+          Expanded(child: NavigationShell(client: client)),
+          lipSync,
+        ],
+      ),
     );
   }
 }

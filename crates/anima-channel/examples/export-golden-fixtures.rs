@@ -16,10 +16,10 @@
 use std::path::{Path, PathBuf};
 
 use anima_channel::wire::{
-    CardMetadataReply, CardMetadataSetRequest, CharacterStatsData, ChatSendRequest, CoreStatusReply,
-    DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply, EventTopic,
-    GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData,
-    HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
+    CardMetadataReply, CardMetadataSetRequest, CharacterStatsData, ChatSendRequest,
+    CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply,
+    EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
+    HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
     ProvidersListReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionImportReply,
     SessionImportStatus, SettingsGetReply, SettingsSetReply, StatusChangedData, TokenDeltaData,
     VaultStatsData, VaultStatusReply,
@@ -309,6 +309,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
             serde_json::to_value(ChatSendRequest {
                 session_id: "sess-abc".into(),
                 content: "Hello, Anima!".into(),
+                gen_ui: false,
             })?,
         ),
         (
@@ -411,7 +412,10 @@ mod tests {
 
         // The fixture file must be unchanged after the check.
         let after = std::fs::read(&fixture_path).unwrap();
-        assert_eq!(after, mutated_bytes, "fixture file was rewritten by --check");
+        assert_eq!(
+            after, mutated_bytes,
+            "fixture file was rewritten by --check"
+        );
 
         // Restore the original fixture.
         std::fs::write(&fixture_path, original).unwrap();

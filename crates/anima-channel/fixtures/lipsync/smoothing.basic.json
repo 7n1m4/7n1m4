@@ -1,0 +1,16 @@
+{
+  "schema": "lipsync-smoothing-v1",
+  "decay_seconds": 0.120,
+  "steps": [
+    { "rms": 1.5, "dt": 0.016, "expected_weight": 1.0 },
+    { "rms": -2.0, "dt": 0.25, "expected_weight": 0.0 },
+    { "rms": 0.5, "dt": 0.016, "expected_weight": 0.5 },
+    { "rms": 0.5, "dt": 1.0, "expected_weight": 0.5 },
+    { "rms": 0.25, "dt": 0.03125, "expected_weight": 0.25 },
+    { "rms": 0.75, "dt": 0.03125, "expected_weight": 0.75 },
+    { "rms": 0.75, "dt": 0.0078125, "expected_weight": 0.75 },
+    { "rms": 0.0, "dt": 0.125, "expected_weight": 0.0 },
+    { "rms": 0.125, "dt": 0.0, "expected_weight": 0.125 },
+    { "rms": 0.0625, "dt": 0.004, "expected_weight": 0.09166666865348816 }
+  ]
+}

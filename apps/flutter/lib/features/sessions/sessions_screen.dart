@@ -14,6 +14,7 @@ class SessionsScreen extends StatefulWidget {
 }
 
 class _SessionsScreenState extends State<SessionsScreen> {
+  final TextEditingController _importController = TextEditingController();
   Map<String, dynamic>? _core;
   Map<String, dynamic>? _vault;
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
@@ -25,6 +26,12 @@ class _SessionsScreenState extends State<SessionsScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _importController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -72,6 +79,40 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
+  Future<void> _import() async {
+    final jsonl = _importController.text;
+    if (jsonl.trim().isEmpty) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final reply = await widget.client.call('sessions.import', payload: <String, dynamic>{
+        'jsonl': jsonl,
+      });
+      if (!reply.ok) {
+        if (mounted) {
+          setState(() => _error = reply.error?.message ?? 'sessions.import failed');
+        }
+        return;
+      }
+      final data = reply.data is Map<String, dynamic> ? reply.data as Map<String, dynamic> : null;
+      final status = data?['status']?.toString() ?? 'unknown';
+      final revision = data?['revision']?.toString() ?? '?';
+      if (status == 'applied') {
+        if (mounted) setState(() => _status = 'Imported snapshot (revision $revision)');
+        if (mounted) await _load();
+      } else if (mounted) {
+        setState(() => _status = 'Snapshot not applied ($status, revision $revision)');
+      }
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final chats = (_vault?['stats'] is Map<String, dynamic>)
@@ -95,6 +136,15 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     ListTile(title: const Text('Chat sessions (vault)'), trailing: Text(chats['sessions']?.toString() ?? '—')),
                     ListTile(title: const Text('Chat messages (vault)'), trailing: Text(chats['messages']?.toString() ?? '—')),
                   ],
+                  TextField(
+                    controller: _importController,
+                    decoration: const InputDecoration(labelText: 'JSONL snapshot'),
+                    maxLines: 3,
+                  ),
+                  FilledButton(
+                    onPressed: _import,
+                    child: const Text('Import'),
+                  ),
                   const ListTile(title: Text('Sessions'), dense: true),
                   if (_sessions.isEmpty)
                     const ListTile(title: Text('No sessions'), dense: true)

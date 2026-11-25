@@ -288,16 +288,10 @@ mod tests {
     use super::*;
     use crate::state::LockdownReason;
 
-    fn audit() -> (AuditLog, std::path::PathBuf) {
-        let path = std::env::temp_dir().join(format!(
-            "airi-daemon-ctl-test-{}-{}.jsonl",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
-        (AuditLog::open(path.clone()), path)
+    fn audit() -> (AuditLog, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.jsonl");
+        (AuditLog::open(path), dir)
     }
 
     fn ring() -> Ring {
@@ -415,7 +409,7 @@ mod tests {
     #[test]
     fn set_source_known_and_unknown() {
         let mut a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let (publisher, lane) = subscribed_publisher();
         let ok = set_source_json("media", false, &mut a, &log, &publisher);
         assert_eq!(
@@ -440,13 +434,12 @@ mod tests {
             lane.is_empty(),
             "unknown source must not publish a transition"
         );
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn method_call_roundtrip_get_status() {
         let a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let publisher = noop_publisher();
         let msg = Message::method_call(
             &dbus::strings::BusName::new("org.example.Caller").unwrap(),
@@ -486,13 +479,12 @@ mod tests {
         };
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["ring_count"], 7);
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn method_call_pause_and_unknown_source_and_unknown_method() {
         let mut a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let (publisher, lane) = subscribed_publisher();
         let wake = WakeFacts::new();
         let status = |awareness: &Awareness, ring_count: u64| {
@@ -581,13 +573,12 @@ mod tests {
         )
         .expect("dispatch");
         assert!(matches!(outcome, ControlOutcome::UnknownMethod(_)));
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn set_source_screen_is_accepted_and_toggles() {
         let mut a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let publisher = noop_publisher();
         let ok = set_source_json("screen", false, &mut a, &log, &publisher);
         assert_eq!(
@@ -603,13 +594,12 @@ mod tests {
             true
         );
         assert!(a.effective_armed(Source::Screen));
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn gateway_methods_roundtrip_via_dispatch() {
         let mut a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let publisher = noop_publisher();
         let wake = WakeFacts::new();
         let status = |awareness: &Awareness, ring_count: u64| {
@@ -709,13 +699,12 @@ mod tests {
             outcome,
             ControlOutcome::ReplyString(r#"{"authToken":"canned"}"#.to_string())
         );
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn get_focus_digest_roundtrip_via_dispatch() {
         let mut a = Awareness::new();
-        let (log, path) = audit();
+        let (log, _dir) = audit();
         let publisher = noop_publisher();
         let wake = WakeFacts::new();
         let status = |awareness: &Awareness, ring_count: u64| {
@@ -757,16 +746,14 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["ok"], true);
         assert_eq!(v["app"], "test-app");
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn set_excluded_apps_roundtrip_via_dispatch() {
-        let tmpdir =
-            std::env::temp_dir().join(format!("airi-daemon-setexcl-test-{}", std::process::id()));
-        let excl_path = tmpdir.join("awareness-exclusions.json");
+        let tmpdir = tempfile::tempdir().unwrap();
+        let excl_path = tmpdir.path().join("awareness-exclusions.json");
         let mut a = Awareness::new();
-        let (log, audit_path) = audit();
+        let (log, _audit_dir) = audit();
         let publisher = noop_publisher();
         let wake = WakeFacts::new();
         let status = |awareness: &Awareness, ring_count: u64| {
@@ -838,16 +825,13 @@ mod tests {
             excl.is_excluded("my bank"),
             "list must survive a failed set"
         );
-        let _ = std::fs::remove_file(&audit_path);
-        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 
     #[test]
     fn pause_writes_kill_switch_audit_line() {
         let mut a = Awareness::new();
-        let dir =
-            std::env::temp_dir().join(format!("airi-daemon-pause-test-{}", std::process::id()));
-        let path = dir.join("audit.jsonl");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.jsonl");
         let log = AuditLog::open(path.clone());
         let mut r = Ring::with_default_cap();
         let publisher = noop_publisher();
@@ -856,6 +840,5 @@ mod tests {
         assert!(contents.contains("awareness: paused (kill switch)"));
         assert!(contents.contains("\"source\":\"system\""));
         assert!(a.paused());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

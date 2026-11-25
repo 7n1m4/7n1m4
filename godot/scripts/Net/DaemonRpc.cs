@@ -20,6 +20,8 @@ internal static class DaemonRpc
     internal const string ChatHistory = "chat.history";
     internal const string CoreStatus = "core.status";
     internal const string ProvidersList = "providers.list";
+    internal const string ProvidersSave = "providers.save";
+    internal const string ProvidersDelete = "providers.delete";
     internal const string SettingsGet = "settings.get";
     internal const string SettingsSet = "settings.set";
     internal const string VaultStatus = "vault.status";
@@ -31,6 +33,8 @@ internal static class DaemonRpc
     internal const string CardsList = "cards.list";
     internal const string CardsGet = "cards.get";
     internal const string CardsImport = "cards.import";
+    internal const string CardsMetadata = "cards.metadata";
+    internal const string CardsMetadataSet = "cards.metadata.set";
     internal const string SessionsList = "sessions.list";
     internal const string SessionsExport = "sessions.export";
     internal const string SessionsImport = "sessions.import";
@@ -38,9 +42,11 @@ internal static class DaemonRpc
     /// <summary>Every RPC action the Godot client claims to support.</summary>
     internal static readonly string[] AllActions =
     {
-        ChatSend, ChatCancel, CoreStatus, ProvidersList, SettingsGet, SettingsSet,
+        ChatSend, ChatCancel, CoreStatus, ProvidersList, ProvidersSave, ProvidersDelete,
+        SettingsGet, SettingsSet,
         VaultStatus, StmmList, StmmRebuild, JournalAppend, JournalSearch,
-        RetrievalStatus, CardsList, CardsGet, CardsImport, SessionsList, SessionsExport,
+        RetrievalStatus, CardsList, CardsGet, CardsImport, CardsMetadata, CardsMetadataSet,
+        SessionsList, SessionsExport,
         ChatHistory, SessionsImport,
     };
 
@@ -98,6 +104,47 @@ internal static class DaemonRpc
     internal static object CardGetPayload(string id) => new { id = id ?? string.Empty };
 
     internal static object CardsImportPayload(object card) => new { card = card ?? EmptyPayload };
+
+    /// <summary><c>cards.metadata</c> request: the card id to read.</summary>
+    internal static object CardMetadataPayload(string id) => new { id = id ?? string.Empty };
+
+    /// <summary>
+    /// <c>cards.metadata.set</c> request: both daemon-owned flags are explicit,
+    /// so a stale client toggle cannot flip the other flag on the daemon.
+    /// </summary>
+    internal static object CardMetadataSetPayload(string id, bool liked, bool bookmarked) =>
+        new { id = id ?? string.Empty, liked, bookmarked };
+
+    /// <summary>
+    /// <c>providers.save</c> request (<c>crates/anima-daemon/src/core.rs:296</c>).
+    /// The daemon reads <c>id</c> (alias <c>providerId</c>), <c>kind</c>,
+    /// <c>enabled</c>, the config keys <c>model</c>/<c>baseUrl</c>/<c>apiKey</c>
+    /// (snake_case spellings accepted too) and the literal boolean
+    /// <c>rotateSecrets</c>; anything else is ignored. Omitting a field is a
+    /// PATCH: the stored config and <c>enabled</c> survive, and a stored
+    /// credential is never rotated unless <c>rotateSecrets</c> is literal
+    /// <c>true</c> (<c>gateway.rs:141</c>). The reply is <c>{ok, id}</c> and
+    /// never echoes the key.
+    /// </summary>
+    internal static object ProvidersSavePayload(
+        string id, string kind, string model, string baseUrl, bool enabled, string apiKey, bool rotateSecrets = false) =>
+        new
+        {
+            id = id ?? string.Empty,
+            kind = kind ?? string.Empty,
+            model = model ?? string.Empty,
+            baseUrl = baseUrl ?? string.Empty,
+            enabled,
+            apiKey = apiKey ?? string.Empty,
+            rotateSecrets,
+        };
+
+    /// <summary>
+    /// <c>providers.delete</c> request (<c>gateway.rs:766</c>): the daemon reads
+    /// <c>id</c> and rejects an empty one with <c>missing id</c>. The reply is
+    /// <c>{ok, deleted}</c>, where <c>deleted</c> is false when no row matched.
+    /// </summary>
+    internal static object ProvidersDeletePayload(string id) => new { id = id ?? string.Empty };
 
     /// <summary>True for daemon-initiated event frames (pump traffic).</summary>
     internal static bool IsEvent(JsonElement frame) =>

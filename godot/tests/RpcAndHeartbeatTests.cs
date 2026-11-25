@@ -20,9 +20,11 @@ public sealed class RpcAndHeartbeatTests
     private static readonly string[] ExpectedActions =
     {
         "chat.send", "chat.cancel", "core.status", "providers.list",
+        "providers.save", "providers.delete",
         "settings.get", "settings.set", "vault.status", "stmm.list",
         "stmm.rebuild", "journal.append", "journal.search", "retrieval.status",
-        "cards.list", "cards.get", "cards.import", "sessions.list", "sessions.export",
+        "cards.list", "cards.get", "cards.import", "cards.metadata",
+        "cards.metadata.set", "sessions.list", "sessions.export",
         "chat.history", "sessions.import",
     };
 
@@ -105,6 +107,7 @@ public sealed class RpcAndHeartbeatTests
             "SettingsGetAsync", "SettingsSetAsync", "VaultStatusAsync",
             "StmmListAsync", "StmmRebuildAsync", "JournalAppendAsync", "JournalSearchAsync",
             "RetrievalStatusAsync", "CardsListAsync", "CardsGetAsync", "CardsImportAsync",
+            "CardsMetadataAsync", "CardsMetadataSetAsync",
             "SessionsListAsync", "SessionsExportAsync",
             "SubscribeAsync", "UnsubscribeAsync",
         };
@@ -180,5 +183,38 @@ public sealed class RpcAndHeartbeatTests
 
         var export = Serialize(DaemonRpc.SessionPayload("s42"));
         Assert.Equal("s42", export.GetProperty("session_id").GetString());
+
+        var meta = Serialize(DaemonRpc.CardMetadataPayload("card-1"));
+        Assert.Equal("card-1", meta.GetProperty("id").GetString());
+
+        var set = Serialize(DaemonRpc.CardMetadataSetPayload("card-1", true, false));
+        Assert.Equal("card-1", set.GetProperty("id").GetString());
+        Assert.True(set.GetProperty("liked").GetBoolean());
+        Assert.False(set.GetProperty("bookmarked").GetBoolean());
+    }
+
+    [Fact]
+    public void CapabilityProbeVerbs_StayReadOnly()
+    {
+        // Main.ProbeCapabilitiesAsync runs on every reconnect, so its verb set
+        // must never mutate daemon state: chat.send persists a junk turn and
+        // spends a provider call, chat.cancel broadcasts a fake final token.
+        // chat.history is the read-only chat-lane probe.
+        var probeActions = new[]
+        {
+            DaemonRpc.CoreStatus,
+            DaemonRpc.ChatHistory,
+            DaemonRpc.ProvidersList,
+            DaemonRpc.SettingsGet,
+            DaemonRpc.VaultStatus,
+            DaemonRpc.StmmList,
+            DaemonRpc.JournalSearch,
+            DaemonRpc.RetrievalStatus,
+            DaemonRpc.CardsList,
+            DaemonRpc.SessionsList,
+        };
+        Assert.DoesNotContain(DaemonRpc.ChatSend, probeActions);
+        Assert.DoesNotContain(DaemonRpc.ChatCancel, probeActions);
+        Assert.Contains(DaemonRpc.ChatHistory, probeActions);
     }
 }

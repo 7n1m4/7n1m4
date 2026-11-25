@@ -40,12 +40,8 @@ class DirectWebSocketTransport implements DaemonTransport {
     await close();
     final channel = WebSocketChannel.connect(endpoint);
     _channel = channel;
-    // web_socket_channel queues sends until the handshake completes, so the
-    // first auth frame can be written immediately after this call.
-    _connected = true;
     _subscription = channel.stream.listen(
       (event) {
-        if (!_connected) _connected = true;
         if (event is String) {
           if (!_messages.isClosed) _messages.add(event);
         } else {
@@ -61,6 +57,13 @@ class DirectWebSocketTransport implements DaemonTransport {
         if (!_errors.isClosed) _errors.add(const TransportClosed());
       },
     );
+
+    // `connect` returns before the handshake finishes. Publishing connected
+    // here would make the client send auth into a dead socket and report a
+    // healthy status until the 5s auth timeout expires.
+    await channel.ready;
+    if (!identical(_channel, channel)) return; // closed while awaiting ready
+    _connected = true;
   }
 
   @override

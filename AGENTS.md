@@ -98,6 +98,10 @@ Anima is no longer "a desktop pet app". It is pivoting to the **agent-runtime co
 - Aim for near-complete coverage of changed executable lines, especially for critical logic and new branches. Prioritize meaningful assertions over a numerical target that would encourage brittle or redundant tests.
 - If a relevant test is unavailable, prohibitively expensive, or unrelated to the actual change, explain the limitation and choose an appropriate alternative. Never claim validation that was not performed.
 
+### Multi-expert reviews and audits
+
+- **User-approved 2026-11-25 policy:** delegate code reviews, whole-repo audits, and investigations in multi-expert mode. Fan the same read-only prompt to all available recommended native roles/models without inventing absent roles or substituting unapproved per-call models; the final message is the deliverable (complete requested report in prose with file:lines on findings), intermediate yields are not results; if a role's structured payload is empty/stale, salvage from its transcript before redispatch; parent dedups by file:line, synthesizes one ranked report, ranks workers by complete final report then evidence density then non-overlap, persists the ranking in Beads memory key anima-multi-expert-delegation-policy, and prefers reliable roles next dispatch; workers stay read-only unless implementation is authorized; after every multi-worker delegation, run a short off-thread worker-performance retro (not a retro of the retro) that files deduped actionable environment improvements as beads and never blocks the main result.
+
 ## 9. General Decision-Making Principles
 
 - **Use the least restrictive approach that reliably protects the user's work and the project's integrity.**

@@ -5,9 +5,7 @@
 //! This is the ONLY place the daemon touches core state. It opens the
 //! application store using the same profile/identity rules Slint uses today
 //! and fails closed on open error: no empty/temp/fallback database.
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -160,7 +158,6 @@ pub struct CoreSnapshot {
 #[derive(Clone)]
 pub struct CoreService {
     inner: Arc<Mutex<CoreInner>>,
-    cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 struct CoreInner {
@@ -211,7 +208,6 @@ impl CoreService {
                         session_count: sessions,
                         message_count: messages,
                     })),
-                    cancels: Arc::new(Mutex::new(HashMap::new())),
                 }
             }
             Err(_) => Self::unavailable("store open failed".to_string()),
@@ -227,7 +223,6 @@ impl CoreService {
                 session_count: 0,
                 message_count: 0,
             })),
-            cancels: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -296,7 +291,8 @@ impl CoreService {
     /// Create or update a provider through the daemon-owned `ProviderRepo`.
     /// Accepts the secret only on input; the returned id is safe to put on the
     /// wire. Missing fields keep the stored value so a partial update cannot
-    /// silently drop an api key.
+    /// silently drop an api key. Credential-shaped keys are preserved unless
+    /// the caller opts into rotation with the literal `rotateSecrets: true`.
     pub fn providers_save(&self, payload: &serde_json::Value) -> Result<String, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
         let core = guard
@@ -318,6 +314,14 @@ impl CoreService {
         let kind: anima_store::ProviderKind =
             serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
                 .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
+        let rotate_secrets = payload
+            .get("rotateSecrets")
+            .map(|v| {
+                v.as_bool()
+                    .ok_or_else(|| "rotateSecrets must be a boolean".to_string())
+            })
+            .transpose()?
+            .unwrap_or(false);
 
         let existing = repo
             .get(id)
@@ -348,11 +352,16 @@ impl CoreService {
                 );
             }
         }
-        // A client-supplied apiKey must never rotate a daemon-managed
-        // credential: stored secret-shaped keys win over every incoming
-        // spelling, including camelCase aliases (TS
-        // `mergeConfigPreservingSecrets` parity).
-        let merged = anima_core::providers::merge_config_preserving_secrets(&stored_config, &incoming);
+        // By default a client-supplied apiKey must never rotate a
+        // daemon-managed credential: stored secret-shaped keys win over every
+        // incoming spelling, including camelCase aliases (TS
+        // `mergeConfigPreservingSecrets` parity). Only an explicit opt-in lets
+        // the new value through for the matching stored key.
+        let merged = if rotate_secrets {
+            anima_core::providers::merge_config_rotating_secrets(&stored_config, &incoming)
+        } else {
+            anima_core::providers::merge_config_preserving_secrets(&stored_config, &incoming)
+        };
         repo.upsert(&StoredProvider {
             id: id.to_string(),
             kind,
@@ -583,29 +592,12 @@ impl CoreService {
             .map_err(|e| e.to_string())
     }
 
-    /// Install a fresh cancel flag for a new turn in `session_id` and return
-    /// it. Each turn owns its own flag, so a stale flag from an earlier turn
-    /// can never signal cancellation into a later one.
-    pub fn chat_cancel_flag(&self, session_id: &str) -> Arc<AtomicBool> {
-        let flag = Arc::new(AtomicBool::new(false));
-        let mut map = self.cancels.lock().expect("cancel mutex poisoned");
-        map.insert(session_id.to_string(), flag.clone());
-        flag
-    }
-
     /// Cancel an in-flight generation for `session_id`.
     ///
-    /// Flags the current turn's pump without creating a flag for a session
-    /// that has no active turn, then forwards to the daemon-owned
-    /// `ChatService`. `ChatService::stop` is authoritative: `true` only when
-    /// a generation was actually in flight.
+    /// `ChatService` owns the single per-turn flag; the daemon registers it
+    /// before spawning the background turn, so this is authoritative even for
+    /// a cancel arriving immediately after the `chat.send` ack.
     pub fn chat_cancel(&self, session_id: &str) -> bool {
-        {
-            let map = self.cancels.lock().expect("cancel mutex poisoned");
-            if let Some(flag) = map.get(session_id) {
-                flag.store(true, Ordering::SeqCst);
-            }
-        }
         self.chat_stop(session_id).unwrap_or(false)
     }
     /// Daemon-owned short-term memory (STMM) service, sharing the store and
@@ -821,24 +813,10 @@ mod tests {
     }
 
     #[test]
-    fn cancel_flag_is_per_turn_not_stale_across_turns() {
+    fn cancel_without_a_turn_is_honest() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
-
-        // Turn 1 is cancelled; its flag is set.
-        let first = svc.chat_cancel_flag("s1");
-        first.store(true, Ordering::SeqCst);
-
-        // Turn 2 in the same session must receive a fresh flag. A stale true
-        // flag from turn 1 must not signal cancellation into turn 2.
-        let second = svc.chat_cancel_flag("s1");
-        assert!(!second.load(Ordering::SeqCst));
-        assert!(!Arc::ptr_eq(&first, &second));
-
-        // Cancel with no generation in flight is honest and only flags the
-        // current turn; it must not resurrect a brand-new flag afterwards.
         assert!(!svc.chat_cancel("s1"));
-        assert!(second.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -969,5 +947,86 @@ mod tests {
         assert_eq!(stored.config["headers"]["x-region"], "eu");
         assert_eq!(stored.config["headers"]["authorization"], "BEARER-OLD");
         assert!(!stored.config.to_string().contains("CLIENT-ROTATION"));
+    }
+
+    #[test]
+    fn providers_save_explicit_rotation_replaces_managed_secret_and_keeps_extras() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        repo.upsert(&StoredProvider {
+            id: "managed".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({
+                "model": "old-model",
+                "api_key": "MANAGED-SECRET",
+                "account_id": "acct-1",
+                "headers": { "x-region": "eu", "authorization": "BEARER-OLD" },
+            }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+
+        svc.providers_save(&serde_json::json!({
+            "id": "managed",
+            "kind": "open-ai-compatible",
+            "model": "new-model",
+            "apiKey": "ROTATED-KEY",
+            "rotateSecrets": true,
+        }))
+        .unwrap();
+
+        let stored = repo.get("managed").unwrap().unwrap();
+        assert_eq!(stored.config["model"], "new-model");
+        assert_eq!(stored.config["api_key"], "ROTATED-KEY");
+        assert_eq!(stored.config["account_id"], "acct-1");
+        assert_eq!(stored.config["headers"]["x-region"], "eu");
+        assert_eq!(stored.config["headers"]["authorization"], "BEARER-OLD");
+        assert!(!stored.config.to_string().contains("MANAGED-SECRET"));
+    }
+
+    #[test]
+    fn providers_save_rejects_non_true_rotation_flag() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let repo = anima_store::ProviderRepo::new(svc.db().unwrap());
+        repo.upsert(&StoredProvider {
+            id: "p1".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({ "api_key": "MANAGED-KEY" }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+        for flag in [
+            serde_json::json!("true"),
+            serde_json::json!(1),
+            serde_json::json!(null),
+        ] {
+            let err = svc
+                .providers_save(&serde_json::json!({
+                    "id": "p1",
+                    "kind": "open-ai-compatible",
+                    "apiKey": "ROTATED-KEY",
+                    "rotateSecrets": flag,
+                }))
+                .expect_err("only a boolean rotateSecrets value is valid");
+            assert!(err.contains("rotateSecrets"), "{err}");
+        }
+
+        svc.providers_save(&serde_json::json!({
+            "id": "p1",
+            "kind": "open-ai-compatible",
+            "apiKey": "NOT-ROTATED",
+            "rotateSecrets": false,
+        }))
+        .unwrap();
+        let stored = repo.get("p1").unwrap().unwrap();
+        assert_eq!(
+            stored.config["api_key"], "MANAGED-KEY",
+            "false preserves default behavior"
+        );
     }
 }

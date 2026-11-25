@@ -45,6 +45,17 @@ use crate::ws::{
 /// How long a client may take to send the HTTP upgrade headers.
 const HANDSHAKE_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Post-upgrade writes are bounded: a write that does not complete within
+/// this deadline closes the peer.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Maximum time the connection reader waits for a registered RPC handler.
+/// Long-running renderer verbs (MCP/ACP tools) must not hold the reader: the
+/// worker keeps running, and the client receives `rpc_handler_timeout`.
+/// Must exceed the longest legitimate verb (ACP prompts default to 300 s);
+/// the client-side tool timeouts provide the tight per-call bounds.
+pub const HANDLER_DEADLINE: Duration = Duration::from_secs(330);
+
 /// No frame from a peer for this long → close the connection with 1001. 75 s ≈ 2× the ~30 s heartbeat cadence of the SDK client; the app-level heartbeat is what keeps honest peers alive.
 pub const DEAD_PEER_TTL: Duration = Duration::from_secs(75);
 
@@ -63,10 +74,16 @@ enum ConnectionStream {
 impl ConnectionStream {
     /// Set the socket read timeout; the dead-peer TTL doubles as the
     /// post-upgrade read deadline so one timer covers both.
-    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+    fn set_timeouts(&mut self, read: Option<Duration>, write: Duration) -> io::Result<()> {
         match self {
-            Self::Plain(stream) => stream.set_read_timeout(timeout),
-            Self::Tls(stream) => stream.sock.set_read_timeout(timeout),
+            Self::Plain(stream) => {
+                stream.set_read_timeout(read)?;
+                stream.set_write_timeout(Some(write))
+            }
+            Self::Tls(stream) => {
+                stream.sock.set_read_timeout(read)?;
+                stream.sock.set_write_timeout(Some(write))
+            }
         }
     }
 }
@@ -104,6 +121,8 @@ pub struct ChannelServer {
     renderer_handlers: Arc<RendererHandlers>,
     tls: Option<Arc<rustls::ServerConfig>>,
     dead_peer_ttl: Duration,
+    handler_deadline: Duration,
+    write_timeout: Duration,
     /// Shared publisher handle for the Wave 0 event lane. Exposed via
     /// [`ChannelServer::event_bus`] so daemon services can publish events
     /// without touching sessions or sockets.
@@ -174,6 +193,8 @@ impl ChannelServer {
             renderer_handlers: Arc::new(handlers),
             tls,
             dead_peer_ttl: DEAD_PEER_TTL,
+            handler_deadline: HANDLER_DEADLINE,
+            write_timeout: WRITE_TIMEOUT,
             event_bus: EventBus::with_defaults(),
         })
     }
@@ -182,6 +203,20 @@ impl ChannelServer {
     /// production keeps [`DEAD_PEER_TTL`].
     pub fn with_dead_peer_ttl(mut self, ttl: Duration) -> Self {
         self.dead_peer_ttl = ttl;
+        self
+    }
+
+    /// Override the registered-handler deadline. Exists so tests can use a
+    /// short deadline; production keeps [`HANDLER_DEADLINE`].
+    pub fn with_handler_deadline(mut self, deadline: Duration) -> Self {
+        self.handler_deadline = deadline;
+        self
+    }
+
+    /// Override the post-upgrade write timeout. Exists so tests can use a
+    /// short timeout; production keeps [`WRITE_TIMEOUT`].
+    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
+        self.write_timeout = timeout;
         self
     }
 
@@ -221,6 +256,8 @@ impl ChannelServer {
             self.renderer_handlers,
             self.tls,
             self.dead_peer_ttl,
+            self.handler_deadline,
+            self.write_timeout,
             self.event_bus,
             stop,
         )
@@ -237,6 +274,8 @@ impl ChannelServer {
         let renderer_handlers = self.renderer_handlers;
         let tls = self.tls;
         let dead_peer_ttl = self.dead_peer_ttl;
+        let handler_deadline = self.handler_deadline;
+        let write_timeout = self.write_timeout;
         let event_bus = self.event_bus;
         let join = std::thread::Builder::new()
             .name("airi-channel-accept".to_string())
@@ -248,6 +287,8 @@ impl ChannelServer {
                     renderer_handlers,
                     tls,
                     dead_peer_ttl,
+                    handler_deadline,
+                    write_timeout,
                     event_bus,
                     thread_stop,
                 )
@@ -290,6 +331,8 @@ fn serve(
     renderer_handlers: Arc<RendererHandlers>,
     tls: Option<Arc<rustls::ServerConfig>>,
     dead_peer_ttl: Duration,
+    handler_deadline: Duration,
+    write_timeout: Duration,
     event_bus: EventBus,
     stop: Arc<AtomicBool>,
 ) -> io::Result<()> {
@@ -309,6 +352,7 @@ fn serve(
                 // HTTP upgrade phase must complete within it.
                 if let Err(err) = tcp
                     .set_read_timeout(Some(HANDSHAKE_READ_TIMEOUT))
+                    .and_then(|_| tcp.set_write_timeout(Some(WRITE_TIMEOUT)))
                     .and_then(|_| tcp.set_nonblocking(false))
                 {
                     tracing::debug!(%peer, %err, "channel connection rejected at socket setup");
@@ -334,6 +378,8 @@ fn serve(
                             rpc,
                             &renderer_handlers,
                             dead_peer_ttl,
+                            handler_deadline,
+                            write_timeout,
                             event_bus,
                         ) {
                             tracing::debug!(%peer, %err, "channel connection ended with error");
@@ -363,6 +409,8 @@ fn handle_connection(
     rpc: RpcContext,
     renderer_handlers: &Arc<RendererHandlers>,
     dead_peer_ttl: Duration,
+    handler_deadline: Duration,
+    write_timeout: Duration,
     event_bus: EventBus,
 ) -> io::Result<()> {
     // --- HTTP Upgrade phase -------------------------------------------------
@@ -416,8 +464,9 @@ fn handle_connection(
     // only refreshes on inbound frames — event writes never keep a silent
     // peer alive. This is a byte-silence rule, not a TCP-liveness probe.
     let read_timeout = dead_peer_ttl.min(DEFAULT_EVENT_POLL_INTERVAL);
-    stream.set_read_timeout(Some(read_timeout))?;
-    let mut session = Session::with_renderer(token.to_string(), rpc, Arc::clone(renderer_handlers));
+    stream.set_timeouts(Some(read_timeout), write_timeout)?;
+    let mut session = Session::with_renderer(token.to_string(), rpc, Arc::clone(renderer_handlers))
+        .with_handler_deadline(handler_deadline);
     // Register this connection's lane with the shared bus *before* any frames
     // are read; unsubscribe (the lane's default) means no events until the
     // client authenticates and calls `event.subscribe`.
@@ -437,7 +486,17 @@ fn handle_connection(
             {
                 // No inbound frame: this is the event-lane poll tick.
                 let events = SessionOutcome::events_only(session.drain_events());
-                write_outcome(&mut stream, &events)?;
+                match write_outcome(&mut stream, &events) {
+                    Ok(()) => {}
+                    Err(err)
+                        if err.kind() == io::ErrorKind::WouldBlock
+                            || err.kind() == io::ErrorKind::TimedOut =>
+                    {
+                        tracing::info!(%peer, %err, "closing connection: write timed out (dead peer)");
+                        return Ok(());
+                    }
+                    Err(err) => return Err(err),
+                }
                 if last_seen.elapsed() >= dead_peer_ttl {
                     tracing::info!(%peer, ttl_ms = dead_peer_ttl.as_millis() as u64, "closing connection: no frames within dead-peer TTL");
                     send_close(&mut stream, CLOSE_GOING_AWAY, "going away (dead peer)");
@@ -473,7 +532,17 @@ fn handle_connection(
         // that arrived while it was handled, so they are not delayed to the
         // next poll tick.
         let events = SessionOutcome::events_only(session.drain_events());
-        write_outcome(&mut stream, &events)?;
+        match write_outcome(&mut stream, &events) {
+            Ok(()) => {}
+            Err(err)
+                if err.kind() == io::ErrorKind::WouldBlock
+                    || err.kind() == io::ErrorKind::TimedOut =>
+            {
+                tracing::info!(%peer, %err, "closing connection: write timed out (dead peer)");
+                return Ok(());
+            }
+            Err(err) => return Err(err),
+        }
     }
 }
 

@@ -19,6 +19,7 @@
 //! kill switch drops everything pre-audit, user flag wins over lockdown.
 
 mod audit;
+mod logging;
 mod control;
 mod core;
 mod events;
@@ -90,11 +91,17 @@ fn usage() {
 }
 
 fn main() {
+    logging::init();
     anima_channel::install_default_crypto_provider();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match parse_args(&args) {
-        Ok(Mode::Run) => run(true),
-        Ok(Mode::RunNoGateway) => run(false),
+        Ok(mode @ (Mode::Run | Mode::RunNoGateway)) => {
+            let dir = anima_core::single_instance::default_lock_dir();
+            match acquire_instance_lock(&dir) {
+                Ok(_guard) => run(matches!(mode, Mode::Run)),
+                Err(()) => exit(0),
+            }
+        }
         Ok(Mode::SelfTest) => selftest(),
         Ok(Mode::Version) => println!("airi-daemon {VERSION} (protocol {PROTOCOL})"),
         Ok(Mode::Help) => usage(),
@@ -102,6 +109,20 @@ fn main() {
             eprintln!("airi-daemon: {e}");
             usage();
             exit(2);
+        }
+    }
+}
+
+fn acquire_instance_lock(dir: &std::path::Path) -> Result<anima_core::single_instance::LockGuard, ()> {
+    match anima_core::single_instance::acquire(dir) {
+        Ok(g) => Ok(g),
+        Err(anima_core::single_instance::SingleInstanceError::AlreadyRunning { pid, lock_path }) => {
+            eprintln!("airi-daemon: already running (pid {pid}) at {}", lock_path.display());
+            Err(())
+        }
+        Err(_) => {
+            eprintln!("airi-daemon: failed to acquire instance lock");
+            Err(())
         }
     }
 }
@@ -449,6 +470,92 @@ fn init_screen_awareness(session: &Connection) -> Option<A11yClient> {
     }
 }
 
+/// Redacted audit detail for a successful `ApplyGatewayConfig`: effective
+/// hostname and transport, never the auth token. The reply is the only place
+/// where the bound transport is visible (non-loopback forces TLS), and it is
+/// already trusted JSON from `Gateway::apply`.
+fn gateway_apply_audit_detail(reply: &str) -> String {
+    let value = serde_json::from_str::<serde_json::Value>(reply).ok();
+    let hostname = value
+        .as_ref()
+        .and_then(|v| v.get("hostname"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("<unknown>");
+    let tls = value
+        .as_ref()
+        .and_then(|v| v.get("websocketTlsConfig"))
+        .is_some_and(|v| !v.is_null());
+    format!("hostname={hostname}, token: ***, tls={tls}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::acquire_instance_lock;
+    use super::gateway_apply_audit_detail;
+
+    #[test]
+    fn logging_init_is_idempotent() {
+        // The subscriber is process-global; `try_init` returns Err on a
+        // second install and `logging::init` swallows it, so calling twice
+        // (e.g. across test runs in one process) never panics.
+        crate::logging::init();
+        crate::logging::init();
+    }
+
+    #[test]
+    fn gateway_apply_audit_detail_never_contains_token() {
+        let token = "super-secret-token-123";
+        let reply = serde_json::json!({
+            "websocketTlsConfig": {},
+            "authToken": token,
+            "hostname": "0.0.0.0",
+        })
+        .to_string();
+        let detail = gateway_apply_audit_detail(&reply);
+        assert_eq!(detail, "hostname=0.0.0.0, token: ***, tls=true");
+        assert!(!detail.contains(token), "token leaked into audit detail");
+
+        let reply = serde_json::json!({
+            "websocketTlsConfig": serde_json::Value::Null,
+            "authToken": token,
+            "hostname": "127.0.0.1",
+        })
+        .to_string();
+        let detail = gateway_apply_audit_detail(&reply);
+        assert_eq!(detail, "hostname=127.0.0.1, token: ***, tls=false");
+        assert!(!detail.contains(token), "token leaked into audit detail");
+
+        // The same string reaches the JSONL audit log verbatim (after the
+        // standard redactor) — no secret in the persisted line either.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.jsonl");
+        crate::audit::AuditLog::open(path.clone()).append(
+            "gateway",
+            "gateway: config applied",
+            &detail,
+        );
+        let line = std::fs::read_to_string(&path).unwrap();
+        let logged: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(
+            logged["detail"].as_str().unwrap(),
+            "hostname=127.0.0.1, token: ***, tls=false"
+        );
+    }
+
+    #[test]
+    fn instance_lock_narrow() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = acquire_instance_lock(dir.path()).unwrap();
+        assert!(first.path().exists());
+        assert!(acquire_instance_lock(dir.path()).is_err());
+        assert!(first.path().exists());
+        drop(first);
+        assert!(!dir.path().join("daemon.lock").exists());
+        let second = acquire_instance_lock(dir.path()).unwrap();
+        drop(second);
+    }
+}
+
 struct LoopCtx<'a> {
     awareness: &'a mut Awareness,
     ring: &'a mut Ring,
@@ -499,7 +606,7 @@ fn handle_message(bus: Bus, msg: dbus::Message, conn: &Connection, ctx: &mut Loo
                         gateway::GatewayRequest::Apply(_) => audit.append(
                             "gateway",
                             "gateway: config applied",
-                            "hostname/TLS/token updated via D-Bus",
+                            &gateway_apply_audit_detail(&reply),
                         ),
                         gateway::GatewayRequest::RegenerateToken => audit.append(
                             "gateway",

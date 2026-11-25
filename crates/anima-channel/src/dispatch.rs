@@ -49,6 +49,8 @@
 //!   five-topic [`EventTopic`] vocabulary.
 //! - `rpc_handler_error` — a registered renderer handler returned `Err(msg)`
 //!   (message truncated to 512 chars).
+//! - `rpc_handler_timeout` — a renderer handler exceeded the server-side
+//!   deadline; the reader thread stays free while its worker finishes.
 //! - `rpc_handler_panic` — a registered renderer handler panicked; the client
 //!   gets a generic message, the payload is logged server-side only.
 //! - `rpc_actions_disabled` — a registered renderer handler refused because
@@ -64,12 +66,13 @@
 //! [`RendererHandlers`]; the map travels behind an `Arc` and is consulted
 //! only under the `renderer.` prefix. Handlers receive the sub-method name
 //! (e.g. `info` for `renderer.info`) and the already-validated JSON object
-//! payload. They run on the connection's reader thread, receive and return
-//! plain JSON (never the token or the config), and must not block for long.
-//! A panicking handler does not take the connection down — see
-//! [`RpcError::renderer_handler_panic`].
+//! payload. They receive and return plain JSON (never the token or the
+//! config). Registered handlers run off the connection's reader thread under
+//! a server-side deadline; built-ins stay on the reader. A panicking handler
+//! does not take the connection down — see [`RpcError::renderer_handler_panic`].
 
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
@@ -245,6 +248,15 @@ impl RpcError {
         }
     }
 
+    /// `rpc_handler_timeout` — a handler did not reply within the server-side
+    /// deadline. The message never includes handler internals or payload data.
+    pub fn handler_timeout(deadline: Duration) -> Self {
+        Self {
+            code: "rpc_handler_timeout",
+            message: format!("renderer handler exceeded server deadline of {deadline:?}"),
+        }
+    }
+
     /// `rpc_bad_payload` — `payload` was present but not a JSON object.
     pub fn bad_payload(message: &str) -> Self {
         Self {
@@ -314,12 +326,32 @@ impl RpcRegistry {
     ///
     /// Renderer handler failures surface as typed errors: `Err(msg)` from a
     /// handler becomes `rpc_handler_error` (truncated), a panic becomes
-    /// `rpc_handler_panic` (generic message; the panic is logged server-side).
+    /// `rpc_handler_panic` (generic message; the panic is logged server-side),
+    /// and a handler that outlives the supplied deadline becomes
+    /// `rpc_handler_timeout` while the reader thread carries on.
     pub fn dispatch(
         ctx: &RpcContext,
         action: &str,
         payload: &Payload,
-        renderer_handlers: &RendererHandlers,
+        renderer_handlers: &Arc<RendererHandlers>,
+    ) -> Result<RpcValue, RpcError> {
+        Self::dispatch_with_deadline(ctx, action, payload, renderer_handlers, None)
+    }
+
+    /// Dispatch with a mandatory server-side deadline for registered handlers.
+    ///
+    /// The handler runs on a dedicated worker thread; the calling reader
+    /// thread waits at most `deadline` for its reply. Built-in RPCs stay on
+    /// the caller because they never touch external systems. A timeout is
+    /// reported as [`RpcError::handler_timeout`]; the worker keeps running
+    /// (handlers own their client lifecycle and cleanup), so no handler state
+    /// is cancelled behind its back.
+    pub fn dispatch_with_deadline(
+        ctx: &RpcContext,
+        action: &str,
+        payload: &Payload,
+        renderer_handlers: &Arc<RendererHandlers>,
+        deadline: Option<Duration>,
     ) -> Result<RpcValue, RpcError> {
         match action {
             "runtime.ping" => runtime_ping(ctx, payload),
@@ -333,12 +365,22 @@ impl RpcRegistry {
                 // full action name (such as "core.status") in addition to the
                 // "renderer.<method>" namespace. Consult the registry for an
                 // exact match before reporting an unknown method.
-                if renderer_handlers.contains_key(action) {
-                    dispatch_renderer(renderer_handlers, action, payload)
-                } else if let Some(method) = action.strip_prefix("renderer.") {
-                    dispatch_renderer(renderer_handlers, method, payload)
+                let method = if renderer_handlers.contains_key(action) {
+                    Some(action)
                 } else {
-                    Err(RpcError::unknown_method(action))
+                    action.strip_prefix("renderer.")
+                };
+                match method {
+                    Some(method) => match deadline {
+                        Some(deadline) => dispatch_renderer_with_deadline(
+                            renderer_handlers,
+                            method,
+                            payload,
+                            deadline,
+                        ),
+                        None => dispatch_renderer(renderer_handlers, method, payload),
+                    },
+                    None => Err(RpcError::unknown_method(action)),
                 }
             }
         }
@@ -374,7 +416,7 @@ fn renderer_handler_error_from(message: &str) -> RpcError {
 /// handlers are invoked behind `catch_unwind` so a panicking renderer
 /// handler cannot take the connection — or the server — down with it.
 fn dispatch_renderer(
-    renderer_handlers: &RendererHandlers,
+    renderer_handlers: &Arc<RendererHandlers>,
     method: &str,
     payload: &Payload,
 ) -> Result<RpcValue, RpcError> {
@@ -396,6 +438,60 @@ fn dispatch_renderer(
             tracing::warn!(%detail, %method, "renderer handler panicked");
             Err(RpcError::renderer_handler_panic())
         }
+    }
+}
+
+/// Run a registered renderer handler off the connection's reader thread,
+/// with a hard deadline on how long the reader may wait for its reply.
+fn dispatch_renderer_with_deadline(
+    renderer_handlers: &Arc<RendererHandlers>,
+    method: &str,
+    payload: &Payload,
+    deadline: Duration,
+) -> Result<RpcValue, RpcError> {
+    require_object_payload(payload)?;
+    if !renderer_handlers.contains_key(method) {
+        return Err(RpcError::renderer_not_implemented(method));
+    }
+    let handlers = Arc::clone(renderer_handlers);
+    let log_method = method.to_string();
+    let owned_method = log_method.clone();
+    let owned_payload = payload.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    // A detached worker keeps the shared `Arc<RendererHandlers>` alive even
+    // after the deadline releases the reader. The handler owns its client and
+    // its own (tighter) timeout, so it finishes and drops its state on its
+    // own; the reader never waits on it past `deadline`.
+    std::thread::Builder::new()
+        .name(format!("airi-channel-rpc-{method}"))
+        .spawn(move || {
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                handlers[owned_method.as_str()](&owned_method, &owned_payload)
+            }));
+            let _ = tx.send(outcome);
+        })
+        .map_err(|e| RpcError::renderer_handler_error(&format!("failed to start handler: {e}")))?;
+    match rx.recv_timeout(deadline) {
+        Ok(result) => match result {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(message)) => Err(renderer_handler_error_from(&message)),
+            Err(panic) => {
+                let detail = panic
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                tracing::warn!(%detail, method = %log_method, "renderer handler panicked");
+                Err(RpcError::renderer_handler_panic())
+            }
+        },
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            tracing::warn!(method = %method, ?deadline, "renderer handler exceeded deadline");
+            Err(RpcError::handler_timeout(deadline))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(
+            RpcError::renderer_handler_error("renderer handler worker died"),
+        ),
     }
 }
 
@@ -514,8 +610,8 @@ mod tests {
         RpcContext::new("127.0.0.1", 6121)
     }
 
-    fn empty_handlers() -> RendererHandlers {
-        RendererHandlers::new()
+    fn empty_handlers() -> Arc<RendererHandlers> {
+        Arc::new(RendererHandlers::new())
     }
 
     /// Dispatch with the default (empty) renderer registry.
@@ -587,7 +683,7 @@ mod tests {
         assert_eq!(err.code(), "rpc_unknown_method");
     }
 
-    fn info_handlers() -> RendererHandlers {
+    fn info_handlers() -> Arc<RendererHandlers> {
         let mut handlers = RendererHandlers::new();
         handlers.insert(
             "info".to_string(),
@@ -596,7 +692,7 @@ mod tests {
                 Ok(json!({ "echoMethod": method, "echoPayload": payload }))
             }),
         );
-        handlers
+        Arc::new(handlers)
     }
 
     #[test]
@@ -634,7 +730,7 @@ mod tests {
             &ctx(),
             "renderer.getModels",
             &json!({ "limit": 3 }),
-            &handlers,
+            &Arc::new(handlers),
         )
         .unwrap();
         assert_eq!(out, json!({ "ok": true }));
@@ -652,8 +748,13 @@ mod tests {
             "explode".to_string(),
             Box::new(|_method: &str, _payload: &Value| Err("boom".repeat(200))),
         );
-        let err =
-            RpcRegistry::dispatch(&ctx(), "renderer.explode", &Value::Null, &handlers).unwrap_err();
+        let err = RpcRegistry::dispatch(
+            &ctx(),
+            "renderer.explode",
+            &Value::Null,
+            &Arc::new(handlers),
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "rpc_handler_error");
         assert_eq!(err.message().len(), 512);
         assert!(err.message().starts_with("boomboom"));
@@ -666,8 +767,13 @@ mod tests {
             "explode".to_string(),
             Box::new(|_method: &str, _payload: &Value| Err("nope".to_string())),
         );
-        let err =
-            RpcRegistry::dispatch(&ctx(), "renderer.explode", &Value::Null, &handlers).unwrap_err();
+        let err = RpcRegistry::dispatch(
+            &ctx(),
+            "renderer.explode",
+            &Value::Null,
+            &Arc::new(handlers),
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "rpc_handler_error");
         assert_eq!(err.message(), "nope");
     }
@@ -681,8 +787,8 @@ mod tests {
                 Err("actions-disabled: gateway actions are off; set \"allowActions\": true in /tmp/example/server-channel/config.json".to_string())
             }),
         );
-        let err =
-            RpcRegistry::dispatch(&ctx(), "renderer.notify", &json!({}), &handlers).unwrap_err();
+        let err = RpcRegistry::dispatch(&ctx(), "renderer.notify", &json!({}), &Arc::new(handlers))
+            .unwrap_err();
         assert_eq!(err.code(), "rpc_actions_disabled");
         assert_eq!(
             err.message(),
@@ -697,7 +803,8 @@ mod tests {
             }),
         );
         let err =
-            RpcRegistry::dispatch(&ctx(), "renderer.explode", &json!({}), &handlers).unwrap_err();
+            RpcRegistry::dispatch(&ctx(), "renderer.explode", &json!({}), &Arc::new(handlers))
+                .unwrap_err();
         assert_eq!(err.code(), "rpc_handler_error");
     }
 
@@ -708,8 +815,8 @@ mod tests {
             "boom".to_string(),
             Box::new(|_method: &str, _payload: &Value| -> Result<Value, String> { panic!("boom") }),
         );
-        let err =
-            RpcRegistry::dispatch(&ctx(), "renderer.boom", &Value::Null, &handlers).unwrap_err();
+        let err = RpcRegistry::dispatch(&ctx(), "renderer.boom", &Value::Null, &Arc::new(handlers))
+            .unwrap_err();
         assert_eq!(err.code(), "rpc_handler_panic");
         assert_eq!(err.message(), "renderer handler panicked — see server log");
         // The test itself survives; the connection would stay open.
@@ -745,8 +852,13 @@ mod tests {
         assert_eq!(out["authenticated"], json!(true));
         // And the same map is consulted (only) under the renderer. prefix —
         // "renderer.runtime.ping" looks up the sub-method "runtime.ping".
-        let out = RpcRegistry::dispatch(&ctx(), "renderer.runtime.ping", &Value::Null, &handlers)
-            .unwrap();
+        let out = RpcRegistry::dispatch(
+            &ctx(),
+            "renderer.runtime.ping",
+            &Value::Null,
+            &Arc::new(handlers),
+        )
+        .unwrap();
         assert_eq!(out, json!({ "shadowed": true }));
     }
 

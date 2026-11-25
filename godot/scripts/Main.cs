@@ -33,7 +33,7 @@ public partial class Main : Node2D
     private AudioStreamPlayer? _speechPlayer;
     private CancellationTokenSource? _speechCts;
     private Task? _speechTask;
-    private readonly SpeechTurnAccumulator _speechTurns = new(CapabilityProbeSession);
+    private readonly SpeechTurnAccumulator _speechTurns = new(ReadOnlyProbeSession);
     private DaemonClient? _daemon;
     private CancellationTokenSource? _pumpCts;
     private CancellationTokenSource? _heartbeatCts;
@@ -82,8 +82,13 @@ public partial class Main : Node2D
 
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(2);
 
-    /// <summary>Session used only by the startup capability probe; never spoken.</summary>
-    private const string CapabilityProbeSession = "debug";
+    /// <summary>
+    /// Session id used only by the read-only startup capability probe
+    /// (<c>chat.history</c>). No turn is ever started for it, so it is also the
+    /// <see cref="SpeechTurnAccumulator"/> filter value; it must not be a name a real
+    /// session could carry, or a genuine turn would be silently dropped.
+    /// </summary>
+    private const string ReadOnlyProbeSession = "anima-pet-probe";
 
     /// <summary>
     /// Connect, subscribe and stay connected. A daemon restart closes the WS;
@@ -138,8 +143,9 @@ public partial class Main : Node2D
                 _pumpCts = pumpCts;
                 _ = daemon.PumpAsync(pumpCts.Token);
 
-                // One real caller per capability group so the client's RPC claim is
-                // exercised at runtime, not just asserted in the parity table.
+                // One real read-only caller per capability group so the client's
+                // RPC claim is exercised at runtime, not just asserted in the
+                // parity table.
                 heartbeatCts = new CancellationTokenSource();
                 _heartbeatCts = heartbeatCts;
                 await ProbeCapabilitiesAsync(heartbeatCts.Token).ConfigureAwait(true);
@@ -156,8 +162,10 @@ public partial class Main : Node2D
             {
                 // The daemon may not be running yet; log and keep the window
                 // alive so the user sees the pet even before the core is up.
-                GD.PrintErr($"[AnimaPet] daemon connection failed: {ex.Message}");
-                UpdateStatus($"Failed: {ex.Message}");
+                var safeError = RpcErrorSanitizer.UserMessage(ex);
+                GD.PrintErr($"[AnimaPet] daemon connection failed: {safeError}");
+                System.Diagnostics.Debug.WriteLine($"[AnimaPet] daemon connection failure detail: {ex}");
+                UpdateStatus($"Failed: {safeError}");
             }
             finally
             {
@@ -227,11 +235,14 @@ public partial class Main : Node2D
     }
 
     /// <summary>
-    /// Fire one RPC per capability group so chat/settings/providers/vault/etc.
-    /// are genuinely wired to the daemon, not just marked "implemented" in the
-    /// parity table. A failing probe is logged and skipped; it never blocks
-    /// startup or the heartbeat that follows. The chat probe deliberately uses
-    /// a short debug message so the stream path is exercised too.
+    /// Fire one read-only RPC per capability group so chat/settings/providers/
+    /// vault/etc. are genuinely wired to the daemon, not just marked
+    /// "implemented" in the parity table. Every probe runs on each reconnect,
+    /// so mutating verbs are forbidden here: chat.send would persist a junk
+    /// turn and spend a provider call, and chat.cancel would broadcast a fake
+    /// final token. chat.history is the read-only chat-lane probe instead. A
+    /// failing probe is logged and skipped; it never blocks startup or the
+    /// heartbeat that follows.
     /// </summary>
     private async Task ProbeCapabilitiesAsync(CancellationToken cancellationToken)
     {
@@ -241,8 +252,7 @@ public partial class Main : Node2D
         var probes = new (string Label, Func<DaemonClient, CancellationToken, Task<JsonElement>>)[]
         {
             ("core.status", (d, ct) => d.CoreStatusAsync(ct)),
-            ("chat.send", (d, ct) => d.ChatSendAsync(CapabilityProbeSession, "[AnimaPet] capability probe", ct)),
-            ("chat.cancel", (d, ct) => d.ChatCancelAsync(CapabilityProbeSession, ct)),
+            ("chat.history", (d, ct) => d.ChatHistoryAsync(ReadOnlyProbeSession, ct)),
             ("providers.list", (d, ct) => d.ProvidersListAsync(ct)),
             ("settings.get", (d, ct) => d.SettingsGetAsync("general", ct)),
             ("vault.status", (d, ct) => d.VaultStatusAsync(ct)),
@@ -268,7 +278,8 @@ public partial class Main : Node2D
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[AnimaPet] {label} probe failed: {ex.Message}");
+                GD.PrintErr($"[AnimaPet] {label} probe failed: {RpcErrorSanitizer.UserMessage(ex)}");
+                System.Diagnostics.Debug.WriteLine($"[AnimaPet] {label} probe failure detail: {ex}");
             }
         }
     }

@@ -41,8 +41,9 @@
 //!   A client-supplied `id` is echoed verbatim. `renderer.*` methods are
 //!   dispatched to embedder-registered renderer handlers (`rpc_not_implemented`
 //!   when unregistered; `rpc_handler_error` / `rpc_handler_panic` when a
-//!   registered handler fails); unknown methods get `rpc_unknown_method`;
-//!   non-object payloads get `rpc_bad_payload`.
+//!   registered handler fails, `rpc_handler_timeout` when the server-side
+//!   deadline expires); unknown methods get `rpc_unknown_method`; non-object
+//!   payloads get `rpc_bad_payload`.
 //! - Anything else → typed `error` frame with code `unsupported_type`;
 //!   the connection stays open.
 //!
@@ -66,6 +67,7 @@
 //! the stable `rpc_*` codes documented in [`crate::dispatch`].
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -146,6 +148,9 @@ pub struct Session {
     state: SessionState,
     rpc_ctx: RpcContext,
     renderer_handlers: Arc<RendererHandlers>,
+    /// Mandatory deadline for registered handlers; `None` only in the pure
+    /// session state machine tests, which drive quick local handlers.
+    handler_deadline: Option<Duration>,
 }
 
 impl Session {
@@ -185,7 +190,14 @@ impl Session {
             state: SessionState::AwaitingAuth,
             rpc_ctx,
             renderer_handlers,
+            handler_deadline: None,
         }
+    }
+
+    /// Configure the mandatory handler deadline for this connection.
+    pub(crate) fn with_handler_deadline(mut self, deadline: Duration) -> Self {
+        self.handler_deadline = Some(deadline);
+        self
     }
 
     /// Current authentication state.
@@ -344,11 +356,12 @@ impl Session {
                 match action {
                     Some(action) if !action.trim().is_empty() => {
                         let payload = value.get("payload").cloned().unwrap_or(Value::Null);
-                        let result = RpcRegistry::dispatch(
+                        let result = RpcRegistry::dispatch_with_deadline(
                             &self.rpc_ctx,
                             action,
                             &payload,
                             &self.renderer_handlers,
+                            self.handler_deadline,
                         );
                         let id = value.get("id").cloned();
                         let action = action.to_string();

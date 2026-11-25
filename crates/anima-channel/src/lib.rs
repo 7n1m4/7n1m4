@@ -92,7 +92,7 @@ pub use dispatch::{
     RendererHandler, RendererHandlers, RpcContext, RpcError, RpcRegistry, APP_NAME, PROTOCOL,
 };
 pub use event_bus::{EventBus, EventLane, DEFAULT_EVENT_POLL_INTERVAL, DEFAULT_LANE_CAPACITY};
-pub use server::{ChannelServer, ServerHandle};
+pub use server::{ChannelServer, ServerHandle, HANDLER_DEADLINE};
 pub use session::{CloseInfo, Session, SessionOutcome, SessionState, CLOSE_POLICY_VIOLATION};
 pub use wire::{
     AuthenticatedData, CardInfo, CardMetadataReply, CardMetadataSetRequest, ChatMessage,

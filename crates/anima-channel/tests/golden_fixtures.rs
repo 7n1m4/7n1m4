@@ -15,11 +15,11 @@
 #[cfg(test)]
 mod golden_fixtures {
     use anima_channel::wire::{
-        CardMetadataReply, CardMetadataSetRequest, ChatSendRequest, CoreStatusReply, EmotionTagData,
-        EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
-        GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject, RuntimePingReply,
-        RuntimeStatusReply, SessionImportReply, SettingsGetReply, SettingsSetReply,
-        VaultStatusReply,
+        CardMetadataReply, CardMetadataSetRequest, ChatSendRequest, CoreStatusReply,
+        EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply,
+        GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject,
+        RuntimePingReply, RuntimeStatusReply, SessionImportReply, SettingsGetReply,
+        SettingsSetReply, VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;

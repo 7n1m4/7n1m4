@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Widget tests for the providers form: save/delete must go through the
-// daemon RPCs, validate required fields before any call, preserve daemon
-// validation state, and show RPC errors instead of optimistic success.
+// daemon RPCs, validate required fields before any call, render only daemon
+// provider metadata, and show RPC errors instead of optimistic success.
 // Secrets are never part of a list reply, so the tiles below assert that only
 // metadata is rendered and no key is ever sent back on list/delete.
 
@@ -211,42 +211,32 @@ void main() {
     expect(find.text('Disabled provider p-openai'), findsOneWidget);
   });
 
-  testWidgets('daemon validation state survives save and list round-trips',
+  testWidgets('renders exactly the metadata the daemon supplies',
       (tester) async {
-    final client = _RecordingProviderClient();
-    addTearDown(client.dispose);
-    client.handler = (action, payload) {
-      if (action == 'providers.list') {
-        return _ok(action, <String, dynamic>{
-          'providers': <Map<String, dynamic>>[
-            <String, dynamic>{
-              ..._seededProvider(),
-              'validation': <String, dynamic>{
-                'state': 'invalid',
-                'message': 'bad key',
-              },
-            },
-          ],
-        });
-      }
-      if (action == 'providers.save') {
-        return _ok(action, <String, dynamic>{
-          'ok': true,
-          'id': 'p-openai',
-          'validation': <String, dynamic>{
-            'state': 'valid',
-            'message': 'checked',
-          },
-        });
-      }
-      return _ok(action, <String, dynamic>{'ok': true, 'deleted': true});
-    };
-    await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: ProvidersScreen(client: client))));
-    await tester.pumpAndSettle();
+    // The daemon's list reply is the only source of tile text: the screen
+    // projects id/kind/model/baseUrl/enabled and invents no status, health,
+    // or validation field of its own. Extra keys in the reply are ignored
+    // rather than decoded into a claim the daemon never made.
+    await _pump(tester, providers: <Map<String, dynamic>>[
+      <String, dynamic>{
+        ..._seededProvider(),
+        'validation': <String, dynamic>{
+          'state': 'invalid',
+          'message': 'bad key',
+        },
+        'isValid': true,
+      },
+    ]);
 
-    expect(find.text('Validation: invalid: bad key'), findsOneWidget);
+    expect(
+      find.text('open-ai-compatible · gpt · https://api.openai.com/v1 · enabled'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('invalid'), findsNothing);
+    expect(find.textContaining('bad key'), findsNothing);
 
+    // A save reports only what the daemon answered ({ok, id}) — the screen
+    // adds no validation verdict of its own.
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
     await tester.enterText(find.widgetWithText(TextField, 'Kind'), 'openai');
     tester
@@ -254,8 +244,8 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('Saved provider p-openai · Validation: valid: checked'),
-        findsOneWidget);
+    expect(find.text('Saved provider p1'), findsOneWidget);
+    expect(find.textContaining('invalid'), findsNothing);
   });
 
   testWidgets('provider tiles never render secret material', (tester) async {

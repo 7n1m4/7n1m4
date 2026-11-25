@@ -343,14 +343,12 @@ mod tests {
 
     #[test]
     fn exclusions_persist_and_reload_roundtrip() {
-        let dir =
-            std::env::temp_dir().join(format!("airi-daemon-excl-test-{}", std::process::id()));
-        let path = dir.join("awareness-exclusions.json");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("awareness-exclusions.json");
         let mut ex = Exclusions::load(path.clone());
         ex.set(vec!["my bank".to_string()]).unwrap();
         let reloaded = Exclusions::load(path.clone());
         assert!(reloaded.is_excluded("My Bank Dashboard"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

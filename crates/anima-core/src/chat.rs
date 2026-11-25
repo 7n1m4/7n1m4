@@ -112,6 +112,17 @@ pub struct StreamOutcome {
 /// How often a running stream checks its stop flag while idle.
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// Server-side instruction for the A2UI subset Flutter GenUI can render.
+///
+/// Applied only through the A2UI-capable turn methods, never on ordinary
+/// chat turns or one-shot calls such as auto-titling. It never touches the
+/// user's prompt text or persisted message content.
+const A2UI_SYSTEM_PROMPT: &str = r#"Dynamic UI format (A2UI v0.9, Flutter GenUI basic catalog): when the user asks for a dynamic widget/UI, reply with A2UI JSON only (JSON lines or one fenced ```json block), no prose. Otherwise reply with plain text as usual.
+Emit a createSurface message followed by an updateComponents message, both using the same surfaceId:
+{"version":"v0.9","createSurface":{"surfaceId":"weather-card","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","sendDataModel":true}}
+{"version":"v0.9","updateComponents":{"surfaceId":"weather-card","components":[{"id":"root","component":"Column","children":["headerText"]},{"id":"headerText","component":"Text","text":"..."}]}}
+Rules: mint a new unique, stable, slug-like surfaceId per widget (e.g. "weather-card-2026-11-25"); reuse that exact surfaceId only when updating that same widget, never for a new one; never use a fixed id like "main". The root component id must be "root"; define each component once in updateComponents and connect them by id via children (never nest component objects); use only the no-asset basic catalog: Text, Column, Row, Button, Card, CheckBox, Divider, Icon, List, Modal, ChoicePicker, Slider, Tabs, TextField. No image, audio, or video."#;
+
 /// Streaming chat service.
 ///
 /// Cheap to clone; clones share the database, provider table, status table,
@@ -244,8 +255,16 @@ impl ChatService {
         model: &str,
         text: &str,
     ) -> Result<StreamOutcome> {
-        self.send_message_with_assistant_id(session_id, provider_id, config, model, text, None)
-            .await
+        self.send_message_with_assistant_id(
+            session_id,
+            provider_id,
+            config,
+            model,
+            text,
+            None,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
     }
 
     /// Like [`Self::send_message`] but lets the caller supply a pre-minted
@@ -259,8 +278,59 @@ impl ChatService {
         model: &str,
         text: &str,
         assistant_message_id: Option<&str>,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<StreamOutcome> {
+        self.send_message_inner(
+            session_id,
+            provider_id,
+            config,
+            model,
+            text,
+            assistant_message_id,
+            cancel,
+            false,
+        )
+        .await
+    }
+
+    /// Like [`Self::send_message_with_assistant_id`], but adds the A2UI system
+    /// instruction for clients that can render GenUI surfaces.
+    pub async fn send_message_with_a2ui(
+        &self,
+        session_id: Option<&str>,
+        provider_id: &str,
+        config: ProviderConfig,
+        model: &str,
+        text: &str,
+        assistant_message_id: Option<&str>,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<StreamOutcome> {
+        self.send_message_inner(
+            session_id,
+            provider_id,
+            config,
+            model,
+            text,
+            assistant_message_id,
+            cancel,
+            true,
+        )
+        .await
+    }
+
+    async fn send_message_inner(
+        &self,
+        session_id: Option<&str>,
+        provider_id: &str,
+        config: ProviderConfig,
+        model: &str,
+        text: &str,
+        assistant_message_id: Option<&str>,
+        cancel: Arc<AtomicBool>,
+        a2ui: bool,
     ) -> Result<StreamOutcome> {
         let session_id = self.ensure_session(session_id.unwrap_or(""), text)?;
+        self.register_cancel(&session_id, &cancel);
         let user_message = StoredMessage {
             id: new_id(),
             session_id: session_id.clone(),
@@ -281,11 +351,12 @@ impl ChatService {
             ChatRequest {
                 model: model.to_string(),
                 messages,
-                system: None,
+                system: a2ui.then(|| A2UI_SYSTEM_PROMPT.to_string()),
                 temperature: None,
                 max_tokens: None,
                 tools: Vec::new(),
             },
+            cancel,
         )
         .await
     }
@@ -303,8 +374,39 @@ impl ChatService {
         config: ProviderConfig,
         model: String,
         messages: Vec<ChatMessage>,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<StreamOutcome> {
+        self.stream_inner(session, provider_id, config, model, messages, cancel, false)
+            .await
+    }
+
+    /// Like [`Self::stream`], but adds the A2UI system instruction for clients
+    /// that can render GenUI surfaces.
+    pub async fn stream_with_a2ui(
+        &self,
+        session: String,
+        provider_id: String,
+        config: ProviderConfig,
+        model: String,
+        messages: Vec<ChatMessage>,
+        cancel: Arc<AtomicBool>,
+    ) -> Result<StreamOutcome> {
+        self.stream_inner(session, provider_id, config, model, messages, cancel, true)
+            .await
+    }
+
+    async fn stream_inner(
+        &self,
+        session: String,
+        provider_id: String,
+        config: ProviderConfig,
+        model: String,
+        messages: Vec<ChatMessage>,
+        cancel: Arc<AtomicBool>,
+        a2ui: bool,
     ) -> Result<StreamOutcome> {
         let session_id = self.ensure_session(&session, "New chat")?;
+        self.register_cancel(&session_id, &cancel);
         self.run_stream(
             session_id,
             None,
@@ -313,11 +415,12 @@ impl ChatService {
             ChatRequest {
                 model,
                 messages,
-                system: None,
+                system: a2ui.then(|| A2UI_SYSTEM_PROMPT.to_string()),
                 temperature: None,
                 max_tokens: None,
                 tools: Vec::new(),
             },
+            cancel,
         )
         .await
     }
@@ -362,6 +465,18 @@ impl ChatService {
         .await
     }
 
+    /// Install the caller's flag as this session's active turn cancel.
+    ///
+    /// Call this before spawning a background turn so a cancel arriving right
+    /// after the send ack already reaches the generation. The same `Arc` must
+    /// be passed into `send_message_with_assistant_id` / `stream`.
+    pub fn register_cancel(&self, session_id: &str, cancel: &Arc<AtomicBool>) {
+        self.cancels
+            .lock()
+            .expect("cancel mutex poisoned")
+            .insert(session_id.to_string(), cancel.clone());
+    }
+
     async fn run_stream(
         &self,
         session_id: String,
@@ -369,14 +484,10 @@ impl ChatService {
         provider_id: &str,
         config: ProviderConfig,
         request: ChatRequest,
+        cancel: Arc<AtomicBool>,
     ) -> Result<StreamOutcome> {
         let assistant_message_id = assistant_message_id.unwrap_or_else(new_id);
         self.set_status(&session_id, ChatStatus::Streaming);
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.cancels
-            .lock()
-            .expect("cancel mutex poisoned")
-            .insert(session_id.clone(), cancel.clone());
 
         let result = self
             .run_stream_inner(
@@ -784,6 +895,7 @@ mod tests {
         deltas: Vec<String>,
         pace: Duration,
         fail_on_stream: bool,
+        requests: Option<Arc<Mutex<Vec<ChatRequest>>>>,
     }
 
     impl MockChatClient {
@@ -792,7 +904,21 @@ mod tests {
                 deltas: deltas.iter().map(|d| d.to_string()).collect(),
                 pace: Duration::ZERO,
                 fail_on_stream: false,
+                requests: None,
             }
+        }
+
+        /// Record every request reaching the provider so tests can inspect
+        /// the exact `ChatRequest` that would be sent to the LLM.
+        fn recording(deltas: &[&str]) -> (Self, Arc<Mutex<Vec<ChatRequest>>>) {
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let client = Self {
+                deltas: deltas.iter().map(|d| d.to_string()).collect(),
+                pace: Duration::ZERO,
+                fail_on_stream: false,
+                requests: Some(requests.clone()),
+            };
+            (client, requests)
         }
 
         fn pending() -> Self {
@@ -800,6 +926,7 @@ mod tests {
                 deltas: Vec::new(),
                 pace: Duration::MAX,
                 fail_on_stream: false,
+                requests: None,
             }
         }
 
@@ -808,6 +935,7 @@ mod tests {
                 deltas: Vec::new(),
                 pace: Duration::ZERO,
                 fail_on_stream: true,
+                requests: None,
             }
         }
     }
@@ -826,6 +954,9 @@ mod tests {
         }
 
         async fn stream(&self, req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+            if let Some(requests) = &self.requests {
+                requests.lock().unwrap().push(req.clone());
+            }
             if self.fail_on_stream {
                 return Err(anima_llm::LlmError::Provider(
                     "mock provider boom".to_string(),
@@ -957,6 +1088,7 @@ mod tests {
                     content: "ping".to_string(),
                     tool_call_id: None,
                 }],
+                Arc::new(AtomicBool::new(false)),
             )
             .await
             .unwrap();
@@ -968,6 +1100,130 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "assistant");
         assert_eq!(messages[0].content, "pong");
+    }
+
+    #[tokio::test]
+    async fn a2ui_turns_inject_unique_surface_prompt_without_changing_user_messages() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let (client, requests) = MockChatClient::recording(&["plain reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        // `stream_with_a2ui` owns its history, so it creates a separate
+        // session; the two `send_message*` turns share this one.
+        let session = service.new_session_with_title("Custom title").unwrap();
+        // An ordinary turn must not receive the widget instruction.
+        let plain = service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "ordinary question",
+            )
+            .await
+            .unwrap();
+        assert_eq!(plain.content, "plain reply");
+
+        let outcome = service
+            .send_message_with_a2ui(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "hi there",
+                None,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome.content, "plain reply");
+
+        let explicit = vec![ChatMessage {
+            role: Role::User,
+            content: "another question".to_string(),
+            tool_call_id: None,
+        }];
+        let streamed = service
+            .stream_with_a2ui(
+                String::new(),
+                "mock".to_string(),
+                ProviderConfig::default(),
+                "mock-model".to_string(),
+                explicit.clone(),
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+        assert_ne!(streamed.session_id, session.id);
+
+        let recorded = requests.lock().unwrap();
+        // The assistant's first reply may trigger a separate bounded
+        // auto-title call; select only the two chat turns by prompt text.
+        let turn_for = |text: &str| {
+            recorded
+                .iter()
+                .find(|req| req.messages.iter().any(|m| m.content == text))
+                .unwrap_or_else(|| panic!("no provider request for {text:?}"))
+        };
+        let plain_request = turn_for("ordinary question");
+        assert!(
+            plain_request.system.is_none(),
+            "ordinary turns must not get the A2UI instruction"
+        );
+
+        let sent_request = turn_for("hi there");
+        let streamed_request = turn_for("another question");
+        for request in [sent_request, streamed_request] {
+            let system = request
+                .system
+                .as_deref()
+                .expect("A2UI-capable turn needs a system prompt");
+            assert!(system.contains("v0.9"));
+            assert!(
+                system.contains("https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json")
+            );
+            assert!(system.contains(r#""id":"root""#));
+            assert!(system.contains("createSurface"));
+            assert!(system.contains("updateComponents"));
+            assert!(system.contains("unique, stable, slug-like surfaceId"));
+            assert!(!system.contains(r#""surfaceId":"main""#));
+            assert!(
+                request.messages.iter().all(|m| m.role != Role::System),
+                "system instruction must stay in ChatRequest.system"
+            );
+        }
+        assert_eq!(plain_request.messages.len(), 1);
+        assert_eq!(plain_request.messages[0].role, Role::User);
+        assert_eq!(sent_request.messages.len(), 3);
+        assert_eq!(sent_request.messages[0].content, "ordinary question");
+        assert_eq!(sent_request.messages[1].content, "plain reply");
+        assert_eq!(sent_request.messages[2].content, "hi there");
+        assert!(sent_request
+            .messages
+            .iter()
+            .all(|m| m.role == Role::User || m.role == Role::Assistant));
+        assert_eq!(streamed_request.messages.len(), 1);
+        assert_eq!(streamed_request.messages[0].role, Role::User);
+
+        let repo = MessageRepo::new(db);
+        let sent = repo.list(&session.id).unwrap();
+        assert_eq!(sent.len(), 4);
+        assert_eq!(sent[0].role, "user");
+        assert_eq!(sent[0].content, "ordinary question");
+        assert_eq!(sent[1].role, "assistant");
+        assert_eq!(sent[2].content, "hi there");
+        assert_eq!(sent[3].role, "assistant");
+        assert_eq!(sent[3].content, "plain reply");
+        let streamed_messages = repo.list(&streamed.session_id).unwrap();
+        assert_eq!(streamed_messages.len(), 1);
+        assert_eq!(streamed_messages[0].content, "plain reply");
+        assert!(
+            sent.iter()
+                .chain(streamed_messages.iter())
+                .all(|m| !m.content.contains("a2ui.org")),
+            "system prompt must never leak into persisted/user-visible messages"
+        );
     }
 
     #[tokio::test]
@@ -1022,6 +1278,48 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[tokio::test]
+    async fn preregistered_cancel_stops_a_stream_before_it_registers() {
+        // The daemon arms this flag in its chat.send handler, before the
+        // background turn starts. A cancel immediately after the ack can
+        // arrive before the stream polls its flag; the generation must still
+        // stop and must not persist an assistant message.
+        let (_dir, db) = test_db();
+        let verify_db = db.clone();
+        let service = ChatService::new(db);
+        service.register_client("mock", Arc::new(MockChatClient::pending()));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let session = service.new_session().unwrap();
+        cancel.store(true, Ordering::SeqCst);
+        service.register_cancel(&session.id, &cancel);
+
+        assert!(service.stop(session.id.clone()).await.unwrap());
+        let outcome = service
+            .send_message_with_assistant_id(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "stop me",
+                None,
+                cancel,
+            )
+            .await
+            .unwrap();
+
+        assert!(outcome.stopped);
+        assert_eq!(outcome.content, "");
+        assert!(outcome.assistant_message_id.is_none());
+        assert_eq!(service.status(&session.id), ChatStatus::Idle);
+        let messages = MessageRepo::new(verify_db).list(&session.id).unwrap();
+        assert_eq!(
+            messages.len(),
+            1,
+            "cancelled turn must not persist an assistant message"
+        );
+        assert_eq!(messages[0].role, "user");
     }
 
     #[tokio::test]

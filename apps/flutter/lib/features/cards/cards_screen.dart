@@ -17,6 +17,8 @@ class CardsScreen extends StatefulWidget {
 class _CardsScreenState extends State<CardsScreen> {
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
   Map<String, dynamic>? _detail;
+  ({String id, bool liked, bool bookmarked})? _metadata;
+  bool _metadataBusy = false;
   bool _busy = false;
   String? _error;
 
@@ -48,11 +50,41 @@ class _CardsScreenState extends State<CardsScreen> {
     });
     try {
       final card = await widget.client.cardsGet(id);
-      if (mounted) setState(() => _detail = card);
+      final metadata = await widget.client.cardsMetadata(id);
+      if (mounted) {
+        setState(() {
+          _detail = card;
+          _metadata = metadata;
+        });
+      }
     } on DaemonClientException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setMetadata({
+    required bool liked,
+    required bool bookmarked,
+  }) async {
+    final current = _metadata;
+    if (current == null || current.id.isEmpty) return;
+    setState(() {
+      _metadataBusy = true;
+      _error = null;
+    });
+    try {
+      final metadata = await widget.client.cardsMetadataSet(
+        current.id,
+        liked: liked,
+        bookmarked: bookmarked,
+      );
+      if (mounted) setState(() => _metadata = metadata);
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _metadataBusy = false);
     }
   }
 
@@ -70,9 +102,10 @@ class _CardsScreenState extends State<CardsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
-                // Cards are explicitly out of scope for the local daemon
-                // port: card verbs return a not-implemented error. Never show
-                // a false "import succeeded" state here.
+                // Card CRUD is out of scope for the local daemon port:
+                // cards.import returns a not-implemented error. Never show a
+                // false "import succeeded" state here. Local metadata is the
+                // one card verb surface that is implemented.
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(12),
@@ -96,7 +129,32 @@ class _CardsScreenState extends State<CardsScreen> {
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
-                      child: Text(jsonEncode(_detail)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(jsonEncode(_detail)),
+                          if (_metadata != null) ...<Widget>[
+                            CheckboxListTile(
+                              title: const Text('Liked'),
+                              value: _metadata!.liked,
+                              enabled: !_metadataBusy,
+                              onChanged: (value) => _setMetadata(
+                                liked: value ?? false,
+                                bookmarked: _metadata!.bookmarked,
+                              ),
+                            ),
+                            CheckboxListTile(
+                              title: const Text('Bookmarked'),
+                              value: _metadata!.bookmarked,
+                              enabled: !_metadataBusy,
+                              onChanged: (value) => _setMetadata(
+                                liked: _metadata!.liked,
+                                bookmarked: value ?? false,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
               ],
