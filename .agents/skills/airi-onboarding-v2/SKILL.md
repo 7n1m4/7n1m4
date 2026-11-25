@@ -135,10 +135,10 @@ The orchestrator's NOTICE comment is load-bearing: V2 previewing must never muta
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/project-onboarding-modernize.md](docs/project-onboarding-modernize.md) — Canonical Onboarding V2/V3 spec (Core Principles 1–6, 5 Entry Use Cases, per-step behavior, dual-track flow, codebase reference table).
-- [docs/archive/proposal-onboarding-overhaul.md](docs/archive/proposal-onboarding-overhaul.md) — (Archived) Post-V2 roadmap superseded and consolidated into [docs/project-onboarding-modernize.md](docs/project-onboarding-modernize.md).
-- [docs/design-onboarding-character-selection.md](docs/design-onboarding-character-selection.md) — Character selection & starter souls.
-- [docs/proposal-global-user-profile.md](docs/proposal-global-user-profile.md) — Global user profile spec (Step 3).
+- [docs/project-onboarding-modernize.md](../../../docs/project-onboarding-modernize.md) — Canonical Onboarding V2/V3 spec (Core Principles 1–6, 5 Entry Use Cases, per-step behavior, dual-track flow, codebase reference table).
+- [docs/archive/proposal-onboarding-overhaul.md](../../../docs/archive/proposal-onboarding-overhaul.md) — (Archived) Post-V2 roadmap superseded and consolidated into [docs/project-onboarding-modernize.md](../../../docs/project-onboarding-modernize.md).
+- [docs/design-onboarding-character-selection.md](../../../docs/design-onboarding-character-selection.md) — Character selection & starter souls.
+- [docs/proposal-global-user-profile.md](../../../docs/proposal-global-user-profile.md) — Global user profile spec (Step 3).
 
 ## Verification
 

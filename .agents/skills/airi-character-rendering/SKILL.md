@@ -14,15 +14,15 @@ This skill provides comprehensive guidelines, architectural mental models, exact
 
 Before modifying expression systems, rendering loops, or model customization UI, read these foundational documents:
 
-- **[`docs/design-model-customizer.md`](docs/design-model-customizer.md)** — **Canonical design for interactive model capability exploration**:
+- **[`docs/design-model-customizer.md`](../../../docs/design-model-customizer.md)** — **Canonical design for interactive model capability exploration**:
   - Defines the strict boundary between **`ModelCustomizer.vue`** (zero-side-effects capabilities explorer, transient click-to-preview, rename/visibility/favorite/cycle toggles) and parent containers like **`chat_rehearsal.vue`** (sandbox dialogue, LLM generation, backup file download, prompt injection) and settings panels (`vrm.vue`, `live2d.vue`, `mmd.vue`, `spine.vue`).
-- **[`docs/design-act-token-expression-system.md`](docs/design-act-token-expression-system.md)** — **3-Layer Expression Architecture**:
+- **[`docs/design-act-token-expression-system.md`](../../../docs/design-act-token-expression-system.md)** — **3-Layer Expression Architecture**:
   - *Layer 1 (Raw Geometry/Mesh)*: Underlying morph targets / Live2D parameter IDs.
   - *Layer 2 (Preset Transition Engine)*: `useVRMEmote` / `Live2DStageManager` cubic easing, duration blending, and non-destructive additive layering.
   - *Layer 3 (Semantic ACT Mapping)*: User-configurable VRM expression $\to$ ACT emotion slot bindings (`emotionMappings`) and LLM `<|ACT:emotion="..."|>` cue tokens.
-- **[`docs/design-vrm-animation-ecosystem.md`](docs/design-vrm-animation-ecosystem.md)** — VRM animation mixer, MToon shader injection, bone retargeting, and runtime hooks.
-- **[`docs/rosetta-stone.md`](docs/rosetta-stone.md)** — Canonical concept-to-path index (§13 BroadcastChannel registry, §16 binary-proxy safety).
-- **[`docs/research-vrm-cloth-interaction.md`](docs/research-vrm-cloth-interaction.md)** — VRM cloth tugging, spring bones, and tactile interaction expressions.
+- **[`docs/design-vrm-animation-ecosystem.md`](../../../docs/design-vrm-animation-ecosystem.md)** — VRM animation mixer, MToon shader injection, bone retargeting, and runtime hooks.
+- **[`docs/rosetta-stone.md`](../../../docs/rosetta-stone.md)** — Canonical concept-to-path index (§13 BroadcastChannel registry, §16 binary-proxy safety).
+- **[`docs/research-vrm-cloth-interaction.md`](../../../docs/research-vrm-cloth-interaction.md)** — VRM cloth tugging, spring bones, and tactile interaction expressions.
 
 ---
 
@@ -155,10 +155,10 @@ Expressions can be activated via three distinct pathways:
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-vrm-animation-ecosystem.md](docs/design-vrm-animation-ecosystem.md) — VRM animation ecosystem design.
-- [docs/arch-live2d-wasm-optimization.md](docs/arch-live2d-wasm-optimization.md) — Live2D WASM optimization architecture.
-- [docs/design-act-token-expression-system.md](docs/design-act-token-expression-system.md) — ACT token expression system design.
-- [docs/research-vrm-cloth-interaction.md](docs/research-vrm-cloth-interaction.md) — VRM cloth interaction deep dive.
-- [docs/research-mmd-issues-and-regressions.md](docs/research-mmd-issues-and-regressions.md) — MMD issues and regressions.
-- [docs/design-spine-model.md](docs/design-spine-model.md) — Spine model design.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §16 binary-proxy lesson.
+- [docs/design-vrm-animation-ecosystem.md](../../../docs/design-vrm-animation-ecosystem.md) — VRM animation ecosystem design.
+- [docs/arch-live2d-wasm-optimization.md](../../../docs/arch-live2d-wasm-optimization.md) — Live2D WASM optimization architecture.
+- [docs/design-act-token-expression-system.md](../../../docs/design-act-token-expression-system.md) — ACT token expression system design.
+- [docs/research-vrm-cloth-interaction.md](../../../docs/research-vrm-cloth-interaction.md) — VRM cloth interaction deep dive.
+- [docs/research-mmd-issues-and-regressions.md](../../../docs/research-mmd-issues-and-regressions.md) — MMD issues and regressions.
+- [docs/design-spine-model.md](../../../docs/design-spine-model.md) — Spine model design.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §16 binary-proxy lesson.

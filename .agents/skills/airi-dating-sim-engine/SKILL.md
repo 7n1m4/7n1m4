@@ -124,11 +124,11 @@ Two styles coexist in AIRI. Dating-sim uses the raw `new BroadcastChannel('datin
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-dating-sim-gamestate-mechanics.md](docs/design-dating-sim-gamestate-mechanics.md) — Dating sim gamestate mechanics.
-- [docs/design-dating-sim-intimacy-spec.md](docs/design-dating-sim-intimacy-spec.md) — Dating sim intimacy spec.
-- [docs/design-director-producer-roles.md](docs/design-director-producer-roles.md) — Director/producer roles document.
-- [docs/content/en/docs/showcase/07-producer-subsystem.md](docs/content/en/docs/showcase/07-producer-subsystem.md) — Producer subsystem showcase.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §13 BroadcastChannel registry.
+- [docs/design-dating-sim-gamestate-mechanics.md](../../../docs/design-dating-sim-gamestate-mechanics.md) — Dating sim gamestate mechanics.
+- [docs/design-dating-sim-intimacy-spec.md](../../../docs/design-dating-sim-intimacy-spec.md) — Dating sim intimacy spec.
+- [docs/design-director-producer-roles.md](../../../docs/design-director-producer-roles.md) — Director/producer roles document.
+- [docs/content/en/docs/showcase/07-producer-subsystem.md](../../../docs/content/en/docs/showcase/07-producer-subsystem.md) — Producer subsystem showcase.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §13 BroadcastChannel registry.
 
 ## Verification
 

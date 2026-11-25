@@ -38,14 +38,14 @@ Use this skill when you need to design, debug, or benchmark memory retrieval:
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/memory_lab/retrieval-and-ranking-spec.md](docs/memory_lab/retrieval-and-ranking-spec.md) — Canonical spec for the retrieval pipeline.
-- [docs/memory_lab/search-probe-harness-plan.md](docs/memory_lab/search-probe-harness-plan.md) — Test-harness plan for measuring product-shaped search quality.
-- [docs/memory_lab/evaluation-and-benchmarking-methodology.md](docs/memory_lab/evaluation-and-benchmarking-methodology.md) — Evaluation and benchmarking methodology.
-- [docs/memory_lab/benchmark_history_and_outlook.md](docs/memory_lab/benchmark_history_and_outlook.md) — Benchmark history and outlook.
-- [docs/memory_lab/scoped-probe-window-plan.md](docs/memory_lab/scoped-probe-window-plan.md) — Scoped probe window plan.
-- [docs/design-semantic-search-browser-native.md](docs/design-semantic-search-browser-native.md) — Browser-native semantic search design.
-- [docs/blueprint-semantic-search-integration.md](docs/blueprint-semantic-search-integration.md) — Semantic search integration blueprint.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §9 memory-systems canonical path index.
+- [docs/memory_lab/retrieval-and-ranking-spec.md](../../../docs/memory_lab/retrieval-and-ranking-spec.md) — Canonical spec for the retrieval pipeline.
+- [docs/memory_lab/search-probe-harness-plan.md](../../../docs/memory_lab/search-probe-harness-plan.md) — Test-harness plan for measuring product-shaped search quality.
+- [docs/memory_lab/evaluation-and-benchmarking-methodology.md](../../../docs/memory_lab/evaluation-and-benchmarking-methodology.md) — Evaluation and benchmarking methodology.
+- [docs/memory_lab/benchmark_history_and_outlook.md](../../../docs/memory_lab/benchmark_history_and_outlook.md) — Benchmark history and outlook.
+- [docs/memory_lab/scoped-probe-window-plan.md](../../../docs/memory_lab/scoped-probe-window-plan.md) — Scoped probe window plan.
+- [docs/design-semantic-search-browser-native.md](../../../docs/design-semantic-search-browser-native.md) — Browser-native semantic search design.
+- [docs/blueprint-semantic-search-integration.md](../../../docs/blueprint-semantic-search-integration.md) — Semantic search integration blueprint.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §9 memory-systems canonical path index.
 
 ## Verification
 

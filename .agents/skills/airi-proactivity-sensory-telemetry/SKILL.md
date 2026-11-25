@@ -70,12 +70,12 @@ the user is appropriate before any TTS/LLM output is produced.
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-proactivity-heartbeats-engine.md](docs/design-proactivity-heartbeats-engine.md) — Proactivity heartbeats engine design (5-phase pipeline).
-- [docs/arch-chat-stt-proactivity-pipelines.md](docs/arch-chat-stt-proactivity-pipelines.md) — Chat/STT/proactivity pipelines architecture.
-- [docs/project-proactivity-enrichment-roadmap.md](docs/project-proactivity-enrichment-roadmap.md) — Proactivity enrichment roadmap.
-- [docs/proposal-proactivity-vision.md](docs/proposal-proactivity-vision.md) — Proactivity vision proposal.
-- [docs/design-director-producer-roles.md](docs/design-director-producer-roles.md) — Director/producer roles document.
-- [docs/content/en/docs/showcase/07-producer-subsystem.md](docs/content/en/docs/showcase/07-producer-subsystem.md) — Producer subsystem showcase.
+- [docs/design-proactivity-heartbeats-engine.md](../../../docs/design-proactivity-heartbeats-engine.md) — Proactivity heartbeats engine design (5-phase pipeline).
+- [docs/arch-chat-stt-proactivity-pipelines.md](../../../docs/arch-chat-stt-proactivity-pipelines.md) — Chat/STT/proactivity pipelines architecture.
+- [docs/project-proactivity-enrichment-roadmap.md](../../../docs/project-proactivity-enrichment-roadmap.md) — Proactivity enrichment roadmap.
+- [docs/proposal-proactivity-vision.md](../../../docs/proposal-proactivity-vision.md) — Proactivity vision proposal.
+- [docs/design-director-producer-roles.md](../../../docs/design-director-producer-roles.md) — Director/producer roles document.
+- [docs/content/en/docs/showcase/07-producer-subsystem.md](../../../docs/content/en/docs/showcase/07-producer-subsystem.md) — Producer subsystem showcase.
 
 ## Verification
 

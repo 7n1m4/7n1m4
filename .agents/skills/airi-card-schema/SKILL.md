@@ -73,11 +73,11 @@ AIRI maintains an advanced fork of the upstream (`moeru-ai/airi:main`).
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-airi-card.md](docs/design-airi-card.md) — AIRI Package Spec v2, upstream ZIP packaging, ecosystem interoperability.
-- [docs/design-character-card-import-export.md](docs/design-character-card-import-export.md) — Character card import/export design.
-- [docs/content/en/docs/manual/config/character-card.md](docs/content/en/docs/manual/config/character-card.md) — Character card manual/config.
-- [docs/content/en/docs/showcase/01-card-system.md](docs/content/en/docs/showcase/01-card-system.md) — Card system showcase.
-- [docs/design-starter-character-gold-standard.md](docs/design-starter-character-gold-standard.md) — Starter character gold standard.
+- [docs/design-airi-card.md](../../../docs/design-airi-card.md) — AIRI Package Spec v2, upstream ZIP packaging, ecosystem interoperability.
+- [docs/design-character-card-import-export.md](../../../docs/design-character-card-import-export.md) — Character card import/export design.
+- [docs/content/en/docs/manual/config/character-card.md](../../../docs/content/en/docs/manual/config/character-card.md) — Character card manual/config.
+- [docs/content/en/docs/showcase/01-card-system.md](../../../docs/content/en/docs/showcase/01-card-system.md) — Card system showcase.
+- [docs/design-starter-character-gold-standard.md](../../../docs/design-starter-character-gold-standard.md) — Starter character gold standard.
 
 ## Related Skills & References
 

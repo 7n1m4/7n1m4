@@ -35,10 +35,10 @@ Paths below are relative to `packages/stage-pages/src/pages/settings/modules/`.
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/memory_lab/memory-settings-home-page-plan.md](docs/memory_lab/memory-settings-home-page-plan.md) — Memory settings home page plan.
-- [docs/memory_lab/rich-journal-mockups.md](docs/memory_lab/rich-journal-mockups.md) — Rich journal mockups.
-- [docs/memory_lab/archive-index.md](docs/memory_lab/archive-index.md) — Archive index.
-- [docs/memory_lab/in_progress.md](docs/memory_lab/in_progress.md) — In-progress items.
+- [docs/memory_lab/memory-settings-home-page-plan.md](../../../docs/memory_lab/memory-settings-home-page-plan.md) — Memory settings home page plan.
+- [docs/memory_lab/rich-journal-mockups.md](../../../docs/memory_lab/rich-journal-mockups.md) — Rich journal mockups.
+- [docs/memory_lab/archive-index.md](../../../docs/memory_lab/archive-index.md) — Archive index.
+- [docs/memory_lab/in_progress.md](../../../docs/memory_lab/in_progress.md) — In-progress items.
 
 ## Verification
 

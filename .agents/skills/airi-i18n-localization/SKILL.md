@@ -37,8 +37,8 @@ Key→file map (from `docs/settings-yaml.md`):
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/settings-yaml.md](docs/settings-yaml.md) — Canonical key→file map and yaml-manager command interface guide.
-- [docs/proposal-broader-unicode-support.md](docs/proposal-broader-unicode-support.md) — Broader Unicode support proposal.
+- [docs/settings-yaml.md](../../../docs/settings-yaml.md) — Canonical key→file map and yaml-manager command interface guide.
+- [docs/proposal-broader-unicode-support.md](../../../docs/proposal-broader-unicode-support.md) — Broader Unicode support proposal.
 
 ## Verification
 

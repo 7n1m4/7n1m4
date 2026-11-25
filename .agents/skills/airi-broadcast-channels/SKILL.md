@@ -59,7 +59,7 @@ Multi-window AIRI (desktop chat + stage + caption + widgets, or web split panes)
 
 ### Cross-Citations
 
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — §13 canonical registry.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — §13 canonical registry.
 - Skills that consume specific channels: `airi-caption-subsystem`, `airi-dating-sim-engine`, `airi-scenes-backgrounds`, `airi-stage-ui-surfaces`, `airi-byos-cloud-sync`, `airi-cloud-relay-infrastructure`.
 
 ## Related Skills & References
@@ -69,4 +69,4 @@ Multi-window AIRI (desktop chat + stage + caption + widgets, or web split panes)
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical BroadcastChannel registry (§13).
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical BroadcastChannel registry (§13).

@@ -95,14 +95,14 @@ If you skip this, concurrent edits (e.g., another tab writing a separate `airi` 
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-character-card-import-export.md](docs/design-character-card-import-export.md) — Character card import/export design.
-- [docs/content/en/docs/showcase/02-animadex-wizard.md](docs/content/en/docs/showcase/02-animadex-wizard.md) — AnimaDex wizard showcase.
-- [docs/proposal-animadex-wizard.md](docs/proposal-animadex-wizard.md) — AnimaDex wizard proposal.
-- [docs/proposal-animadex-new-characters.md](docs/proposal-animadex-new-characters.md) — AnimaDex new characters proposal.
-- [docs/project-animadex-wizard-pending-items.md](docs/project-animadex-wizard-pending-items.md) — AnimaDex wizard pending items.
-- [docs/proposal-default-cards-revamp.md](docs/proposal-default-cards-revamp.md) — Default cards revamp proposal.
-- [docs/design-airi-card.md](docs/design-airi-card.md) — AIRI card design spec.
-- [docs/design-nan0-integration-feedback.md](docs/design-nan0-integration-feedback.md) — NAN0 integration feedback.
+- [docs/design-character-card-import-export.md](../../../docs/design-character-card-import-export.md) — Character card import/export design.
+- [docs/content/en/docs/showcase/02-animadex-wizard.md](../../../docs/content/en/docs/showcase/02-animadex-wizard.md) — AnimaDex wizard showcase.
+- [docs/proposal-animadex-wizard.md](../../../docs/proposal-animadex-wizard.md) — AnimaDex wizard proposal.
+- [docs/proposal-animadex-new-characters.md](../../../docs/proposal-animadex-new-characters.md) — AnimaDex new characters proposal.
+- [docs/project-animadex-wizard-pending-items.md](../../../docs/project-animadex-wizard-pending-items.md) — AnimaDex wizard pending items.
+- [docs/proposal-default-cards-revamp.md](../../../docs/proposal-default-cards-revamp.md) — Default cards revamp proposal.
+- [docs/design-airi-card.md](../../../docs/design-airi-card.md) — AIRI card design spec.
+- [docs/design-nan0-integration-feedback.md](../../../docs/design-nan0-integration-feedback.md) — NAN0 integration feedback.
 
 ## Verification
 

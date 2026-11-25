@@ -49,13 +49,11 @@ The DSL VM executes scripting instructions attached to Live2D character models:
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-live2d-dsl-interpreter-spec.md](docs/design-live2d-dsl-interpreter-spec.md) — Formal specification for the Live2D Scripting DSL instruction set.
-- [docs/handoff-live2d-dsl-phase2.md](docs/handoff-live2d-dsl-phase2.md) — Phase 2 implementation handoff (instruction dispatch, test cases).
-- [docs/design-live2d-multimoc-changecos.md](docs/design-live2d-multimoc-changecos.md) — Multi-moc3 costume switching (change_cos) design.
-- [docs/design-live2d-dsl-test-cases.md](docs/design-live2d-dsl-test-cases.md) — DSL test cases handoff.
-- [docs/design-live2d-change-cos-challenge.md](docs/design-live2d-change-cos-challenge.md) — change_cos dependency challenge.
-- [docs/research-live2d-special-sauce.md](docs/research-live2d-special-sauce.md) — Live2D special sauce insights.
-- [docs/project-standalone-live2d-engine-plan.md](docs/project-standalone-live2d-engine-plan.md) — Standalone Live2D engine plan.
+- [packages/live2d-runtime/src/dsl/README.md](../../../packages/live2d-runtime/src/dsl/README.md) — DSL instruction set, grammar, and VM heap architecture.
+- [docs/handoff-live2d-dsl-phase2.md](../../../docs/handoff-live2d-dsl-phase2.md) — Phase 2 implementation handoff (instruction dispatch, test cases).
+- [packages/stage-ui-live2d/src/runtime/README.md](../../../packages/stage-ui-live2d/src/runtime/README.md) — Multi-moc3 costume switching (change_cos) runtime.
+- [docs/research-live2d-special-sauce.md](../../../docs/research-live2d-special-sauce.md) — Live2D special sauce insights.
+- [docs/project-standalone-live2d-engine-plan.md](../../../docs/project-standalone-live2d-engine-plan.md) — Standalone Live2D engine plan.
 
 ## Related Skills & References
 

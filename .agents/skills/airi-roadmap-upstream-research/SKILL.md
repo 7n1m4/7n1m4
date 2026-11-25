@@ -100,25 +100,25 @@ Maintain an active rolling monitor of high-impact upstream PRs during scheduled 
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/content/en/docs/chronicles/roadmap.md](docs/content/en/docs/chronicles/roadmap.md) — AIRI Pending Items Catalog (roadmap triage source of truth).
-- [docs/project-selective-upstream-sync-protocol.md](docs/project-selective-upstream-sync-protocol.md) — Selective upstream sync protocol.
-- [docs/project-selective-upstream-sync-shortlist.md](docs/project-selective-upstream-sync-shortlist.md) — Selective upstream sync shortlist.
-- [docs/project-selective-upstream-sync-p1-file-manifest.md](docs/project-selective-upstream-sync-p1-file-manifest.md) — Selective upstream sync P1 file manifest.
-- [docs/project-selective-upstream-sync-phase-a-buy-in.md](docs/project-selective-upstream-sync-phase-a-buy-in.md) — Selective upstream sync phase A buy-in.
-- [docs/project-selective-upstream-sync-phase-b-buy-in.md](docs/project-selective-upstream-sync-phase-b-buy-in.md) — Selective upstream sync phase B buy-in.
-- [docs/project-critical-upstream-sync-hashes.md](docs/project-critical-upstream-sync-hashes.md) — Critical upstream sync hashes.
-- [docs/project-upstream-sync-alpha15-alpha22.md](docs/project-upstream-sync-alpha15-alpha22.md) — Upstream sync alpha15→alpha22.
-- [docs/project-upstream-sync-alpha15-alpha22-v2.md](docs/project-upstream-sync-alpha15-alpha22-v2.md) — Upstream sync alpha15→alpha22 v2.
-- [docs/project-upstream-sync-report-alpha22-to-latest.md](docs/project-upstream-sync-report-alpha22-to-latest.md) — Upstream sync report alpha22→latest.
-- [docs/project-upstream-pr-catalog.md](docs/project-upstream-pr-catalog.md) — Upstream PR catalog.
-- [docs/project-upstream-squat-candidates.md](docs/project-upstream-squat-candidates.md) — Upstream squat candidates.
-- [docs/project-squat-1622-report.md](docs/project-squat-1622-report.md) — Squat 1622 report.
-- [docs/project-rebase-changelog.md](docs/project-rebase-changelog.md) — Rebase changelog.
-- [docs/research-fork-harvest-report.md](docs/research-fork-harvest-report.md) — Fork harvest report.
-- [docs/research-forks-ecosystem.md](docs/research-forks-ecosystem.md) — Forks ecosystem.
-- [docs/proposal-fork-explorer-harvest-scanner.md](docs/proposal-fork-explorer-harvest-scanner.md) — Fork explorer harvest scanner proposal.
-- [docs/superpowers/README.md](docs/superpowers/README.md) — Superpowers docs README (commercial backend plans/specs index).
-- [docs/project-specialized-skills.md](docs/project-specialized-skills.md) — Specialized skills project plan.
+- [docs/content/en/docs/chronicles/roadmap.md](../../../docs/content/en/docs/chronicles/roadmap.md) — AIRI Pending Items Catalog (roadmap triage source of truth).
+- [docs/project-selective-upstream-sync-protocol.md](../../../docs/project-selective-upstream-sync-protocol.md) — Selective upstream sync protocol.
+- [docs/project-selective-upstream-sync-shortlist.md](../../../docs/project-selective-upstream-sync-shortlist.md) — Selective upstream sync shortlist.
+- [docs/project-selective-upstream-sync-p1-file-manifest.md](../../../docs/project-selective-upstream-sync-p1-file-manifest.md) — Selective upstream sync P1 file manifest.
+- [docs/project-selective-upstream-sync-phase-a-buy-in.md](../../../docs/project-selective-upstream-sync-phase-a-buy-in.md) — Selective upstream sync phase A buy-in.
+- [docs/project-selective-upstream-sync-phase-b-buy-in.md](../../../docs/project-selective-upstream-sync-phase-b-buy-in.md) — Selective upstream sync phase B buy-in.
+- [docs/project-critical-upstream-sync-hashes.md](../../../docs/project-critical-upstream-sync-hashes.md) — Critical upstream sync hashes.
+- [docs/project-upstream-sync-alpha15-alpha22.md](../../../docs/project-upstream-sync-alpha15-alpha22.md) — Upstream sync alpha15→alpha22.
+- [docs/project-upstream-sync-alpha15-alpha22-v2.md](../../../docs/project-upstream-sync-alpha15-alpha22-v2.md) — Upstream sync alpha15→alpha22 v2.
+- [docs/project-upstream-sync-report-alpha22-to-latest.md](../../../docs/project-upstream-sync-report-alpha22-to-latest.md) — Upstream sync report alpha22→latest.
+- [docs/project-upstream-pr-catalog.md](../../../docs/project-upstream-pr-catalog.md) — Upstream PR catalog.
+- [docs/project-upstream-squat-candidates.md](../../../docs/project-upstream-squat-candidates.md) — Upstream squat candidates.
+- [docs/project-squat-1622-report.md](../../../docs/project-squat-1622-report.md) — Squat 1622 report.
+- [docs/project-rebase-changelog.md](../../../docs/project-rebase-changelog.md) — Rebase changelog.
+- [docs/research-fork-harvest-report.md](../../../docs/research-fork-harvest-report.md) — Fork harvest report.
+- [docs/research-forks-ecosystem.md](../../../docs/research-forks-ecosystem.md) — Forks ecosystem.
+- [docs/proposal-fork-explorer-harvest-scanner.md](../../../docs/proposal-fork-explorer-harvest-scanner.md) — Fork explorer harvest scanner proposal.
+- [docs/superpowers/README.md](../../../docs/superpowers/README.md) — Superpowers docs README (commercial backend plans/specs index).
+- [docs/project-specialized-skills.md](../../../docs/project-specialized-skills.md) — Specialized skills project plan.
 
 ## Verification
 

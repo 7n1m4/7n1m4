@@ -24,7 +24,7 @@ The multi-instance architecture resolves the "Single-Slot Constraint", allowing 
 - [`packages/stage-ui/src/stores/provider-catalog.ts`](packages/stage-ui/src/stores/provider-catalog.ts) — Pinia store for provider catalog configurations.
 - [`packages/stage-ui/src/database/repos/providers.repo.ts`](packages/stage-ui/src/database/repos/providers.repo.ts) — IndexedDB persistence layer.
 - [`packages/stage-ui/src/composables/use-provider-validation.ts`](packages/stage-ui/src/composables/use-provider-validation.ts) — Validation logic and debouncing.
-- [`docs/design-multi-instance-provider-studio.md`](docs/design-multi-instance-provider-studio.md) — Architecture design document.
+- [`docs/design-multi-instance-provider-studio.md`](../../../docs/design-multi-instance-provider-studio.md) — Architecture design document.
 
 ## 3. Core SOPs & Guidelines
 
@@ -58,17 +58,17 @@ The multi-instance architecture resolves the "Single-Slot Constraint", allowing 
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-multi-instance-provider-studio.md](docs/design-multi-instance-provider-studio.md) — Multi-instance provider studio architecture design.
-- [docs/provider-catalog.md](docs/provider-catalog.md) — Provider catalog reference.
-- [docs/arch-provider-store-current-structure.md](docs/arch-provider-store-current-structure.md) — Provider store current structure architecture.
-- [docs/project-provider-store-restructuring-plan.md](docs/project-provider-store-restructuring-plan.md) — Provider store restructuring plan.
-- [docs/project-codex-provider-restructuring-plan.md](docs/project-codex-provider-restructuring-plan.md) — Codex provider restructuring plan.
-- [docs/archive/project-provider-store-phase1-handoff.md](docs/archive/project-provider-store-phase1-handoff.md) — Phase 1 handoff.
-- [docs/archive/project-provider-store-phase2-handoff.md](docs/archive/project-provider-store-phase2-handoff.md) — Phase 2 handoff.
-- [docs/archive/project-provider-store-phase3-handoff.md](docs/archive/project-provider-store-phase3-handoff.md) — Phase 3 handoff.
-- [docs/archive/project-provider-store-phase4-handoff.md](docs/archive/project-provider-store-phase4-handoff.md) — Phase 4 handoff.
-- [docs/archive/project-provider-store-phase5-handoff.md](docs/archive/project-provider-store-phase5-handoff.md) — Phase 5 handoff.
-- [docs/settings-yaml.md](docs/settings-yaml.md) — Canonical key→file map and yaml-manager guide.
+- [docs/design-multi-instance-provider-studio.md](../../../docs/design-multi-instance-provider-studio.md) — Multi-instance provider studio architecture design.
+- [docs/provider-catalog.md](../../../docs/provider-catalog.md) — Provider catalog reference.
+- [docs/arch-provider-store-current-structure.md](../../../docs/arch-provider-store-current-structure.md) — Provider store current structure architecture.
+- [docs/project-provider-store-restructuring-plan.md](../../../docs/project-provider-store-restructuring-plan.md) — Provider store restructuring plan.
+- [docs/project-codex-provider-restructuring-plan.md](../../../docs/project-codex-provider-restructuring-plan.md) — Codex provider restructuring plan.
+- [docs/archive/project-provider-store-phase1-handoff.md](../../../docs/archive/project-provider-store-phase1-handoff.md) — Phase 1 handoff.
+- [docs/archive/project-provider-store-phase2-handoff.md](../../../docs/archive/project-provider-store-phase2-handoff.md) — Phase 2 handoff.
+- [docs/archive/project-provider-store-phase3-handoff.md](../../../docs/archive/project-provider-store-phase3-handoff.md) — Phase 3 handoff.
+- [docs/archive/project-provider-store-phase4-handoff.md](../../../docs/archive/project-provider-store-phase4-handoff.md) — Phase 4 handoff.
+- [docs/archive/project-provider-store-phase5-handoff.md](../../../docs/archive/project-provider-store-phase5-handoff.md) — Phase 5 handoff.
+- [docs/settings-yaml.md](../../../docs/settings-yaml.md) — Canonical key→file map and yaml-manager guide.
 
 ## Related Skills & References
 

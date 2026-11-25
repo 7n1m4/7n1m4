@@ -58,7 +58,7 @@ GLB chunk-header math (offset = `20 + jsonBytes.length`, then 8-byte header + da
 
 ### Authoritative Docs & Cross-Citations
 
-- [docs/design-vhack-studio.md](docs/design-vhack-studio.md) — V-HACK founding spec (panel layout, module breakdown, MVP priorities).
+- [docs/design-vhack-studio.md](../../../docs/design-vhack-studio.md) — V-HACK founding spec (panel layout, module breakdown, MVP priorities).
 - `airi-character-rendering` — model/schema layer this panel modifies.
 - `airi-card-schema` — if exploring "write mutated VRM back onto the outfit card" flows.
 
@@ -69,6 +69,6 @@ GLB chunk-header math (offset = `20 + jsonBytes.length`, then 8-byte header + da
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-vhack-studio.md](docs/design-vhack-studio.md) — V-HACK DevTools design document.
-- [docs/research-vrm-cloth-interaction.md](docs/research-vrm-cloth-interaction.md) — VRM cloth interaction deep dive.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §16 binary-proxy lesson.
+- [docs/design-vhack-studio.md](../../../docs/design-vhack-studio.md) — V-HACK DevTools design document.
+- [docs/research-vrm-cloth-interaction.md](../../../docs/research-vrm-cloth-interaction.md) — VRM cloth interaction deep dive.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §16 binary-proxy lesson.

@@ -44,17 +44,17 @@ For silence, distinguish suspended AudioContext, empty transformed text, synthes
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/feat-audio-studio.md](docs/feat-audio-studio.md) — Audio studio feature spec (VoiceProfiles, UST).
-- [docs/design-openai-compatible-tts.md](docs/design-openai-compatible-tts.md) — OpenAI-compatible TTS.
-- [docs/blueprint-tts-universal-speech-transformer.md](docs/blueprint-tts-universal-speech-transformer.md) — TTS universal speech transformer blueprint.
-- [docs/blueprint-aws-polly-integration.md](docs/blueprint-aws-polly-integration.md) — AWS Polly integration blueprint.
-- [docs/analysis-pocket-tts-viability.md](docs/analysis-pocket-tts-viability.md) — Pocket TTS viability analysis.
-- [docs/analysis-gpt-sovits-onnx-webgpu-viability.md](docs/analysis-gpt-sovits-onnx-webgpu-viability.md) — GPT-SoVITS ONNX WebGPU viability analysis.
-- [docs/proposal-higgs-audio-v3-tts-integration.md](docs/proposal-higgs-audio-v3-tts-integration.md) — Higgs Audio V3 TTS integration proposal.
-- [docs/proposal-moss-tts-nano-provider-unified-webgpu.md](docs/proposal-moss-tts-nano-provider-unified-webgpu.md) — MOSS TTS nano provider unified WebGPU proposal.
-- [docs/project-multimodal-audio-transport.md](docs/project-multimodal-audio-transport.md) — Multimodal audio transport project.
-- [docs/tts.md](docs/tts.md) — TTS research reference.
-- [docs/lipsync.md](docs/lipsync.md) — Lipsync research reference.
+- [docs/feat-audio-studio.md](../../../docs/feat-audio-studio.md) — Audio studio feature spec (VoiceProfiles, UST).
+- [docs/design-openai-compatible-tts.md](../../../docs/design-openai-compatible-tts.md) — OpenAI-compatible TTS.
+- [docs/blueprint-tts-universal-speech-transformer.md](../../../docs/blueprint-tts-universal-speech-transformer.md) — TTS universal speech transformer blueprint. UST source of truth: `packages/stage-ui/src/stores/modules/README-speech-transformer.md`.
+- [docs/blueprint-aws-polly-integration.md](../../../docs/blueprint-aws-polly-integration.md) — AWS Polly integration blueprint.
+- [docs/analysis-pocket-tts-viability.md](../../../docs/analysis-pocket-tts-viability.md) — Pocket TTS viability analysis.
+- [docs/analysis-gpt-sovits-onnx-webgpu-viability.md](../../../docs/analysis-gpt-sovits-onnx-webgpu-viability.md) — GPT-SoVITS ONNX WebGPU viability analysis.
+- [docs/proposal-higgs-audio-v3-tts-integration.md](../../../docs/proposal-higgs-audio-v3-tts-integration.md) — Higgs Audio V3 TTS integration proposal.
+- [docs/proposal-moss-tts-nano-provider-unified-webgpu.md](../../../docs/proposal-moss-tts-nano-provider-unified-webgpu.md) — MOSS TTS nano provider unified WebGPU proposal.
+- [docs/project-multimodal-audio-transport.md](../../../docs/project-multimodal-audio-transport.md) — Multimodal audio transport project.
+- [docs/tts.md](../../../docs/tts.md) — TTS research reference.
+- [docs/lipsync.md](../../../docs/lipsync.md) — Lipsync research reference.
 
 ## Verification
 

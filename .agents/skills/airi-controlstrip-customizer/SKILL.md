@@ -55,9 +55,9 @@ The Control Strip Customizer is the **user-facing "Customizer"** — a floating,
 ### Authoritative Design & Architecture Documents
 - **`docs/design-model-customizer.md`**: Design document defining `ModelCustomizer.vue` separation of concerns, settings panel adoption matrix (`live2d.vue`, `mmd.vue`, `spine.vue`, `vrm.vue`), Rehearsal Room (`chat_rehearsal.vue`) sandbox integration, `@insertToken` events, and transient motion previewing.
 - **`docs/catalog-control-strip.md`**: Master catalog of control strip items, customizer rows, and default visibility flags.
-- [docs/project-control-strip-rfc.md](docs/project-control-strip-rfc.md) — Control strip RFC.
-- [docs/design-stage-ui-context-bridge-control-island.md](docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
-- [docs/bugfix-apply-btn-race.md](docs/bugfix-apply-btn-race.md) — Apply-button race bugfix.
+- [docs/project-control-strip-rfc.md](../../../docs/project-control-strip-rfc.md) — Control strip RFC.
+- [docs/design-stage-ui-context-bridge-control-island.md](../../../docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
+- [docs/bugfix-apply-btn-race.md](../../../docs/bugfix-apply-btn-race.md) — Apply-button race bugfix.
 
 ---
 ## 3. Customizer Catalog Schema (`CUSTOMIZER_CATALOG`)

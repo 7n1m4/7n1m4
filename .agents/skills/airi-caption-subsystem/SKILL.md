@@ -166,11 +166,11 @@ Wiring: `use-control-strip-action.ts` handles `head-tethered-caption`, `caption-
 
 ## 9. Authoritative Design & Architecture Documents
 
-- [docs/design-captions-widget-system.md](docs/design-captions-widget-system.md) — Canonical widget/window + Sentence-Sync system spec (may predate current store names; see §6).
-- [docs/design-head-tethered-captions.md](docs/design-head-tethered-captions.md) — Head-tethered plank design and cross-model roadmap.
-- [docs/design-live2d-caption.md](docs/design-live2d-caption.md) — Baked-in motion Text/Language pipeline (canonical).
-- [docs/catalog-control-strip.md](docs/catalog-control-strip.md) — Catalog of caption strip buttons.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — §13 BroadcastChannel registry.
+- [docs/design-captions-widget-system.md](../../../docs/design-captions-widget-system.md) — Canonical widget/window + Sentence-Sync system spec (may predate current store names; see §6). Technical spec moved to `packages/stage-ui/src/components/scenes/README.md`.
+- [docs/design-head-tethered-captions.md](../../../docs/design-head-tethered-captions.md) — Head-tethered plank design and cross-model roadmap. Technical spec moved to `packages/stage-ui/src/components/scenes/README.md`.
+- [docs/design-live2d-caption.md](../../../docs/design-live2d-caption.md) — Baked-in motion Text/Language pipeline (canonical).
+- [docs/catalog-control-strip.md](../../../docs/catalog-control-strip.md) — Catalog of caption strip buttons.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — §13 BroadcastChannel registry.
 
 ## Related Skills & References
 
@@ -178,7 +178,6 @@ Wiring: `use-control-strip-action.ts` handles `head-tethered-caption`, `caption-
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-head-tethered-captions.md](docs/design-head-tethered-captions.md) — Canonical design for head-tethered captions vs windowed captions.
-- [docs/design-live2d-caption.md](docs/design-live2d-caption.md) — Live2D caption pipeline design (motion Text/Language fields).
-- [docs/design-captions-widget-system.md](docs/design-captions-widget-system.md) — Captions widget system.
-- [docs/catalog-control-strip.md](docs/catalog-control-strip.md) — Control strip catalog (caption toggles, docking cyclers).
+- [packages/stage-ui/src/components/scenes/README.md](../../../packages/stage-ui/src/components/scenes/README.md) — Technical spec for head-tethered and captions widget.
+- [docs/design-live2d-caption.md](../../../docs/design-live2d-caption.md) — Live2D caption pipeline design (motion Text/Language fields).
+- [docs/catalog-control-strip.md](../../../docs/catalog-control-strip.md) — Control strip catalog (caption toggles, docking cyclers).

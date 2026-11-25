@@ -91,10 +91,10 @@ Both exist. Choose the correct import path for the surface you are editing; do n
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-scenes-and-backgrounds-system.md](docs/design-scenes-and-backgrounds-system.md) — Scenes and backgrounds system design.
-- [docs/design-image-journal-storage.md](docs/design-image-journal-storage.md) — Image journal storage design.
-- [docs/project-artistry-porting-report.md](docs/project-artistry-porting-report.md) — Artistry porting report.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §16 toRaw/binary lesson.
+- [docs/design-scenes-and-backgrounds-system.md](../../../docs/design-scenes-and-backgrounds-system.md) — Scenes and backgrounds system design.
+- [docs/design-image-journal-storage.md](../../../docs/design-image-journal-storage.md) — Image journal storage design.
+- [docs/project-artistry-porting-report.md](../../../docs/project-artistry-porting-report.md) — Artistry porting report.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §16 toRaw/binary lesson.
 
 ## Verification
 

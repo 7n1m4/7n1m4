@@ -29,14 +29,14 @@ Own prompt composition and refresh. Marker execution belongs to [ACT tokens](../
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-prompt-crafting-catalog.md](docs/design-prompt-crafting-catalog.md) — Prompt crafting catalog.
-- [docs/proposal-introspective-context-injection.md](docs/proposal-introspective-context-injection.md) — Introspective context injection proposal.
-- [docs/proposal-dynamic-memory-rag-injection.md](docs/proposal-dynamic-memory-rag-injection.md) — Dynamic memory RAG injection proposal.
-- [docs/design-character-configurable-llm.md](docs/design-character-configurable-llm.md) — Character-configurable LLM design.
-- [docs/design-director-producer-roles.md](docs/design-director-producer-roles.md) — Director/producer roles document.
-- [docs/proposal-core-agent-revamp.md](docs/proposal-core-agent-revamp.md) — Core agent revamp proposal.
-- [docs/journal-the-reasoning-content-bug.md](docs/journal-the-reasoning-content-bug.md) — Reasoning-content bug journal.
-- [docs/design-act-token-expression-system.md](docs/design-act-token-expression-system.md) — ACT token expression system design.
+- [docs/design-prompt-crafting-catalog.md](../../../docs/design-prompt-crafting-catalog.md) — Prompt crafting catalog.
+- [docs/proposal-introspective-context-injection.md](../../../docs/proposal-introspective-context-injection.md) — Introspective context injection proposal.
+- [docs/proposal-dynamic-memory-rag-injection.md](../../../docs/proposal-dynamic-memory-rag-injection.md) — Dynamic memory RAG injection proposal.
+- [docs/design-character-configurable-llm.md](../../../docs/design-character-configurable-llm.md) — Character-configurable LLM design.
+- [docs/design-director-producer-roles.md](../../../docs/design-director-producer-roles.md) — Director/producer roles document.
+- [docs/proposal-core-agent-revamp.md](../../../docs/proposal-core-agent-revamp.md) — Core agent revamp proposal.
+- [docs/journal-the-reasoning-content-bug.md](../../../docs/journal-the-reasoning-content-bug.md) — Reasoning-content bug journal.
+- [docs/design-act-token-expression-system.md](../../../docs/design-act-token-expression-system.md) — ACT token expression system design.
 
 ## Verification
 

@@ -114,16 +114,16 @@ This runs `scripts/tests/attention-ecology-harness/live-desktop-dashboard.ts`, c
 
 ## 6. Authoritative Design & Architecture Documents
 
-- [docs/design-attention-ecology-screen-watching.md](docs/design-attention-ecology-screen-watching.md) — Canonical Attention Ecology & Screen Watching architecture specification (Cascaded Salience Gate, dual push/pull, test harness, and promotion discipline).
-- [docs/design-vision-system-support.md](docs/design-vision-system-support.md) — Local ONNX & WebGPU vision model support (Moondream2, Waifu Diffusion WD14 tagger, BLIP-2).
-- [docs/proposal-proactivity-vision.md](docs/proposal-proactivity-vision.md) — Screenshot pipeline and Direct vs. Forward-to-LLM vision routing.
-- [docs/proposal-vision-witness.md](docs/proposal-vision-witness.md) — Vision witness implementation plan and salience scoring harness.
-- [docs/proposal-poc-attention-ecology-vibe-island.md](docs/proposal-poc-attention-ecology-vibe-island.md) — Vibe Island ambient sensory indicator proof-of-concept.
-- [docs/design-jev-integrations.md](docs/design-jev-integrations.md) — TypeSafe Jev / Laya System-1 non-autoregressive cognitive sentinel specification.
-- [docs/proposal-salience-gate-ui-integration.md](docs/proposal-salience-gate-ui-integration.md) — Salience gate UI integration proposal.
-- [docs/design-vision-api-cost-analysis.md](docs/design-vision-api-cost-analysis.md) — Token and financial cost breakdown for 24/7 continuous perception.
-- [docs/content/en/docs/manual/vision.md](docs/content/en/docs/manual/vision.md) — User-facing vision settings manual.
-- [docs/content/en/docs/manual/proactivity.md](docs/content/en/docs/manual/proactivity.md) — User-facing proactivity and screen-watching guide.
+- [docs/design-attention-ecology-screen-watching.md](../../../docs/design-attention-ecology-screen-watching.md) — Canonical Attention Ecology & Screen Watching architecture specification (Cascaded Salience Gate, dual push/pull, test harness, and promotion discipline).
+- [docs/design-vision-system-support.md](../../../docs/design-vision-system-support.md) — Local ONNX & WebGPU vision model support (Moondream2, Waifu Diffusion WD14 tagger, BLIP-2).
+- [docs/proposal-proactivity-vision.md](../../../docs/proposal-proactivity-vision.md) — Screenshot pipeline and Direct vs. Forward-to-LLM vision routing.
+- [docs/proposal-vision-witness.md](../../../docs/proposal-vision-witness.md) — Vision witness implementation plan and salience scoring harness.
+- [docs/proposal-poc-attention-ecology-vibe-island.md](../../../docs/proposal-poc-attention-ecology-vibe-island.md) — Vibe Island ambient sensory indicator proof-of-concept.
+- [docs/design-jev-integrations.md](../../../docs/design-jev-integrations.md) — TypeSafe Jev / Laya System-1 non-autoregressive cognitive sentinel specification.
+- [docs/proposal-salience-gate-ui-integration.md](../../../docs/proposal-salience-gate-ui-integration.md) — Salience gate UI integration proposal.
+- [docs/design-vision-api-cost-analysis.md](../../../docs/design-vision-api-cost-analysis.md) — Token and financial cost breakdown for 24/7 continuous perception.
+- [docs/content/en/docs/manual/vision.md](../../../docs/content/en/docs/manual/vision.md) — User-facing vision settings manual.
+- [docs/content/en/docs/manual/proactivity.md](../../../docs/content/en/docs/manual/proactivity.md) — User-facing proactivity and screen-watching guide.
 
 ## Related Skills & References
 
@@ -131,14 +131,14 @@ This runs `scripts/tests/attention-ecology-harness/live-desktop-dashboard.ts`, c
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-attention-ecology-screen-watching.md](docs/design-attention-ecology-screen-watching.md) — Attention ecology & screen watching local WebGPU / System-1 salience guard spec.
-- [docs/proposal-vision-witness.md](docs/proposal-vision-witness.md) — Vision witness implementation plan and salience scoring harness.
-- [docs/proposal-poc-attention-ecology-vibe-island.md](docs/proposal-poc-attention-ecology-vibe-island.md) — Vibe Island proof-of-concept design.
-- [docs/design-vision-system-support.md](docs/design-vision-system-support.md) — Vision system support design.
-- [docs/design-vision-system-support.md](docs/design-vision-system-support.md) — Vision system support (localized architecture copy).
-- [docs/design-vision-api-cost-analysis.md](docs/design-vision-api-cost-analysis.md) — Vision API cost analysis.
-- [docs/research-vision-witness-report.md](docs/research-vision-witness-report.md) — Vision witness research report.
-- [docs/project-vision-architecture-review-alpha22.md](docs/project-vision-architecture-review-alpha22.md) — Vision architecture review alpha22.
-- [docs/proposal-salience-gate-ui-integration.md](docs/proposal-salience-gate-ui-integration.md) — Salience gate UI integration proposal.
-- [docs/proposal-vlm-forward-to-llm.md](docs/proposal-vlm-forward-to-llm.md) — VLM forward-to-LLM proposal.
-- [docs/content/en/docs/showcase/08-situational-awareness.md](docs/content/en/docs/showcase/08-situational-awareness.md) — Situational awareness showcase.
+- [docs/design-attention-ecology-screen-watching.md](../../../docs/design-attention-ecology-screen-watching.md) — Attention ecology & screen watching local WebGPU / System-1 salience guard spec.
+- [docs/proposal-vision-witness.md](../../../docs/proposal-vision-witness.md) — Vision witness implementation plan and salience scoring harness.
+- [docs/proposal-poc-attention-ecology-vibe-island.md](../../../docs/proposal-poc-attention-ecology-vibe-island.md) — Vibe Island proof-of-concept design.
+- [docs/design-vision-system-support.md](../../../docs/design-vision-system-support.md) — Vision system support design.
+- [docs/design-vision-system-support.md](../../../docs/design-vision-system-support.md) — Vision system support (localized architecture copy).
+- [docs/design-vision-api-cost-analysis.md](../../../docs/design-vision-api-cost-analysis.md) — Vision API cost analysis.
+- [docs/research-vision-witness-report.md](../../../docs/research-vision-witness-report.md) — Vision witness research report.
+- [docs/project-vision-architecture-review-alpha22.md](../../../docs/project-vision-architecture-review-alpha22.md) — Vision architecture review alpha22.
+- [docs/proposal-salience-gate-ui-integration.md](../../../docs/proposal-salience-gate-ui-integration.md) — Salience gate UI integration proposal.
+- [docs/proposal-vlm-forward-to-llm.md](../../../docs/proposal-vlm-forward-to-llm.md) — VLM forward-to-LLM proposal.
+- [docs/content/en/docs/showcase/08-situational-awareness.md](../../../docs/content/en/docs/showcase/08-situational-awareness.md) — Situational awareness showcase.

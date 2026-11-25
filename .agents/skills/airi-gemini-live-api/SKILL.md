@@ -57,9 +57,9 @@ Real-time, sub-second bidirectional multimodal streaming over a Bidi WebSocket u
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-gemini-live-api-integration.md](docs/design-gemini-live-api-integration.md) — Canonical Gemini Live API integration design.
-- [docs/project-multimodal-audio-transport.md](docs/project-multimodal-audio-transport.md) — Multimodal audio transport project.
-- [docs/arch-chat-stt-proactivity-pipelines.md](docs/arch-chat-stt-proactivity-pipelines.md) — Chat/STT/proactivity pipelines architecture.
+- [docs/design-gemini-live-api-integration.md](../../../docs/design-gemini-live-api-integration.md) — Canonical Gemini Live API integration design.
+- [docs/project-multimodal-audio-transport.md](../../../docs/project-multimodal-audio-transport.md) — Multimodal audio transport project.
+- [docs/arch-chat-stt-proactivity-pipelines.md](../../../docs/arch-chat-stt-proactivity-pipelines.md) — Chat/STT/proactivity pipelines architecture.
 
 ## Verification
 

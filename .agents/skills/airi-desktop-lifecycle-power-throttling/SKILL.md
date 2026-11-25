@@ -62,7 +62,7 @@ This guide covers the end-to-end integration between desktop window state transi
 ```
 
 ### Multi-Tier Power Management Architecture
-AIRI separates power management into two distinct architectural tiers (see [`docs/design-vram-eviction-and-standby-hibernation.md`](docs/design-vram-eviction-and-standby-hibernation.md)):
+AIRI separates power management into two distinct architectural tiers (see [`docs/design-vram-eviction-and-standby-hibernation.md`](../../../docs/design-vram-eviction-and-standby-hibernation.md)):
 
 1. **Tier 1: Instant Render Freezing (`stagePaused = true`)**:
    - **Trigger**: Window minimized, hidden, or screen locked.

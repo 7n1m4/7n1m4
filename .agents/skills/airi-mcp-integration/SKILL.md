@@ -34,9 +34,9 @@ description: >-
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/arch-mcp-integration.md](docs/arch-mcp-integration.md) — MCP integration architecture.
-- [docs/research-open-apis-and-mcp-servers.md](docs/research-open-apis-and-mcp-servers.md) — Finding open APIs, MCP servers, and plugins.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa contract registry.
+- [docs/arch-mcp-integration.md](../../../docs/arch-mcp-integration.md) — MCP integration architecture.
+- [docs/research-open-apis-and-mcp-servers.md](../../../docs/research-open-apis-and-mcp-servers.md) — Finding open APIs, MCP servers, and plugins.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa contract registry.
 
 ## Verification
 

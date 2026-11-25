@@ -34,13 +34,13 @@ Use this skill when:
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/memory_lab/design-prospective-rich-journal.md](docs/memory_lab/design-prospective-rich-journal.md) — Triple-Store model, Sacred Journal Rule, Dream Worker, Emotional Exhaust/MoodState.
-- [docs/memory_lab/memory-schema-and-lifecycle-spec.md](docs/memory_lab/memory-schema-and-lifecycle-spec.md) — Canonical schema & lifecycle spec.
-- [docs/memory_lab/memory-lifecycle-and-features.md](docs/memory_lab/memory-lifecycle-and-features.md) — Lifecycle & features spec (Adaptive Indexing Model).
-- [docs/memory_lab/great_merger_cheat_sheet.md](docs/memory_lab/great_merger_cheat_sheet.md) — Great merger cheat sheet.
-- [docs/memory_lab/ultimate_hybrid_design_doc_detailed.md](docs/memory_lab/ultimate_hybrid_design_doc_detailed.md) — Ultimate hybrid design doc (detailed).
-- [docs/memory_lab/lifetime-artifact-generation-plan.md](docs/memory_lab/lifetime-artifact-generation-plan.md) — Lifetime artifact generation plan.
-- [docs/arch-long-term-memory-journal.md](docs/arch-long-term-memory-journal.md) — Long-term memory journal architecture.
+- [docs/memory_lab/design-prospective-rich-journal.md](../../../docs/memory_lab/design-prospective-rich-journal.md) — Triple-Store model, Sacred Journal Rule, Dream Worker, Emotional Exhaust/MoodState.
+- [docs/memory_lab/memory-schema-and-lifecycle-spec.md](../../../docs/memory_lab/memory-schema-and-lifecycle-spec.md) — Canonical schema & lifecycle spec.
+- [docs/memory_lab/memory-lifecycle-and-features.md](../../../docs/memory_lab/memory-lifecycle-and-features.md) — Lifecycle & features spec (Adaptive Indexing Model).
+- [docs/memory_lab/great_merger_cheat_sheet.md](../../../docs/memory_lab/great_merger_cheat_sheet.md) — Great merger cheat sheet.
+- [docs/memory_lab/ultimate_hybrid_design_doc_detailed.md](../../../docs/memory_lab/ultimate_hybrid_design_doc_detailed.md) — Ultimate hybrid design doc (detailed).
+- [docs/memory_lab/lifetime-artifact-generation-plan.md](../../../docs/memory_lab/lifetime-artifact-generation-plan.md) — Lifetime artifact generation plan.
+- [docs/arch-long-term-memory-journal.md](../../../docs/arch-long-term-memory-journal.md) — Long-term memory journal architecture.
 
 ## Verification
 

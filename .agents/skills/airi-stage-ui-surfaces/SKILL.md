@@ -129,14 +129,14 @@ Edit the `mode === 'mobile'` branches in §3's table — not a new component. To
 
 ## 7. Authoritative Design & Architecture Documents
 
-- [docs/project-control-strip-rfc.md](docs/project-control-strip-rfc.md) — Control Strip revamp RFC (pill schema, endcaps, mode toggle, notch docking, startup visibility orchestration).
-- [docs/catalog-control-strip.md](docs/catalog-control-strip.md) — master catalog of strip items by category with icons/display-type/default-state.
-- [docs/archive/project-mobile-revamp.md](docs/archive/project-mobile-revamp.md) (archived 2026-11-13, superseded by `proposal-unified-rust-native-app.md` — mobile is the unified Rust native app, not a webview) — mobile UX design (interaction planes, dockedEdge coordination, touch-first customizer). **Partially stale**: its named `MobileControlStrip.vue`/`MobileControlCustomizerDialog.vue` files were never built; the shipped version is `ControlStrip mode="mobile"` (§3).
-- [docs/design-stage-ui-context-bridge-control-island.md](docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
-- [docs/project-navigation-routing-overhaul.md](docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
-- [docs/proposal-studio-sidetab.md](docs/proposal-studio-sidetab.md) — Studio sidetab proposal.
-- [docs/proposal-novel-stage-concepts.md](docs/proposal-novel-stage-concepts.md) — Stage↔Chat unification concepts (inline/sidebar stage, Magic Wand WhisperDock).
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — canonical concept→path index; §1 eventa, §13 BroadcastChannel registry (`airi-control-strip-actions` lives there).
+- [docs/project-control-strip-rfc.md](../../../docs/project-control-strip-rfc.md) — Control Strip revamp RFC (pill schema, endcaps, mode toggle, notch docking, startup visibility orchestration).
+- [docs/catalog-control-strip.md](../../../docs/catalog-control-strip.md) — master catalog of strip items by category with icons/display-type/default-state.
+- [docs/archive/project-mobile-revamp.md](../../../docs/archive/project-mobile-revamp.md) (archived 2026-11-13, superseded by `proposal-unified-rust-native-app.md` — mobile is the unified Rust native app, not a webview) — mobile UX design (interaction planes, dockedEdge coordination, touch-first customizer). **Partially stale**: its named `MobileControlStrip.vue`/`MobileControlCustomizerDialog.vue` files were never built; the shipped version is `ControlStrip mode="mobile"` (§3).
+- [docs/design-stage-ui-context-bridge-control-island.md](../../../docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
+- [docs/project-navigation-routing-overhaul.md](../../../docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
+- [docs/proposal-studio-sidetab.md](../../../docs/proposal-studio-sidetab.md) — Studio sidetab proposal.
+- [docs/proposal-novel-stage-concepts.md](../../../docs/proposal-novel-stage-concepts.md) — Stage↔Chat unification concepts (inline/sidebar stage, Magic Wand WhisperDock).
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — canonical concept→path index; §1 eventa, §13 BroadcastChannel registry (`airi-control-strip-actions` lives there).
 
 ## Related Skills & References
 
@@ -144,9 +144,9 @@ Edit the `mode === 'mobile'` branches in §3's table — not a new component. To
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-stage-ui-context-bridge-control-island.md](docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
-- [docs/catalog-control-strip.md](docs/catalog-control-strip.md) — Master catalog of control strip items.
-- [docs/project-control-strip-rfc.md](docs/project-control-strip-rfc.md) — Control strip RFC.
-- [docs/project-navigation-routing-overhaul.md](docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
-- [docs/proposal-studio-sidetab.md](docs/proposal-studio-sidetab.md) — Studio sidetab proposal.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa, §13 BroadcastChannel registry.
+- [docs/design-stage-ui-context-bridge-control-island.md](../../../docs/design-stage-ui-context-bridge-control-island.md) — Stage UI context bridge / control island architecture.
+- [docs/catalog-control-strip.md](../../../docs/catalog-control-strip.md) — Master catalog of control strip items.
+- [docs/project-control-strip-rfc.md](../../../docs/project-control-strip-rfc.md) — Control strip RFC.
+- [docs/project-navigation-routing-overhaul.md](../../../docs/project-navigation-routing-overhaul.md) — Navigation & routing overhaul project plan.
+- [docs/proposal-studio-sidetab.md](../../../docs/proposal-studio-sidetab.md) — Studio sidetab proposal.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — Canonical concept-to-path index; §1 eventa, §13 BroadcastChannel registry.

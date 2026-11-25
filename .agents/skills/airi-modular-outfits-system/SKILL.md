@@ -56,11 +56,11 @@ Character outfits represent distinct visual costume variants (e.g. casual wear, 
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/proposal-visual-state-outfit-hook.md](docs/proposal-visual-state-outfit-hook.md) — Visual state outfit hook proposal.
-- [docs/proposal-visual-state-outfit-hook-evolution.md](docs/proposal-visual-state-outfit-hook-evolution.md) — Visual state outfit hook evolution design.
-- [docs/design-live2d-multimoc-changecos.md](docs/design-live2d-multimoc-changecos.md) — Live2D multi-moc3 change_cos design.
-- [docs/design-modular-outfits-system.md](docs/design-modular-outfits-system.md) — Modular outfits system design.
-- [docs/design-airi-card.md](docs/design-airi-card.md) — AIRI card design (packages, manifestations, visual assets).
+- [docs/proposal-visual-state-outfit-hook.md](../../../docs/proposal-visual-state-outfit-hook.md) — Visual state outfit hook proposal.
+- [docs/proposal-visual-state-outfit-hook-evolution.md](../../../docs/proposal-visual-state-outfit-hook-evolution.md) — Visual state outfit hook evolution design.
+- [packages/stage-ui-live2d/src/runtime/README.md](../../../packages/stage-ui-live2d/src/runtime/README.md) — Live2D runtime README covering `.moc3` costume hot-swapping.
+- [docs/design-modular-outfits-system.md](../../../docs/design-modular-outfits-system.md) — Modular outfits system design.
+- [docs/design-airi-card.md](../../../docs/design-airi-card.md) — AIRI card design (packages, manifestations, visual assets).
 
 ## Related Skills & References
 

@@ -100,17 +100,17 @@ In desktop or multi-tab web, each BrowserWindow or tab possesses an isolated V8 
 
 ### Authoritative Design & Architecture Documents
 
-- [docs/design-local-whisper-stt.md](docs/design-local-whisper-stt.md) — Local Whisper Speech-to-Text (STT) architecture and unified WebGPU design.
-- [docs/proposal-built-in-llm-webgpu.md](docs/proposal-built-in-llm-webgpu.md) — WebGPU local inference harness specification.
-- [docs/design-web-rwkv-quantization-architecture.md](docs/design-web-rwkv-quantization-architecture.md) — Web-RWKV local quantization architecture, empirical cleanroom matrix, and prefab distribution pipeline.
-- [docs/design-attention-ecology-screen-watching.md](docs/design-attention-ecology-screen-watching.md) — Attention ecology & screen watching local WebGPU / System-1 salience guard.
-- [docs/proposal-toggle4-rework-and-rwkv-harness.md](docs/proposal-toggle4-rework-and-rwkv-harness.md) — Toggle4 rework and RWKV harness proposal.
-- [docs/project-rwkv-kimi.md](docs/project-rwkv-kimi.md) — RWKV Kimi project.
-- [docs/project-rwkv-cleanroom-harness-plan.md](docs/project-rwkv-cleanroom-harness-plan.md) — RWKV cleanroom harness plan.
-- [docs/proposal-moss-tts-nano-provider-unified-webgpu.md](docs/proposal-moss-tts-nano-provider-unified-webgpu.md) — MOSS TTS nano provider unified WebGPU proposal.
-- [docs/research-moss-tts-nano-report.md](docs/research-moss-tts-nano-report.md) — MOSS TTS nano research report.
-- [docs/design-vram-eviction-and-standby-hibernation.md](docs/design-vram-eviction-and-standby-hibernation.md) — VRAM eviction, LRU pressure reclamation, and multi-tier standby hibernation specification.
-- [docs/design-embedding-provider-support.md](docs/design-embedding-provider-support.md) — Embedding backend migration: provider taxonomy, EmbeddingGemma 2 q4 baseline, prefix catalog, BGE-mark checklist.
+- [docs/design-local-whisper-stt.md](../../../docs/design-local-whisper-stt.md) — Local Whisper Speech-to-Text (STT) architecture and unified WebGPU design.
+- [docs/proposal-built-in-llm-webgpu.md](../../../docs/proposal-built-in-llm-webgpu.md) — WebGPU local inference harness specification.
+- [docs/design-web-rwkv-quantization-architecture.md](../../../docs/design-web-rwkv-quantization-architecture.md) — Web-RWKV local quantization architecture, empirical cleanroom matrix, and prefab distribution pipeline.
+- [docs/design-attention-ecology-screen-watching.md](../../../docs/design-attention-ecology-screen-watching.md) — Attention ecology & screen watching local WebGPU / System-1 salience guard.
+- [docs/proposal-toggle4-rework-and-rwkv-harness.md](../../../docs/proposal-toggle4-rework-and-rwkv-harness.md) — Toggle4 rework and RWKV harness proposal.
+- [docs/project-rwkv-kimi.md](../../../docs/project-rwkv-kimi.md) — RWKV Kimi project.
+- [docs/project-rwkv-cleanroom-harness-plan.md](../../../docs/project-rwkv-cleanroom-harness-plan.md) — RWKV cleanroom harness plan.
+- [docs/proposal-moss-tts-nano-provider-unified-webgpu.md](../../../docs/proposal-moss-tts-nano-provider-unified-webgpu.md) — MOSS TTS nano provider unified WebGPU proposal.
+- [docs/research-moss-tts-nano-report.md](../../../docs/research-moss-tts-nano-report.md) — MOSS TTS nano research report.
+- [docs/design-vram-eviction-and-standby-hibernation.md](../../../docs/design-vram-eviction-and-standby-hibernation.md) — VRAM eviction, LRU pressure reclamation, and multi-tier standby hibernation specification.
+- [docs/design-embedding-provider-support.md](../../../docs/design-embedding-provider-support.md) — Embedding backend migration: provider taxonomy, EmbeddingGemma 2 q4 baseline, prefix catalog, BGE-mark checklist.
 
 ## Related Skills & References
 
