@@ -19,9 +19,8 @@
 //! config boundaries; public APIs use typed structs.
 //!
 //! Streaming wire strategy is hand-rolled `reqwest` + an incremental SSE parser
-//! for all providers (see `client_openai` for the rationale). `data: [DONE]`
-//! terminates OpenAI streams; Anthropic `message_stop` and Gemini end-of-body
-//! terminate theirs.
+//! for all providers. `data: [DONE]` terminates OpenAI streams; Anthropic
+//! `message_stop` and Gemini end-of-body terminate theirs.
 //!
 //! Client-module map:
 //! - `sse`: incremental `text/event-stream` parser (partial lines, `\r\n`).

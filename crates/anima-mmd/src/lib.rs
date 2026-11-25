@@ -64,7 +64,7 @@
 //! ```
 //!
 //! `AIRI_TEST_MMD_ZIP` extracts to a per-process temp directory
-//! (zip-slip-safe), parses the first `.pmx` found, and cleans up. The `zip`
+//! (zip-slip-safe), parses the last `.pmx` found, and cleans up. The `zip`
 //! crate is a **dev-dependency only**.
 //!
 //! # Verification
