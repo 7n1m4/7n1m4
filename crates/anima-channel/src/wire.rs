@@ -231,6 +231,36 @@ pub struct ProviderInfo {
     pub updated_at: i64,
 }
 
+/// Model metadata returned by a provider's model listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelInfo {
+    /// Model identifier (e.g. `gpt-4o`).
+    pub id: String,
+    /// Owning organization, if reported by the provider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+}
+
+/// `data` payload of a `providers.models` request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersModelsRequest {
+    /// Optional provider id filter; omitted or unknown ids fail closed with `provider not found`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+}
+
+/// `data` payload of a `providers.models` reply.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvidersModelsReply {
+    /// Provider identifier the models belong to.
+    pub provider_id: String,
+    /// Available models.
+    pub models: Vec<ProviderModelInfo>,
+}
+
 /// `data` payload of a `settings.get` reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -1115,6 +1145,9 @@ pub fn type_collection() -> specta::Types {
         .register::<GatewayAuthReply>()
         .register::<ProvidersListReply>()
         .register::<ProviderInfo>()
+        .register::<ProviderModelInfo>()
+        .register::<ProvidersModelsRequest>()
+        .register::<ProvidersModelsReply>()
         .register::<SettingsGetReply>()
         .register::<SettingsSetReply>()
         .register::<VaultStatusReply>()
@@ -1319,6 +1352,33 @@ mod tests {
             })
             .unwrap(),
             json!({ "authenticated": true, "sessionStartedMs": 5 })
+        );
+    }
+
+    #[test]
+    fn providers_models_request_omission_and_reply_shape() {
+        assert_eq!(
+            serde_json::to_value(ProvidersModelsRequest { provider_id: None }).unwrap(),
+            json!({})
+        );
+        assert_eq!(
+            serde_json::to_value(ProviderModelInfo {
+                id: "gpt-4o".to_string(),
+                owned_by: Some("openai".to_string()),
+            })
+            .unwrap(),
+            json!({ "id": "gpt-4o", "ownedBy": "openai" })
+        );
+        assert_eq!(
+            serde_json::to_value(ProvidersModelsReply {
+                provider_id: "openai".to_string(),
+                models: vec![ProviderModelInfo {
+                    id: "gpt-4o".to_string(),
+                    owned_by: None,
+                }],
+            })
+            .unwrap(),
+            json!({ "providerId": "openai", "models": [{ "id": "gpt-4o" }] })
         );
     }
 

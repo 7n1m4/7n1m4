@@ -198,6 +198,20 @@ impl ChatService {
             .insert(provider_id.into(), client);
     }
 
+    /// Clone a registered client from the shared table.
+    pub fn provider(&self, provider_id: &str) -> Option<Arc<dyn ChatProvider>> {
+        self.providers
+            .lock()
+            .expect("providers mutex poisoned")
+            .get(provider_id)
+            .cloned()
+    }
+
+    /// Return a copy of the service's static registry.
+    pub fn registry(&self) -> ProviderRegistry {
+        self.registry.clone()
+    }
+
     /// Create a new untitled session ("New chat") and return it.
     pub fn new_session(&self) -> Result<StoredSession> {
         self.new_session_with_title("New chat")
@@ -745,7 +759,7 @@ const AUTO_TITLE_TIMEOUT: Duration = Duration::from_secs(10);
 /// static registry: it is not an OpenAI-compatible HTTP endpoint and has
 /// nowhere to point, so `airi-local-llm::LlamaChatProvider` is constructed
 /// directly from `AIRI_QT_LLAMA_MODEL` / `settings/local-llm` instead.
-pub(crate) async fn resolve_provider(
+pub async fn resolve_provider(
     providers: &Arc<Mutex<HashMap<String, Arc<dyn ChatProvider>>>>,
     registry: &ProviderRegistry,
     provider_id: &str,

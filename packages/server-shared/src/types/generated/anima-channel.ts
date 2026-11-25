@@ -565,6 +565,14 @@ export type ProviderInfo = {
 	updatedAt: number,
 };
 
+/**  Model metadata returned by a provider's model listing. */
+export type ProviderModelInfo = {
+	/**  Model identifier (e.g. `gpt-4o`). */
+	id: string,
+	/**  Owning organization, if reported by the provider. */
+	ownedBy?: string | null,
+};
+
 /**  Provider domain statistics. */
 export type ProviderStatsData = {
 	/**  Number of providers. */
@@ -582,6 +590,20 @@ export type ProviderStatsData = {
 export type ProvidersListReply = {
 	/**  List of provider metadata (no secrets). */
 	providers: ProviderInfo[],
+};
+
+/**  `data` payload of a `providers.models` reply. */
+export type ProvidersModelsReply = {
+	/**  Provider identifier the models belong to. */
+	providerId: string,
+	/**  Available models. */
+	models: ProviderModelInfo[],
+};
+
+/**  `data` payload of a `providers.models` request. */
+export type ProvidersModelsRequest = {
+	/**  Optional provider id filter; omitted or unknown ids fail closed with `provider not found`. */
+	providerId?: string | null,
 };
 
 /**  The `error` object carried by `error` frames and failing `rpc` replies. */

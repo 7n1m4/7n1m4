@@ -23,6 +23,8 @@ mod control;
 mod core;
 mod events;
 mod gateway;
+#[cfg(test)]
+mod gateway_contract_tests;
 mod logging;
 mod observe;
 mod redact;

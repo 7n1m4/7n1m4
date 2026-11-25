@@ -295,6 +295,63 @@ impl CoreService {
         Ok(anima_channel::wire::ProvidersListReply { providers: infos })
     }
 
+    /// Discover models for one enabled provider. The core mutex is
+    /// released before any network model discovery so long-running requests
+    /// cannot stall other daemon operations; only non-secret model metadata is
+    /// projected onto the wire.
+    pub fn providers_models(
+        &self,
+        request: &anima_channel::wire::ProvidersModelsRequest,
+    ) -> Result<anima_channel::wire::ProvidersModelsReply, String> {
+        let (chat, providers, settings) = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            let core = guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?;
+            let repo = core.provider_repo();
+            let mut providers = repo.list().map_err(|_| "store query failed".to_string())?;
+            providers.retain(|p| p.enabled);
+            if let Some(id) = request.provider_id.as_deref() {
+                if !providers.iter().any(|p| p.id == id) {
+                    return Err("provider not found".to_string());
+                }
+                providers.retain(|p| p.id == id);
+            }
+            let settings = anima_store::SettingsRepo::new(core.db.clone());
+            (core.chat.clone(), providers, settings)
+        };
+        if providers.len() != 1 {
+            return Err("provider not found".to_string());
+        }
+        let p = providers.into_iter().next().unwrap();
+        let models = chat_runtime().block_on(async {
+            let resolved = anima_core::chat::resolve_provider(
+                &chat.providers,
+                &chat.registry(),
+                &p.id,
+                serde_json::from_value(p.config.clone()).unwrap_or_default(),
+                Some(&settings),
+            )
+            .await
+            .map_err(|_| "provider model discovery failed".to_string())?;
+            resolved
+                .models()
+                .await
+                .map_err(|_| "provider model discovery failed".to_string())
+        })?;
+        Ok(anima_channel::wire::ProvidersModelsReply {
+            provider_id: p.id.clone(),
+            models: models
+                .into_iter()
+                .map(|m| anima_channel::wire::ProviderModelInfo {
+                    id: m.id,
+                    owned_by: m.owned_by,
+                })
+                .collect(),
+        })
+    }
+
     /// Create or update a provider through the daemon-owned `ProviderRepo`.
     /// Accepts the secret only on input; the returned id is safe to put on the
     /// wire. Missing fields keep the stored value so a partial update cannot
@@ -876,9 +933,7 @@ impl CoreService {
     pub fn card_get(&self, id: &str) -> Result<Option<serde_json::Value>, String> {
         let id = normalized_card_id(id)?;
         let repo = self.card_repo()?;
-        let card = repo
-            .get(id)
-            .map_err(|_| "store query failed".to_string())?;
+        let card = repo.get(id).map_err(|_| "store query failed".to_string())?;
         card.map(|c| {
             serde_json::from_str(&c.document)
                 .map_err(|_| "stored card document is not valid JSON".to_string())
@@ -898,8 +953,8 @@ impl CoreService {
         if name.is_empty() {
             return Err("missing name".to_string());
         }
-        let document = serde_json::to_string(&req.document)
-            .map_err(|_| "serialize failed".to_string())?;
+        let document =
+            serde_json::to_string(&req.document).map_err(|_| "serialize failed".to_string())?;
         let repo = self.card_repo()?;
         let card = repo
             .insert(&anima_core::new_card_id(), &document, name)
@@ -954,8 +1009,8 @@ impl CoreService {
         } else {
             document
         };
-        let document = serde_json::to_string(&document)
-            .map_err(|_| "serialize failed".to_string())?;
+        let document =
+            serde_json::to_string(&document).map_err(|_| "serialize failed".to_string())?;
         let card = repo
             .insert(&anima_core::new_card_id(), &document, &unique)
             .map_err(|_| "store write failed".to_string())?;
@@ -984,8 +1039,8 @@ impl CoreService {
             Some("") | None => existing.name,
             Some(name) => name.to_string(),
         };
-        let document = serde_json::to_string(&req.document)
-            .map_err(|_| "serialize failed".to_string())?;
+        let document =
+            serde_json::to_string(&req.document).map_err(|_| "serialize failed".to_string())?;
         let updated = repo
             .update(id, &document, &name)
             .map_err(|_| "store write failed".to_string())?;
@@ -1189,6 +1244,71 @@ mod tests {
         assert!(!text.contains("SYSTEM-SECRET"));
         assert!(!text.contains("NESTED-SECRET"));
         assert_eq!(reply.providers[0].model, "gpt-pooled");
+    }
+
+    struct DiscoveryProvider;
+
+    #[async_trait::async_trait]
+    impl anima_llm::ChatProvider for DiscoveryProvider {
+        fn id(&self) -> &str {
+            "discoverable"
+        }
+
+        async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+            Ok(vec![anima_llm::ModelInfo {
+                id: "public-model".to_string(),
+                owned_by: Some("public-owner".to_string()),
+            }])
+        }
+
+        async fn stream(
+            &self,
+            _request: anima_llm::ChatRequest,
+        ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+            Err(anima_llm::LlmError::UnsupportedProvider(
+                "test provider".to_string(),
+            ))
+        }
+    }
+
+    #[test]
+    fn providers_models_unknown_provider_is_rejected_without_model_lookup() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let err = svc
+            .providers_models(&anima_channel::wire::ProvidersModelsRequest {
+                provider_id: Some("missing".to_string()),
+            })
+            .unwrap_err();
+        assert_eq!(err, "provider not found");
+    }
+
+    #[test]
+    fn providers_models_uses_registered_provider_and_projects_only_public_model_metadata() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let chat = svc.chat_service().unwrap();
+        chat.register_client("discoverable", std::sync::Arc::new(DiscoveryProvider));
+        let db = svc.db().unwrap();
+        let repo = anima_store::ProviderRepo::new(db);
+        repo.upsert(&StoredProvider {
+            id: "discoverable".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({ "apiKey": "DISCOVERY-SECRET" }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+
+        let reply = svc
+            .providers_models(&anima_channel::wire::ProvidersModelsRequest {
+                provider_id: Some("discoverable".to_string()),
+            })
+            .unwrap();
+        let text = serde_json::to_string(&reply).unwrap();
+        assert!(text.contains("public-model"));
+        assert!(text.contains("public-owner"));
+        assert!(!text.contains("DISCOVERY-SECRET"));
     }
 
     #[test]
@@ -1412,7 +1532,10 @@ mod tests {
             card: None,
             png_base64: None,
         };
-        assert_eq!(svc.card_import(&missing).unwrap_err(), "missing card or pngBase64");
+        assert_eq!(
+            svc.card_import(&missing).unwrap_err(),
+            "missing card or pngBase64"
+        );
         let both = anima_channel::wire::CardImportRequest {
             card: Some(card_document()),
             png_base64: Some("AAAA".to_string()),

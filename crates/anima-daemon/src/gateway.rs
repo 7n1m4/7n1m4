@@ -852,7 +852,7 @@ impl Gateway {
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::ChatSendRequest =
                             serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
-                        if req.content.is_empty() {
+                        if req.content.trim().is_empty() {
                             return Err("empty content".to_string());
                         }
                         let session_id = if req.session_id.is_empty() {
@@ -1176,7 +1176,7 @@ impl Gateway {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        if content.is_empty() {
+                        if content.trim().is_empty() {
                             return Err("empty content".to_string());
                         }
                         let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("note");
@@ -1334,7 +1334,8 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::CardImportRequest =
-                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
                         let reply = core.card_import(&req)?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                     },
@@ -1350,7 +1351,8 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::CardCreateRequest =
-                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
                         let reply = core.card_create(&req)?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                     },
@@ -1366,7 +1368,8 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::CardUpdateRequest =
-                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
                         let reply = core.card_update(&req)?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                     },
@@ -1382,7 +1385,8 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::CardDeleteRequest =
-                            serde_json::from_value(value.clone()).map_err(|_| "invalid request".to_string())?;
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
                         let reply = core.card_delete(&req)?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                     },
@@ -1425,10 +1429,15 @@ impl Gateway {
             );
         }
         {
+            let core = core.clone();
             m.insert(
                 "providers.models".to_string(),
-                handler(move |_method: &str, _value: &serde_json::Value| {
-                    Err("providers.models is not implemented by the daemon: provider model discovery is out of scope for the daemon port".to_string())
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let req: anima_channel::wire::ProvidersModelsRequest =
+                        serde_json::from_value(value.clone())
+                            .map_err(|_| "invalid request".to_string())?;
+                    let reply = core.providers_models(&req)?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
         }
@@ -3438,7 +3447,9 @@ mod tests {
         let (gateway, _tmp) = isolated_gateway();
         enable_actions(&gateway);
         let handlers = handlers(&gateway);
-        let create = handlers.get("cards.create").expect("cards.create registered");
+        let create = handlers
+            .get("cards.create")
+            .expect("cards.create registered");
         let doc = serde_json::json!({
             "spec": "chara_card_v2",
             "data": {
@@ -3448,7 +3459,11 @@ mod tests {
                 "x_unknown": 42
             }
         });
-        let created = create("cards.create", &serde_json::json!({ "name": "Aria", "document": doc })).unwrap();
+        let created = create(
+            "cards.create",
+            &serde_json::json!({ "name": "Aria", "document": doc }),
+        )
+        .unwrap();
         let id = created["id"].as_str().unwrap();
         let list = handlers.get("cards.list").unwrap();
         let listed = list("cards.list", &serde_json::json!({})).unwrap();
@@ -3465,7 +3480,9 @@ mod tests {
         let (gateway, _tmp) = isolated_gateway();
         enable_actions(&gateway);
         let handlers = handlers(&gateway);
-        let import = handlers.get("cards.import").expect("cards.import registered");
+        let import = handlers
+            .get("cards.import")
+            .expect("cards.import registered");
         let doc = serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Bob" } });
         let first = import("cards.import", &serde_json::json!({ "card": doc })).unwrap();
         assert_eq!(first["renamed"], false);
@@ -3484,7 +3501,11 @@ mod tests {
         let id = created["id"].as_str().unwrap();
         let update = handlers.get("cards.update").unwrap();
         let new_doc = serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "New" } });
-        let updated = update("cards.update", &serde_json::json!({ "id": id, "document": new_doc })).unwrap();
+        let updated = update(
+            "cards.update",
+            &serde_json::json!({ "id": id, "document": new_doc }),
+        )
+        .unwrap();
         assert_eq!(updated["updated"], true);
         let get = handlers.get("cards.get").unwrap();
         let got = get("cards.get", &serde_json::json!({ "id": id })).unwrap();
@@ -3510,8 +3531,15 @@ mod tests {
     fn card_write_verbs_are_gated() {
         let (gateway, _tmp) = isolated_gateway();
         let handlers = handlers(&gateway);
-        for verb in &["cards.create", "cards.update", "cards.delete", "cards.import"] {
-            let h = handlers.get(*verb).unwrap_or_else(|| panic!("{verb} registered"));
+        for verb in &[
+            "cards.create",
+            "cards.update",
+            "cards.delete",
+            "cards.import",
+        ] {
+            let h = handlers
+                .get(*verb)
+                .unwrap_or_else(|| panic!("{verb} registered"));
             let err = h(verb, &serde_json::json!({})).expect_err("gated verb must deny");
             assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{verb}: {err}");
         }

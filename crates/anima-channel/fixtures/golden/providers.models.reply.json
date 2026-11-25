@@ -1,0 +1,9 @@
+{
+  "models": [
+    {
+      "id": "gpt-4o",
+      "ownedBy": "openai"
+    }
+  ],
+  "providerId": "openai"
+}

@@ -17,11 +17,12 @@ mod golden_fixtures {
     use anima_channel::wire::{
         CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
         CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
-        CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest, CoreStatusReply,
-        EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply,
-        GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject,
-        RuntimePingReply, RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest,
-        SessionImportReply, SettingsGetReply, SettingsSetReply, VaultStatusReply,
+        CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest,
+        CoreStatusReply, EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply,
+        GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply,
+        ProvidersModelsReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
+        SessionDeleteReply, SessionDeleteRequest, SessionImportReply, SettingsGetReply,
+        SettingsSetReply, VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -143,6 +144,12 @@ mod golden_fixtures {
     }
 
     #[test]
+    fn providers_models_reply_fixture() {
+        let value = load_json("providers.models.reply");
+        round_trip::<ProvidersModelsReply>("providers.models.reply", &value);
+    }
+
+    #[test]
     fn settings_get_reply_fixture() {
         let value = load_json("settings_get.reply");
         round_trip::<SettingsGetReply>("settings_get.reply", &value);
@@ -247,7 +254,6 @@ mod golden_fixtures {
         let reply = load_json("cards.delete.reply");
         round_trip::<CardDeleteReply>("cards.delete.reply", &reply);
     }
-
 
     #[test]
     fn chat_send_request_fixture_locks_camel_case_session_id() {

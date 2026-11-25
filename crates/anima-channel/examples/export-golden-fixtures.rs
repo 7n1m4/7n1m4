@@ -16,13 +16,16 @@
 use std::path::{Path, PathBuf};
 
 use anima_channel::wire::{
-    CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply, CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, CharacterStatsData, ChatSendRequest,
-    CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply,
-    EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
-    HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
-    ProvidersListReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply,
-    SessionDeleteRequest, SessionImportReply, SessionImportStatus, SettingsGetReply,
-    SettingsSetReply, StatusChangedData, TokenDeltaData, VaultStatsData, VaultStatusReply,
+    CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
+    CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
+    CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, CharacterStatsData,
+    ChatSendRequest, CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload,
+    EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
+    GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData,
+    ProviderInfo, ProviderModelInfo, ProviderStatsData, ProvidersListReply, ProvidersModelsReply,
+    RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest,
+    SessionImportReply, SessionImportStatus, SettingsGetReply, SettingsSetReply, StatusChangedData,
+    TokenDeltaData, VaultStatsData, VaultStatusReply,
 };
 
 fn fixtures_dir() -> PathBuf {
@@ -209,6 +212,16 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
             })?,
         ),
         (
+            "providers.models.reply",
+            serde_json::to_value(ProvidersModelsReply {
+                provider_id: "openai".into(),
+                models: vec![ProviderModelInfo {
+                    id: "gpt-4o".into(),
+                    owned_by: Some("openai".to_string()),
+                }],
+            })?,
+        ),
+        (
             "settings_get.reply",
             serde_json::to_value(SettingsGetReply {
                 section: "tts".into(),
@@ -307,20 +320,27 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "cards.list.reply",
             serde_json::to_value(CardListReply {
-                cards: vec![CardInfo { id: "card-7".into(), name: "Aria".into() }],
+                cards: vec![CardInfo {
+                    id: "card-7".into(),
+                    name: "Aria".into(),
+                }],
                 truncated: false,
             })?,
         ),
         (
             "cards.get.reply",
             serde_json::to_value(CardGetReply {
-                card: Some(serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } })),
+                card: Some(
+                    serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } }),
+                ),
             })?,
         ),
         (
             "cards.import.request",
             serde_json::to_value(CardImportRequest {
-                card: Some(serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } })),
+                card: Some(
+                    serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Aria" } }),
+                ),
                 png_base64: None,
             })?,
         ),
@@ -356,9 +376,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         ),
         (
             "cards.update.reply",
-            serde_json::to_value(CardUpdateReply {
-                updated: true,
-            })?,
+            serde_json::to_value(CardUpdateReply { updated: true })?,
         ),
         (
             "cards.delete.request",
@@ -368,9 +386,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         ),
         (
             "cards.delete.reply",
-            serde_json::to_value(CardDeleteReply {
-                deleted: true,
-            })?,
+            serde_json::to_value(CardDeleteReply { deleted: true })?,
         ),
         (
             "chat.send.request",
