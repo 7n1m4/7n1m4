@@ -776,7 +776,7 @@ const textJournalConflictWarning = computed(() => {
          through selectedImageJournalInstruction, but generation is off so no provider,
          model, toggle or instruction editor is exposed here. -->
     <section class="border border-neutral-200 rounded-2xl bg-white p-6 transition-all dark:border-neutral-800 dark:bg-neutral-900/40">
-      <div class="flex items-start justify-between gap-4">
+      <div class="border border-amber-500/30 rounded-2xl bg-amber-500/10 p-5">
         <div class="flex items-start gap-3">
           <div class="i-solar:info-circle-bold-duotone mt-0.5 text-xl text-amber-600 dark:text-amber-300" />
           <div class="flex flex-col gap-1.5">
