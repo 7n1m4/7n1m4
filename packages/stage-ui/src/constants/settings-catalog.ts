@@ -19,6 +19,7 @@ export interface SettingsTopologyNode {
   desktopOnly?: boolean
   disabled?: boolean
   hidden?: boolean
+  deprecated?: boolean
   metadata?: Record<string, unknown>
 }
 
@@ -42,6 +43,8 @@ export interface CatalogNodeItem {
   parentId: string | null
   kind?: 'root' | 'area' | 'category' | 'page' | 'tool'
   desktopOnly?: boolean
+  hidden?: boolean
+  deprecated?: boolean
   keywords?: string[]
 }
 
@@ -355,11 +358,11 @@ export const SETTINGS_CATALOG_ITEMS: CatalogNodeItem[] = [
   },
   {
     id: 'mod-artistry',
-    label: 'Artistry & Image Studio',
+    label: 'Artistry (Deprecated)',
     shortLabel: 'Art',
     titleKey: 'settings.pages.modules.artistry.title',
     descriptionKey: 'settings.pages.modules.artistry.description',
-    description: 'Autonomous image generation, ComfyUI studio, and memory illustrations',
+    description: 'Image generation is deprecated; existing generated images remain available in the image journal. Future image control targets an external SAI integration.',
     glyph: '画',
     clusterGroup: 'PERCEPTION & FACULTIES 感',
     route: '/settings/modules/artistry',
@@ -367,6 +370,8 @@ export const SETTINGS_CATALOG_ITEMS: CatalogNodeItem[] = [
     order: 5,
     parentId: 'area-modules',
     kind: 'page',
+    hidden: true,
+    deprecated: true,
   },
   {
     id: 'mod-text-to-motion',
@@ -590,7 +595,7 @@ export const SETTINGS_CATALOG_ITEMS: CatalogNodeItem[] = [
   },
   {
     id: 'prov-cat-artistry',
-    label: 'Artistry (Image Models)',
+    label: 'Artistry Providers (Deprecated)',
     shortLabel: 'Artistry',
     glyph: '絵',
     clusterGroup: 'VISION 視',
@@ -599,6 +604,8 @@ export const SETTINGS_CATALOG_ITEMS: CatalogNodeItem[] = [
     order: 5,
     parentId: 'area-providers',
     kind: 'category',
+    hidden: true,
+    deprecated: true,
   },
   {
     id: 'prov-cat-motion',
@@ -1089,6 +1096,8 @@ export function buildSettingsCatalogTopology(
   const nodesById: Record<string, SettingsTopologyNode> = {}
 
   for (const item of allItems) {
+    if (item.hidden || item.deprecated)
+      continue
     nodesById[item.id] = {
       id: item.id,
       label: item.label,
@@ -1104,6 +1113,8 @@ export function buildSettingsCatalogTopology(
       kind: item.kind || 'page',
       icon: item.icon,
       desktopOnly: item.desktopOnly,
+      hidden: item.hidden,
+      deprecated: item.deprecated,
       metadata: {
         clusterGroup: item.clusterGroup,
       },

@@ -28,6 +28,7 @@ interface ModuleGroup {
 
 const moduleGroups = computed<ModuleGroup[]>(() => {
   const items = SETTINGS_CATALOG_ITEMS
+    .filter(item => !item.hidden && !item.deprecated)
     .filter(item => item.parentId === 'area-modules')
     .filter(item => isStageTamagotchi() || !item.desktopOnly)
     .sort((a, b) => a.order - b.order)

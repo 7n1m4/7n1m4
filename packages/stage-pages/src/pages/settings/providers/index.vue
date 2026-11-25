@@ -185,6 +185,7 @@ const providerBlocksConfig = [
     title: 'Artistry',
     description: 'Image generation and design model providers. e.g. ComfyUI, Replicate.',
     providersRef: allArtistryProvidersMetadata,
+    hidden: true,
   },
   {
     id: 'vision',
@@ -216,6 +217,7 @@ const providerBlocksConfig = [
   },
 ]
 
+const visibleProviderBlocks = providerBlocksConfig.filter(block => !block.hidden)
 const activeTabId = ref(providerBlocksConfig[0].id)
 const filterPricing = ref<'all' | 'free' | 'paid'>('all')
 const filterDeployment = ref<'all' | 'local' | 'cloud'>('all')
@@ -263,7 +265,7 @@ onMounted(() => {
   refreshCacheSize()
   if (route.hash) {
     const hashId = route.hash.replace('#', '')
-    if (providerBlocksConfig.some(b => b.id === hashId)) {
+    if (visibleProviderBlocks.some(b => b.id === hashId)) {
       activeTabId.value = hashId
     }
   }
@@ -278,7 +280,7 @@ function setActiveTab(id: string) {
 
 const providerBlocks = computed(() => {
   let globalIndex = 0
-  return providerBlocksConfig
+  return visibleProviderBlocks
     .filter(block => block.id === activeTabId.value)
     .map((block) => {
       const filteredProviders = block.providersRef.value
@@ -439,7 +441,7 @@ const providerBlocks = computed(() => {
 
     <div class="flex flex-row flex-wrap gap-2 pb-2">
       <button
-        v-for="block in providerBlocksConfig"
+        v-for="block in visibleProviderBlocks"
         :key="block.id"
         class="flex items-center gap-2 rounded-xl px-4 py-2 outline-none transition-colors duration-200"
         :class="activeTabId === block.id ? 'bg-primary-500/15 text-primary-700 dark:bg-primary-500/20 dark:text-primary-300 font-semibold' : 'hover:bg-neutral-200/50 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400'"

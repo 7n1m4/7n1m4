@@ -20,6 +20,9 @@ export function convertCatalogItemToSearchItem(item: CatalogNodeItem): SearchIte
   if (item.id === 'hub' || item.kind === 'root') {
     return null
   }
+  if (item.hidden || item.deprecated) {
+    return null
+  }
 
   let category = item.clusterGroup || 'Settings'
   if (item.kind === 'area') {

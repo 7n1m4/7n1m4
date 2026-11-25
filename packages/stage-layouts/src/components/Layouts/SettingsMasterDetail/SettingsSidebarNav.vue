@@ -25,7 +25,7 @@ interface NavGroup {
 }
 
 const navGroups = computed<NavGroup[]>(() => {
-  const hubItems = SETTINGS_CATALOG_ITEMS.filter(item => item.parentId === 'hub')
+  const hubItems = SETTINGS_CATALOG_ITEMS.filter(item => item.parentId === 'hub' && !item.hidden && !item.deprecated)
   const groupsMap = new Map<string, NavGroup>()
 
   for (const item of hubItems) {
