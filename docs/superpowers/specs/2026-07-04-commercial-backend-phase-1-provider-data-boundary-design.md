@@ -102,7 +102,7 @@ Document these browser/device-local storage locations in the Phase 1 implementat
 | `local:chat/outbox/:userId` | Historical pending cloud message outbox used only if cloud sync is re-enabled later. |
 | `local:characters` | Local private character cards. |
 
-The user-facing copy should not expose every raw key unless it helps troubleshooting. The product text should explain the behavior in plain Chinese: local data is saved in this browser/device and should be exported before clearing site data, changing browsers, or reinstalling.
+The user-facing copy should not expose every raw key unless it helps troubleshooting. The product text should explain the behavior in plain Korean: local data is saved in this browser/device and should be exported before clearing site data, changing browsers, or reinstalling.
 
 ## Data Settings UX Design
 
@@ -122,7 +122,7 @@ Do not add a new character import/export workflow in Phase 1. That would be usef
 
 All new or changed user-facing copy belongs in `packages/i18n`, especially:
 
-- `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- `packages/i18n/src/locales/ko/settings.yaml`
 - `packages/i18n/src/locales/en/settings.yaml`
 
 Phase 1 should replace obvious English fallback text in touched settings surfaces. Priority keys:
@@ -170,4 +170,4 @@ Targeted verification commands should prefer workspace-scoped or file-scoped Vit
 - Memory remains local and no server memory sync is introduced.
 - Data settings clearly says chats, character cards, and memory are stored in the browser/device and should be exported before clearing local data.
 - Existing chat export/import/delete entry points remain available.
-- Touched Chinese settings copy has no obvious English fallback on the Phase 1 surfaces.
+- Touched Korean settings copy has no obvious English fallback on the Phase 1 surfaces.

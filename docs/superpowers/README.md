@@ -14,7 +14,7 @@
 | 日期 | 工作项 | 状态 | 设计 | 实施计划 | 实现依据 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-07-04 | Commercial Backend Phase 0 收尾 | `done` | [Design](specs/2026-07-04-commercial-backend-phase-0-design.md) | [Plan](plans/2026-07-04-commercial-backend-phase-0-closure.md) | [`cee66adea`](https://github.com/riverben-max/airi/commit/cee66adea3b73abcb1c126c77fc2aff4925f0bff) |
-| 2026-07-04 | Phase 1 官方 Provider 与本地数据边界 | `done` | [Design](specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md) | 无有效 Plan（[现存文件为空](plans/2026-07-04-commercial-backend-phase-1-provider-data-boundary.md)） | [`cee66adea`](https://github.com/riverben-max/airi/commit/cee66adea3b73abcb1c126c77fc2aff4925f0bff) |
+| 2026-07-04 | Phase 1 官方 Provider 与本地数据边界 | `done` | [Design](specs/2026-07-04-commercial-backend-phase-1-provider-data-boundary-design.md) | 无有效 Plan | [`cee66adea`](https://github.com/riverben-max/airi/commit/cee66adea3b73abcb1c126c77fc2aff4925f0bff) |
 | 2026-07-04 | Phase 1 私有同步与第三方 Provider 硬阻断 | `done` | [Design](specs/2026-07-04-phase-1-hard-block-design.md) | - | [`cee66adea`](https://github.com/riverben-max/airi/commit/cee66adea3b73abcb1c126c77fc2aff4925f0bff) |
 | 2026-07-10 | Character-First Web 性能优化 | `in-progress` | [Design](specs/2026-07-10-character-first-web-performance-design.md) | [Plan](plans/2026-07-10-character-first-web-performance.md) | 已完成 Task 1-5，最近提交 [`755f13bde`](https://github.com/riverben-max/airi/commit/755f13bde365991eb74d04b274fd7371f49b2b25)；Task 6-8 尚未确认完成 |
 | 2026-07-10 | Web 首次引导进入登录 | `done` | [Design](specs/2026-07-10-web-onboarding-login-entry-design.md) | [Plan](plans/2026-07-10-web-onboarding-login-entry.md) | [`c868a7fae`](https://github.com/riverben-max/airi/commit/c868a7faec1b07fe09470b3a532d052b643fec8d) |

@@ -5,57 +5,6 @@ description: How Anima generates procedural 3D motions, triggers animations on t
 
 # Generative Motion & Gestures
 
-In Anima, your 3D avatar does not simply repeat the same static idle loop. Through the **Motion Engine**, avatars can gesture while speaking, react emotionally to your words, perform procedural dances, and even synthesize brand-new full-body skeletal animations on demand using neural diffusion models.
+Anima's motion engine (built-in VRMA presets, inline `<|ACT:…|>` cues, and local FlowMDM text-to-motion) is implemented in the stage-ui text-to-motion store and the avatar renderer packages.
 
----
-
-## 1. How Motion Works in Anima
-
-Anima uses a dual-engine motion architecture:
-
-```text
-[ LLM Turn / User Command ]
-              │
-              ├──► Built-in Presets (11+ VRMA animations: waving, thinking, jumping, dancing)
-              │
-              ├──► Kinetic ACT Tokens (<|ACT:motion="excited_wave"|>)
-              │
-              └──► Generative Text-to-Motion (FlowMDM Neural Diffusion via WebGPU)
-```
-
----
-
-## 2. ACT Motion & Emotion Tokens
-
-When chatting, your character's LLM can embed kinetic performance markers:
-- `<|ACT:motion="wave"|>`: Triggers a friendly greeting wave.
-- `<|ACT:motion="think",duration="4"|>`: Puts hand to chin thoughtfully during deep answers for 4 seconds.
-- `<|ACT:emotion="happy",intensity="0.8",duration="3"|>`: Triggers a warm smile held for 3 seconds before smoothly returning to neutral.
-- `<|ACT:emotion="happy",motion="wave",duration="3"|>`: Combines expression and motion cues in a single tag.
-- `<|ACT:emotion="neutral"|>` or `duration="0"`: Immediately releases any active expression hold.
-- `<|DELAY:2|>`: Inserts a 2-second pause in speech.
-- `<|ACT:vfx="fire",duration="4"|>`: Manifests elemental visual auras during emotional peaks.
-
-These tokens are automatically intercepted by the parser and dispatched to the avatar renderer, blending smoothly with the current speech audio.
-
----
-
-## 3. Generative Text-to-Motion (FlowMDM)
-
-Anima includes experimental support for **FlowMDM (Local WebGPU Neural Motion Diffusion)**:
-- **How It Works**: Given a text description (e.g., *"Take two steps back and do a dramatic bow"* or *"Celebrate with a victory spin"*), the local WebGPU worker synthesizes a 3D skeletal animation track and compiles it into standard VRMA bytecode directly inside your browser or desktop app.
-- **Zero Cloud Rendering**: Runs on your local GPU with zero external cloud dependencies.
-
-### Enabling FlowMDM:
-1. Open **Settings &rarr; Modules &rarr; Text to Motion**.
-2. Select **FlowMDM (Local WebGPU)**.
-3. Click **"Download Model Weights"** (once downloaded, the weights are cached locally).
-4. Test custom motion prompts in the **Motion Playground**.
-
----
-
-## 4. Resting Postures & Random Cycles
-
-In **Settings &rarr; Character &rarr; Vessel &rarr; Customize Model**:
-- **Default Idle**: Set your character's base resting posture.
-- **Random Motion Cycles**: Enable subtle random shifts (weight transfers, head tilts, hair adjustments) every 15–30 seconds to make the avatar feel alive when idle.
+See the code-colocated [Generative Motion & Gestures](https://github.com/7n1m4/AnimA/blob/main/packages/stage-pages/src/pages/settings/modules/MOTION-AND-GESTURES.md) document for the three motion paths, the ACT cue vocabulary, enabling FlowMDM, and idle posture configuration.

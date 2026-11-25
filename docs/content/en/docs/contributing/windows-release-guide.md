@@ -1,131 +1,140 @@
-# Stable Release & Build Guide
+---
+title: Windows & Desktop Build
+description: Contribute to Project Anima
+---
 
-This document captures the lessons learned and the specific technical steps required to successfully build and release stable versions of the Anima Electron application, particularly focusing on overcoming environment-related build failures.
+# Desktop (Hutch/Electrobun) Build & Release Guide
+
+This document captures the current desktop build and release workflow plus the environment
+lessons that still apply after the Electrobun/Hutch port. The Windows process-safety rules and
+the Node-shim lessons are unchanged; the old `release:win` / `electron-builder` /
+`app.asar` inventory is gone.
 
 ## 1. Release Workflow
 
 ### Step 1: Generate & Review Release Notes
-Do not proceed blindly. This is the implicit first step of the entire process.
-1. **Compare Hashes**: Analyze all commits between the previous stable tag and `HEAD`:
+
+1. Compare commits between the previous stable tag and `HEAD`:
    ```bash
    git log [previous-tag]..HEAD --oneline
    ```
-2. **Draft Summary**: Focus on user-facing features (new UI, stability wins, feature additions) rather than internal refactors.
-3. **Present Inline**: Present the gathered details and drafted notes **inline** to the USER for review and edits. Do not hide this in a "blind" artifact without showing it to the user first.
-4. **Finalize**: Once approved, save the notes to a local, uncommitted file (e.g., `release-notes.md`).
+2. Draft user-facing notes (new UI, stability wins, feature additions) rather than internal refactors.
+3. Present the drafted notes **inline** to the user for review and edits.
+4. Once approved, save the notes to a local, uncommitted file (e.g., `release-notes.md`).
 
 ### Step 2: Version Stamping
-Update the `version` in `apps/stage-tamagotchi/package.json`. Follow the format: `[major].[minor].[patch]-stable.[YYYYMMDD]`.
 
-### Step 3: Local Tagging
-Create a git tag matching the version (with a `v` prefix) and push it to your fork or upstream:
-```bash
-git tag v0.9.1-stable.20260520
-git push origin v0.9.1-stable.20260520
-```
+Update the `version` in `apps/stage-tamagotchi/package.json`. Follow the format:
+`[major].[minor].[patch]-stable.[YYYYMMDD]`.
 
-### Step 4: Build & Publish (Automated Utility)
-
-To make the build, lock check, and asset upload process deterministic and safe, a unified release script is provided. It handles pulling git updates, resolving tag references, checking for file locks on `app.asar`, compiling the package, uploading to the correct GitHub release, and verifying cross-platform release inventory.
-
-Simply run:
-```bash
-pnpm run release:win
-```
-*(Or use `--build-only` to compile and smoke test locally first, followed by `pnpm run release:win --upload-only`.)*
-
----
-
-### Step 5: Release Verification & Cross-Platform Inventory (Gatekeeping)
-
-The Windows agent acts as the final gatekeeper for the release. Once the Windows assets are uploaded, `publish-win.js` automatically runs the release asset inventory verification. You can also run it directly:
+### Step 3: Local Tagging (User Approval Required)
 
 ```bash
-pnpm run ci:status --release
+git tag v[version]
+git push origin v[version]
 ```
 
-Because the Mac agent dispatches the GitHub Actions `Release: Linux Desktop` workflow immediately after publishing macOS/iOS assets, by the time the Windows build and smoke test finish, the cloud Linux builds should be ready or completing. Verify that all 14 release assets are attached:
-- **macOS**: `arm64.dmg` and `arm64-mac.zip`
-- **iOS**: `Anima-[version]-ios.ipa`
-- **Android**: `Anima-[version]-pocket.apk`
-- **Windows**: `windows-x64-setup.exe` and portable `windows-x64.zip`
-- **Linux x64**: `.deb`, `.rpm`, `.flatpak`
-- **Linux arm64**: `.deb`, `.rpm`, `.flatpak`
-- **Metadata**: `latest-linux.yml` and `latest-linux-arm64.yml`
+Only tag and push when the user or release policy authorizes it.
 
----
+### Step 4: Build
 
-### Step 6: Manual Alternative / Verification
+```bash
+pnpm -F @proj-anima/stage-tamagotchi run build
+```
 
-If you prefer or need to run individual steps manually:
+`build` is `hutch run build`: it prepares Electrobun, builds the Vite renderer, and runs the
+Electrobun build. Release artifacts land in `apps/stage-tamagotchi/artifacts/`.
 
-1. **Build Windows Executable**:
-   Execute the build command from the `stage-tamagotchi` workspace:
-   ```bash
-   pnpm -F @proj-anima/stage-tamagotchi run build:win
-   ```
-   This runs `electron-builder --win` after performing necessary typechecks and production builds.
+> [!CAUTION]
+> The root `release:win` wrapper is stale: `scripts/release/publish-win.js` still inspects
+> electron-builder paths (`dist`, `app.asar`, DMG/ZIP discovery) that a Hutch build never
+> produces. Do not treat it as authoritative until it is ported to `artifacts/`.
 
-2. **Publish to GitHub Releases**:
-   Use the `gh` CLI to upload the asset, ensuring local keyring authentication is used:
+### Step 5: Publish
 
-   * **PowerShell**:
-     ```powershell
-     $env:GITHUB_TOKEN=$null; $env:GH_SSL_NO_VERIFY="true"; gh release upload [tag] [artifact_path] --repo dasilva333/airi --clobber
-     ```
-   * **Bash**:
-     ```bash
-     GITHUB_TOKEN="" GH_SSL_NO_VERIFY="true" gh release upload [tag] [artifact_path] --repo dasilva333/airi --clobber
-     ```
+Inspect what the build actually emitted, then upload only those files:
+
+```bash
+GITHUB_TOKEN="" GH_SSL_NO_VERIFY="true" gh release upload [tag] [artifact_path] --repo dasilva333/airi --clobber
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:GITHUB_TOKEN=$null; $env:GH_SSL_NO_VERIFY="true"; gh release upload [tag] [artifact_path] --repo dasilva333/airi --clobber
+```
 
 > [!IMPORTANT]
-> **Authentication Scope**: Ensure your `gh` CLI session has the `workflow` scope. This is required for creating releases. If you see a "Failed to create release" error despite having permissions, run:
-> `gh auth refresh -h github.com -s workflow`
+> **Authentication Scope**: `gh` needs the `workflow` scope to create releases:
+> `gh auth refresh -h github.com -s workflow`.
 >
 > [!TIP]
-> **Invalid GITHUB_TOKEN Environment Override**: If you encounter an `HTTP 401` error when running `gh release create`, an invalid `GITHUB_TOKEN` environment variable in your session may be overriding your active `gh` CLI keyring credentials. The automated script and manual commands bypass this by clearing the local process env mapping.
+> **Invalid `GITHUB_TOKEN` Override**: an invalid `GITHUB_TOKEN` in the session overrides the
+> `gh` CLI keyring credentials and causes `HTTP 401`. Clearing it (as above) restores keyring auth.
+
+### Step 6: Linux CI Inventory
+
+`.github/workflows/release-linux-desktop.yml` is the only desktop release automation:
+
+- Triggers: GitHub `release: prereleased`, manual `workflow_dispatch` (`build_only` /
+  `artifacts_only` / `tag`), and a nightly `schedule` (cron `0 0 * * *`).
+- Matrix: `ubuntu-latest` (linux-x64) and `ubuntu-24.04-arm` (linux-arm64).
+- Build: `pnpm -F @proj-anima/stage-tamagotchi run build`.
+- Artifacts: `apps/stage-tamagotchi/artifacts/*` — nightly/manual runs use
+  `actions/upload-artifact`, release publication uses `softprops/action-gh-release`.
+
+There is no CI lane for Windows or macOS desktop artifacts; those are local release operations.
+deb/rpm/flatpak parity for the Hutch build is still open (`docs/design-electrobun-port.md`).
 
 ---
 
 ## 2. Lessons Learned: Environment Conflicts
 
 ### The `node:crypto` Renderer Error
-Electron renderer processes are browser environments. Many modern dependencies (like `@noble/hashes` or `better-auth`) accidentally pull in Node.js-specific bundles in production builds.
+
+The Electrobun renderer is a browser environment. Dependencies such as `@noble/hashes` or
+`better-auth` can pull in Node-specific bundles in production builds.
 
 **Symptoms:**
 - `Uncaught Error: Module "node:crypto" has been externalized for browser compatibility.`
 - `Cannot access "node:crypto.webcrypto" in client code.`
 
 **Solution:**
-1. **Force Browser Aliases**: Map Node-specific packages to their browser equivalents in `electron.vite.config.ts`.
-2. **Custom Shimming**: Implement a virtual `node:crypto` shim (e.g., `apps/stage-tamagotchi/src/renderer/shims/node-crypto.ts`) that maps `node:crypto.webcrypto` to `window.crypto`.
+1. **Aliases** in `apps/stage-tamagotchi/vite.config.ts` map `node:crypto` and `crypto` to
+   `apps/stage-tamagotchi/src/renderer/shims/node-crypto.ts`.
+2. **Custom Shimming**: that shim maps `node:crypto.webcrypto` to `window.crypto`.
+3. **Catch-all plugin**: the `force-node-crypto-shim` plugin (`vite.config.ts:229-233`)
+   redirects any remaining `node:*` / `process` / `module` / `path` / `fs` import to a virtual
+   empty module.
 
-### DuckDB Environment Leakage
-`@proj-anima/duckdb-wasm` (and its dependencies) may attempt to load Node.js-specific WASM loaders or bundles even in the renderer.
+### DuckDB / Node WASM Leakage
 
-**Solution:**
-Use a custom Vite plugin (e.g., `force-node-crypto-shim` in our config) to intercept `resolveId` and redirected any path like `bundles/default-node` to `bundles/default-browser`.
-
-### Global Module Shimming
-To prevent "leakage" of Node.js modules like `process`, `module`, and `path` into the renderer bundle:
-1. Use the custom Vite plugin to catch imports starting with `node:` or common Node-only module names.
-2. Redirect them to a virtual empty module or a safe constant-only shim.
+`@proj-anima/duckdb-wasm` can attempt to load Node-specific WASM loaders in the renderer. The
+same `force-node-crypto-shim` interception keeps those imports out of the renderer bundle; when
+adding another leaking dependency, extend that plugin rather than adding a second mechanism.
 
 ---
 
 ## 3. Resilient Builds
 
-To avoid build failures due to transient network issues (e.g., downloading VRM models or fonts):
-- Use the `resilient` wrapper (found in `packages/stage-shared/src/ts/resilient.ts`) in build-time download plugins or scripts.
-- This provides automatic retries and ensures the build can continue if at least one critical asset is present.
+Transient network failures while downloading VRM/Live2D models or fonts are absorbed by the
+`resilient(...)` wrapper around each download plugin in `apps/stage-tamagotchi/vite.config.ts`
+(defined at the top of that file, applied at `:347-351`). Keep new build-time downloads wrapped
+in it so a single failed asset does not abort the build.
 
 ---
 
 ## 4. Troubleshooting
 
-- **Alias Conflicts**: If an alias doesn't work, it might be due to relative path resolution within `node_modules`. Use **regex aliases** in Vite configuration to catch all variations.
-- **Typecheck Failures**: If adding an alias breaks typechecks, ensure the shim file exports types compatible with the original module, or use `// @ts-ignore` sparingly in the shim itself.
-- **File Locks**: If `electron-builder` fails with an `IOException` (e.g., "process cannot access the file app.asar"), it is likely that an instance of Anima or a file watcher is locking the artifact. Refer to the process safety guidelines below.
+- **Alias Conflicts**: if an alias does not apply, resolution may be happening through a
+  relative path inside `node_modules`; use a regex alias or the `force-node-crypto-shim`
+  `resolveId` hook to catch all variants.
+- **Typecheck Failures**: `pnpm -F @proj-anima/stage-tamagotchi run typecheck` localizes TS6133
+  unused-symbol failures and Vue template errors before a build.
+- **Renderer OOM**: the renderer Vite build needs a large heap; `hutch.config.ts` restates
+  `NODE_OPTIONS=--max-old-space-size=12288` for `build:renderer`.
+- **File Locks**: if a build fails because a file cannot be replaced, an Anima instance or file
+  watcher is holding it. Follow the process-safety rules below.
 
 ---
 
@@ -133,24 +142,34 @@ To avoid build failures due to transient network issues (e.g., downloading VRM m
 
 > [!CAUTION]
 > **Strict Process Guidelines**:
-> - **Never autonomously run `taskkill`** or similar commands without explicitly pausing and obtaining permission from the USER.
-> - `taskkill` is **not** a standard part of the release process and should only be considered a last resort when manual coordination with the user fails.
-> - If a file is locked (e.g., `app.asar`), ask the user to stop the relevant process; they will gladly stop and restart it to facilitate the build.
-> - **"Nuking" all `node.exe` or `electron.exe` processes is never acceptable** for any reason, as it can cause data loss or terminate essential background services.
+> - **Never autonomously run `taskkill`** or similar commands without explicitly pausing and
+>   obtaining permission from the user.
+> - `taskkill` is **not** part of the release process and is a last resort only after manual
+>   coordination with the user fails.
+> - If a file is locked, ask the user to stop the relevant process; they will stop and restart
+>   it to unblock the build.
+> - **"Nuking" all `node.exe` / `bun.exe` processes is never acceptable**, as it can cause data
+>   loss or terminate essential background services.
 
 ---
 
 ## 6. Windows Application Control & Code Signing Action Items
 
-When users attempt to open Windows setup binaries (`.exe`), they may encounter the following security error:
+When users open Windows release binaries they may hit:
 > **`An Application Control policy has blocked this file.`**
 
-### Root Cause / Problem
-1. **Unsigned Executables**: Windows Defender Application Control (WDAC), AppLocker, or SmartScreen blocks unsigned or self-signed installer `.exe` files downloaded from the internet.
-2. **Strict User Environment Policies**: Certain Windows installations enforce strict application control policies preventing non-whitelisted installers from running in standard user/download directories.
+### Root Cause
 
-### Action Items for Release Preparation
-1. **Code Signing**: Ensure Windows setup executables are signed with a valid Code Signing Certificate (or provide clear instructions for trusting the release cert) to prevent Windows Application Control and Defender SmartScreen blocks.
-2. **Release Portable Zip Artifacts**: Always build and attach a portable `.zip` / archive version of the release alongside the `.exe` setup installer on GitHub Releases so users with restricted installer policies can extract and run the application without administrator setup blocks.
-3. **Document User Workaround**: Advise users encountering WDAC/AppLocker blocks to either unblock the file via **Properties -> General -> Unblock** (or PowerShell `Unblock-File`), run as administrator, or use the portable `.zip` release.
+1. **Unsigned executables**: WDAC, AppLocker, or SmartScreen blocks unsigned or self-signed
+   binaries downloaded from the internet.
+2. **Strict machine policies**: some Windows installations block non-whitelisted installers in
+   user/download directories.
 
+### Action Items
+
+1. **Code Signing**: sign Windows release binaries with a valid Code Signing Certificate, or
+   document how to trust the release certificate.
+2. **Portable Archives**: ship an archive alongside any installer so users with restricted
+   installer policies can extract and run without administrator setup.
+3. **Document the User Workaround**: unblock via **Properties → General → Unblock** (or
+   PowerShell `Unblock-File`), run as administrator, or use the portable archive.

@@ -1,5 +1,14 @@
 # AIRI Artistry Porting Catalog (Image Generation)
 
+> [!NOTE]
+> **Generated-feature deprecation notice (2026-11-25) — shipped and folded into generated Artistry docs.**
+> This catalog was written for a fork→clean-room porting pass that has since shipped; the Artistry system now lives in the main branch and is documented in the generated Artistry docs. Authoritative pointers:
+> - `docs/rosetta-stone.md`
+> - `docs/data-catalog.md` (image journal / background blobs, `bg-{nanoid}` key pattern)
+> - In-code homes: `packages/stage-ui/src/stores/modules/artistry.ts`, `apps/stage-tamagotchi/src/main/services/airi/widgets/artistry-bridge.ts`, `apps/stage-tamagotchi/src/main/services/airi/widgets/providers/`
+>
+> The fork→clean-room port procedure below is **historical**, and the file catalog is a point-in-time snapshot — when it disagrees with the code, the code wins.
+
 This document catalogs all the components, views, stores, and backend logic required to port the full **Artistry (Image Generation)** system from the fork to the main branch.
 
 > [!IMPORTANT]

@@ -5,29 +5,6 @@ description: Detailed configuration of AI intelligence, speech synthesis, hearin
 
 # Intelligence & Modules
 
-This section covers the specialized components that give Anima its intelligence and functionality.
+Anima's modules (consciousness, speech, hearing, vision, memory, messaging, and the provider registry that backs them) are implemented in the stage-ui module stores and the stage-pages module settings pages.
 
-## Modules
-
-The **Modules** regulate the AI's "thought processes" and specialized tasks.
-
-- **Consciousness**: The main LLM provider configuration.
-- **Speech**: Text-to-Speech (TTS) configuration, including model selection, pitch, and rate of speech.
-- **Artistry**: Image generation configuration (for character expression and visual content).
-- **Hearing**: Speech-to-Text (STT) configuration, including microphone selection, sensitivity settings, and hotkey toggles.
-- **Vision**: Image analysis and visual processing capabilities.
-- **Short-Term Memory**: Configuration of the conversation window and token budget.
-- **Long-Term Memory**: Management of memory storage and retrieval mechanisms.
-- **Discord**: Discord bot integration using your bot token from the Discord Developer Portal.
-- **Integrations**: Support for external platforms like X (Twitter), Factorio, and MCP Servers (Model Context Protocol).
-
----
-
-## Providers
-
-The **Providers** are the underlying services that power the Modules.
-
-- **Manage Providers**: Add and configure external services like OpenAI, Anthropic, Google Gemini, Ollama, and more.
-- **Health Checks**: Check connectivity and model availability for each provider directly from the dashboard.
-- **API Keys**: Securely store and manage your credentials for each service.
-- **Gateway**: Configuration for the local Anima proxy used to interact with these providers.
+See the code-colocated [Intelligence & Modules](https://github.com/7n1m4/AnimA/blob/main/packages/stage-pages/src/pages/settings/modules/README.md) document for the per-module store map, the settings routes, the deprecated Artistry seam, and provider configuration.

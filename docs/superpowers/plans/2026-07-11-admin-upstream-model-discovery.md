@@ -179,7 +179,7 @@ git commit -m "feat(web): add upstream model discovery client"
 
 **Files:**
 - Modify: `apps/stage-web/src/pages/admin/components/AdminOfficialGatewayPanel.vue`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
 - Modify: `packages/i18n/src/locales/en/settings.yaml`
 
 - [x] **Step 1: Add state and request behavior**
@@ -200,14 +200,14 @@ Use `discoverUpstreamModels` with current provider, Base URL, plaintext key, sel
 </datalist>
 ```
 
-Add localizations for `actions.fetchModels`, `messages.modelsFetched`, and `messages.noModelsFound` in Chinese and English. No display strings are hard-coded.
+Add localizations for `actions.fetchModels`, `messages.modelsFetched`, and `messages.noModelsFound` in Korean and English. No display strings are hard-coded.
 
 - [x] **Step 3: Run focused web verification and commit Task 4**
 
 ```powershell
 pnpm -F @proj-anima/stage-web typecheck
 pnpm exec vitest run --config apps/stage-web/src/pages/admin/adminApi.vitest.config.ts apps/stage-web/src/pages/admin/adminApi.test.ts
-git add apps/stage-web/src/pages/admin/components/AdminOfficialGatewayPanel.vue packages/i18n/src/locales/zh-Hans/settings.yaml packages/i18n/src/locales/en/settings.yaml
+git add apps/stage-web/src/pages/admin/components/AdminOfficialGatewayPanel.vue packages/i18n/src/locales/ko/settings.yaml packages/i18n/src/locales/en/settings.yaml
 git commit -m "feat(web): select discovered upstream models"
 ```
 

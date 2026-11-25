@@ -10,7 +10,7 @@
 ## 1. Executive Summary
 
 ### 1.1 The Problem: The "Tiered Query Router Dragon"
-Across 15 historical benchmark runs in the AIRI Memory Lab (documented in `docs/memory_lab/ChatGPT Ultimate Hybrid Design Doc.md` and `evaluation-and-benchmarking-methodology.md`), the memory architecture has swung between two destructive failure modes:
+Across 15 historical benchmark runs in the AIRI Memory Lab (documented in `docs/memory_lab/ultimate_hybrid_design_doc_detailed.md` and `evaluation-and-benchmarking-methodology.md`), the memory architecture has swung between two destructive failure modes:
 
 1. **The Literal Choke (Run 09)**: Strict lexical heuristics and narrow retrieval windows maximized single-hop precision (`C4`) and temporal stability (`C2`), but completely failed open-domain inductive reasoning (`C3`) because the router could not recognize when abstraction was required (e.g., subtle cues like *Stamford $\rightarrow$ Connecticut* or *fat fingers $\rightarrow$ obesity*).
 2. **The Ungrounded Detective (Run 14 / 15)**: When heuristics were loosened to unlock `C3` reasoning, the router accidentally triggered "Detective Mode" on straightforward factual questions. The system hallucinated ungrounded abstractions, destabilized temporal ordering, and degraded precision F1.

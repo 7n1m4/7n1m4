@@ -1,4 +1,6 @@
-# In-Progress Journal: Run 6 - The Great Merger
+# Historical Archive — Run 6 In-Progress Journal (archived 2026-04-29)
+
+> This document is a historical snapshot of Run 6 ("The Great Merger") while it was in progress. It is **not** the current state of the system. For the authoritative current state, see [`docs/memory_lab/state-of-system.md`](./state-of-system.md). For the canonical benchmark history and outlook, see [`docs/memory_lab/benchmark_history_and_outlook.md`](./benchmark_history_and_outlook.md).
 
 ## Active Goal
 Executing **Run 6: The Great Merger**. Integrating high-fidelity abstraction layers (Session/Profile summaries) and weighted Reciprocal Rank Fusion (RRF) into the Orama-based Gemini pipeline to break the Open-Domain and Temporal F1 ceilings.

@@ -1,8 +1,10 @@
 # AIRI Short-Term Memory
 
+> **Pointer (2026-11-25):** canonical in-code source of truth is the Rust `crates/anima-core/src/memory/short_term.rs` (`ShortTermMemoryService`, `ShortTermMemoryConfig`) exposed over the gateway as the `stmm.list` / `stmm.rebuild` verbs in `crates/anima-daemon/src/gateway.rs`; the TS reference implementation is `packages/stage-ui/src/database/repos/short-term-memory.repo.ts` + `packages/stage-ui/src/stores/memory-short-term.ts` with persisted keys in `docs/data-catalog.md` (`local:memory/short-term/{userId}`); the conceptual two-layer split stays in `docs/arch-memory-system-overview.md`. The sections below are the 2026-11 MVP-era design record and the code wins.
+
 This document defines AIRI short-term memory as a derived summary layer, not a raw journal.
 
-## Status
+## Status (2026-11 snapshot — superseded by the code; see pointer above)
 
 Implemented today:
 
@@ -170,7 +172,7 @@ Not in MVP:
 
 That is enough to make it useful without turning it into a full-blown memory platform on day one.
 
-## 9A. Current Implemented Shape
+## 9A. Current Implemented Shape (2026-11 snapshot)
 
 The current implementation does this now:
 

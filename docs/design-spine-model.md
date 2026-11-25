@@ -1,49 +1,42 @@
-# Spine Model Architecture & Integration Design
+# Spine Model Architecture & Integration
 
-This document serves as the canonical technical reference for 2D Spine character models in AIRI, covering asset packaging, metadata schemas, interaction engines, hit detection modes, and downstream `<|ACT|>` token integration for AI actors.
+> Architecture pointer. The **in-code types and loaders are the source of truth**
+> for the Spine package manifest, hit-area schema, and gesture engine; this doc
+> only maps the parts. The `model0.json` schema and `SpineHitArea` shape live
+> verbatim in the JSDoc of the files below.
 
----
+## Where the truth lives
 
-## 1. Architecture Overview
+| Concern | Canonical source |
+| :--- | :--- |
+| Package / variant layout (`SpineModelLayout`, `SpineModelVariant`, `detectAllSpineLayouts`) | [`packages/stage-ui-spine/src/utils/spine-zip-loader.ts`](packages/stage-ui-spine/src/utils/spine-zip-loader.ts) |
+| Interaction manifest (`SpineHitArea`: `spring`/`limits`/`follower`/`audio`) + gesture state machine | [`packages/stage-ui-spine/src/composables/spine/gesture-interaction.ts`](packages/stage-ui-spine/src/composables/spine/gesture-interaction.ts) |
+| Scene model (parses `model0.json` `hit_areas`/`motions`/`options.scale_factor`) | [`packages/stage-ui-spine/src/components/scenes/spine/Model.vue`](packages/stage-ui-spine/src/components/scenes/spine/Model.vue) |
+| Store (`availableVariants`/`availableSkins`, `hitDetectionMode`, `radialHitRadius`) | [`packages/stage-ui-spine/src/stores/spine.ts`](packages/stage-ui-spine/src/stores/spine.ts) |
+| Emotion ↔ animation mapping | [`packages/stage-ui-spine/src/constants/emotions.ts`](packages/stage-ui-spine/src/constants/emotions.ts) |
 
-AIRI's Spine subsystem provides high-performance WebGL rendering for esoteric software Spine assets (binary `.skel` and `.json`), multi-outfit variant switching, tactile physics interactions, and LLM-driven expression/motion orchestration.
+## Model
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              AIRI Spine System                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                       │
-      ┌────────────────────────────────┼────────────────────────────────┐
-      ▼                                ▼                                ▼
-┌──────────────┐             ┌───────────────────┐            ┌──────────────────┐
-│ Asset Loader │             │ Interactive Stage │            │ ModelCustomizer  │
-│ (Zip Loader) │             │ (Hit/Physics Engine)           │ (ACT Mapping)    │
-└──────────────┘             └───────────────────┘            └──────────────────┘
-```
+A Spine character is a single ZIP with one subdirectory per **outfit/variant**
+(skeleton `.skel`/`.json` + `.atlas` + textures + an optional `model0.json`
+manifest) and shared root-level audio. Internal **skins** (attachments/weapons)
+are compiled into the skeleton and exposed via `availableSkins`.
 
----
+`model0.json` (parsed at runtime by `Model.vue`) declares `hit_areas[]`
+(per-bone interaction zones with spring-damper `limits` and `follower` bones)
+and `motions` (interaction → animation clip + SFX). The gesture engine resolves
+`pull` / `tap` / `pat` / `tickle` / `smash` from `hit_area.type` and name, using
+`hitDetectionMode` (`bounds` | `radial`) and `radialHitRadius` from the store.
 
-## 2. ZIP Package Specification
+AI actors drive the model via `<|ACT: ...|>` tokens (emotion / motion / vfx),
+mapped to animations by `constants/emotions.ts` and played through the store's
+one-shot / idle tracks.
 
-Spine characters are packaged as single canonical ZIP archives (e.g. `Butter.zip`) supporting multiple outfits (variants) and shared audio assets.
+## Related
 
-### Directory Structure
+- Card schema & `extensions.airi`: [`design-airi-card.md`](./design-airi-card.md)
 
-```text
-/CharacterName.zip
-├── Basic Civvies/               <-- Variant Subdirectory 1 (Outfit)
-│   ├── Character.skel           <-- Skeleton binary / JSON
-│   ├── Character.atlas          <-- Texture atlas descriptor
-│   ├── TexturePage1.png         <-- Texture sheet
-│   └── model0.json              <-- Extended manifest (physics & hit areas)
-├── Safety Guard/                <-- Variant Subdirectory 2 (Outfit)
-│   ├── CharacterSkin1.skel
-│   ├── CharacterSkin1.atlas
-│   ├── TexturePage1.png
-│   └── model0.json
-├── SFX_Common_PullCheek.wav     <-- Shared SFX files (placed at root)
-└── SFX_Common_PullCheekEnd.wav
-```
+## Relevant Skills
 
 ### Key Packaging Rules:
 1. **Subdirectory Variants:** `detectAllSpineLayouts` scans the ZIP and automatically populates `availableVariants` using the subdirectory names (`Basic Civvies`, `Safety Guard`, etc.).

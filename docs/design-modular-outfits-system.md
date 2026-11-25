@@ -1,9 +1,10 @@
 # Design: Modular Outfits & Accessories System
 
-## Overview
-The Modular Outfits system replaces the legacy "Single Favorite Expression" toggle with a flexible, grid-based management interface. It allows users to group character expressions and parameters into named bundles that can be toggled through the [Control Island](./design-stage-ui-context-bridge-control-island.md).
+> Architecture pointer. The **in-code schema and store are the source of truth**
+> for the outfit data model and switching logic; this doc only maps the parts.
+> The `AiriOutfit` shape lives verbatim in the JSDoc of the files below.
 
-## Technical Implementation Index
+## Where the truth lives
 
 ### 1. Data Layer (The Schema)
 **File**: [packages/stage-ui/src/types/card.schema.ts](file:///c:/Users/h4rdc/Documents/Github/airi-rebase-scratch/packages/stage-ui/src/types/card.schema.ts)
@@ -39,18 +40,9 @@ export interface AiriOutfit {
   - `Base`: Solid amber background.
   - `Overlay`: Blue ring/outline highlight.
 
-## Core Logic: Exclusive vs. Additive
+## Related
 
-> [!IMPORTANT]
-> When a user selects a **Base** outfit, the system works as a "Net Zero" transition. It looks up the model's currently active expressions and aggressively zeroes out any that are part of the "Outfit" category before applying the new selected pattern. This prevents "overlapping clothes" artifacts on VRM models.
-
-> [!TIP]
-> **Overlay** accessories (like Glasses or Blushing) ignore other active states. They are additive layers designed for modularity.
-
-## Status
-- **Phase 1: Mock UI**: Functional mock injected into `ControlsIsland` using random categorization of existing expressions. (Completed 2026-03-29).
-- **Phase 2: Schema Migration**: Updating `card.schema.ts` and initializing `outfits` for existing cards. (Planned).
-- **Phase 3: Logic Engine**: Implementing the exclusive-zeroing logic in `airi-card.ts`. (Planned).
+- Card schema & `extensions.airi.outfits`: [`design-airi-card.md`](./design-airi-card.md)
 
 ## Relevant Skills
 

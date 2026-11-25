@@ -32,21 +32,18 @@ Nightly builds are automatically generated every day from the latest `main` bran
 
 ### How to Get Nightly Builds
 
-1. Visit the [Nightly Build Workflow](https://github.com/moeru-ai/airi/actions/workflows/release-tamagotchi.yml) page
+1. Visit the [Nightly Build Workflow](https://github.com/moeru-ai/airi/actions/workflows/release-linux-desktop.yml) page (Actions → "Release: Linux Desktop")
 2. Click on the most recent successful run (indicated by a green checkmark ✓)
 3. Scroll down to the **Artifacts** section
 4. Download the build for your platform:
-   - **Windows**: `AIRI_*_x64_en-US.exe`
-   - **macOS (Intel)**: `AIRI_*_x64.dmg`
-   - **macOS (Apple Silicon)**: `AIRI_*_arm64.dmg`
-   - **Linux (x64)**: `airi_*_amd64.deb` or `airi-*.x86_64.rpm`
-   - **Linux (ARM64)**: `airi_*_arm64.deb` or `airi-*.aarch64.rpm`
+   - `apps/stage-tamagotchi/artifacts/*` — tarball (`stable-linux-x64-AIRI.tar.zst` / `AIRI-Setup.tar.gz`) plus `*-update.json` sidecars
+   - (Windows/macOS have no nightly lane yet)
 
 ::: tip
-Nightly builds run automatically at **00:00 UTC** every day. If you encounter an issue with the latest stable release, try the latest nightly build to see if it has been fixed.
+Nightly builds run automatically at **00:00 UTC** every day. The nightly job currently covers **linux-x64** and **linux-arm64** only. If you encounter an issue with the latest stable release, try the latest nightly build to see if it has been fixed.
 :::
 
 ### Recent Nightly Builds
 
 
-[View all nightly builds →](https://github.com/moeru-ai/airi/actions/workflows/release-tamagotchi.yml)
+[View all nightly builds →](https://github.com/moeru-ai/airi/actions/workflows/release-linux-desktop.yml)

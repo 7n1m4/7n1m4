@@ -1002,7 +1002,7 @@ if ($head -ne $upstream) { throw 'Task 5 commit is not on upstream' }
 - Modify: `packages/stage-ui/src/components/scenes/RendererStage.vue:55-106,388-491`
 - Modify: `apps/stage-web/src/pages/index.vue:1-100,217-259`
 - Modify: `packages/i18n/src/locales/en/stage.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/stage.yaml`
+- Modify: `packages/i18n/src/locales/ko/stage.yaml`
 
 - [ ] **Step 1: Write the recovery decision tests**
 
@@ -1249,7 +1249,7 @@ Only the Retry button accepts pointer events; chat, header, and settings control
 
 - [ ] **Step 7: Add localized loading/error copy**
 
-Under `operations.load-models-status` in English and Simplified Chinese stage locales add:
+Under `operations.load-models-status` in English and Korean stage locales add:
 
 ```yaml
 # en
@@ -1259,14 +1259,14 @@ retrying: Retrying the character...
 fallback: Loading the lightweight fallback character...
 ```
 
-For Simplified Chinese add:
+English and Korean add:
 
 ```yaml
-# zh-Hans
-error: 人物加载失败。
-retry: 重试
-retrying: 正在重新加载人物……
-fallback: 正在加载轻量备用人物……
+# ko
+error: 캐릭터를 불러올 수 없습니다.
+retry: 다시 시도
+retrying: 캐릭터를 다시 불러오는 중...
+fallback: 가벼운 대체 캐릭터를 불러오는 중...
 ```
 
 The `modelLoadStatusMessage` computed value uses the existing `loading` key and the new retry/fallback keys; remove the hardcoded loading and reload-reason strings.
@@ -1291,7 +1291,7 @@ Expected: all focused tests PASS and all four typechecks exit 0.
 - [ ] **Step 9: Commit**
 
 ```powershell
-git add apps/stage-web/src/modules/model-load-recovery.ts apps/stage-web/src/modules/model-load-recovery.test.ts apps/stage-web/src/pages/index.vue packages/stage-ui/src/components/scenes/runtime.test.ts packages/stage-ui/src/stores/settings/stage-model.ts packages/stage-ui/src/stores/settings/index.ts packages/stage-ui/src/components/scenes/RendererStage.vue packages/i18n/src/locales/en/stage.yaml packages/i18n/src/locales/zh-Hans/stage.yaml
+git add apps/stage-web/src/modules/model-load-recovery.ts apps/stage-web/src/modules/model-load-recovery.test.ts apps/stage-web/src/pages/index.vue packages/stage-ui/src/components/scenes/runtime.test.ts packages/stage-ui/src/stores/settings/stage-model.ts packages/stage-ui/src/stores/settings/index.ts packages/stage-ui/src/components/scenes/RendererStage.vue packages/i18n/src/locales/en/stage.yaml packages/i18n/src/locales/ko/stage.yaml
 git commit -m "fix(web): recover failed character loads"
 git push
 $head = git rev-parse HEAD

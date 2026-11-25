@@ -1,56 +1,34 @@
-# Image Journal Proposal
+# Image Journal Storage
 
-## Overview
+> Architecture pointer. The **in-code types are the source of truth** for the
+> journal record shape; this doc only maps the parts. The `ImageJournalEntry`
+> fields live verbatim in the JSDoc of the type file.
 
-The `image_journal` is a first-class character capability designed to provide durable, persistent storage for AI-generated art. It replaces the current ephemeral `stage_widgets` flow with an append-only, character-scoped image history system.
+## Where the truth lives
 
-## The Problem: Ephemeral Widgets
+| Concern | Canonical source |
+| :--- | :--- |
+| Entry types (`ImageJournalEntry`, `CreateImageJournalEntryInput`) | [`packages/stage-ui/src/types/image-journal.ts`](packages/stage-ui/src/types/image-journal.ts) |
+| Live gallery / persistence (`type: 'journal'` entries, per-character scoping) | [`packages/stage-ui/src/stores/background.ts`](packages/stage-ui/src/stores/background.ts) |
+| LLM tool (`image_journal` `create` / `apply` / `set_as_background`) | [`apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts`](apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts) |
+| Card flag (`extensions.airi.imageJournal.selfie`) | [`packages/stage-ui/src/types/card.schema.ts`](packages/stage-ui/src/types/card.schema.ts) |
 
-Currently, generated art is modeled as a `stage_widgets` lifecycle problem. This approach has several limitations:
-- **Ownership**: The widget is both the live surface and the only owner of the image history.
-- **Fragility**: Once a widget is replaced or removed, the history becomes inaccessible or hard to reason about.
-- **Model overhead**: The LLM must manage widget IDs, which adds unnecessary complexity to the prompt.
+## Model
 
-## The Solution: `image_journal`
+The image journal is a durable, append-only, per-character (`activeCardId`) art
+history; the on-screen widget is a **viewport** into it, not the source of truth.
+Entries are stored as background-store `journal` entries (blob-backed);
+`image_journal.create` appends a new entry and `image_journal.apply` /
+`set_as_background` promotes one to the stage background (surfacing the active
+background back into the proactivity/sensor layer as ambient self-context).
 
-The `image_journal` reframes generated art as a persistent record rather than a temporary UI element. The widget becomes a **viewport** into the journal, not the source of truth itself.
+> Note: in-code `image_journal.create` image generation is currently gated off
+> (deprecated); existing journal images remain and `apply` still switches to
+> them. See `stores/modules/artistry.ts`.
 
-### Key Principles
+## Related
 
-1.  **Durable Storage**: Image history is stored independently of any active UI widgets. History is scoped per character.
-2.  **Carousel UI Pattern**: Preserve the successful "carousel" interaction pattern already used for generated art.
-3.  **Append-only**: New images are appended to the journal history over time.
-4.  **Simplified Logic**: Remove the need for the LLM to track and manage ephemeral widget IDs for art.
-
-## Proposed MVP Tools
-
-### 1. `image_journal.create`
-Generates a new image and appends it to the character's journal.
-- **Arguments**:
-  - `title`: A human-readable title for the image.
-  - `prompt`: The generation prompt.
-- **Behavior**: Routes through the defined Artistry provider (e.g., ComfyUI, Replicate) and adds the resulting metadata/URL to the persistent journal.
-
-### 2. `image_journal.set_as_background`
-Promotes the currently focused journal image to the Stage background.
-- **Behavior**: Triggers the scene system to update the background.
-- **Context Feedback**: Once updated, the active background is surfaced back into the proactivity/sensor layer as "ambient self-context," allowing the character to be aware of their current environment.
-
-## Technical Requirements
-
-### Storage & Management
-- **Sanitization**: All titles must be sanitized and slugified for stable storage.
-- **Deduplication**: Automatic deduplication of titles within a character's journal.
-- **Scope**: Journal entries are strictly scoped to the `activeCardId`.
-
-### UI Integration
-- The existing carousel component should be refactored to consume the `image_journal` store instead of local widget state.
-- Support for "Set as Background" should be added to the journal UI interface.
-
-## Future Extensions
-- **Tagging/Search**: Keyword-based search and categorization of journal entries.
-- **Manual Upload**: Allow users to manually add images to a character's journal.
-- **Shared Journal**: Optional cross-character gallery or vault for shared assets.
+- Card schema (`extensions.airi.imageJournal`): [`design-airi-card.md`](./design-airi-card.md)
 
 ## Relevant Skills
 

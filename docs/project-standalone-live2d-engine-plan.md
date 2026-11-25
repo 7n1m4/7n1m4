@@ -1,12 +1,20 @@
 # Project Plan: Standalone Live2D Engine & DSL Runtime
 
+> **Dated pointer (2026-11-25):** This plan has landed. The source of truth is now the code, not this document:
+> - DSL spec + §7 test corpus: `packages/live2d-runtime/src/dsl/README.md`
+> - Runtime implementation: `packages/live2d-runtime/src/dsl/` (`var-store.ts` `ReactiveVarStore`, `command-parser.ts`, `selector.ts`, `template.ts`, `interpreter.ts` `DSLVirtualMachine`, `types.ts`) and `packages/live2d-runtime/src/ports.ts`
+> - Host adapter: `packages/stage-ui-live2d/src/runtime/` (`README.md`, `live2d-runtime-adapter.ts`, `dsl-capture`)
+> - Render host: `packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue`
+>
+> The `## 4.2 Progress Log` and Phase checkboxes below are a 2026-11 status snapshot; **the code wins**.
+
 **Status:** Phases 1–3 substantially landed; Phase 2 multi-gen `.moc` routing deferred. See §4.2 Progress Log.
 **Target Package:** `@proj-anima/live2d-runtime` (headless, framework-agnostic) + `packages/stage-ui-live2d/src/runtime/` host adapter
 **References:**
-- DSL Interpreter Spec: [design-live2d-dsl-interpreter-spec.md](./design-live2d-dsl-interpreter-spec.md)
+- DSL runtime spec (source of truth): [packages/live2d-runtime/src/dsl/README.md](../packages/live2d-runtime/src/dsl/README.md)
 - Special Sauce Manifests: [research-live2d-special-sauce.md](./research-live2d-special-sauce.md)
-- DSL Test Cases / Handoff: [design-live2d-dsl-test-cases.md](./design-live2d-dsl-test-cases.md)
-- change_cos dependency challenge: [design-live2d-change-cos-challenge.md](./design-live2d-change-cos-challenge.md)
+- DSL test corpus & verification (source of truth): [packages/live2d-runtime/src/dsl/README.md](../packages/live2d-runtime/src/dsl/README.md) §7
+- change_cos dependency challenge: [packages/stage-ui-live2d/src/runtime/README.md](../packages/stage-ui-live2d/src/runtime/README.md)
 - Upstream Rosetta Stone: [rosetta-stone.md](./rosetta-stone.md)
 - ~~Upstream PR #2197~~ — superseded; we build on our own vendored `pixi-live2d-display` cubism2 build, not that PR.
 
@@ -141,7 +149,7 @@ Parses `;`-delimited command chains from `Command`/`PostCommand` fields. **Lane/
 ### Phase 1: Headless DSL VM + Vitest Suite (DONE — see §4.2)
 1. Scaffold `packages/live2d-runtime` (`@proj-anima/live2d-runtime`) as pure TS; add to `pnpm-workspace`/Vitest `projects`. Wire `typecheck`.
 2. Implement `dsl/` (types, var-store, command-parser, selector, template, interpreter) and `ports.ts` interfaces.
-3. Isolated Vitest suite built directly from [`design-live2d-dsl-test-cases.md`](./design-live2d-dsl-test-cases.md) and `research-live2d-special-sauce.md` fixtures: operator superset, atomic guard→mutate toggles, `assign rand(20,25)`, OpenChat toggle, Flandre `Tapbody` intimacy ladder, weighted `Update7#98` Intimacy→IntimacyVI mapping, `change_cos` heap-preservation.
+3. Isolated Vitest suite built directly from [`packages/live2d-runtime/src/dsl/README.md`](../packages/live2d-runtime/src/dsl/README.md) §7 and `research-live2d-special-sauce.md` fixtures: operator superset, atomic guard→mutate toggles, `assign rand(20,25)`, OpenChat toggle, Flandre `Tapbody` intimacy ladder, weighted `Update7#98` Intimacy→IntimacyVI mapping, `change_cos` heap-preservation.
 
 ### Phase 2: Multi-Gen Cubism Adapter (render host) — PARTIAL
 1. ⏳ Route Cubism 2 `.moc` manifests to the vendored `cubism2` entry; union-type `Cubism2InternalModel | Cubism4InternalModel`. **DEFERRED** — not yet wired into `Model.vue`'s loader; `change_cos` is upstream-blocked (ingestion split), so `.moc` routing is a follow-up.
@@ -162,7 +170,7 @@ Parses `;`-delimited command chains from `Command`/`PostCommand` fields. **Lane/
 
 ---
 
-## 4.2 Progress Log
+## 4.2 Progress Log (2026-11 snapshot)
 
 | Phase | Status | Key artifacts |
 | :--- | :--- | :--- |

@@ -1,24 +1,12 @@
 ---
 title: Neuro-sama
+description: Background references for the AI VTuber inspiration behind Project Anima.
 ---
 
-Hypes and thoughts:
+# Neuro-sama
 
-- [r/VirtualYoutubers --- Someone help me understand Neuro-sama : r/VirtualYoutubers](https://www.reddit.com/r/VirtualYoutubers/comments/1gi5ra0/someone_help_me_understand_neurosama/)
-- [How to Make an AI Vtuber. - YouTube](https://www.youtube.com/watch?v=WZ9JqlxQ6iQ)
-- [How neuro plays Minecraft? : r/NeuroSama](https://www.reddit.com/r/NeuroSama/comments/1hi8seg/how_neuro_plays_minecraft/)
-- [How to make an AI VTuber Using GPT 3 and Google Cloud TTS - YouTube](https://www.youtube.com/watch?v=EXICATDyYWI)
-- [Having a personal neuro-sama? : r/NeuroSama](https://www.reddit.com/r/NeuroSama/comments/1ix5uip/having_a_personal_neurosama/)
-- [Is it really Neuro-sama playing Minecraft? : r/NeuroSama](https://www.reddit.com/r/NeuroSama/comments/1ifhv0f/is_it_really_neurosama_playing_minecraft/)
-- [Is neuro custom coded from the ground up or does she have a base model? : r/NeuroSama](https://www.reddit.com/r/NeuroSama/comments/19481ow/is_neuro_custom_coded_from_the_ground_up_or_does/)
+Neuro-sama is an AI VTuber used as a reference point for character-driven streaming and autonomous performance. This page is intentionally a background pointer rather than a claim about Project Anima's implementation.
 
-We can use this plugin to allow AI/LLM to control the model:
+Read the code-collected [Project Anima overview](https://github.com/7n1m4/AnimA/blob/main/README.md) for the current character-runtime architecture, and the [AI VTuber overview](./about-ai-vtuber) for the broader context.
 
-- [pladisdev/VTS-AI-Plugin](https://github.com/pladisdev/VTS-AI-Plugin)
-
-- [Plugins · DenchiSoft/VTubeStudio Wiki](https://github.com/DenchiSoft/VTubeStudio/wiki/Plugins)
-
-Some of the existing open sourced projects:
-
-- [JarodMica/open-neruosama](https://github.com/JarodMica/open-neruosama/tree/master)
-- [AIVTDevPKevin/AI-VTuber-System: A graphical system program that allows you to quickly create your own AI VTuber for free.](https://github.com/AIVTDevPKevin/AI-VTuber-System)
+External background material is listed in the [project overview](https://github.com/7n1m4/AnimA/tree/main/docs/content/en/docs/overview); it is not an endorsement or a statement that any referenced implementation is used by this fork.

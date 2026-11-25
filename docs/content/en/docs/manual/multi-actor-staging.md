@@ -5,44 +5,9 @@ description: How to orchestrate multi-character conversations in Studio, manage 
 
 # Multi-Actor Staging & Wardrobes
 
-Anima is not limited to a single character. With **Multi-Actor Staging** and the **Modular Outfits System**, you can host multi-character talk shows, interactive team brainstorms, and manage wardrobe changes mid-conversation.
+Anima's multi-actor staging (`<|ACTOR:x|>` handoff), card-level outfits, and the ACT-setter pattern that persists in-costume state are implemented in the stage-ui actor-token pipeline, card store, and wardrobe UI.
 
----
+See the code-colocated [Multi-Actor Staging & Wardrobes](https://github.com/7n1m4/AnimA/blob/main/packages/stage-ui/src/components/scenes/MULTI-ACTOR-STAGING.md) document for multi-actor cards, outfit authoring and switching, Base vs. Layer concepts, and the `Variant [Skin]` persistence rules.
 
-## 1. Multi-Actor Cards & The ACTOR Token
-
-In a multi-actor card (created in the AnimaDex Wizard or Card Editor), multiple character personas live inside one card definition:
-
-```text
-<|ACTOR:Alice|> Hey Bob, did you finish review on the PR?
-<|ACT:motion="think"|>
-<|ACTOR:Bob|> Almost! Just running the typecheck suite now.
-```
-
-- **Automatic Voice Routing**: Anima automatically routes `<|ACTOR:Alice|>` speech through Alice's assigned TTS voice and `<|ACTOR:Bob|>` through Bob's voice.
-- **Stage Focus**: When an actor speaks, their 3D/2D model animates while inactive actors shift to subtle listening or idle gestures.
-
----
-
-## 2. Setting Up Outfits & Wardrobes
-
-Characters can have multiple costume variants (e.g., *Casual*, *School Uniform*, *Sleepwear*, *Formal Dress*).
-
-### Adding Outfits to a Card:
-1. Open **Settings &rarr; Character Cards &rarr; Edit Card &rarr; Outfits**.
-2. Click **"Add Outfit"**.
-3. Set the **Outfit Name** and assign the target 3D/2D model file or Live2D expression preset.
-4. For VRM models with sub-mesh clothing parts, select which meshes to show/hide for that specific outfit.
-
----
-
-## 3. Switching Outfits During Chat
-
-- **Manual Switch**: Open the Control Strip or Chatbox Action Menu &rarr; **"Change Outfit"** and click the desired look.
-- **In-Character Dialogue Triggers**: The AI companion can trigger costume changes automatically during narrative scenes using the outfit tool (e.g., changing into pajamas when you say *"Goodnight, let's head to sleep"*).
-
----
-
-## 4. Deep Concept Stacks & Studio Integration
-
-Multi-Actor staging and modular outfits build upon Anima's underlying Studio Concept Stack. For deep technical configuration of Base vs. Layer concepts, image generation prompt overrides, and autonomous Director grading loops, see the [Studio Configuration Guide](./config/studio.md).
+> [!NOTE]
+> Studio image generation (Autonomous Artistry / the Director loop) is deprecated and disabled; actor tokens, outfits, and static-asset pinning still work.

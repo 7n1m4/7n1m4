@@ -1,10 +1,10 @@
-# Web 用户界面中文化 Implementation Plan
+# Web 사용자 인터페이스 한국어화 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让简体中文环境下主要 Web 用户路径不再回退或写死为英文，并建立静态翻译键完整性检查。
+**Goal:** 한국어 환경에서 주요 Web 사용자 경로가 더 이상 영어로 폴백되거나 하드코딩되지 않도록 하고, 정적 번역 키 완전성 검사를 구축한다.
 
-**Architecture:** 继续使用现有 Vue I18n 和 `packages/i18n` YAML 语言包。先用源码契约测试收集生产代码中的静态 `t()` 键并校验简体中文覆盖，再按用户可见程度迁移硬编码文案；品牌、模型、协议和精确配置键通过明确白名单保留原文。
+**Architecture:** 기존 Vue I18n 과 `packages/i18n` YAML 언어 팩을 계속 사용한다. 먼저 소스 계약 테스트로 프로덕션 코드의 정적 `t()` 키를 수집하고 한국어 커버리지를 검증한 뒤, 사용자 가시성에 따라 하드코딩된 문구를 마이그레이션한다; 브랜드, 모델, 프로토콜, 정확한 설정 키는 명시적 화이트리스트로 원문을 유지한다.
 
 **Tech Stack:** Vue 3、TypeScript、Vue I18n、YAML、Vitest、Vite、pnpm 10.32.1、Node.js 24.13.0
 
@@ -15,7 +15,7 @@
 - `packages/stage-layouts/src/localization/web-localization.test.ts`：跨 Web 生产源码检查静态 i18n 键、插值变量和已确认的硬编码英文。
 - `packages/stage-layouts/package.json`：为上述测试声明 `yaml` 开发依赖。
 - `packages/i18n/src/locales/en/settings.yaml`、`packages/i18n/src/locales/en/stage.yaml`：新增从组件迁出的英文源文案。
-- `packages/i18n/src/locales/zh-Hans/settings.yaml`、`packages/i18n/src/locales/zh-Hans/stage.yaml`：补齐中文键并翻译用户可见内容。
+- `packages/i18n/src/locales/ko/settings.yaml`、`packages/i18n/src/locales/ko/stage.yaml`：한국어 키를 보완하고 사용자 가시 문구를 번역한다.
 - `packages/stage-pages/src/pages/settings/**`：迁移设置页、角色卡和向导中的硬编码文案。
 - `packages/stage-ui/src/components/scenarios/settings/**`：迁移模型设置中的硬编码文案。
 - `packages/stage-ui/src/components/scenarios/chat/**`、`packages/stage-ui/src/components/scenarios/dialogs/onboarding/**`：迁移聊天弹窗和首次引导文案。
@@ -31,13 +31,13 @@
 $corepack = 'D:\Tools\airi\.node24.local\node-v24.13.0-win-x64\corepack.cmd'
 ```
 
-### Task 1: 建立 Web 中文键完整性保护并补齐现有缺键
+### Task 1: Web 한국어 키 완전성 보호 구축 및 기존 누락 키 보완
 
 **Files:**
 - Create: `packages/stage-layouts/src/localization/web-localization.test.ts`
 - Modify: `packages/stage-layouts/package.json`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/stage.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/stage.yaml`
 
 - [ ] **Step 1: 声明 YAML 测试依赖**
 
@@ -91,7 +91,7 @@ function flatten(value: unknown, prefix = '', output: Record<string, unknown> = 
   return output
 }
 
-function loadWebMessages(locale: 'en' | 'zh-Hans') {
+function loadWebMessages(locale: 'en' | 'ko') {
   const localeRoot = resolve(workspaceRoot, 'packages/i18n/src/locales', locale)
   return flatten({
     base: parse(readFileSync(resolve(localeRoot, 'base.yaml'), 'utf8')),
@@ -118,19 +118,19 @@ function interpolationVariables(value: unknown) {
   return [...value.matchAll(/\{([^{}]+)\}/g)].map(match => match[1]).sort()
 }
 
-describe('Simplified Chinese web localization', () => {
+describe('Korean web localization', () => {
   const english = loadWebMessages('en')
-  const chinese = loadWebMessages('zh-Hans')
+  const korean = loadWebMessages('ko')
   const referencedKeys = collectStaticTranslationKeys().filter(key => key in english)
 
-  it('defines every statically referenced English key in Simplified Chinese', () => {
-    expect(referencedKeys.filter(key => !(key in chinese))).toEqual([])
+  it('defines every statically referenced English key in Korean', () => {
+    expect(referencedKeys.filter(key => !(key in korean))).toEqual([])
   })
 
   it('preserves interpolation variables from English messages', () => {
     const mismatches = referencedKeys
-      .filter(key => key in chinese)
-      .filter(key => interpolationVariables(english[key]).join('|') !== interpolationVariables(chinese[key]).join('|'))
+      .filter(key => key in korean)
+      .filter(key => interpolationVariables(english[key]).join('|') !== interpolationVariables(korean[key]).join('|'))
     expect(mismatches).toEqual([])
   })
 })
@@ -144,45 +144,45 @@ Run:
 & $corepack pnpm --filter @proj-anima/stage-layouts exec vitest run src/localization/web-localization.test.ts
 ```
 
-Expected: FAIL；第一项测试列出 84 个中文缺失键，主要位于 `settings.pages.modules`、`settings.dialogs.onboarding`、`settings.pages.data`、`settings.chat` 和 `settings.pages.chat`。
+Expected: FAIL; first test lists 84 missing Korean keys, mainly in `settings.pages.modules`, `settings.dialogs.onboarding`, `settings.pages.data`, `settings.chat`, and `settings.pages.chat`.
 
 - [ ] **Step 4: 补齐所有静态引用缺键**
 
-按英文文件的相同层级向简体中文 YAML 加入键。以下核心翻译必须使用这些文字，其余同组键保持相同术语：
+按英文文件的相同层级向한국어 YAML 加入键。以下核心翻译必须使用这些文字，其余同组键保持相同术语：
 
 ```yaml
 chat:
   send-mode:
-    title: 发送按键
-    description: 选择聊天输入框发送消息的按键方式。
+    title: 전송 키
+    description: 채팅 입력창에서 메시지를 전송하는 키 방식을 선택합니다.
     options:
-      enter: 按 Enter 发送
-      ctrl-enter: 按 Ctrl+Enter 发送
-      double-enter: 连按两次 Enter 发送
+      enter: Enter로 전송
+      ctrl-enter: Ctrl+Enter로 전송
+      double-enter: Enter 두 번으로 전송
   stream-idle-timeout:
-    title: 流式响应空闲超时
-    description: 模型流式响应长时间没有新事件时自动取消本次响应。
+    title: 스트리밍 응답 유휴 타임아웃
+    description: 모델 스트리밍 응답에 새 이벤트가 오랫동안 없으면 이번 응답을 자동으로 취소합니다.
     options:
-      10s: 10 秒
-      15s: 15 秒
-      30s: 30 秒
-      45s: 45 秒
-      60s: 60 秒
-      120s: 2 分钟
+      10s: 10초
+      15s: 15초
+      30s: 30초
+      45s: 45초
+      60s: 60초
+      120s: 2분
 ```
 
 同时补齐并翻译这些完整键组：
 
-- `dialogs.onboarding.modeSelection`：如何开始、简易设置、高级设置及两种模式说明。
-- `dialogs.onboarding.senseSetup`：感知入口、意识、语音与听觉、OpenRouter/Deepgram 获取入口及说明。
-- `pages.chat`：聊天设置标题、说明和三种发送模式。
-- `pages.connection.hf-token`：Hugging Face 令牌标签、用途说明和 `hf_...` 示例。
-- `pages.data.sections.characters|memory|backgrounds`：角色、记忆与日记、背景及导入导出操作。
-- `pages.modules.hearing.sections.section.hotkey`：麦克风切换快捷键和 Scroll/Caps/Num Lock 选项。
-- `pages.modules.messaging-discord`：连接状态、控制、模拟消息和开发控制台；保留 Discord、VLM 名称。
-- `pages.providers.provider.amazon-bedrock.config`：AWS 凭据说明；保留 AWS、IAM、STS 名称。
-- `vrm.scale-and-position`：鼠标跟随、跟随速度及说明。
-- `stage.chat.reasoning_only`：模型只生成推理内容时的用户提示。
+- `dialogs.onboarding.modeSelection`：시작 방법, 간편 설정, 고급 설정 및 두 모드 설명.
+- `dialogs.onboarding.senseSetup`：지각 진입점, 의식, 음성과 청각, OpenRouter/Deepgram 획득 진입점 및 설명.
+- `pages.chat`：채팅 설정 제목, 설명 및 세 가지 전송 모드.
+- `pages.connection.hf-token`：Hugging Face 토큰 라벨, 용도 설명 및 `hf_...` 예시.
+- `pages.data.sections.characters|memory|backgrounds`：캐릭터, 기억과 일기, 배경 및 가져오기/내보내기 작업.
+- `pages.modules.hearing.sections.section.hotkey`：마이크 전환 단축키 및 Scroll/Caps/Num Lock 옵션.
+- `pages.modules.messaging-discord`：연결 상태, 제어, 시뮬레이션 메시지 및 개발 콘솔; Discord, VLM 이름 유지.
+- `pages.providers.provider.amazon-bedrock.config`：AWS 자격 증명 설명; AWS, IAM, STS 이름 유지.
+- `vrm.scale-and-position`：마우스 따라가기, 따라가기 속도 및 설명.
+- `stage.chat.reasoning_only`：모델이 추론 내용만 생성할 때 사용자에게 보여주는 안내.
 
 - [ ] **Step 5: 重新运行测试并提交**
 
@@ -191,18 +191,18 @@ Run:
 ```powershell
 & $corepack pnpm --filter @proj-anima/stage-layouts exec vitest run src/localization/web-localization.test.ts
 git diff --check
-git add packages/stage-layouts/package.json packages/stage-layouts/src/localization/web-localization.test.ts packages/i18n/src/locales/zh-Hans/settings.yaml packages/i18n/src/locales/zh-Hans/stage.yaml
-git commit -m "test(i18n): require Chinese web message coverage"
+git add packages/stage-layouts/package.json packages/stage-layouts/src/localization/web-localization.test.ts packages/i18n/src/locales/ko/settings.yaml packages/i18n/src/locales/ko/stage.yaml
+git commit -m "test(i18n): require Korean web message coverage"
 ```
 
-Expected: 2 tests PASS；提交只包含测试、依赖和补齐的中文键。
+Expected: 2 tests PASS；提交只包含测试、依赖和 보완한 한국어 키。
 
-### Task 2: 清理中文语言包内仍为英文的可见文案
+### Task 2: 한국어 언어 팩에 남은 영어 가시 문구 정리
 
 **Files:**
 - Modify: `packages/stage-layouts/src/localization/web-localization.test.ts`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/stage.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/stage.yaml`
 
 - [ ] **Step 1: 增加“普通英文不得原样回退”失败测试**
 
@@ -230,7 +230,7 @@ function canRemainEnglish(key: string) {
 it('does not leave referenced user-facing sentences identical to English', () => {
   const untranslated = referencedKeys.filter(key => (
     typeof english[key] === 'string'
-    && english[key] === chinese[key]
+    && english[key] === korean[key]
     && /[A-Z]{3}/i.test(english[key] as string)
     && !canRemainEnglish(key)
   ))
@@ -253,19 +253,19 @@ Expected: FAIL；列出 Provider 分类说明、连接说明、模型设置、�
 翻译测试列出的全部普通句子。采用以下术语：
 
 ```text
-Speech -> 语音合成
-Transcription -> 语音转写
-Vision -> 视觉
-Gaming -> 游戏
-Messaging -> 消息平台
-Maximum FPS -> 最大帧率
-Render Scale -> 渲染比例
-Unlimited -> 不限
-Confirm new password -> 确认新密码
-Danger Zone -> 危险操作
+Speech -> 음성 합성
+Transcription -> 음성 전사
+Vision -> 비전
+Gaming -> 게임
+Messaging -> 메시징
+Maximum FPS -> 최대 FPS
+Render Scale -> 렌더 비율
+Unlimited -> 무제한
+Confirm new password -> 새 비밀번호 확인
+Danger Zone -> 위험 구역
 ```
 
-Provider 名称、模型名、OpenAI、OpenRouter、AWS、WebSocket、API、URL、Flux、Live2D、VRM 保持原文，但其前后说明翻译成中文。开发工具命名和 `Markdown Stress` 不纳入此测试。
+Provider 名称、模型名、OpenAI、OpenRouter、AWS、WebSocket、API、URL、Flux、Live2D、VRM 保持原文，但其前后说明翻译成한국어。开发工具命名和 `Markdown Stress` 不纳入此测试。
 
 - [ ] **Step 4: 验证并提交**
 
@@ -274,8 +274,8 @@ Run:
 ```powershell
 & $corepack pnpm --filter @proj-anima/stage-layouts exec vitest run src/localization/web-localization.test.ts
 git diff --check
-git add packages/stage-layouts/src/localization/web-localization.test.ts packages/i18n/src/locales/zh-Hans/settings.yaml packages/i18n/src/locales/zh-Hans/stage.yaml
-git commit -m "fix(i18n): translate referenced Chinese web messages"
+git add packages/stage-layouts/src/localization/web-localization.test.ts packages/i18n/src/locales/ko/settings.yaml packages/i18n/src/locales/ko/stage.yaml
+git commit -m "fix(i18n): translate referenced Korean web messages"
 ```
 
 Expected: 3 tests PASS。
@@ -285,7 +285,7 @@ Expected: 3 tests PASS。
 **Files:**
 - Modify: `packages/stage-layouts/src/localization/web-localization.test.ts`
 - Modify: `packages/i18n/src/locales/en/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
 - Modify: `packages/stage-pages/src/pages/settings/modules/speech.vue`
 - Modify: `packages/stage-pages/src/pages/settings/modules/vision.vue`
 - Modify: `packages/stage-pages/src/pages/settings/modules/hearing.vue`
@@ -397,7 +397,7 @@ const { t } = useI18n()
 </span>
 ```
 
-英文和中文 YAML 使用同一键结构。技术示例 `tts-1`、`whisper-1`、`gpt-4o-mini`、`hf_...` 和模型 ID 保持原样；按钮、状态、说明和可访问性标签全部翻译。
+英文和한국어 YAML 使用同一键结构。技术示例 `tts-1`、`whisper-1`、`gpt-4o-mini`、`hf_...` 和模型 ID 保持原样；按钮、状态、说明和可访问性标签全部翻译。
 
 - [ ] **Step 4: 验证模块设置并提交**
 
@@ -407,7 +407,7 @@ Run:
 & $corepack pnpm --filter @proj-anima/stage-layouts exec vitest run src/localization/web-localization.test.ts
 & $corepack pnpm --filter @proj-anima/stage-pages typecheck
 git diff --check
-git add packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/zh-Hans/settings.yaml packages/stage-layouts/src/localization/web-localization.test.ts packages/stage-pages/src/pages/settings packages/stage-pages/src/pages/v2/settings/providers.vue
+git add packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/ko/settings.yaml packages/stage-layouts/src/localization/web-localization.test.ts packages/stage-pages/src/pages/settings packages/stage-pages/src/pages/v2/settings/providers.vue
 git commit -m "fix(settings): localize core web settings"
 ```
 
@@ -418,7 +418,7 @@ Expected: 本地化测试 PASS，`stage-pages` 类型检查退出码为 0。
 **Files:**
 - Modify: `packages/stage-layouts/src/localization/web-localization.test.ts`
 - Modify: `packages/i18n/src/locales/en/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
 - Modify: `packages/stage-pages/src/pages/settings/airi-card/guided.vue`
 - Modify: `packages/stage-pages/src/pages/settings/airi-card/components/CardCreationDialog.vue`
 - Modify: `packages/stage-pages/src/pages/settings/airi-card/components/CardImportWizard.vue`
@@ -505,7 +505,7 @@ Run:
 & $corepack pnpm --filter @proj-anima/stage-pages typecheck
 & $corepack pnpm --filter @proj-anima/stage-ui typecheck
 git diff --check
-git add packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/zh-Hans/settings.yaml packages/stage-layouts/src/localization/web-localization.test.ts packages/stage-pages/src/pages/settings/airi-card packages/stage-ui/src/components/scenarios/settings/model-settings
+git add packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/ko/settings.yaml packages/stage-layouts/src/localization/web-localization.test.ts packages/stage-pages/src/pages/settings/airi-card packages/stage-ui/src/components/scenarios/settings/model-settings
 git commit -m "fix(settings): localize card and model editors"
 ```
 
@@ -520,11 +520,11 @@ Expected: 本地化测试以及两个类型检查均退出码为 0。
 - Create: `packages/i18n/src/locales/en/server/index.ts`
 - Create: `packages/i18n/src/locales/en/server/auth.yaml`
 - Modify: `packages/i18n/src/locales/en/index.ts`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/stage.yaml`
-- Create: `packages/i18n/src/locales/zh-Hans/server/index.ts`
-- Create: `packages/i18n/src/locales/zh-Hans/server/auth.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/index.ts`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/stage.yaml`
+- Create: `packages/i18n/src/locales/ko/server/index.ts`
+- Create: `packages/i18n/src/locales/ko/server/auth.yaml`
+- Modify: `packages/i18n/src/locales/ko/index.ts`
 - Modify: `packages/stage-layouts/src/components/Widgets/ChatArea.vue`
 - Modify: `packages/stage-layouts/src/components/Layouts/MobileInteractiveArea.vue`
 - Modify: `packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue`
@@ -547,7 +547,7 @@ Expected: 本地化测试以及两个类型检查均退出码为 0。
 
 当前认证语言 YAML 只残留在生成目录，源码索引没有导出 `server.auth`。将
 `packages/i18n/dist/locales/locales/en/server/auth.yaml` 和
-`packages/i18n/dist/locales/locales/zh-Hans/server/auth.yaml` 的现有内容原样恢复到对应 `src/locales` 路径，再修正其中仍为英文的简体中文普通文案。两个 `server/index.ts` 均使用：
+`packages/i18n/dist/locales/locales/ko/server/auth.yaml` 的现有内容原样恢复到对应 `src/locales` 路径，再修正其中仍为英文的한국어普通文案。两个 `server/index.ts` 均使用：
 
 ```ts
 import auth from './auth.yaml'
@@ -557,7 +557,7 @@ export default {
 }
 ```
 
-在英文和简体中文 `index.ts` 中加入：
+在英文和한국어 `index.ts` 中加入：
 
 ```ts
 import server from './server'
@@ -583,7 +583,7 @@ return {
 }
 ```
 
-运行本地化测试；若恢复的简体中文认证文件缺键或插值变量不一致，测试必须失败并在本步骤内补齐。
+运行本地化测试；若恢复的한국어认证文件缺键或插值变量不一致，测试必须失败并在本步骤内补齐。
 
 - [ ] **Step 2: 为共享界面添加失败契约**
 
@@ -674,7 +674,7 @@ rg -n -g '*.vue' -g '*.ts' -g '!**/*.test.ts' -g '!**/*.story.vue' -g '!**/devto
 Run:
 
 ```powershell
-& 'D:\Tools\airi\.node24.local\node-v24.13.0-win-x64\node.exe' -e "const fs=require('fs'),YAML=require('yaml');for(const f of ['packages/i18n/src/locales/en/settings.yaml','packages/i18n/src/locales/en/stage.yaml','packages/i18n/src/locales/zh-Hans/settings.yaml','packages/i18n/src/locales/zh-Hans/stage.yaml'])YAML.parse(fs.readFileSync(f,'utf8'));console.log('YAML OK')"
+& 'D:\Tools\airi\.node24.local\node-v24.13.0-win-x64\node.exe' -e "const fs=require('fs'),YAML=require('yaml');for(const f of ['packages/i18n/src/locales/en/settings.yaml','packages/i18n/src/locales/en/stage.yaml','packages/i18n/src/locales/ko/settings.yaml','packages/i18n/src/locales/ko/stage.yaml'])YAML.parse(fs.readFileSync(f,'utf8'));console.log('YAML OK')"
 $files = git diff --name-only fork/main -- '*.yaml' '*.vue' '*.ts' '*.md'
 foreach ($file in $files) {
   $bytes = [IO.File]::ReadAllBytes((Resolve-Path $file))
@@ -701,9 +701,9 @@ Run:
 
 Expected: 所有命令退出码为 0，Stage Web 生产构建成功。
 
-- [ ] **Step 4: 浏览器抽查简体中文界面**
+- [ ] **Step 4: 浏览器抽查한국어界面**
 
-在后台启动本地 Stage Web，在简体中文下检查：
+在后台启动本地 Stage Web，在한국어下检查：
 
 ```powershell
 $web = Start-Process -FilePath $corepack -ArgumentList @('pnpm', '--filter', '@proj-anima/stage-web', 'dev', '--host', '127.0.0.1') -WindowStyle Hidden -PassThru
@@ -711,7 +711,7 @@ $web = Start-Process -FilePath $corepack -ArgumentList @('pnpm', '--filter', '@p
 Stop-Process -Id $web.Id
 ```
 
-检查 `/settings/`、系统/聊天/数据设置、听觉/语音/视觉/记忆模块、角色卡向导、模型设置、聊天弹窗、首次引导、旧登录页和角色管理。验收结果应为：普通按钮、标题、说明、空状态和 tooltip 显示中文；仅品牌、模型、协议和技术字段保留英文。
+检查 `/settings/`、系统/聊天/数据设置、听觉/语音/视觉/记忆模块、角色卡向导、模型设置、聊天弹窗、首次引导、旧登录页和角色管理。验收结果应为：普通按钮、标题、说明、空状态和 tooltip 显示한국어；仅品牌、模型、协议和技术字段保留英文。
 
 - [ ] **Step 5: 更新索引并提交收尾**
 

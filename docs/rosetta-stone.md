@@ -2,7 +2,7 @@
 
 Concept-to-file-path index for rapid context retrieval. Use this to find where anything lives — UI, data, providers, modules, audio, memory, or the integration plumbing between them.
 
-> **Architecture in one line (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; the Flutter window companion (`apps/flutter`), Godot renderer (`godot/`) and Vue web UI (`apps/stage-web`) are maintained full-parity renderers/clients driven by that same backend. "Thin client" means no competing state writer, never a reduced UI surface. TS business-logic retirement (the still-gated `airi-3cp` remote-sync slice) does not retire the Vue renderer; gateway trust gates and `airi-3cp` DO NOT START remain unless the user explicitly says otherwise. Canonical overview: [`docs/README.md`](./README.md); per-capability status: [`docs/feature-parity-checklist.md`](./feature-parity-checklist.md).
+> **Architecture in one line (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; **Flutter (`apps/flutter`) is the primary and sole active renderer on desktop and mobile**, at full feature parity with the Vue stage UI including native character/model rendering. "Thin client" means no competing state writer, never a reduced UI surface. The Godot renderer was purged from the active architecture (historical files only); the Vue web UI (`apps/stage-web`) and the Electrobun desktop app remain the behaviour reference while parity is incomplete, not a second active renderer. TS business-logic retirement (the still-gated `airi-3cp` remote-sync slice) is a logic slice only; gateway trust gates and `airi-3cp` DO NOT START remain unless the user explicitly says otherwise. Canonical overview: [`docs/README.md`](./README.md); per-capability status: [`docs/feature-parity-checklist.md`](./feature-parity-checklist.md).
 >
 > **Relationship to `.agents/skills/`:** The skills directory contains deep-dive domain guides (staged entry points, pitfalls, SOPs). This Rosetta Stone is the dense index layer — use it to locate where something lives; load the corresponding skill for implementation procedure.
 
@@ -16,7 +16,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 > | :--- | :--- |
 > | App startup, window managers, DI wiring, the `eventa` contract | **1, 6 (providers)** |
 > | Any visible window/island/chat surface (Control Strip, Stage, Chatbox, islands) | **2, 3, 4** |
-| Multi-renderer architecture: Rust daemon backend + Flutter/Godot/Vue full-parity clients | **1, 1b, 14** (+ [`docs/README.md`](./README.md), [`feature-parity-checklist.md`](./feature-parity-checklist.md)) |
+> | Flutter-first architecture: Rust daemon backend + Flutter as the full-parity renderer (Vue stage UI is the behaviour reference) | **1, 1b, 14** (+ [`docs/README.md`](./README.md), [`feature-parity-checklist.md`](./feature-parity-checklist.md)) |
 > | Anything persisted — cards, chat logs, memory, sync, IndexedDB/localStorage keys | **5** (+ catalog) |
 > | Swapping LLM/TTS/STT/vision/image backends, `defineProvider`, local model inference | **6** |
 > | Feature modules (card-embedded vs standalone) — consciousness, speech, hearing, vision, discord, etc. | **7** |
@@ -601,17 +601,17 @@ Cross-window communication relies on named `BroadcastChannel` instances. This is
 | `packages/stream-kit/` | Streaming utilities |
 | `packages/electron-eventa/` | Electron Eventa bindings |
 | `packages/font-*` | Font packages (allseto, departure-mono, xiaolai) |
-| `apps/flutter` | Flutter window companion — maintained full-parity daemon client (`lib/daemon_client/`, `lib/speech/`); view state and client-local audio only. |
-| `godot` | Godot renderer — maintained full-parity daemon client (`scripts/Net/`, `scripts/Audio/`, `scripts/Renderers/`); VRM/Live2D backends still stubs. |
-| `apps/stage-tamagotchi` | Electrobun app (main + renderer). Desktop stage; re-backed to the daemon when it answers on the session bus, with an in-app fallback elsewhere. Its TS shell is parity-gated, not the Vue renderer. |
-| `apps/stage-web` | Vue web UI — maintained full-parity renderer, hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml` (build with `pnpm run build:web:pages`). Its temporary opt-in TS remote-sync backend (`apps/server`) is a separate gated business-logic slice, not a renderer dependency. |
-| `apps/stage-pocket` | ❌ Purged 2026-11. Native mobile app replaced by the unified Rust-native direction (`docs/proposal-unified-rust-native-app.md`). |
+| `apps/flutter` | Flutter — primary and sole active renderer on desktop and mobile (`lib/daemon_client/`, `lib/speech/`, `lib/features/`, `lib/ui/`); full stage-UI surface including native character/model rendering. Holds view state and client-local audio only. |
+| `godot/` | ❌ Retired 2026-11-25 — Godot purged from the active architecture by user decision; not a maintained surface or parity target. Historical research: `docs/research-godot-renderer-spike.md`. |
+| `apps/stage-tamagotchi` | Electrobun app (main + renderer). Behaviour reference for the Flutter port; re-backed to the daemon when it answers on the session bus, with an in-app fallback elsewhere. Its TS shell is parity-gated, not a second renderer. |
+| `apps/stage-web` | Vue web UI — behaviour reference for Flutter parity, hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml` (build with `pnpm run build:web:pages`). Its temporary opt-in TS remote-sync backend (`apps/server`) is a separate gated business-logic slice, not a renderer dependency. |
+| `apps/stage-pocket` | ❌ Purged 2026-11. Capacitor mobile app replaced by Flutter (`apps/flutter`), which ships to Android/iOS as a thin daemon client. |
 | `apps/server` | Dedicated backend service for the Web Stage (`apps/stage-web`) topology (WebSocket channel server, API proxy, storage). Required for web-stage deployments. |
 | `.github/workflows/deploy-frontends.yml` | Frontends CI deploy workflow (builds Docs to `/airi/` root and Web Stage to `/airi/web-stage/`; local build via `pnpm run build:pages`) |
 | `docs/design-web-stage-pages-deployment.md` | Web Stage GitHub Pages deployment architecture & surface reference |
 | `apps/stage-tamagotchi/src/main/services/airi/` | Main process services (discord, widgets, MCP) |
 | `scripts/` | Utility scripts (`yaml-manager.js`, `pr_summary.sh`) |
-| `crates/` | Rust runtime core: `anima-daemon` (owns state; hosts the WS/wss gateway via `anima-channel`), `anima-core`, and domain crates (stt / llm / speech / render / store / sync / ...). The Slint native shell was removed. |
+| `crates/` | Rust runtime core: `anima-daemon` (owns state; hosts the WS/wss gateway via `anima-channel`), `anima-core`, and domain crates (stt / llm / speech / render / store / sync / ...). The Slint native shell was removed; the Godot renderer is retired and Flutter is the sole active renderer. |
 | `docs/` | Proposal docs, reference sheets, how-to guides |
 | `docs/content/en/docs/` | In-app manual content |
 | `scripts/motion-export/` | ONNX texture-export lineage (`compile_onnx.py`, `inspect_sampler.py`, `test_onnx_parity.py`) |

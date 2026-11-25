@@ -59,7 +59,7 @@ Anima supports both Web and Desktop platforms.
       /
       <div i-lucide:computer />
     </div>
-    <span>Desktop (Electron)</span>
+    <span>Desktop</span>
     <a href="https://github.com/dasilva333/airi/releases/latest" target="_blank" decoration-none class="text-primary-900 dark:text-primary-400 text-base not-prose bg-primary-400/10 dark:bg-primary-600/10 block px-4 py-2 rounded-lg active:scale-95 transition-all duration-200 ease-in-out">
       Download Desktop
     </a>

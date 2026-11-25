@@ -1,5 +1,7 @@
 # Feat: Discord Revamp
 
+> Dated pointer (2026-11-25): This stays the full Discord spec (`docs/rosetta-stone.md` §11 links it), but the source of truth is the code — command schema and interaction/component routing in `packages/stage-ui/src/stores/modules/discord.ts`, settings UI `packages/stage-pages/src/pages/settings/modules/messaging-discord.vue`, and the Rust `crates/anima-discord/` crate (REST + Gateway client). The in-process service entry `apps/stage-tamagotchi/src/main/services/airi/discord/index.ts` is currently a `not-implemented` Electrobun port stub (its `./electron.ts` voice implementation is not present in this tree), so Phase 1–4 below is a target design, not a description of shipped wiring. Overlapping designs: `docs/design-discord-bot-integration.md`, `docs/design-discord-context-routing.md`, `docs/design-discord-control-plane.md`.
+
 ## Vision & Goals
 Transitioning the Discord integration from a disconnected "second process" bot into a unified service running directly within the main AIRI architecture.
 

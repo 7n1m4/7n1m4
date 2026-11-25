@@ -104,9 +104,11 @@ Advanced toggles and routing capabilities.
 | :--- | :--- | :--- |
 | `/voicemode` | `mode: puppet \| voicenote \| none` | Controls TTS playback destination (desktop speakers, voice note attachment, or muted). |
 | `/voicecall` | `mode: classic \| gemini` | Selects the VC engine (standard TTS pipeline vs native Gemini Live WebSocket). |
-| `/director` | `mode: on \| off` | Toggles Autonomous Artistry (character-initiated generation). |
+| `/director` | `mode: on \| off` | ~~Deprecated/disabled~~ Toggles Autonomous Artistry (character-initiated generation). |
+
 | `/vision` | `mode: on \| off` | Toggles VLM processing of image attachments in the channel. |
-| `/imagine` | `prompt: string` | Forces a visual generation through the Artistry pipeline. |
+| `/imagine` | `prompt: string` | ~~Deprecated/disabled~~ Forces a visual generation through the Artistry pipeline. |
+
 | `/selfie` | `emotion?: string` | Captures a stage screenshot. Optional emotion overrides the character expression. |
 
 #### Details
@@ -120,11 +122,11 @@ Advanced toggles and routing capabilities.
 - **`gemini`**: Discord Opus audio → Gemini Live WebSocket → Discord Opus. Ultra-low latency, no text serialization.
 - **`classic`**: Audio → STT → LLM → TTS → Audio. Slower but uses high-fidelity desktop TTS providers and keeps a full text transcript.
 
-**`/director`** — When `on`, Anima can autonomously decide to generate images (widgets, backgrounds) through Artistry. When `off`, all generation must be explicitly requested.
+**`/director`** — ~~Deprecated/disabled~~ When `on`, Anima can autonomously decide to generate images (widgets, backgrounds) through Artistry. When `off`, all generation must be explicitly requested. No image is generated; existing images can still be applied.
 
 **`/vision`** — When `on`, image attachments in Discord are intercepted, converted to base64, and fed into the VLM processor via the chat orchestrator. Anima can "see" and respond to images.
 
-**`/imagine`** — Sends the prompt to the configured Artistry backend (e.g., ComfyUI). The result is posted as a native Discord attachment.
+**`/imagine`** — ~~Deprecated/disabled~~ Sends the prompt to the configured Artistry backend (e.g., ComfyUI). No image is generated; existing images can still be applied. The result is posted as a native Discord attachment.
 
 **`/selfie`** — Triggers `visionStore.heartbeat({ force: true })` — the same capture function used by the desktop Control Island. The screenshot is stored as a "selfie" entry in the Image Journal and posted as a high-quality attachment.
 
@@ -139,7 +141,7 @@ The Discord settings page at **Settings > Discord** (under *Messaging*) provides
 | **Connectivity** | Gateway status badge + ping/latency readout. |
 | **Authentication** | Masked token display + reset button. |
 | **Active Presence** | Table of guilds and voice channels Anima is currently in. |
-| **Logic Routing** | Toggles for VLM processing, Global Artistry Sync, and auto-prefixing. |
+| **Logic Routing** | Toggles for VLM processing, Global Artistry Sync (disabled), and auto-prefixing. |
 | **Developer Console** | Collapsible real-time log of Discord service events. |
 
 ---

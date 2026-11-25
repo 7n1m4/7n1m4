@@ -1,6 +1,6 @@
 ---
 title: Configuring the Anima Gateway
-description: How the local WebSocket gateway works, where the authentication token lives, and how to pair external companion apps.
+description: Gateway architecture and operational security pointers.
 ---
 
 # Configuring the Anima Gateway

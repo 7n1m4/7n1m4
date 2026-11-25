@@ -15,7 +15,7 @@
 - Create `packages/stage-layouts/src/components/Layouts/HeaderAvatar.test.ts`: regression contract for the Flux link, balance display, i18n calls, and locale entries.
 - Modify `packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue`: read Flux credits, render the subscription entry, and replace hardcoded menu/session strings.
 - Modify `packages/i18n/src/locales/en/settings.yaml`: add the missing session-menu messages.
-- Modify `packages/i18n/src/locales/zh-Hans/settings.yaml`: add Chinese session-menu messages and correct `signedInAs`.
+- Modify `packages/i18n/src/locales/ko/settings.yaml`: add Korean session-menu messages and correct `signedInAs`.
 - Do not modify `packages/stage-pages/src/pages/settings/index.vue` or the Flux subscription implementation.
 
 ### Task 1: Add the failing avatar-menu regression contract
@@ -24,7 +24,7 @@
 - Create: `packages/stage-layouts/src/components/Layouts/HeaderAvatar.test.ts`
 - Read: `packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue`
 - Read: `packages/i18n/src/locales/en/settings.yaml`
-- Read: `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- Read: `packages/i18n/src/locales/ko/settings.yaml`
 
 - [ ] **Step 1: Create the source-contract test**
 
@@ -41,7 +41,7 @@ function read(relativePath: string): string {
 describe('header avatar account menu', () => {
   const source = read('./HeaderAvatar.vue')
   const enSettings = read('../../../../i18n/src/locales/en/settings.yaml')
-  const zhHansSettings = read('../../../../i18n/src/locales/zh-Hans/settings.yaml')
+  const koSettings = read('../../../../i18n/src/locales/ko/settings.yaml')
 
   it('keeps the Flux balance and subscription entry discoverable', () => {
     expect(source).toContain('const { isAuthenticated, user, credits } = storeToRefs(authStore)')
@@ -64,15 +64,15 @@ describe('header avatar account menu', () => {
     expect(source).not.toContain('An unknown error occurred')
   })
 
-  it('defines the new English and Simplified Chinese locale entries', () => {
+  it('defines the new English and Korean locale entries', () => {
     expect(enSettings).toContain('activeSessions: Active sessions')
     expect(enSettings).toContain('activeSessionsCount: \'You have {count} active sessions.\'')
     expect(enSettings).toContain('sessionListErrorFallback: Could not load active sessions.')
 
-    expect(zhHansSettings).toContain('signedInAs: 已登录为')
-    expect(zhHansSettings).toContain('activeSessions: 活跃会话')
-    expect(zhHansSettings).toContain('activeSessionsCount: \'当前共有 {count} 个活跃会话。\'')
-    expect(zhHansSettings).toContain('sessionListErrorFallback: 无法加载活跃会话，请稍后重试。')
+    expect(koSettings).toContain('signedInAs: 로그인 계정')
+    expect(koSettings).toContain('activeSessions: 활성 세션')
+    expect(koSettings).toContain('activeSessionsCount: \'현재 {count}개의 활성 세션이 있습니다.\'')
+    expect(koSettings).toContain('sessionListErrorFallback: 활성 세션을 불러오지 못했습니다.')
   })
 })
 ```
@@ -92,7 +92,7 @@ Expected: FAIL because `HeaderAvatar.vue` does not read `credits`, does not cont
 **Files:**
 - Modify: `packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue`
 - Modify: `packages/i18n/src/locales/en/settings.yaml`
-- Modify: `packages/i18n/src/locales/zh-Hans/settings.yaml`
+- Modify: `packages/i18n/src/locales/ko/settings.yaml`
 - Test: `packages/stage-layouts/src/components/Layouts/HeaderAvatar.test.ts`
 
 - [ ] **Step 1: Read and format the Flux balance from the auth store**
@@ -169,15 +169,15 @@ activeSessionsCount: 'You have {count} active sessions.'
 sessionListErrorFallback: Could not load active sessions.
 ```
 
-- [ ] **Step 5: Add Simplified Chinese locale entries and correct `signedInAs`**
+- [ ] **Step 5: Add Korean locale entries and correct `signedInAs`**
 
 Under `pages.account`, use:
 
 ```yaml
-signedInAs: 已登录为
-activeSessions: 活跃会话
-activeSessionsCount: '当前共有 {count} 个活跃会话。'
-sessionListErrorFallback: 无法加载活跃会话，请稍后重试。
+signedInAs: 로그인됨
+activeSessions: 활성 세션
+activeSessionsCount: '현재 {count}개의 활성 세션이 있습니다.'
+sessionListErrorFallback: 활성 세션을 불러올 수 없습니다.
 ```
 
 - [ ] **Step 6: Verify the focused regression test passes**
@@ -201,14 +201,14 @@ Expected: both commands exit 0 with no TypeScript errors.
 
 - [ ] **Step 8: Verify encoding and diff integrity**
 
-Run `git diff --check`, then verify every modified Chinese text file has no UTF-8 BOM and no CRLF bytes.
+Run `git diff --check`, then verify every modified Korean text file has no UTF-8 BOM and no CRLF bytes.
 
 Expected: `git diff --check` exits 0; `HasBom` is `False`; `CrLfCount` is `0`.
 
 - [ ] **Step 9: Commit the implementation**
 
 ```powershell
-git add -- 'packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue' 'packages/stage-layouts/src/components/Layouts/HeaderAvatar.test.ts' 'packages/i18n/src/locales/en/settings.yaml' 'packages/i18n/src/locales/zh-Hans/settings.yaml'
+git add -- 'packages/stage-layouts/src/components/Layouts/HeaderAvatar.vue' 'packages/stage-layouts/src/components/Layouts/HeaderAvatar.test.ts' 'packages/i18n/src/locales/en/settings.yaml' 'packages/i18n/src/locales/ko/settings.yaml'
 git commit -m "fix(web): restore localized Flux account menu"
 ```
 
@@ -337,7 +337,7 @@ Expected: both hashes exactly match Step 4.
 
 - [ ] **Step 10: Verify the authenticated desktop UI in a real browser**
 
-Open `https://airi.aifamily.vip/` with a desktop viewport and an authenticated account. Confirm the avatar menu shows Chinese labels, a formatted Flux balance, and the Flux link; click it and confirm `/settings/flux` displays the subscription surface. Confirm there are no page errors, no `Electron ipcRenderer` errors, and no requests to `api.airi.build`.
+Open `https://airi.aifamily.vip/` with a desktop viewport and an authenticated account. Confirm the avatar menu shows Korean labels, a formatted Flux balance, and the Flux link; click it and confirm `/settings/flux` displays the subscription surface. Confirm there are no page errors, no `Electron ipcRenderer` errors, and no requests to `api.airi.build`.
 
 - [ ] **Step 11: Record deployment evidence**
 

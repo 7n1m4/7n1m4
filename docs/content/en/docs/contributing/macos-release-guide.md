@@ -1,164 +1,65 @@
-# Apple Platforms (macOS & iOS) Stable Release Guide
+---
+title: macOS Build & Release
+description: Contribute to Project Anima
+---
+
+# macOS Desktop Build & Release
 
 > **[2026-11-13] iOS half superseded**: the Capacitor `apps/stage-pocket` app was purged — web tech on mobile was rejected in favor of a unified Rust native app (desktop + mobile from one screen-size-reactive Slint codebase). See `docs/proposal-unified-rust-native-app.md`. The macOS `.dmg` sections remain valid; the iOS `.ipa` sections are historical until the Rust native app has a packaging lane.
 
-This document captures the specific technical steps required to successfully build, package, and release stable versions of Anima for Apple platforms (Electron macOS `.dmg` and Capacitor iOS `.ipa`).
+## 1. Build
 
-## 1. Release Workflow
-
-### Step 1: Generate & Review Release Notes
-Do not proceed blindly. Draft notes inline for user review before stamping or tagging.
-1. **Compare Hashes**: Analyze all commits between the previous stable tag and `HEAD`:
-   ```bash
-   git log [previous-tag]..HEAD --oneline
-   ```
-2. **Draft Curated Release Notes**: Structure the release notes according to the canonical release format below. Focus on user-facing value, capabilities, workflows, and visual improvements.
-3. **Present Inline in Natural Markdown**: Present the drafted notes directly to the user as formatted Markdown. Never wrap the entire release notes in a single giant triple-backtick block in chat responses.
-4. **Save Draft**: Once reviewed, save the notes to `release-notes.md` in the project root (uncommitted). Both desktop and iOS upload scripts automatically ingest this file.
-
-#### Canonical Release Notes Format & Editorial Invariants
-Every stable release must adhere to the following standard template and quality rules:
-
-```markdown
-# 🚀 Anima v[version] — Release Notes
-
-[Opening Executive Blurb: 1–2 paragraphs synthesizing the headlining themes, brand new systems, and major improvements of this release.]
-
----
-
-## ✨ Key Highlights
-
-### [Emoji] [Domain 1]: [Feature Title & Theme] (e.g., Brand New Feature / WIP Preview)
-[*Optional italicized disclaimer for early-access or experimental features*]
-- **[Feature Subhead]**: [Clear description of user capability and behavior.]
-- **[Feature Subhead]**: [Clear description of user capability and behavior.]
-
-### [Emoji] [Domain 2]: [Feature Title]
-...
-
-### 🧙 Onboarding V3: Step-by-Step Experience Polish & Hardware Intelligence
-- **Step 1 (Triage)**: [Specific improvements made to this step]
-- **Step 4 (User Profile)**: [Specific improvements made to this step]
-- **Step 6 (Persona)**: [Specific improvements made to this step]
-- **Step 8 (Consciousness)**: [Specific improvements made to this step]
-...
-```
-
-**Editorial Rules**:
-- **Zero Low-Level Code Slop**: Never cite internal variable names, private methods, or trivial code tokens (e.g. avoid `reasoningText`, `setProviderConfig`, store mutations). Frame all highlights around end-user capabilities, workflow fluidity, and reliability.
-- **No Raw Commit Dumps**: Do not append raw `git log` hashes or commit messages to user-facing release notes.
-- **Accurate Feature Framing**: Clearly distinguish brand-new features (e.g. Arcade, Sound Studio) from bug fixes, and flag early-access surfaces with explicit Work in Progress (WIP) notices.
-- **Step-by-Step Stepper Organization**: When documenting extensive onboarding overhauls, organize changes by numbered steps (`Step X (Name)`) for scannability.
-- **Upstream Contributor Attribution & Radar Shoutouts**: Whenever cherry-picking, adopting, or adapting upstream contributions (tracked in `docs/UPSTREAM_RADAR.md` or git commit logs), always acknowledge the original PRs with markdown links and credit the authors (e.g., `Special thanks to upstream contributor @author for PR [#1234](url)`). This honors community contributions and signals proactive monitoring of upstream advancements.
-
----
-
-### Step 2: Version Stamping & Manifest Synchronization
-Ensure all manifests, package definitions, and documentation links are synchronized to avoid broken download buttons or mismatched build metadata.
-
-1. **Desktop Version (`apps/stage-tamagotchi/package.json`)**:
-   Update `version` using the date-stamped stable format:
-   ```json
-   { "version": "<major>.<minor>.<patch>-stable.<YYYYMMDD>" }
-   ```
-   *(Note: The release script checks if the date stamp matches today's date to avoid multi-machine tag drift.)*
-
-2. **Mobile Workspace & Root Packages**:
-   Synchronize `version` in `apps/stage-pocket/package.json` and the root `package.json` to keep monorepo versions aligned.
-
-3. **iOS Native Project (`apps/stage-pocket/ios/App/App.xcodeproj/project.pbxproj`)**:
-   Update native marketing and build versions:
-   - `MARKETING_VERSION = [major].[minor].[patch];` (e.g., `0.9.32`)
-   - `CURRENT_PROJECT_VERSION = [buildNumber];` (increment the integer build number)
-
-4. **Update `README.md` Release Download Badges**:
-   [`README.md`](../../../../README.md) contains explicit hardcoded download URLs for release assets. Update all download button targets to point to the new tag `v[version]`:
-   - Windows setup: `.../releases/download/v[version]/airi-dasilva333-[version]-windows-x64-setup.exe`
-   - macOS DMG: `.../releases/download/v[version]/airi-dasilva333-[version]-darwin-arm64.dmg`
-   - Android APK: `.../releases/download/v[version]/Anima-[version]-android.apk`
-   - iOS IPA: `.../releases/download/v[version]/Anima-[version]-ios.ipa`
-
-5. **Commit Manifest Updates**:
-   Commit the updated `package.json`, `project.pbxproj`, and `README.md` files to `main` before creating the release tag.
-
----
-
-### Step 3: Local Tagging (User Approval Required)
-Once the version bump and manifests are committed, create the matching release tag:
 ```bash
-git tag v[version]
-git push origin v[version]
+pnpm -F @proj-anima/stage-tamagotchi run build
 ```
-*(Always obtain explicit user authorization before pushing tags or release commits.)*
 
----
+`build` is `hutch run build`: it prepares Electrobun, builds the Vite renderer, and runs the
+Electrobun build for the host platform. Inspect `apps/stage-tamagotchi/artifacts/` for what was
+actually emitted; do not assume `.dmg`, `.app`, or `dist/` paths unless this build produced them.
 
-### Step 4: macOS Desktop Build & Publish (Automated Utility)
-Compilation and release asset uploading for macOS are unified into a single command:
+Platform build options live in `apps/stage-tamagotchi/electrobun.config.ts`:
+
+- `build.mac` — `bundleCEF: true`, `defaultRenderer: 'cef'`, `chromiumFlags`, icon `build/icon.icon`.
+- Hardened-runtime entitlements: `apps/stage-tamagotchi/build/entitlements.mac.plist`
+  (JIT, unsigned executable memory, dyld environment variables, camera/microphone/audio-input).
+- Architecture: the build targets the host architecture; there is no separate `--arm64` / `--x64`
+  packaging flag in the Hutch flow.
+
+## 2. Publish
+
+1. Draft release notes and get them reviewed (see the Windows guide, step 1).
+2. Stamp `apps/stage-tamagotchi/package.json` and tag `v[version]` only with user authorization.
+3. Build as above.
+4. Upload the emitted artifacts:
+
 ```bash
-pnpm run release:mac
+GITHUB_TOKEN="" GH_SSL_NO_VERIFY="true" gh release upload v[version] <artifact_path> --repo dasilva333/airi --clobber
 ```
-This executes `scripts/release/publish-mac.js`, which handles:
-- Syncing git tags and validating the date stamp.
-- Removing physical `node_modules` override copies (e.g., `discord.js`, `undici`, `ws`) to prevent Vite V8 memory overflows.
-- Building Stage-Tamagotchi with `NODE_OPTIONS="--max-old-space-size=12288"`.
-- Packaging the `.dmg` into `apps/stage-tamagotchi/dist/`.
-- Verifying/creating the GitHub release `v[version]` on `dasilva333/airi` using `release-notes.md`.
-- Uploading the `.dmg` asset with `--clobber`.
-- **Dispatching Linux Desktop CI**: Automatically dispatches the `Release: Linux Desktop` workflow (`.github/workflows/release-linux-desktop.yml`) on GitHub Actions for tag `v[version]`.
 
-> [!TIP]
-> **Concurrent Cloud Compilation**: Building Linux packages (`.deb`, `.rpm`, and `.flatpak` across both `ubuntu-latest` x64 and `ubuntu-24.04-arm` arm64) takes ~25–28 minutes on GitHub Actions. Having `publish-mac.js` dispatch this workflow immediately allows GitHub Actions to crunch the Linux release packages in the cloud concurrently while you switch workstations to package Windows.
+> [!CAUTION]
+> The root `release:mac` wrapper is stale: `scripts/release/publish-mac.js` still inspects
+> electron-builder outputs (`dist`, DMG/ZIP discovery) that a Hutch build never writes. Do not
+> run it as the release path until it is ported to `apps/stage-tamagotchi/artifacts/`.
 
----
+## 3. Notarization
 
-### Step 5: iOS IPA Build & Upload (Mandatory Release Step)
-> [!IMPORTANT]
-> An Apple platform release is **incomplete** until both the macOS `.dmg` and the iOS `.ipa` are published. Because [`README.md`](../../../../README.md) advertises direct download badges for both platforms, omitting this step leaves the iOS download button pointing to a **404 Not Found** release asset.
+Notarization is not wired into the current build. Local macOS builds require an Apple Developer
+Certificate in the Keychain for any codesigning step you add; CI notarization secrets
+(`CSC_CONTENT`, `APPLE_ID`) are not consumed by any current workflow. Treat notarized macOS
+releases as an open action item, not an existing capability.
 
-To compile the web bundle, sync native Capacitor dependencies, build the `.xcarchive`, package the `.ipa`, and upload directly to the active GitHub release:
-```bash
-pnpm run release:ios
-```
-*(Or from the pocket workspace: `pnpm -F @proj-anima/stage-pocket run release:ios`.)*
+## 4. Troubleshooting
 
-This script (`apps/stage-pocket/scripts/build-ipa.ts`):
-1. Executes `pnpm run build && pnpm exec cap sync ios` to compile the web bundle into `dist/` and sync assets into `ios/App/App/public/`.
-2. Automatically patches `CapApp-SPM/Package.swift` to ensure Swift 6.0 compatibility and links `CoreLLMKit` / `CoreMLBackend` for native on-device AI.
-3. Runs `xcodebuild archive` to create `build/App.xcarchive`.
-4. Extracts `App.app` into an `ipa-staging/Payload` container and packages `Anima-[version]-ios.ipa` (and `App.ipa`).
-5. Uploads `Anima-[version]-ios.ipa` to the matching GitHub release `v[version]` on `dasilva333/airi` with `--clobber`.
+- **Node engine mismatch**: root `package.json` requires Node `>=20.14.0 <28.0.0`; a mismatch
+  surfaces as engine warnings or lockfile churn during pnpm operations.
+- **TS6133 unused symbols**: run `pnpm -F @proj-anima/stage-tamagotchi run typecheck` before a
+  release build.
+- **Vue template errors**: `[unplugin-vue-named-template-pre] Element is missing end tag` —
+  `pnpm -F @proj-anima/stage-tamagotchi run typecheck` localizes the file.
+- **Renderer OOM**: the renderer Vite build needs the heap bump restated in `hutch.config.ts`
+  (`NODE_OPTIONS=--max-old-space-size=12288`).
 
----
-
-### Step 6: Local iOS Simulation & Manual Xcode Prerequisites
-If you are developing locally, testing in the Xcode iOS Simulator, or exporting manual archives (Ad Hoc / TestFlight / App Store Connect):
-
-> [!WARNING]
-> Xcode has no knowledge of Vite or pnpm. If you launch the simulator or archive without compiling the web frontend, `ios/App/App/public` will be empty and the app will crash to a blank white screen with `The file “index.html” couldn’t be opened`.
-
-1. **Pre-build & Sync Web Assets**:
-   Always compile the web application and sync assets into the iOS container first:
-   ```bash
-   pnpm run open:ios
-   # (This automatically executes: pnpm run build && cap sync ios && cap open ios)
-   ```
-   Or manually:
-   ```bash
-   pnpm -F @proj-anima/stage-pocket run build
-   pnpm -F @proj-anima/stage-pocket exec cap sync ios
-   ```
-2. **Local Headless IPA Compilation (Without Upload)**:
-   ```bash
-   pnpm run build:pocket:ipa
-   ```
-   Output: `apps/stage-pocket/build/Anima-[version]-ios.ipa`.
-3. **Manual Xcode Archive / Distribution**:
-   - In Xcode, select target **App** and destination **Any iOS Device (arm64)**.
-   - Select **Product** → **Archive**.
-   - In Organizer, choose **Distribute App** (App Store Connect / Ad-Hoc / Enterprise / Development).
-
----
+## 5. Authoritative Documents
 
 ### Step 7: Manual Desktop Alternative / Verification
 If you need to run macOS desktop packaging manually:

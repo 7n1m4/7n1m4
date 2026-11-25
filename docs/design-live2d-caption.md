@@ -2,6 +2,8 @@
 
 > How captions, motion labels, and localized dialogue actually work in AIRI for Live2D models.
 > Written after tracing the full pipeline from `model3.json` → `motionManager.definitions` → caption overlay.
+>
+> Pointer (2026-11-25): canonical source of truth is the code — motion parsing/capture in `packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue` and `packages/stage-ui-live2d/src/runtime/` (`dsl-capture`, `live2d-runtime-adapter.ts`), capability keys in `packages/stage-ui/src/stores/display-models.ts`, caption transport on the `airi-caption-overlay` BroadcastChannel (`packages/stage-ui/src/components/scenes/CaptionPanel.vue`). Note that `Model.vue` line numbers below are a 2026-11 snapshot and the code wins.
 
 ---
 

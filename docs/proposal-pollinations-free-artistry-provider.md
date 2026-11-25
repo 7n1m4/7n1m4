@@ -1,5 +1,7 @@
 # Architectural Proposal: Zero-Config Free Artistry Provider (Pollinations AI)
 
+> **Generated-feature deprecation banner (2026-11-25):** The Pollinations provider has shipped. This document is now a generated-feature record only. Authoritative pointers are the in-code provider at `apps/stage-tamagotchi/src/main/services/airi/widgets/providers/pollinations.ts`, with registry wiring in `apps/stage-tamagotchi/src/main/services/airi/widgets/artistry-bridge.ts` and settings in `packages/stage-ui/src/stores/modules/artistry.ts`. `docs/rosetta-stone.md` and `docs/data-catalog.md` (background blobs, `bg-{nanoid}`) remain the generated docs. The code snippets below are the as-proposed shape; the code wins.
+
 **Status:** Proposed Architecture & Design Specification
 **Target Subsystems:**
 - `packages/stage-pages/src/pages/settings/modules/artistry.vue` (Artistry Module Switchboard)

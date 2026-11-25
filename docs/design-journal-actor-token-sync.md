@@ -1,10 +1,15 @@
-# Engineering Journal: Root Cause Analysis & Architectural Rework for `<|ACTOR:|>` Token Sync
+# `<|ACTOR:|>` Token Sync — diagnostics journal (pointer)
 
-This document serves as the canonical diagnostics journal and architectural design record for resolving the timing, synchronization, and text-swallowing bugs associated with the `<|ACTOR:|>` swap tokens.
+**Status:** historical root-cause journal; the verified fixes shipped, the technical content moved into code.
 
-> **Validated by:** [`docs/archive/design-actor-token-sync-postmortem.md`](./archive/design-actor-token-sync-postmortem.md) — independent line-by-line code-trace review (2026-06-12); verdicts on A–D corrected where the original mechanisms were misdiagnosed.
+The `<|ACTOR:actor_id|>` swap-token pipeline — global `speechStore` clock skew, the
+generation vs. playback vs. watcher writers, the missing playback barrier, the
+chunker text-swallowing bug, single-flight model sync, and the current scoped
+resolution/prefetch/handoff implementation — is documented in
+[`packages/stage-ui/src/components/scenes/README-actor-token-pipeline.md`](../packages/stage-ui/src/components/scenes/README-actor-token-pipeline.md).
 
----
+Independent line-by-line validation of the original diagnosis:
+[`docs/archive/design-actor-token-sync-postmortem.md`](./archive/design-actor-token-sync-postmortem.md).
 
 ## 1. Executive Summary
 
