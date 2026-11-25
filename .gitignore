@@ -170,6 +170,7 @@ scratch/
 # omp local config
 .omp/config.yml
 .omp/mcp.json
+.omp/mcp.json.lock
 
 
 # Local agent notes (not product docs)
@@ -181,3 +182,6 @@ scratch/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Local session artifacts
+/session-*.md
