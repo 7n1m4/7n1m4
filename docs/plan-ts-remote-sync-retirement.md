@@ -2,9 +2,9 @@
 
 # Plan: retirement gate for opt-in TS remote sync in stage-web
 
-- **Status:** gate approved 2026-11-25 by maintainer; final removal in progress under `airi-3cp`/`airi-h8du` (originally proposed 2026-11-22). The endpoint set below is the cutover scope; verify code removal before marking any group retired.
+- **Status:** cutover executed 2026-11-25 under explicit dated maintainer approval via `airi-3cp`/`airi-h8du` (commits `d1b56c81`, `73495d98`, `2f9718d3`); gate evidence was mixed — criteria 1/2/4/7 were factually unmet at approval (originally proposed 2026-11-22). The endpoint set below is the cutover scope.
 - **Design bead:** `airi-3mp`
-- **Final-removal beads:** `airi-3cp` (apps/server, packages/server-shared) and `airi-h8du` (Vue/stage-ui/i18n callers) — **APPROVED 2026-11-25, IN PROGRESS**. Two disjoint workers execute the cutover; this design defines their boundary, not a fresh gate.
+- **Final-removal beads:** `airi-3cp` (apps/server, packages/server-shared) and `airi-h8du` (Vue/stage-ui/i18n callers) — **APPROVED 2026-11-25, EXECUTED**. Two disjoint workers execute the cutover; this design defines their boundary, not a fresh gate.
 - **Authority:** [`decision-server-endpoints.md`](./decision-server-endpoints.md) records these endpoints as the cutover scope; Wave 5 decision C in
   [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md) requires daemon business-logic
   parity **and** Flutter frontend parity **and** explicit approval before the Electrobun/Vue
@@ -15,30 +15,21 @@
 companion exercising those flows over daemon RPC must be proven before the
 opt-in TS remote-sync mirror or the Electrobun TS shell is retired. The Vue **web** UI renderer
 (`apps/stage-web`) is a maintained full-parity renderer and the behaviour reference; it is **not**
-what this cutover retires, and neither is the Flutter renderer. The maintainer approved the cutover on 2026-11-25 after a NO-GO gate audit; removal now proceeds under `airi-3cp`/`airi-h8du`. This plan still defines the boundary: Flutter/Vue renderer scope and gateway trust gates are unchanged.
+what this cutover retires, and neither is the Flutter renderer. The maintainer approved the cutover on 2026-11-25 after a NO-GO gate audit (criteria 1/2/4/7 factually unmet at approval); removal was executed under `airi-3cp`/`airi-h8du` (commits `d1b56c81`, `73495d98`, `2f9718d3`). This plan still defines the boundary: Flutter/Vue renderer scope and gateway trust gates are unchanged.
 
 ## Current state (source verified, not an endorsement)
 
 No Rust REST equivalent exists. `anima-daemon` exposes authenticated WebSocket RPC handlers
 (`crates/anima-daemon/src/gateway.rs:680-1841`: `renderer_handlers` registers 36 `renderer.*` verbs), not HTTP routes. The TypeScript layer is
-**not gone**: `apps/server` still mounts the routes and `packages/stage-ui` still contains the Hono
-client, better-auth client, and remote branches.
+**removed** under `airi-3cp`/`airi-h8du` (commits `d1b56c81`, `73495d98`, `2f9718d3`): the `/api/auth`, `/api/characters`, `/api/providers` route mounts are gone from `apps/server/src/app.ts` (only `/health` remains) and the Hono/better-auth clients are deleted from `packages/stage-ui`.
 
-| Kept temporarily                                                             | Why it is still here                                                                                                                                                                                                                                                            | Live caller evidence                                                                                                                                                   |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`/`POST /api/auth/*`                                                     | Optional account/session path for the Vue web and Electrobun references. Sign-in is user-initiated and may precede a session, so "opt-in" means default-off storage plus explicit navigation, not an authenticated-only gate.                                                   | `packages/stage-ui/src/libs/auth.ts:7-20,22-48,62-93`; `apps/stage-web/src/pages/auth/login.vue:2-5,24,35,87`; `packages/stage-ui/src/components/auth/LoginDrawer.vue` |
-| `/api/characters` `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` | Local-first compatibility mirror for the Vue reference; remote runs only after the local write and only when the auth store is authenticated. Daemon `cards.list`/`.get`/`.import`/`.create`/`.update`/`.delete` are implemented (`gateway.rs:1301-1391`). This is not a hosted card registry. | `packages/stage-ui/src/stores/characters.ts:79-215`; callers in `apps/stage-web/src/pages/settings/characters/` and `packages/stage-pages/src/pages/v2/index.vue`      |
-| `/api/providers` `GET /`, `POST /`, `PATCH /:id`, `DELETE /:id`              | Same default-off, local-first mirror. The daemon already has `providers.list`/`.save`/`.delete` RPC handlers (`gateway.rs:736-800`), so these routes must not become a second authoritative writer.                                                                             | `packages/stage-ui/src/stores/provider-catalog.ts:16-145`; callers in `packages/stage-pages/src/pages/v2/settings/providers/`                                          |
+| Removed in cutover | What was removed | Caller evidence |
+| --- | --- | --- |
+| `GET`/`POST /api/auth/*` | Removed 2026-11-25 (`73495d98`, `2f9718d3`): better-auth client, login route/drawer and remote-sync i18n keys deleted; account UX retired per `decision-byos-identity.md` (Option C). | No production caller remains (`rg 'client\.api\.auth'` empty). |
+| `/api/characters` `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` | Removed 2026-11-25 (`73495d98`, `2f9718d3`): characters store repointed to daemon `cards.*` RPC (`gateway.rs:1301-1391`); ownership in `docs/decision-card-ownership.md`. | No production caller remains (`rg 'client\.api\.characters'` empty). |
+| `/api/providers` `GET /`, `POST /`, `PATCH /:id`, `DELETE /:id` | Removed 2026-11-25 (`73495d98`, `2f9718d3`): provider-catalog store repointed to daemon `providers.*` RPC. | No production caller remains (`rg 'client\.api\.providers'` empty). |
 
-Gate mechanics: `remoteSyncEnabled` is stored at `settings/privacy/remote-sync-enabled` with default
-`false` (`packages/stage-ui/src/stores/settings/general.ts:33`); the settings checkbox is in
-`packages/stage-pages/src/components/settings-general-fields.vue:65` and
-`packages/stage-pages/src/pages/settings/system/general.vue:60`. `fetchSession()` returns early
-unless that key is true (`libs/auth.ts:10-26`), and `isAuthenticated` additionally requires both
-user and session (`stores/auth.ts:13,24-38`). `useLocalFirstRequest` runs `local()` first, then
-`remote()` only when allowed or authenticated (`packages/stage-ui/src/composables/use-local-first.ts:6-40`).
-`SERVER_URL` comes from `VITE_SERVER_URL` or `http://localhost:3000` (`libs/auth.ts:7`) and is the
-base for the Hono client (`packages/stage-ui/src/composables/api.ts:1-16`).
+Gate mechanics (pre-cutover, now removed): `remoteSyncEnabled` defaulted `false` (`stores/settings/general.ts:33`); `fetchSession()`/`isAuthenticated` gated on it (`libs/auth.ts`, `stores/auth.ts`); `useLocalFirstRequest` ran `local()` then `remote()` (`composables/use-local-first.ts`); `SERVER_URL` came from `VITE_SERVER_URL` (`libs/auth.ts:7`) feeding the Hono client (`composables/api.ts`). All deleted in `73495d98`.
 
 Out of scope for this gate: `/api/chats/sync` (hosted route still mounted at `apps/server/src/app.ts:108` / `routes/chats.ts:15` although the TS caller `syncSessionToRemote()` is gone — deletion tracked in `airi-94l` / `plan-byos-chat-sync.md:91-95`; no production caller was found), like/bookmark (`airi-1gu`, routes removed but orphaned service methods remain in `apps/server/src/services/characters.ts`), uncalled
 `/api/gdrive/*` and `GET /api/providers/:id` (`airi-x41`). Their separate decisions are unaffected.
@@ -77,10 +68,9 @@ unverifiable claim is not evidence. All rows are mandatory; none may be waived b
 
 ## Follow-up sequence (approved cutover)
 
-Owner of `airi-3cp`: Vue reference maintainer; verifiers: daemon and Flutter owners. Criterion 8 (maintainer approval) is recorded 2026-11-25; `airi-h8du` owns the disjoint Vue/stage-ui/i18n slice.
+Owner of `airi-3cp`: Vue reference maintainer; verifiers: daemon and Flutter owners. Criterion 8 (maintainer approval) is recorded 2026-11-25; `airi-h8du` owned the disjoint Vue/stage-ui/i18n slice. Both executed (commits `d1b56c81`, `73495d98`, `2f9718d3`); gate evidence mixed (1/2/4/7 unmet at approval).
 
-1. Link the dated evidence and approvals in `airi-3cp`; update
-   `docs/feature-parity-checklist.md` and this plan's status to "cutover complete" once source verification passes.
+1. Link the dated evidence and approvals in `airi-3cp`; `docs/feature-parity-checklist.md` and this plan updated to cutover executed 2026-11-25 (`CutoverDocsRefresh`) after source verification of criteria 5/6.
 2. Repoint Vue character/provider/auth callers to the daemon RPC/local path, keeping the Vue web
    renderer intact; update focused tests.
    Remove `useLocalFirstRequest` remote branches, `composables/api.ts` (`hc<AppType>`),
@@ -94,4 +84,4 @@ Owner of `airi-3cp`: Vue reference maintainer; verifiers: daemon and Flutter own
 5. Run the verification from criteria 1, 4 and 5 once on the integrated result; confirm the `rg`
    inventory is empty of production callers. Close `airi-3cp` with the commands and results.
 
-As of 2026-11-25 the endpoints, Hono client, and `SERVER_URL` are still in source; the cutover is in progress under `airi-3cp`/`airi-h8du`. Treat a group as retired only after its code is verified gone.
+As of 2026-11-25 the opt-in TS remote-sync endpoints, Hono client, and `SERVER_URL` readers are removed from source (commits `d1b56c81`, `73495d98`, `2f9718d3`); `apps/server/src/app.ts` now mounts only `/health`. Groups are retired only where source verification passed (criteria 5/6); criteria 1/2/4/7 retain their unmet approval-time evidence.

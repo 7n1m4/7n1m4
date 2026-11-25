@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
+import '../../connection/connection_error.dart';
 
 /// Read-only projection of a provider row. Only allowlisted metadata from
 /// `providers.list` reaches the widget tree: credentials never do.
@@ -28,6 +29,18 @@ class _ProviderRow {
   final String model;
   final String baseUrl;
   final bool enabled;
+}
+
+class _ProviderModel {
+  const _ProviderModel({required this.id, this.ownedBy});
+
+  factory _ProviderModel.fromJson(Map<String, dynamic> json) => _ProviderModel(
+        id: (json['id'] ?? '').toString(),
+        ownedBy: json['ownedBy']?.toString() ?? json['owned_by']?.toString(),
+      );
+
+  final String id;
+  final String? ownedBy;
 }
 
 // Mirrors `anima_store::ProviderKind`, which rejects any other tag.
@@ -60,6 +73,10 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   bool _enabled = true;
   String? _error;
   String? _status;
+  String? _modelsProviderId;
+  Map<String, List<_ProviderModel>> _modelsByProvider = const {};
+  bool _modelsLoading = false;
+  String? _modelsError;
 
   @override
   void initState() {
@@ -107,12 +124,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       if (mounted) setState(() => _providers = rows);
     } on DaemonClientException catch (e) {
       if (mounted) setState(() {
-        _error = e.message;
+        _error = userSafeConnectionError(e, context: 'providers.list:');
         _status = null;
       });
     } catch (e) {
       if (mounted) setState(() {
-        _error = e.toString();
+        _error = userSafeConnectionError(e, context: 'providers.list:');
         _status = null;
       });
     } finally {
@@ -135,9 +152,9 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       if (mounted) setState(() => onSuccess(reply.data));
       await _load();
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: '$action:'));
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: '$action:'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -200,6 +217,41 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }, (_) {
       _status = '${enabled ? 'Enabled' : 'Disabled'} provider ${row.id}';
     });
+  }
+
+  Future<void> _loadModels(_ProviderRow row) async {
+    setState(() {
+      _modelsLoading = true;
+      _modelsError = null;
+      _modelsProviderId = row.id;
+    });
+    try {
+      final reply = await _call('providers.models', payload: <String, dynamic>{'providerId': row.id});
+      final data = reply.data;
+      final list = data is Map ? data['models'] : null;
+      final models = <_ProviderModel>[];
+      if (list is List) {
+        for (final item in list) {
+          if (item is Map<String, dynamic>) {
+            models.add(_ProviderModel.fromJson(item));
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _modelsByProvider = <String, List<_ProviderModel>>{
+            ..._modelsByProvider,
+            row.id: models,
+          };
+        });
+      }
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
+    } catch (e) {
+      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
+    } finally {
+      if (mounted) setState(() => _modelsLoading = false);
+    }
   }
 
   void _clearForm() {
@@ -332,6 +384,25 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                               ),
                             ],
                           ),
+                          OutlinedButton(
+                            onPressed: _busy || _modelsLoading ? null : () => _loadModels(row),
+                            child: const Text('Models'),
+                          ),
+                          if (_modelsError != null)
+                            Text(_modelsError!, style: TextStyle(color: colorScheme.error)),
+                          if (_modelsLoading && _modelsProviderId == row.id)
+                            const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Center(child: CircularProgressIndicator()),
+                            )
+                          else
+                            for (final model in _modelsByProvider[row.id] ?? const <_ProviderModel>[])
+                              ListTile(
+                                title: Text(model.id),
+                                subtitle: model.ownedBy == null || model.ownedBy!.isEmpty
+                                    ? null
+                                    : Text(model.ownedBy!),
+                              ),
                         ],
                       ),
                     ),

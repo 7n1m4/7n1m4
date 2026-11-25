@@ -31,3 +31,8 @@ abstract class DaemonTransport {
 
 /// Injection point for tests and for future remote transports.
 typedef DaemonTransportFactory = DaemonTransport Function();
+
+/// Factory that receives the effective CA path for `wss` connections.
+typedef CaAwareDaemonTransportFactory = DaemonTransport Function({
+  String? caCertPath,
+});

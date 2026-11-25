@@ -35,6 +35,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _selectedCardId;
   bool _sessionPanelOpen = false;
   String? _contextError;
+  ({String id, bool liked, bool bookmarked})? _cardMetadata;
+  String? _metadataError;
+  bool _metadataBusy = false;
   final AiriGenUiSession _genUi = AiriGenUiSession();
   late final ChatComposerController _composer;
   String? _activeMessageId;
@@ -96,9 +99,12 @@ class _ChatScreenState extends State<ChatScreen> {
   void _requestEventRpc(String action) {
     _eventRpc = _eventRpc.then((_) async {
       try {
-        await widget.client.call(action, payload: <String, dynamic>{
-          'topics': <String>[EventTopic.emotionTag.wireName],
-        });
+        await widget.client.call(
+          action,
+          payload: <String, dynamic>{
+            'topics': <String>[EventTopic.emotionTag.wireName],
+          },
+        );
       } on Object {
         // Subscription failure is non-fatal: chat and cues degrade quietly.
       }
@@ -122,12 +128,15 @@ class _ChatScreenState extends State<ChatScreen> {
     if (event.topic != EventTopic.tokenDelta) return;
     final data = event.data;
     final sid = data['session_id'] as String? ?? '';
-    if (_composer.sessionId != null && sid.isNotEmpty && sid != _composer.sessionId) {
+    if (_composer.sessionId != null &&
+        sid.isNotEmpty &&
+        sid != _composer.sessionId) {
       return;
     }
     // The chat.send ack can arrive after the first delta; remember the session
     // from the stream so a Stop press cancels the right turn.
-    if (_composer.sessionId == null && sid.isNotEmpty) _composer.sessionId = sid;
+    if (_composer.sessionId == null && sid.isNotEmpty)
+      _composer.sessionId = sid;
     final mid = data['message_id'] as String? ?? '';
     final delta = data['delta'] as String? ?? '';
     final isFinal = data['final'] == true;
@@ -137,9 +146,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // starts a new assistant bubble; otherwise the delta appends to it.
       // _messages.last is the open assistant bubble (the chat.send ack never
       // appends a message), so the delta text is written there.
-      final newTurn = mid.isNotEmpty &&
-          _activeMessageId != null &&
-          _activeMessageId != mid;
+      final newTurn =
+          mid.isNotEmpty && _activeMessageId != null && _activeMessageId != mid;
       final firstTurn = !_assistantStreaming;
       if (firstTurn || newTurn) {
         _messages.add(_ChatMessage.assistant(''));
@@ -177,7 +185,9 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final turn = await _parseGenUi(output);
-    if (!mounted || index >= _messages.length || _messages.last.isUser ||
+    if (!mounted ||
+        index >= _messages.length ||
+        _messages.last.isUser ||
         _messages[index].text != output) {
       return;
     }
@@ -258,12 +268,154 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _loadContext() async { try { final results = await Future.wait<List<Map<String, dynamic>>>(<Future<List<Map<String, dynamic>>>>[widget.client.sessionsList(), widget.client.cardsList()]); if (!mounted) return; setState(() { _sessions = results[0]; _cards = results[1]; _selectedCardId ??= _cards.isEmpty ? null : (_cards.first['id'] as String?); _contextError = null; }); } on Object catch (e) { if (mounted) setState(() => _contextError = e is DaemonClientException ? e.message : 'Could not load chat context: $e'); } }
+  Future<void> _loadContext() async {
+    try {
+      final results = await Future.wait<List<Map<String, dynamic>>>(
+        <Future<List<Map<String, dynamic>>>>[
+          widget.client.sessionsList(),
+          widget.client.cardsList(),
+        ],
+      );
+      if (!mounted) return;
+      setState(() {
+        _sessions = results[0];
+        _cards = results[1];
+        _selectedCardId ??= _cards.isEmpty
+            ? null
+            : (_cards.first['id'] as String?);
+        _contextError = null;
+        _cardMetadata = null;
+        _metadataError = null;
+        _metadataBusy = false;
+      });
+      unawaited(_loadCardMetadata(_selectedCardId));
+    } on Object catch (e) {
+      if (mounted) {
+        setState(
+          () => _contextError = e is DaemonClientException
+              ? e.message
+              : 'Could not load chat context: $e',
+        );
+      }
+    }
+  }
 
-  void _resetTranscript() { _messages.clear(); _deltaBuffer.clear(); _activeMessageId = null; _assistantStreaming = false; _historyUnavailable = false; _cue = null; }
-  void _startNewSession() { _resetTranscript(); _composer.sessionId = null; setState(() => _sessionPanelOpen = false); }
-  Future<void> _openSession(String id) async { if (id.isEmpty || id == _composer.sessionId) { setState(() => _sessionPanelOpen = false); return; } setState(() { _resetTranscript(); _composer.sessionId = id; _sessionPanelOpen = false; }); await _loadHistory(); }
-  Future<void> _manageSessions() async { setState(() => _sessionPanelOpen = false); await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => SessionsScreen(client: widget.client))); if (mounted) await _loadContext(); }
+  Future<void> _loadCardMetadata(String? id) async {
+    if (id == null || id.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _cardMetadata = null;
+          _metadataError = null;
+          _metadataBusy = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _metadataBusy = true;
+        _metadataError = null;
+      });
+    }
+    try {
+      final data = await widget.client.cardsMetadata(id);
+      if (!mounted) return;
+      setState(() {
+        _cardMetadata = data;
+        _metadataBusy = false;
+      });
+    } on DaemonClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _metadataError = e.message;
+        _metadataBusy = false;
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _metadataError = 'Could not load card metadata: $e';
+        _metadataBusy = false;
+      });
+    }
+  }
+
+  Future<void> _setCardMetadata({
+    required bool liked,
+    required bool bookmarked,
+  }) async {
+    final id = _selectedCardId;
+    if (id == null || id.isEmpty) {
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _metadataBusy = true;
+        _metadataError = null;
+      });
+    }
+    try {
+      final data = await widget.client.cardsMetadataSet(
+        id,
+        liked: liked,
+        bookmarked: bookmarked,
+      );
+      if (!mounted) return;
+      setState(() {
+        _cardMetadata = data;
+        _metadataBusy = false;
+      });
+    } on DaemonClientException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _metadataError = e.message;
+        _metadataBusy = false;
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _metadataError = 'Could not update card metadata: $e';
+        _metadataBusy = false;
+      });
+    }
+  }
+
+  void _resetTranscript() {
+    _messages.clear();
+    _deltaBuffer.clear();
+    _activeMessageId = null;
+    _assistantStreaming = false;
+    _historyUnavailable = false;
+    _cue = null;
+  }
+
+  void _startNewSession() {
+    _resetTranscript();
+    _composer.sessionId = null;
+    setState(() => _sessionPanelOpen = false);
+  }
+
+  Future<void> _openSession(String id) async {
+    if (id.isEmpty || id == _composer.sessionId) {
+      setState(() => _sessionPanelOpen = false);
+      return;
+    }
+    setState(() {
+      _resetTranscript();
+      _composer.sessionId = id;
+      _sessionPanelOpen = false;
+    });
+    await _loadHistory();
+  }
+
+  Future<void> _manageSessions() async {
+    setState(() => _sessionPanelOpen = false);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SessionsScreen(client: widget.client),
+      ),
+    );
+    if (mounted) await _loadContext();
+  }
 
   Future<_ChatMessage> _messageFromHistory(Map<String, dynamic> turn) async {
     final text = (turn['content'] as String?) ?? '';
@@ -310,135 +462,305 @@ class _ChatScreenState extends State<ChatScreen> {
     final error = _composer.error;
     return Material(
       child: Column(
-      children: <Widget>[
-        Column(
-          children: <Widget>[
-            Padding(key: const Key('chat-context-bar'), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Row(children: <Widget>[ IconButton(key: const Key('chat-sessions-button'), icon: const Icon(Icons.forum_outlined), tooltip: 'Sessions', onPressed: () => setState(() => _sessionPanelOpen = !_sessionPanelOpen)), const SizedBox(width: 8), Expanded(child: Text(_composer.sessionId == null ? 'New chat' : 'Session ${_composer.sessionId}', overflow: TextOverflow.ellipsis)), const SizedBox(width: 8), DropdownButton<String?>(key: const Key('chat-character-dropdown'), value: _selectedCardId, hint: const Text('Character'), items: <DropdownMenuItem<String?>>[ const DropdownMenuItem<String?>(value: null, child: Text('No character')), for (final card in _cards) DropdownMenuItem<String?>(value: card['id'] as String?, child: Text((card['name'] as String?) ?? (card['id'] as String?) ?? '')), ], onChanged: (value) => setState(() => _selectedCardId = value)), ])),
-            if (_sessionPanelOpen)
-              SizedBox(height: 200, child: ListView(children: <Widget>[ ListTile(key: const Key('chat-new-session'), leading: const Icon(Icons.add), title: const Text('New chat'), onTap: _startNewSession), for (final s in _sessions) ListTile(title: Text((s['title'] as String?) ?? (s['id'] as String?) ?? ''), subtitle: Text((s['id'] as String?) ?? ''), onTap: () => unawaited(_openSession((s['id'] as String?) ?? ''))), ListTile(key: Key('chat-manage-sessions'), leading: Icon(Icons.settings_outlined), title: Text('Manage sessions'), onTap: _manageSessions), ])),
-            if (_contextError != null)
-              Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), child: Text(_contextError!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
-          ],
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _messages.length,
-            itemBuilder: (context, index) {
-              final m = _messages[index];
-              return Align(
-                alignment:
-                    m.isUser ? Alignment.centerRight : Alignment.centerLeft,
-                child: Card(
-                  color: m.isUser
-                      ? AppTheme.subtle.withOpacity(0.2)
-                      : AppTheme.surface,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(m.text.isEmpty ? '…' : m.text),
-                        for (final surfaceId in m.surfaceIds)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: _genUi.surfaceWidget(surfaceId),
-                          ),
-                        if (m.genUiFailed && m.surfaceIds.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: Text('A dynamic widget could not be displayed.'),
+        children: <Widget>[
+          Column(
+            children: <Widget>[
+              Padding(
+                key: const Key('chat-context-bar'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      key: const Key('chat-sessions-button'),
+                      icon: const Icon(Icons.forum_outlined),
+                      tooltip: 'Sessions',
+                      onPressed: () => setState(
+                        () => _sessionPanelOpen = !_sessionPanelOpen,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _composer.sessionId == null
+                            ? 'New chat'
+                            : 'Session ${_composer.sessionId}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    DropdownButton<String?>(
+                      key: const Key('chat-character-dropdown'),
+                      value: _selectedCardId,
+                      hint: const Text('Character'),
+                      items: <DropdownMenuItem<String?>>[
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text('No character'),
+                        ),
+                        for (final card in _cards)
+                          DropdownMenuItem<String?>(
+                            value: card['id'] as String?,
+                            child: Text(
+                              (card['name'] as String?) ??
+                                  (card['id'] as String?) ??
+                                  '',
+                            ),
                           ),
                       ],
+                      onChanged: (value) {
+                        setState(() => _selectedCardId = value);
+                        unawaited(_loadCardMetadata(value));
+                      },
                     ),
+                  ],
+                ),
+              ),
+              if (_selectedCardId != null && _cardMetadata != null)
+                Padding(
+                  key: const Key('chat-character-metadata'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      IconButton(
+                        key: const Key('chat-character-liked'),
+                        icon: Icon(
+                          _cardMetadata!.liked
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                        ),
+                        tooltip: 'Liked',
+                        onPressed: _metadataBusy
+                            ? null
+                            : () => unawaited(
+                                _setCardMetadata(
+                                  liked: !_cardMetadata!.liked,
+                                  bookmarked: _cardMetadata!.bookmarked,
+                                ),
+                              ),
+                      ),
+                      IconButton(
+                        key: const Key('chat-character-bookmarked'),
+                        icon: Icon(
+                          _cardMetadata!.bookmarked
+                              ? Icons.bookmark
+                              : Icons.bookmark_border,
+                        ),
+                        tooltip: 'Bookmarked',
+                        onPressed: _metadataBusy
+                            ? null
+                            : () => unawaited(
+                                _setCardMetadata(
+                                  liked: _cardMetadata!.liked,
+                                  bookmarked: !_cardMetadata!.bookmarked,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _cardMetadata!.liked ? 'Liked' : 'Not liked',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_metadataBusy)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    ],
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ),
-        if (_cue != null)
-          Padding(
-            key: const Key('emotion-cue'),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: <Widget>[
-                const Icon(Icons.emoji_emotions_outlined, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              if (_sessionPanelOpen)
+                SizedBox(
+                  height: 200,
+                  child: ListView(
                     children: <Widget>[
-                      Text(_cue!.label),
-                      Text(
-                        'Intensity ${(_cue!.intensity * 100).round()}% · '
-                        'seq ${_cue!.seq ?? '?'} · ts ${_cue!.tsMs ?? '?'}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                      ListTile(
+                        key: const Key('chat-new-session'),
+                        leading: const Icon(Icons.add),
+                        title: const Text('New chat'),
+                        onTap: _startNewSession,
+                      ),
+                      for (final s in _sessions)
+                        ListTile(
+                          title: Text(
+                            (s['title'] as String?) ??
+                                (s['id'] as String?) ??
+                                '',
+                          ),
+                          subtitle: Text((s['id'] as String?) ?? ''),
+                          onTap: () => unawaited(
+                            _openSession((s['id'] as String?) ?? ''),
+                          ),
+                        ),
+                      ListTile(
+                        key: Key('chat-manage-sessions'),
+                        leading: Icon(Icons.settings_outlined),
+                        title: Text('Manage sessions'),
+                        onTap: _manageSessions,
                       ),
                     ],
                   ),
                 ),
-                SizedBox(
-                  width: 56,
-                  child: LinearProgressIndicator(value: _cue!.intensity),
-                ),
-              ],
-            ),
-          ),
-        if (_historyUnavailable)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Text('Chat history unavailable for this session.'),
-          ),
-        if (_composer.attachments.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Wrap(
-              spacing: 8,
-              children: <Widget>[
-                for (var i = 0; i < _composer.attachments.length; i++)
-                  Chip(
-                    key: Key('chat-attachment-$i'),
-                    label: Text(_composer.attachments[i].url),
-                    onDeleted: () => _composer.removeAttachmentAt(i),
+              if (_contextError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
                   ),
-              ],
-            ),
-          ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    controller: _composer.input,
-                    enabled: !sending,
-                    decoration: const InputDecoration(hintText: 'Message'),
-                    onSubmitted: (_) => _onSubmit(),
+                  child: Text(
+                    _contextError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: _onSubmit,
-                  icon: sending
-                      ? const Icon(Icons.stop)
-                      : const Icon(Icons.send),
-                  tooltip: sending ? 'Stop' : 'Send',
+              if (_metadataError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    _metadataError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
-              ],
+            ],
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final m = _messages[index];
+                return Align(
+                  alignment: m.isUser
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Card(
+                    color: m.isUser
+                        ? AppTheme.subtle.withOpacity(0.2)
+                        : AppTheme.surface,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(m.text.isEmpty ? '…' : m.text),
+                          for (final surfaceId in m.surfaceIds)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: _genUi.surfaceWidget(surfaceId),
+                            ),
+                          if (m.genUiFailed && m.surfaceIds.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text(
+                                'A dynamic widget could not be displayed.',
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        ),
-      ],
-    ),
-  );
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                error,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          if (_cue != null)
+            Padding(
+              key: const Key('emotion-cue'),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.emoji_emotions_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(_cue!.label),
+                        Text(
+                          'Intensity ${(_cue!.intensity * 100).round()}% · '
+                          'seq ${_cue!.seq ?? '?'} · ts ${_cue!.tsMs ?? '?'}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 56,
+                    child: LinearProgressIndicator(value: _cue!.intensity),
+                  ),
+                ],
+              ),
+            ),
+          if (_historyUnavailable)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Text('Chat history unavailable for this session.'),
+            ),
+          if (_composer.attachments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Wrap(
+                spacing: 8,
+                children: <Widget>[
+                  for (var i = 0; i < _composer.attachments.length; i++)
+                    Chip(
+                      key: Key('chat-attachment-$i'),
+                      label: Text(_composer.attachments[i].url),
+                      onDeleted: () => _composer.removeAttachmentAt(i),
+                    ),
+                ],
+              ),
+            ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: TextField(
+                      controller: _composer.input,
+                      enabled: !sending,
+                      decoration: const InputDecoration(hintText: 'Message'),
+                      onSubmitted: (_) => _onSubmit(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _onSubmit,
+                    icon: sending
+                        ? const Icon(Icons.stop)
+                        : const Icon(Icons.send),
+                    tooltip: sending ? 'Stop' : 'Send',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -478,19 +800,17 @@ class _ChatMessage {
     this.genUiFailed = false,
   });
 
-  factory _ChatMessage.user(String t) =>
-      _ChatMessage(isUser: true, text: t);
+  factory _ChatMessage.user(String t) => _ChatMessage(isUser: true, text: t);
   factory _ChatMessage.assistant(
     String t, {
     List<String> surfaceIds = const <String>[],
     bool genUiFailed = false,
-  }) =>
-      _ChatMessage(
-        isUser: false,
-        text: t,
-        surfaceIds: surfaceIds,
-        genUiFailed: genUiFailed,
-      );
+  }) => _ChatMessage(
+    isUser: false,
+    text: t,
+    surfaceIds: surfaceIds,
+    genUiFailed: genUiFailed,
+  );
 
   final bool isUser;
   final String text;
@@ -501,11 +821,10 @@ class _ChatMessage {
     String? text,
     List<String>? surfaceIds,
     bool? genUiFailed,
-  }) =>
-      _ChatMessage(
-        isUser: isUser,
-        text: text ?? this.text,
-        surfaceIds: surfaceIds ?? this.surfaceIds,
-        genUiFailed: genUiFailed ?? this.genUiFailed,
-      );
+  }) => _ChatMessage(
+    isUser: isUser,
+    text: text ?? this.text,
+    surfaceIds: surfaceIds ?? this.surfaceIds,
+    genUiFailed: genUiFailed ?? this.genUiFailed,
+  );
 }

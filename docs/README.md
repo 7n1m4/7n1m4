@@ -116,4 +116,5 @@ Architecture-only Markdown policy: `docs/` keeps architecture, decisions and his
 3. `crates/anima-channel/src/lib.rs` — the gateway protocol the renderer speaks.
 4. `crates/anima-core/src/lib.rs` — what the Rust core already owns.
 5. `docs/port-manifest/features.md` — the parity surface the core must cover.
-6. `rosetta-stone.md` — the map of the TS app you are strangling.
+6. `docs/plan-flutter-native-model-rendering.md` — accepted, dependency-ordered plan for native VRM/Spine/MMD rendering and the Live2D licensing gate.
+7. `rosetta-stone.md` — the map of the TS app you are strangling.

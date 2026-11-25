@@ -1528,7 +1528,6 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-
     fn test_db() -> Database {
         let dir = tempdir().expect("tempdir");
         Database::open(&dir.path().join("test.sqlite")).expect("open db")
@@ -2504,7 +2503,10 @@ mod tests {
             })
             .expect("inspect");
         assert_eq!(exists, 1);
-        assert!(CardRepo::new(db.clone()).list_recent(10).unwrap().is_empty());
+        assert!(CardRepo::new(db.clone())
+            .list_recent(10)
+            .unwrap()
+            .is_empty());
         assert_eq!(CardMetadataRepo::new(db).get("c1").unwrap().liked, true);
     }
 

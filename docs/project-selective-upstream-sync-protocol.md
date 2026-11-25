@@ -218,10 +218,14 @@ The following areas represent permanent or intentional architectural divergences
 - **Upstream Reality**: Upstream introduced a native macOS/iOS Apple Speech provider (`apple-speech` via `SFSpeechRecognizer`).
 - **Filter Rule**: Web Speech API routes audio data over the network to browser vendor servers (e.g. Google), whereas native Apple Speech supports on-device offline recognition on Apple Silicon. While Apple Speech has legitimate on-device privacy value, it is not currently wired in this fork. Do not confuse Web Speech with Apple Speech, and do not propose Apple Speech fixes (such as PR #2540) unless a deliberate port of the native Apple Speech provider is authorized.
 
+> RETIRED 2026-11-25 / historical record — Godot sidecar provenance
+>
+> Godot sidecars are not current, active, sidecar, or planned architecture.
+
 ### 4. Multi-Actor & Expanded Avatar Runtimes
 - **Fork Reality**: This fork supports `<|ACTOR|>` tokens for mid-conversation dynamic character switching, LRU display model caching, and multi-actor character cards. It also provides first-class support for 4 model formats (VRM, Live2D, MMD with PMX physics, Spine 2D).
-- **Upstream Reality**: Upstream focuses predominantly on 1:1 character cards, VRM/Live2D, and experimental Godot 4 sidecar skeletons.
-- **Filter Rule**: Upstream patches assuming single-actor cards or Godot sidecars must not be blindly imported over the fork's multi-actor runtimes.
+- **Upstream Reality**: Upstream focuses predominantly on 1:1 character cards, VRM/Live2D, and experimental Godot 4 sidecar skeletons (historical upstream context only; never current or planned fork architecture).
+- **Filter Rule**: Upstream patches assuming single-actor cards or Godot sidecars must not be blindly imported over the fork's multi-actor runtimes. Godot sidecars are historical upstream context, never current or planned fork architecture.
 
 ### 5. Hosted Responses API & Server-Side LLM Gateways
 - **Fork Reality**: `dasilva333/airi` is strictly client- and local-first, directly dispatching to AI providers (e.g. OpenRouter, Ollama, OpenAI, Anthropic, Gemini) via client-side adapters and WebGPU/local runtimes (`packages/provider-inference`, `packages/stage-ui/src/stores/providers`). There is no intermediate proxy or server-side responses gateway.

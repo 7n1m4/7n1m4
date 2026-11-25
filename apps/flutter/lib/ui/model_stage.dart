@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The stage's routing seam, copied from the Vue reference
+// The stage's canonical routing seam, copied from the Vue reference
 // (`packages/stage-ui/src/components/scenes/RendererStage.vue`): kind check
-// first, then asset-presence check, then render. This slice stops after the
-// first two checks — no renderer, no codec, no asset loading, no licensing
-// code. A card that names an asset this client cannot resolve fails loudly
-// instead of falling back to a fabricated model.
+// first, then asset-presence check, then render. A card that names an asset
+// this client cannot resolve fails loudly instead of falling back to a
+// fabricated model. Once the descriptor is valid, [NativeModelSurface] drives
+// the native backend through a client-local [ModelStageRuntime].
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../daemon_client/daemon_client.dart';
+import '../features/stage/method_channel_backend.dart';
+import '../features/stage/model_asset_resolver.dart';
+import '../features/stage/model_backend.dart';
+import '../features/stage/native_model_surface.dart';
+import '../features/stage/stage_overlay_state.dart';
+import '../speech/lip_sync_rms_data.dart';
 
 /// Display-model kinds the card schema can name.
 enum ModelKind { none, vrm, live2d, mmd, spine }
@@ -142,8 +150,8 @@ class DisplayModel {
       value: file is String && file.isNotEmpty
           ? file
           : url is String && url.isNotEmpty
-              ? url
-              : null,
+          ? url
+          : null,
     );
   }
 }
@@ -161,16 +169,44 @@ class ModelStageError implements Exception {
 
 /// One card's display-model surface.
 ///
-/// Loads the card through `cards.get` (the only read seam) and routes it. Renders
-/// a placeholder when the card names no model, and a loud error when it names an
-/// asset that is missing, invalid, or of a kind this client cannot resolve.
+/// Loads the card through `cards.get` (the only read seam) and routes it.
+/// Renders a placeholder when the card names no model, a loud error when it
+/// names an asset this client cannot resolve, and otherwise delegates to the
+/// native model surface. There is exactly one model-stage entry point: this
+/// widget; [NativeModelSurface] is its render phase, not a competing router.
 class ModelStage extends StatefulWidget {
-  const ModelStage({super.key, required this.client, this.cardId});
+  const ModelStage({
+    super.key,
+    required this.client,
+    this.cardId,
+    this.backends,
+    this.resolver,
+    this.frames,
+    this.actorId,
+    this.render,
+  });
 
   final DaemonClient client;
 
   /// Card to display. Null/empty means "no card selected".
   final String? cardId;
+
+  /// Injectable backend registry for tests. Defaults to method-channel
+  /// adapters for all four kinds in production.
+  final ModelBackendRegistry? backends;
+
+  /// Injectable asset resolver for tests.
+  final ModelAssetResolver? resolver;
+
+  /// Real stamped frames from the local TTS pipeline, when available.
+  final Stream<LipSyncRmsData>? frames;
+
+  /// Optional actor filter for frames and emotion cues.
+  final String? actorId;
+
+  /// Client-local render state shared with the stage shell's overlays. The
+  /// stage shell owns it; this widget only routes the model through it.
+  final StageRenderState? render;
 
   @override
   State<ModelStage> createState() => _ModelStageState();
@@ -178,11 +214,22 @@ class ModelStage extends StatefulWidget {
 
 class _ModelStageState extends State<ModelStage> {
   Future<Map<String, dynamic>?>? _card;
+  late final ModelBackendRegistry _backends;
+  late final ModelAssetResolver _resolver;
 
   @override
   void initState() {
     super.initState();
     _card = _load();
+    _backends =
+        widget.backends ??
+        ModelBackendRegistry.fromRuntimes(
+          create: (info) =>
+              MethodChannelModelBackend(info.kind, info.channelName),
+        );
+    _resolver =
+        widget.resolver ??
+        ModelAssetResolver(cacheDirectory: Directory.systemTemp);
   }
 
   @override
@@ -205,22 +252,48 @@ class _ModelStageState extends State<ModelStage> {
     }
     return FutureBuilder<Map<String, dynamic>?>(
       future: _card,
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<Map<String, dynamic>?> snapshot,
-      ) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return _LoudError(
-            ModelStageError('load-failed', _loadFailureMessage(snapshot.error)),
-          );
-        }
-        return _ModelKindRouter(
-          displayModel: DisplayModel.fromCard(snapshot.data),
-        );
-      },
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<Map<String, dynamic>?> snapshot,
+          ) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _LoudError(
+                ModelStageError(
+                  'load-failed',
+                  _loadFailureMessage(snapshot.error),
+                ),
+              );
+            }
+            final displayModel = DisplayModel.fromCard(snapshot.data);
+            final problem = displayModel.problem;
+            if (problem != null) {
+              return _LoudError(
+                ModelStageError(displayModel.problemCode!, problem),
+              );
+            }
+            if (displayModel.kind == ModelKind.none) {
+              return const _NoModelPlaceholder();
+            }
+            if (widget.backends == null && widget.resolver == null) {
+              return _KindPlaceholder(kind: displayModel.kind);
+            }
+            return NativeModelSurface(
+              key: ValueKey<String>(
+                '${displayModel.kind}-${displayModel.asset?.value}',
+              ),
+              client: widget.client,
+              model: displayModel,
+              backends: _backends,
+              resolver: _resolver,
+              frames: widget.frames,
+              actorId: widget.actorId,
+              render: widget.render,
+            );
+          },
     );
   }
 
@@ -231,31 +304,6 @@ class _ModelStageState extends State<ModelStage> {
     if (error is DaemonClientException) return error.message;
     return 'The card could not be loaded '
         '(${error?.runtimeType ?? 'unknown error'}).';
-  }
-}
-
-class _ModelKindRouter extends StatelessWidget {
-  const _ModelKindRouter({required this.displayModel});
-
-  final DisplayModel displayModel;
-
-  @override
-  Widget build(BuildContext context) {
-    final problem = displayModel.problem;
-    if (problem != null) {
-      return _LoudError(ModelStageError(displayModel.problemCode!, problem));
-    }
-    switch (displayModel.kind) {
-      case ModelKind.none:
-        return const _NoModelPlaceholder();
-      case ModelKind.vrm:
-      case ModelKind.live2d:
-      case ModelKind.mmd:
-      case ModelKind.spine:
-        // The renderer is a later bead (licensing/codec); claiming a kind is
-        // not claiming a rendered model.
-        return _KindPlaceholder(kind: displayModel.kind);
-    }
   }
 }
 
@@ -303,13 +351,11 @@ class _KindPlaceholder extends StatelessWidget {
           Text(
             '${kind.name.toUpperCase()} model · renderer pending',
             style: Theme.of(context).textTheme.titleMedium,
-            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
           Text(
             'The asset is resolved; rendering arrives with the renderer bead.',
             style: TextStyle(color: subtle),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

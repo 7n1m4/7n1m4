@@ -1,12 +1,10 @@
-# TS Emotion → Godot Expression Mapping
+# TS Emotion → Godot Expression Mapping (retired historical record)
 
-> Superseded/retired Godot mapping; retained as reference for Flutter native renderer parity.
+> **RETIRED 2026-11-25 — historical record.** This document is not current, not active, not a sidecar, and not planned. No implementation is authorized from it. Retained for reference only (Flutter native renderer parity / Godot history).
 
-Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14). This doc is the Godot-side *target* mapping, not a re-survey of TS internals. Bead `airi-wxp.4.8` — OPEN/undecided.
+## Canonical keys (TS → Godot AnimationTree state) (historical/retired mapping)
 
-## Canonical keys (TS → Godot AnimationTree state)
-
-| TS emotion key | Godot state target | Hold default (ms) |
+| TS emotion key | Godot state target (historical/retired) | Hold default (ms) |
 |---|---|---|
 | `happy` | `happy` 0.7 + `aa` 0.2 | 2000 |
 | `sad` | `sad` 0.7 + `oh` 0.15 | 2000 |
@@ -21,13 +19,13 @@ Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14). This
 
 Cross-fade: all weights lerp to 0 over `blendDuration` (0.3–0.6 s) while target fades in (R5–R10). Transient cues hold then auto-reset to neutral unless `duration_ms = 0` (immediate reset) or absent (no reset).
 
-## Payload consumed by Godot
+## Payload consumed by Godot (historical/retired payload)
 
-`emotion.tag` event (see research doc §3.6): `{ actor_id, tag, intensity, duration_ms?, kind?, seq, ts_ms }`. Godot resolves `tag` via R3 precedence (direct → case-insensitive → fuzzy cluster → no-op). `kind` ∈ {emotion, motion, vfx}; motion/vfx never touch facial morphs (R4).
+`emotion.tag` event (see research doc §3.6): `{ actor_id, tag, intensity, duration_ms?, kind?, seq, ts_ms }`. Godot resolves `tag` via R3 precedence (direct → case-insensitive → fuzzy cluster → no-op) (historical/retired behavior only). `kind` ∈ {emotion, motion, vfx}; motion/vfx never touch facial morphs (R4).
 
 ## Implementation notes
 
-- Godot uses `Tween`/`AnimationTree` for cross-fade; do NOT port TS easing code (research doc §4 #8).
+- Godot uses `Tween`/`AnimationTree` for cross-fade; do NOT port TS easing code (research doc §4 #8) (historical/retired implementation note).
 - Lip-sync: RMS → `aa` morph, attack snap, decay `dt/0.120`, clamp (research doc §3.5 alg 1). Viseme path is optional upgrade.
 - Model-specific names (heart, star_eyes, etc.) pass through as raw strings (R2) and resolve via case-insensitive fallback.
-- Do NOT port TS glue (parser, queues, stores); Godot consumes daemon events only.
+- Do NOT port TS glue (parser, queues, stores); Godot consumes daemon events only (historical/retired contract only).

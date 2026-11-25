@@ -36,7 +36,7 @@ RpcReply _ok(String action, Object? data) =>
 RpcReply _err(String action, String message) => RpcReply(
       action: action,
       ok: false,
-      error: RpcError(code: 'actions_disabled', message: message),
+      error: RpcError(code: 'rpc_bad_payload', message: message),
     );
 
 Map<String, dynamic> _seededProvider() => <String, dynamic>{
@@ -132,7 +132,7 @@ void main() {
     expect(find.text('Provider id and kind are required.'), findsOneWidget);
   });
 
-  testWidgets('save RPC failure shows the daemon error, no success status',
+  testWidgets('save RPC failure shows a sanitized error, no success status',
       (tester) async {
     final client = await _pump(tester);
     client.handler = (action, _) {
@@ -140,7 +140,7 @@ void main() {
         return _ok(
             action, <String, dynamic>{'providers': <Map<String, dynamic>>[]});
       }
-      return _err(action, 'actions disabled');
+      return _err(action, 'failed to POST https://api.openai.com/v1 (key sk-LEAKED)');
     };
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
@@ -150,7 +150,9 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('actions disabled'), findsOneWidget);
+    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    expect(find.textContaining('sk-LEAKED'), findsNothing);
+    expect(find.textContaining('https://api.openai.com'), findsNothing);
     expect(find.textContaining('Saved provider'), findsNothing);
   });
 
@@ -173,7 +175,7 @@ void main() {
     expect(find.text('Deleted provider p1'), findsOneWidget);
   });
 
-  testWidgets('delete RPC failure shows the daemon error, no success status',
+  testWidgets('delete RPC failure shows a sanitized error, no success status',
       (tester) async {
     final client = await _pump(tester);
     client.handler = (action, _) {
@@ -181,7 +183,7 @@ void main() {
         return _ok(
             action, <String, dynamic>{'providers': <Map<String, dynamic>>[]});
       }
-      return _err(action, 'actions disabled');
+      return _err(action, 'failed to POST https://api.openai.com/v1 (key sk-LEAKED)');
     };
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
@@ -190,8 +192,37 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('actions disabled'), findsOneWidget);
+    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    expect(find.textContaining('sk-LEAKED'), findsNothing);
+    expect(find.textContaining('https://api.openai.com'), findsNothing);
     expect(find.textContaining('Deleted provider'), findsNothing);
+  });
+
+  testWidgets('models RPC failure shows a sanitized error', (tester) async {
+    final client = await _pump(tester, providers: <Map<String, dynamic>>[
+      _seededProvider(),
+    ]);
+    client.handler = (action, _) {
+      if (action == 'providers.models') {
+        return _err(action, 'failed /etc/anima/config.toml key sk-LEAKED');
+      }
+      if (action == 'providers.list') {
+        return _ok(
+            action, <String, dynamic>{'providers': <Map<String, dynamic>>[
+          _seededProvider(),
+        ]});
+      }
+      return _ok(action, <String, dynamic>{'ok': true});
+    };
+
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Models'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Models'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    expect(find.textContaining('sk-LEAKED'), findsNothing);
+    expect(find.textContaining('/etc/anima'), findsNothing);
   });
 
   testWidgets('enable toggle saves a partial update without credentials',

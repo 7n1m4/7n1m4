@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Decision: Flutter control UI and Godot pet coexistence on one mobile screen
+# Decision: Flutter control UI and Godot pet coexistence on one mobile screen (retired historical record)
 
 - **Status:** **superseded / retired 2026-11-25** — the question no longer exists. No implementation authorized.
 - **Bead:** `airi-wxp.4.7` (child of epic `airi-wxp.4`) — closed as moot.
@@ -13,11 +13,11 @@
 
 ## Problem (historical)
 
-On desktop, the Flutter control window and the Godot pet window were independent windows and that was fine. A single mobile screen has no separate-window model, so how the Flutter control UI and the Godot pet were composed was unresolved.
+On desktop, the Flutter control window and the Godot pet window were independent windows and that was fine. A single mobile screen has no separate-window model, so how the Flutter control UI and the Godot pet were composed was unresolved. (historical only; not current, active, sidecar, or planned)
 
 ## Options (historical; not decided, now moot)
 
-1. Embed the Godot view inside Flutter (platform view / Flutter widget).
+1. Embed the Godot view inside Flutter (platform view / Flutter widget). (historical only; not current, active, sidecar, or planned)
 2. Flutter overlay compositing.
 3. Mode switch (control UI vs pet, one at a time).
 4. Compact pet overlay above the control UI.
@@ -37,5 +37,5 @@ surface is ever proposed, this document's status moves back to `open` with a new
 
 ## References
 
-- `docs/design-flutter-godot-pivot.md` — GUI pivot contract (Flutter-first as of 2026-11-25).
+- `docs/design-flutter-godot-pivot.md` — GUI pivot contract (Flutter-first as of 2026-11-25). (historical context only)
 - `docs/decision-mobile-distribution-and-code-signing.md` — mobile distribution lanes.

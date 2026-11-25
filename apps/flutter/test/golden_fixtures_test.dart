@@ -28,9 +28,7 @@ final String _fixturesDir = () {
   final fromApp = Directory('../../crates/anima-channel/fixtures/golden');
   if (fromApp.existsSync()) return fromApp.path;
   // Fallback for IDE runners.
-  final fromScript = Directory(
-    '../crates/anima-channel/fixtures/golden',
-  );
+  final fromScript = Directory('../crates/anima-channel/fixtures/golden');
   if (fromScript.existsSync()) return fromScript.path;
   fail('golden fixtures directory not found');
 }();
@@ -66,20 +64,26 @@ void main() {
     };
 
     eventFixtures.forEach((fixtureName, expectedTopic) {
-      test('$fixtureName parses as event frame with topic "$expectedTopic"', () {
-        final text = _loadFixture(fixtureName);
-        final frame = ServerFrame.parse(text);
+      test(
+        '$fixtureName parses as event frame with topic "$expectedTopic"',
+        () {
+          final text = _loadFixture(fixtureName);
+          final frame = ServerFrame.parse(text);
 
-        expect(frame.kind, ServerFrameKind.event,
-            reason: '$fixtureName should parse as event');
-        expect(frame.event, isNotNull);
-        expect(frame.event!.topic, EventTopic.fromWire(expectedTopic));
-        expect(frame.event!.rawTopic, expectedTopic);
-        expect(frame.event!.data, isA<Map<String, dynamic>>());
-        expect(frame.event!.data, isNotEmpty);
-        // No correlation id in these fixtures.
-        expect(frame.event!.id, isNull);
-      });
+          expect(
+            frame.kind,
+            ServerFrameKind.event,
+            reason: '$fixtureName should parse as event',
+          );
+          expect(frame.event, isNotNull);
+          expect(frame.event!.topic, EventTopic.fromWire(expectedTopic));
+          expect(frame.event!.rawTopic, expectedTopic);
+          expect(frame.event!.data, isA<Map<String, dynamic>>());
+          expect(frame.event!.data, isNotEmpty);
+          // No correlation id in these fixtures.
+          expect(frame.event!.id, isNull);
+        },
+      );
     });
 
     // ----------------------------------------------------------------
@@ -97,7 +101,9 @@ void main() {
     });
 
     test('emotion_tag.emotion data has all fields', () {
-      final frame = ServerFrame.parse(_loadFixture('event.emotion_tag.emotion'));
+      final frame = ServerFrame.parse(
+        _loadFixture('event.emotion_tag.emotion'),
+      );
       final data = frame.event!.data;
       expect(data['actor_id'], 'character-7');
       expect(data['tag'], 'happy');
@@ -109,7 +115,8 @@ void main() {
 
     test('emotion_tag.motion_no_duration omits duration_ms', () {
       final frame = ServerFrame.parse(
-          _loadFixture('event.emotion_tag.motion_no_duration'));
+        _loadFixture('event.emotion_tag.motion_no_duration'),
+      );
       final data = frame.event!.data;
       expect(data.containsKey('duration_ms'), isFalse);
       expect(data['kind'], 'motion');
@@ -126,8 +133,9 @@ void main() {
     });
 
     test('status_changed.healthy has camelCase fields', () {
-      final frame =
-          ServerFrame.parse(_loadFixture('event.status_changed.healthy'));
+      final frame = ServerFrame.parse(
+        _loadFixture('event.status_changed.healthy'),
+      );
       final data = frame.event!.data;
       expect(data['core_available'], isTrue);
       expect(data['store_available'], isTrue);
@@ -164,6 +172,15 @@ void main() {
       expect(error.message, 'invalid token');
     });
 
+    test('chat.cancel.request locks camelCase ids', () {
+      final text = _loadFixture('chat.cancel.request');
+      final json = jsonDecode(text) as Map<String, dynamic>;
+      expect(json['sessionId'], 'sess-abc');
+      expect(json['requestId'], 'r1');
+      expect(json.containsKey('session_id'), isFalse);
+      expect(json.containsKey('request_id'), isFalse);
+    });
+
     test('heartbeat.pong parses as heartbeat frame', () {
       final text = _loadFixture('heartbeat.pong');
       // Heartbeat data is not wrapped in a ServerFrame — it's just the data
@@ -197,8 +214,11 @@ void main() {
       for (final file in files) {
         final text = file.readAsStringSync();
         final decoded = jsonDecode(text);
-        expect(decoded, isA<Map<String, dynamic>>(),
-            reason: '${file.path} is not a JSON object');
+        expect(
+          decoded,
+          isA<Map<String, dynamic>>(),
+          reason: '${file.path} is not a JSON object',
+        );
       }
     });
   });

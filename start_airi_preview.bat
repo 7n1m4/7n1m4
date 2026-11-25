@@ -1,6 +1,6 @@
 @echo off
 :: AIRI Tamagotchi - Production Preview Starter
-:: Builds packages, builds the app, and previews the production bundle via electron-vite.
+:: Builds packages, builds the app, and starts the packaged production bundle (hutch/electrobun).
 
 echo [1/3] Building packages...
 call pnpm run build:packages
@@ -10,9 +10,4 @@ call pnpm -F @proj-anima/stage-tamagotchi run build
 
 echo [3/3] Starting Tamagotchi in Preview Mode...
 set ELECTRON_RUN_AS_NODE=
-:: Try to use local config if it exists, otherwise use default
-if exist "apps\stage-tamagotchi\electron.vite.config.local.ts" (
-    call pnpm -F @proj-anima/stage-tamagotchi start --config electron.vite.config.local.ts
-) else (
-    call pnpm -F @proj-anima/stage-tamagotchi start
-)
+call pnpm -F @proj-anima/stage-tamagotchi start

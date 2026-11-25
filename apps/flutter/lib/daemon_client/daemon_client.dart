@@ -27,7 +27,8 @@ export 'protocol.dart'
         kProtocolId;
 export 'reconnect_policy.dart' show ReconnectPolicy;
 export 'rpc.dart' show CoreStatus, RpcError, RpcReply, RpcRequest;
-export 'transport.dart' show DaemonTransport, DaemonTransportFactory, TransportClosed;
+export 'transport.dart'
+    show DaemonTransport, DaemonTransportFactory, TransportClosed;
 
 class CardWriteResult {
   const CardWriteResult({
@@ -110,13 +111,21 @@ class DaemonStatus {
 class DaemonClient {
   DaemonClient({
     DaemonTransportFactory? transportFactory,
+    this.caAwareTransportFactory,
     this.reconnectPolicy = const ReconnectPolicy(),
     this.authTimeout = const Duration(seconds: 5),
     this.rpcTimeout = const Duration(seconds: 15),
     this.heartbeatInterval = const Duration(seconds: 30),
-  }) : _transportFactory = transportFactory ?? (() => DirectWebSocketTransport());
+  }) {
+    final injectedFactory = transportFactory;
+    _transportFactory =
+        injectedFactory ??
+        (() => DirectWebSocketTransport(caCertPath: _caCertPath));
+  }
 
-  final DaemonTransportFactory _transportFactory;
+  late final DaemonTransportFactory _transportFactory;
+  final CaAwareDaemonTransportFactory? caAwareTransportFactory;
+  String? _caCertPath;
   final ReconnectPolicy reconnectPolicy;
   final Duration authTimeout;
   final Duration rpcTimeout;
@@ -138,9 +147,12 @@ class DaemonClient {
   int _attempt = 0;
   final Map<int, Completer<RpcReply>> _pending = <int, Completer<RpcReply>>{};
   Completer<void>? _authCompleter;
-  final StreamController<DaemonStatus> _status = StreamController<DaemonStatus>.broadcast();
+  final StreamController<DaemonStatus> _status =
+      StreamController<DaemonStatus>.broadcast();
 
-  DaemonStatus _snapshot = const DaemonStatus(state: DaemonConnectionState.disconnected);
+  DaemonStatus _snapshot = const DaemonStatus(
+    state: DaemonConnectionState.disconnected,
+  );
 
   DaemonStatus get snapshot => _snapshot;
   Stream<DaemonStatus> get statusStream => _status.stream;
@@ -182,7 +194,10 @@ class DaemonClient {
   Future<void> connect(ConnectionSettings settings) async {
     final errors = settings.validationErrors();
     if (errors.isNotEmpty) {
-      throw DaemonClientException(kind: DaemonFailureKind.protocol, message: errors.first);
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: errors.first,
+      );
     }
     _wantsConnection = true;
     _settings = settings;
@@ -191,6 +206,7 @@ class DaemonClient {
     _attempt = 0;
     await _open();
   }
+
   /// Instance variant: parse [uri] into [ConnectionSettings] and delegate to
   /// [connect]. Named to avoid the Dart static/instance name collision on
   /// `connect`.
@@ -201,7 +217,7 @@ class DaemonClient {
   /// Static convenience factory: connect to [uri] with [token] and return an
   /// authenticated client. Dart forbids a static `connect` sharing a name
   /// with the instance `connect(ConnectionSettings)`, so this is named
-  /// `fromUri` (see docs/daemon-client-connection.md).
+  /// `fromUri`.
   static Future<DaemonClient> fromUri(String uri, String token) async {
     final client = DaemonClient();
     await client.connectUri(uri, token);
@@ -210,10 +226,16 @@ class DaemonClient {
 
   static ConnectionSettings _settingsFromUri(String uri, String token) {
     final parsed = Uri.parse(uri);
-    final scheme = parsed.scheme.isEmpty ? ConnectionSettings.defaultScheme : parsed.scheme;
-    final host = parsed.host.isEmpty ? ConnectionSettings.defaultHost : parsed.host;
+    final scheme = parsed.scheme.isEmpty
+        ? ConnectionSettings.defaultScheme
+        : parsed.scheme;
+    final host = parsed.host.isEmpty
+        ? ConnectionSettings.defaultHost
+        : parsed.host;
     final port = parsed.hasPort ? parsed.port : ConnectionSettings.defaultPort;
-    final path = parsed.path.isEmpty ? ConnectionSettings.defaultPath : parsed.path;
+    final path = parsed.path.isEmpty
+        ? ConnectionSettings.defaultPath
+        : parsed.path;
     return ConnectionSettings(
       host: host,
       port: port,
@@ -223,16 +245,23 @@ class DaemonClient {
     );
   }
 
-
   Future<void> _open() async {
     final settings = _settings;
     if (settings == null || !_wantsConnection) return;
 
     _authenticated = false;
-    _emit(state: DaemonConnectionState.connecting, clearCore: true, clearError: true, attempt: 0);
+    _emit(
+      state: DaemonConnectionState.connecting,
+      clearCore: true,
+      clearError: true,
+      attempt: 0,
+    );
+    _caCertPath = settings.caCertPath;
     await _teardownTransport();
 
-    final transport = _transportFactory();
+    final transport = caAwareTransportFactory != null
+        ? caAwareTransportFactory!(caCertPath: _caCertPath)
+        : _transportFactory();
     _transport = transport;
     _messageSub = transport.messages.listen(
       _onMessage,
@@ -244,10 +273,12 @@ class DaemonClient {
     try {
       await transport.connect(settings.uri);
     } catch (e) {
-      _onTransportSignal(DaemonClientException(
-        kind: DaemonFailureKind.transport,
-        message: 'Could not open WebSocket: $e',
-      ));
+      _onTransportSignal(
+        DaemonClientException(
+          kind: DaemonFailureKind.transport,
+          message: 'Could not open WebSocket: $e',
+        ),
+      );
       return;
     }
 
@@ -270,7 +301,10 @@ class DaemonClient {
       if (!_wantsConnection) return;
       final failure = e is DaemonClientException
           ? e
-          : DaemonClientException(kind: DaemonFailureKind.protocol, message: 'Authentication failed: $e');
+          : DaemonClientException(
+              kind: DaemonFailureKind.protocol,
+              message: 'Authentication failed: $e',
+            );
       _emit(state: DaemonConnectionState.failed, error: failure);
       // Auth/config failures are terminal: retrying a bad token is just noise.
       return;
@@ -301,15 +335,20 @@ class DaemonClient {
   /// chat itself remains usable.
   Future<void> _subscribeTokenDeltas() async {
     try {
-      final reply = await call('event.subscribe', payload: <String, dynamic>{
-        'topics': <String>['token.delta'],
-      });
+      final reply = await call(
+        'event.subscribe',
+        payload: <String, dynamic>{
+          'topics': <String>['token.delta'],
+        },
+      );
       if (!reply.ok && _wantsConnection) {
-        _emit(error: DaemonClientException(
-          kind: DaemonFailureKind.rpc,
-          message: reply.error?.message ?? 'event.subscribe failed.',
-          code: reply.error?.code,
-        ));
+        _emit(
+          error: DaemonClientException(
+            kind: DaemonFailureKind.rpc,
+            message: reply.error?.message ?? 'event.subscribe failed.',
+            code: reply.error?.code,
+          ),
+        );
       }
     } on DaemonClientException catch (e) {
       if (_wantsConnection) _emit(error: e);
@@ -391,7 +430,8 @@ class DaemonClient {
   void _failAuth(Object error) {
     final pendingAuth = _authCompleter;
     _authCompleter = null;
-    if (pendingAuth != null && !pendingAuth.isCompleted) pendingAuth.completeError(error);
+    if (pendingAuth != null && !pendingAuth.isCompleted)
+      pendingAuth.completeError(error);
   }
 
   void _deliver(RpcReply reply) {
@@ -464,7 +504,9 @@ class DaemonClient {
   /// Typed RPC with id correlation and a per-call timeout.
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     final transport = _transport;
-    if (transport == null || !_authenticated || _snapshot.state != DaemonConnectionState.connected) {
+    if (transport == null ||
+        !_authenticated ||
+        _snapshot.state != DaemonConnectionState.connected) {
       throw const DaemonClientException(
         kind: DaemonFailureKind.notConnected,
         message: 'Not connected to the daemon.',
@@ -475,7 +517,9 @@ class DaemonClient {
     _pending[id] = completer;
     try {
       try {
-        transport.send(RpcRequest(action: action, payload: payload, id: id).toWire());
+        transport.send(
+          RpcRequest(action: action, payload: payload, id: id).toWire(),
+        );
       } catch (e) {
         throw DaemonClientException(
           kind: DaemonFailureKind.transport,
@@ -520,7 +564,10 @@ class DaemonClient {
   // A failed rpc reply is promoted to a DaemonClientException so callers do not
   // have to repeat error handling.
 
-  Future<RpcReply> _callOk(String action, {Map<String, dynamic>? payload}) async {
+  Future<RpcReply> _callOk(
+    String action, {
+    Map<String, dynamic>? payload,
+  }) async {
     final reply = await call(action, payload: payload);
     if (!reply.ok) {
       throw DaemonClientException(
@@ -560,9 +607,10 @@ class DaemonClient {
 
   /// Stop an in-flight chat turn (`chat.cancel`).
   Future<bool> cancelChat(String sessionId) async {
-    final reply = await _callOk('chat.cancel', payload: <String, dynamic>{
-      'session_id': sessionId,
-    });
+    final reply = await _callOk(
+      'chat.cancel',
+      payload: <String, dynamic>{'session_id': sessionId},
+    );
     final data = reply.data;
     return data is Map<String, dynamic> && data['cancelled'] == true;
   }
@@ -570,9 +618,10 @@ class DaemonClient {
   /// Prior persisted turns of a session (`chat.history`). An unregistered verb
   /// is promoted to a DaemonClientException; an empty history yields [].
   Future<List<Map<String, dynamic>>> chatHistory(String sessionId) async {
-    final reply = await _callOk('chat.history', payload: <String, dynamic>{
-      'session_id': sessionId,
-    });
+    final reply = await _callOk(
+      'chat.history',
+      payload: <String, dynamic>{'session_id': sessionId},
+    );
     final data = reply.data;
     if (data is List) {
       return data.whereType<Map<String, dynamic>>().toList(growable: false);
@@ -589,9 +638,10 @@ class DaemonClient {
   /// Read a typed settings section (`settings.get`). The daemon carries the
   /// section as a JSON string; decode it into a map for callers.
   Future<Map<String, dynamic>> settingsGet(String section) async {
-    final reply = await _callOk('settings.get', payload: <String, dynamic>{
-      'section': section,
-    });
+    final reply = await _callOk(
+      'settings.get',
+      payload: <String, dynamic>{'section': section},
+    );
     final data = reply.data;
     if (data is! Map<String, dynamic>) return const <String, dynamic>{};
     final raw = data['settings'];
@@ -609,20 +659,24 @@ class DaemonClient {
 
   /// Write a whole typed settings section (`settings.set`). Returns the
   /// daemon's `ok` flag; a failed write is promoted to an exception by _callOk.
-  Future<bool> settingsSet(String section, Map<String, dynamic> settings) async {
-    final reply = await _callOk('settings.set', payload: <String, dynamic>{
-      'section': section,
-      'settings': settings,
-    });
+  Future<bool> settingsSet(
+    String section,
+    Map<String, dynamic> settings,
+  ) async {
+    final reply = await _callOk(
+      'settings.set',
+      payload: <String, dynamic>{'section': section, 'settings': settings},
+    );
     final data = reply.data;
     return data is Map<String, dynamic> && data['ok'] == true;
   }
 
   /// Recent short-term-memory summaries (`stmm.list`).
   Future<List<Map<String, dynamic>>> stmmList({int limit = 50}) async {
-    final reply = await _callOk('stmm.list', payload: <String, dynamic>{
-      'limit': limit,
-    });
+    final reply = await _callOk(
+      'stmm.list',
+      payload: <String, dynamic>{'limit': limit},
+    );
     return _objects(reply, 'summaries');
   }
 
@@ -633,10 +687,10 @@ class DaemonClient {
 
   /// Append a long-term journal entry (`journal.append`).
   Future<String> journalAppend(String content, {String kind = 'note'}) async {
-    final reply = await _callOk('journal.append', payload: <String, dynamic>{
-      'content': content,
-      'kind': kind,
-    });
+    final reply = await _callOk(
+      'journal.append',
+      payload: <String, dynamic>{'content': content, 'kind': kind},
+    );
     final data = reply.data;
     return (data is Map<String, dynamic> ? data['id'] : null)?.toString() ?? '';
   }
@@ -646,10 +700,10 @@ class DaemonClient {
     String query = '',
     int limit = 50,
   }) async {
-    final reply = await _callOk('journal.search', payload: <String, dynamic>{
-      'query': query,
-      'limit': limit,
-    });
+    final reply = await _callOk(
+      'journal.search',
+      payload: <String, dynamic>{'query': query, 'limit': limit},
+    );
     return _objects(reply, 'entries');
   }
 
@@ -662,17 +716,19 @@ class DaemonClient {
 
   /// All character cards (`cards.list`).
   Future<List<Map<String, dynamic>>> cardsList({int limit = 50}) async {
-    final reply = await _callOk('cards.list', payload: <String, dynamic>{
-      'limit': limit,
-    });
+    final reply = await _callOk(
+      'cards.list',
+      payload: <String, dynamic>{'limit': limit},
+    );
     return _objects(reply, 'cards');
   }
 
   /// One character card, or `null` when the daemon has no such card (`cards.get`).
   Future<Map<String, dynamic>?> cardsGet(String id) async {
-    final reply = await _callOk('cards.get', payload: <String, dynamic>{
-      'id': id,
-    });
+    final reply = await _callOk(
+      'cards.get',
+      payload: <String, dynamic>{'id': id},
+    );
     final data = reply.data;
     if (data is! Map<String, dynamic>) return null;
     final card = data['card'];
@@ -681,13 +737,18 @@ class DaemonClient {
 
   /// Create a character card (`cards.create`).
   Future<CardWriteResult> cardsCreate(Map<String, dynamic> document) async {
-    final reply = await _callOk('cards.create', payload: <String, dynamic>{
-      'name': document['name'],
-      'document': document,
-    });
+    final reply = await _callOk(
+      'cards.create',
+      payload: <String, dynamic>{
+        'name': document['name'],
+        'document': document,
+      },
+    );
     return _cardWriteResult(
       reply,
-      fallbackName: document['name'] is String ? document['name'] as String : '',
+      fallbackName: document['name'] is String
+          ? document['name'] as String
+          : '',
     );
   }
 
@@ -696,13 +757,15 @@ class DaemonClient {
     String id,
     Map<String, dynamic> document,
   ) async {
-    final reply = await _callOk('cards.update', payload: <String, dynamic>{
-      'id': id,
-      'document': document,
-    });
+    final reply = await _callOk(
+      'cards.update',
+      payload: <String, dynamic>{'id': id, 'document': document},
+    );
     return _cardWriteResult(
       reply,
-      fallbackName: document['name'] is String ? document['name'] as String : '',
+      fallbackName: document['name'] is String
+          ? document['name'] as String
+          : '',
       requireUpdated: true,
     );
   }
@@ -793,9 +856,10 @@ class DaemonClient {
 
   /// Delete a character card (`cards.delete`).
   Future<bool> cardsDelete(String id) async {
-    final reply = await _callOk('cards.delete', payload: <String, dynamic>{
-      'id': id,
-    });
+    final reply = await _callOk(
+      'cards.delete',
+      payload: <String, dynamic>{'id': id},
+    );
     final data = reply.data;
     if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
       throw const DaemonClientException(
@@ -836,9 +900,10 @@ class DaemonClient {
 
   /// JSONL export of one chat session (`sessions.export`).
   Future<String> sessionsExport(String sessionId) async {
-    final reply = await _callOk('sessions.export', payload: <String, dynamic>{
-      'session_id': sessionId,
-    });
+    final reply = await _callOk(
+      'sessions.export',
+      payload: <String, dynamic>{'session_id': sessionId},
+    );
     final data = reply.data;
     if (data is! Map<String, dynamic> || data['jsonl'] is! String) {
       throw const DaemonClientException(
@@ -854,9 +919,10 @@ class DaemonClient {
   /// Returns whether the session existed. A missing session is `false`, not an
   /// error, so callers can treat a stale row as an idempotent delete.
   Future<bool> sessionsDelete(String sessionId) async {
-    final reply = await _callOk('sessions.delete', payload: <String, dynamic>{
-      'sessionId': sessionId,
-    });
+    final reply = await _callOk(
+      'sessions.delete',
+      payload: <String, dynamic>{'sessionId': sessionId},
+    );
     final data = reply.data;
     if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
       throw const DaemonClientException(
@@ -873,11 +939,26 @@ class DaemonClient {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _authenticated = false;
-    _failAuth(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
-    _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Disconnected.'));
+    _failAuth(
+      const DaemonClientException(
+        kind: DaemonFailureKind.notConnected,
+        message: 'Disconnected.',
+      ),
+    );
+    _failAllPending(
+      const DaemonClientException(
+        kind: DaemonFailureKind.notConnected,
+        message: 'Disconnected.',
+      ),
+    );
     await _teardownTransport();
     _settings = null;
-    _emit(state: DaemonConnectionState.disconnected, clearCore: true, clearError: true, attempt: 0);
+    _emit(
+      state: DaemonConnectionState.disconnected,
+      clearCore: true,
+      clearError: true,
+      attempt: 0,
+    );
   }
 
   Future<void> _teardownTransport() async {
@@ -896,7 +977,12 @@ class DaemonClient {
     _eventSubscribers.clear();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    _failAllPending(const DaemonClientException(kind: DaemonFailureKind.notConnected, message: 'Client disposed.'));
+    _failAllPending(
+      const DaemonClientException(
+        kind: DaemonFailureKind.notConnected,
+        message: 'Client disposed.',
+      ),
+    );
     final transport = _transport;
     _teardownTransport().whenComplete(() => transport?.dispose());
     _status.close();

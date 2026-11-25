@@ -1,10 +1,9 @@
-# Godot Emotion/Expression Mapping (from TS reference)
+# Godot Emotion/Expression Mapping (from TS reference) (retired historical record)
 
-> Superseded/retired Godot design; retained as historical mapping reference.
-Bead `airi-wxp.4.8` — OPEN/undecided. Study-only; no implementation authorized.
+> RETIRED 2026-11-25 / historical record — not current, active, sidecar, or planned. No implementation authorized.
 Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14, §3.6, §4).
 
-## Canonical keys → Godot animation state (per backend)
+## Canonical keys → Godot animation state (per backend) (historical/retired mapping)
 
 ### VRM 3D backend (morph targets via expressionManager)
 
@@ -37,7 +36,7 @@ Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14, §3.6
 
 ### Live2D (GDCubism) backend — exp3 resolution, NOT fixed morph names
 
-Live2D uses model-authored `.exp3` blend shape files; Godot must discover them at load and build the `emotion key → local expression/motion` mapping from the card's model metadata (research doc §3.1, R3). Resolution precedence:
+Live2D uses model-authored `.exp3` blend shape files; Godot must discover them at load and build the `emotion key → local expression/motion` mapping from the card's model metadata (research doc §3.1, R3) — historical/retired mapping behavior only. Resolution precedence:
 
 1. `emotionMappings` (fileName → emotion key) direct match.
 2. Case-insensitive `availableExpressions.name` match.
@@ -49,9 +48,9 @@ Live2D uses model-authored `.exp3` blend shape files; Godot must discover them a
 
 Emotion → animation name via `EMOTION_SpineAnimationName_value`, falling back to raw name then any existing animation (`packages/stage-ui-spine/src/constants/emotions.ts:50-66`).
 
-## VFX cues → Godot particle/aura triggers
+## VFX cues → Godot particle/aura triggers (historical/retired proposal)
 
-| VFX key | Godot target (proposed) | Duration |
+| VFX key | Godot target (historical/retired proposal) | Duration |
 |---|---|---|
 | `fire` | `VFX/FireAura` (proposed GPUParticles3D node) | as specified in ACT payload |
 | `electric` | `VFX/ElectricArc` (proposed) | as specified in ACT payload |
@@ -66,11 +65,11 @@ Emotion → animation name via `EMOTION_SpineAnimationName_value`, falling back 
 4. Raw pass-through (model-specific names like `heart`, `star_eyes`).
 5. No-op with warning.
 
-## Godot implementation contract
+## Godot implementation contract (historical/retired; no implementation authorized)
 
 - **Cross-fade**: all weights lerp to 0 over `blendDuration` while target fades in (R5–R10). Use `Tween` or `AnimationTree` blend spaces.
 - **Hold-then-reset**: transient cues hold for `duration_ms` (default 2000 ms), then auto-reset to neutral unless `duration_ms = 0` (immediate) or absent (no reset).
 - **Hold default**: single 2000 ms — Live2D uses `Math.max(0.1, duration ?? 2) * 1000` (`packages/stage-ui-live2d/src/stores/live2d.ts:351`); VRM takes ms from caller via `setEmotionWithResetAfter(name, ms, …)` (`packages/stage-ui-three/src/composables/vrm/expression.ts:202`). Override via `duration_ms` in `emotion.tag` payload; `0` = immediate reset, absent = no auto-reset. No per-emotion holds exist in TS source.
 - **Lip-sync**: RMS → `aa` morph, attack snap, decay `dt/0.120`, clamp (research doc §3.5 alg 1). Viseme path is optional upgrade.
-- **Do NOT port** TS glue (parser, queues, stores, easing composables). Godot consumes `emotion.tag` daemon events only (research doc §4).
+- **Do NOT port** TS glue (parser, queues, stores, easing composables). Godot consumes `emotion.tag` daemon events only (research doc §4) — historical/retired contract only.
 - **Do NOT promise** 30–60 Hz lip-sync; in-tree tap is ~15–40 Hz (research doc §3.5).

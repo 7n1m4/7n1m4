@@ -2,18 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Electron",
+      "name": "Debug Stage Tamagotchi",
       "type": "node",
       "request": "launch",
       // Where to run the command
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["-F", "@proj-anima/stage-tamagotchi", "exec", "electron-vite", "--sourcemap"],
+      "runtimeArgs": ["-F", "@proj-anima/stage-tamagotchi", "run", "dev"],
       // Open terminal when debugging starts (Optional)
       // Useful to see console.logs
       // "console": "integratedTerminal",
       // "internalConsoleOptions": "neverOpen",
       "env": {
-        "REMOTE_DEBUGGING_PORT": "9222"
+        "ELECTROBUN_CEF_REMOTE_DEBUGGING_PORT": "9222"
       }
     },
     {
@@ -39,7 +39,7 @@
       "port": 9222,
       "request": "attach",
       "type": "chrome",
-      "webRoot": "${workspaceFolder}/src/renderer",
+      "webRoot": "${workspaceFolder}/apps/stage-tamagotchi/src/renderer",
       "timeout": 60000,
       "presentation": {
         "hidden": true
@@ -60,7 +60,7 @@
   "compounds": [
     {
       "name": "Debug All",
-      "configurations": ["Debug Electron", "Debug Renderer Process"],
+      "configurations": ["Debug Stage Tamagotchi", "Debug Renderer Process"],
       "presentation": {
         "order": 1
       }

@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Guide: client-local TTS runtime setup (Flutter only)
-
+>
+> **RETIRED 2026-11-25 / historical record.** This guide's Godot/C# content is not current, active, sidecar, or planned. Godot/C# TTS runtime is historical/retired and no longer actively configured. Only the Flutter seam described here is current.
 Companion to [`decision-client-local-tts-pcm.md`](./decision-client-local-tts-pcm.md) (ratified Option B: on-device Piper-class TTS exposing PCM; Option C: real WAVE decode as fallback/test harness). This guide covers the **user-supplied binaries and models** the thin clients need. It does not claim full app-level runtime wiring or test results; check [`feature-parity-checklist.md`](./feature-parity-checklist.md) for status. Godot/C# TTS runtime is historical/retired and no longer actively configured.
 
 ## No binaries or models in the repository
@@ -16,7 +17,7 @@ No proprietary binaries, TTS executables, ONNX models, voice assets, or generate
 | Godot | `PiperTtsEngine` (`godot/scripts/Audio/PiperTtsEngine.cs`) | Local `piper` CLI writes a WAVE file; `WavPcmReader` decodes it | Historical/retired: no active config |
 | Both | `WavPcmSource` / `WavPcmReader` (Option C) | Decode a real WAVE asset/file | Available as deterministic test harness and explicit decoded-file fallback |
 
-## Piper (both clients)
+## Piper (Flutter)
 
 Versions checked when this guide was written (2026-11-24): upstream `rhasspy/piper` latest release `2023.11.14-2`, `rhasspy/piper-voices` hub revision `e5349433ed883a32f893a434dc43a6c66b95ef7c`. Pin the same versions in a deployment so a model/binary refresh cannot silently change audio or licensing terms; re-run the license checks below when bumping either.
 
@@ -47,17 +48,16 @@ Versions checked when this guide was written (2026-11-24): upstream `rhasspy/pip
 
    Optional but recommended: save the resolved file digests (e.g. `sha256sum en_US-lessac-medium.onnx*`) alongside your deployment manifest. A direct smoke check with the installed binary, before involving either client, is `printf 'hello\n' | "$PIPER_PATH" --model "$PIPER_MODEL" --output_file /tmp/piper-smoke.wav`; verify the result is a real RIFF/WAVE file (`file /tmp/piper-smoke.wav`). This is a genuine engine synthesis check, not a fixture, and is **not** a claim that this project's client tests were run.
 
-   Note the CLI shape used by both seams: `piper --model <PIPER_MODEL> --output_file <temp.wav>` with the spoken text written to the process's stdin (the Flutter engine does this; the Godot/C# engine was historical). The downloaded release binary must accept that shape. The Godot/C# engine (historical/retired) exposed `sampleRate` (constructor override; default `DefaultSampleRate = 22050`) separately from the model's sidecar; Flutter derives sample rate from the decoded WAVE header.
-
+   Note the CLI shape used by the current Flutter seam only: `piper --model <PIPER_MODEL> --output_file <temp.wav>` with the spoken text written to the process's stdin (the Flutter engine does this). The downloaded release binary must accept that shape. Historical Godot/C# details (retired, not active configuration): the Godot/C# engine exposed `sampleRate` (constructor override; default `DefaultSampleRate = 22050`) separately from the model's sidecar; Flutter derives sample rate from the decoded WAVE header.
 3. Set environment variables before launching the client:
 
    | Variable | Meaning | Default |
    | --- | --- | --- |
    | `PIPER_PATH` | Path to the `piper` executable | `piper` (resolved via `PATH`) |
-   | `PIPER_MODEL` | Path to the downloaded `.onnx` voice model | unset — Flutter/Godot throw a configuration error rather than guessing |
-   | `PIPER_SAMPLE_RATE` | Godot only: expected sample rate (Hz) of the synthesized WAV; must be a positive integer | `22050` |
+   | `PIPER_MODEL` | Path to the downloaded `.onnx` voice model | unset — Flutter throws a configuration error rather than guessing (Godot/C# historical/retired, not active configuration) |
+   | `PIPER_SAMPLE_RATE` | Godot only (historical/retired, not active configuration): expected sample rate (Hz) of the synthesized WAV; must be a positive integer | `22050` (historical/retired) |
 
-   Set `PIPER_SAMPLE_RATE` to the rate in the voice sidecar when it differs from 22050 Hz; Godot passes it to `PiperTtsEngine`, which rejects a WAV whose decoded rate differs (the sample rate is not read from the sidecar at runtime). An invalid or non-positive value fails client startup loudly instead of being ignored. Constructor arguments override these variables (`PiperTtsEngine(executable:, modelPath:)` in Dart; `PiperTtsEngine(piperPath:, modelPath:, sampleRate:)` in C#); the Dart seam has no sample-rate environment override. No daemon setting or gateway RPC supplies these paths; they are local process configuration only.
+   Flutter derives sample rate from the decoded WAVE header; there is no `PIPER_SAMPLE_RATE` override in the Dart seam. (Historical/retired: Godot/C# `PIPER_SAMPLE_RATE` and `PiperTtsEngine(piperPath:, modelPath:, sampleRate:)` are not active configuration.) No daemon setting or gateway RPC supplies these paths; they are local process configuration only.
 
 ## sherpa-onnx (Flutter, optional adapter)
 
@@ -81,5 +81,5 @@ When in doubt, keep the asset user-supplied (paths above) instead of bundling it
 ## Proving text → PCM → RMS → sink honestly
 
 - Flutter: build a real `TtsEngine`/explicit `WavPcmSource`, call `synthesizeToSource(text)`, then `LipSyncGenerator(actorId:, source:, abort:).frames()`. The frames carry `{actor_id, level, seq, ts_ms}` with client-stamped monotonic `seq` and epoch-ms `ts_ms`. There is no Flutter renderer sink yet; the honest proof ends at the frame stream.
-- Godot: `Main.cs` builds an `ITtsEngine` for completed assistant turns and `LocalSpeechPipeline` feeds it through `PcmLipSyncDriver` into `IPetRenderer.SetLipSync(level)` → `LipSyncSmoother` → renderer node state, while playing the same PCM. The shipped `GenericPetRenderer` exposes that state as scale/tint/animation key; the VRM/Live2D backends are stubs without vendored addons.
+- Historical/retired Godot/C# path: `Main.cs` builds an `ITtsEngine` for completed assistant turns and `LocalSpeechPipeline` feeds it through `PcmLipSyncDriver` into `IPetRenderer.SetLipSync(level)` → `LipSyncSmoother` → renderer node state, while playing the same PCM. The shipped `GenericPetRenderer` exposes that state as scale/tint/animation key; the VRM/Live2D backends are stubs without vendored addons. This is not current, active, sidecar, or planned.
 - The RMS window is 50 ms, non-overlapping, at the PCM source's own sample rate; `level = min(1, sqrt(mean(x²)))` with a partial-tail flush, silence/drain when aborted, and exactly one terminal `Done` on natural completion (no `Done` after abort). Do not feed fabricated samples through this path to claim engine coverage.

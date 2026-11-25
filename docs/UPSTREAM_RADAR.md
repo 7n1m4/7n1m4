@@ -77,7 +77,7 @@
 ### 🔬 Subsystem Breakdown
 #### Electron Desktop Shell (`⚠️ hand-merge`) — 20 file(s) (+810/-218)
 - `apps/stage-tamagotchi-kirie/src-web/src/renderer/pages/index.vue` *(+1/-2)*
-- `apps/stage-tamagotchi/electron.vite.config.ts` *(+1/-0)*
+- `apps/stage-tamagotchi/electron.vite.config.ts` *(+1/-0)* _(upstream electron-vite config, historical; this fork replaced it with `electrobun.config.ts`)_
 - `apps/stage-tamagotchi/src/main/index.ts` *(+3/-1)*
 - `apps/stage-tamagotchi/src/main/services/airi/home-assistant/index.ts` *(+103/-0)*
 - `apps/stage-tamagotchi/src/main/services/airi/home-assistant/request.test.ts` *(+111/-0)*

@@ -10,6 +10,8 @@ Companion to [`project-selective-upstream-sync-protocol.md`](./project-selective
 
 ---
 
+> **RETIRED 2026-11-25 / historical record** — P5 Godot tier is retired; retained as historical record only.
+
 ## Priority overview
 
 | Tier | Focus | PRs |
@@ -17,7 +19,7 @@ Companion to [`project-selective-upstream-sync-protocol.md`](./project-selective
 | **P1** | Core agent & chat | #1826, #1819, #1775 |
 | **P3** | Server / gateway (optional) | #1837, #1833 |
 | **P4** | Computer-use / desktop agent | #1647, #1648, #1649, #1734, #1805 |
-| **P5** | Godot stage — **paused** (spike upstream `main` first) | #1697, #1724, #1830 |
+| **P5** | Godot stage — **retired** (historical tier, not active or planned) | #1697, #1724, #1830 |
 
 **Dropped from shortlist:** #1818 (warpdrive → basemove) — web/S3 remote hosting only; not relevant to this fork.
 
@@ -28,7 +30,7 @@ Companion to [`project-selective-upstream-sync-protocol.md`](./project-selective
 **Clean room branch (`airi-clean-pr`):** `selective-sync/core-agent-eval-2026-05` off `fork/main` — prep only, no upstream merges yet.
 
 **Suggested pass order:**
-`#1826 → #1819 → #1775` → skip P3 unless running cloud server → skip P4 unless using computer-use → skip P5 (try upstream Godot on `main` before any port)
+`#1826 → #1819 → #1775` → skip P3 unless running cloud server → skip P4 unless using computer-use → P5 is retired and excluded from current sync planning
 
 ---
 
@@ -54,19 +56,19 @@ Your fork’s server is **slim** (auth, characters, chats, providers) and you **
 
 ---
 
-### Godot stage — paused (P5, lowest)
+### Godot stage — retired historical tier
 
-**Not a model format** — an alternate **Godot 4 sidecar window** (Electron host + local WebSocket). Upstream merged it to `main` while still **experimental**:
+Historical upstream artifact only — an alternate **Godot 4 sidecar window** (Electron host + local WebSocket) that upstream merged to `main` while still **experimental**; not part of current architecture:
 
 | Stage | PR | Integration level (upstream) |
 |-------|-----|------------------------------|
-| Bootstrap | #1697 | Godot project + empty scene (box + camera). **No avatars.** |
-| Glue | #1724 | Settings toggle; launch/stop sidecar; packaging/CI for Godot binary. **Skeleton only.** |
-| VRM path | #1830 | **VRM-only** — bytes written to disk, imported in Godot via vendored VRM addon. **Not** Live2D / Spine / MMD. VRM 1.0 runtime incomplete. |
+| Bootstrap | #1697 | Godot project + empty scene (box + camera). **No avatars.** Historical/retired upstream record only; not current or planned. |
+| Glue | #1724 | Settings toggle; launch/stop sidecar; packaging/CI for Godot binary. **Skeleton only.** Historical/retired upstream record only; not current or planned. |
+| VRM path | #1830 | **VRM-only** — bytes written to disk, imported in Godot via vendored VRM addon. **Not** Live2D / Spine / MMD. VRM 1.0 runtime incomplete. Historical/retired upstream record only; not current or planned. |
 
 **No parity** with the main Three.js stage (ACT expressions, full settings, etc.) is claimed in PR text — it’s a **G1 experiment**, large vendored trees, unclear end-user value until you try it.
 
-**Fork stance (2026-05):** **Pause porting.** Optionally install/checkout **upstream `main`** locally later, enable Godot sidecar in settings, and decide if “juice worth squeeze” before any selective sync of #1697–#1830. Tier is **below computer-use** (~138 unique files across those PRs).
+**Fork stance (retired):** Historical record only. No active pause/trial posture remains; Godot sidecar is retired and not part of current architecture or planning. (~138 unique files across those PRs, retained as historical record.)
 
 ---
 
@@ -206,11 +208,11 @@ Automation infra only.
 
 ---
 
-### P5 — Godot stage sidecar (paused — spike upstream first)
+### P5 — Godot stage sidecar (retired historical tier — no porting/revival)
 
-Do **not** port until you’ve tried upstream `main` and judged value. **VRM-only** on Godot path; does not extend Live2D / Spine / MMD.
+Godot sidecar is retired historical record only: not current, not active, not a sidecar, and not planned. **VRM-only** on Godot path; does not extend Live2D / Spine / MMD.
 
-#### [#1697](https://github.com/moeru-ai/airi/pull/1697) — `feat(stage-tamagotchi-godot): initiation of Godot stage`
+#### [#1697](https://github.com/moeru-ai/airi/pull/1697) — `feat(stage-tamagotchi-godot): initiation of Godot stage` (historical/retired upstream record only)
 
 **What it actually is**
 **G0 bootstrap:** Godot 4 + C# project, minimal scene. **No avatar loading.**
@@ -218,31 +220,31 @@ Do **not** port until you’ve tried upstream `main` and judged value. **VRM-onl
 **Relevance to your fork**
 Foundation only for later PRs. Large new tree for an unproven experiment.
 
-**Sync class:** `ignore` until spike says yes → then `import`
+**Sync class:** `ignore (retired; no revival)`
 
 ---
 
-#### [#1724](https://github.com/moeru-ai/airi/pull/1724) — `feat(stage-tamagotchi-godot): add Godot stage G0 sidecar preview`
+#### [#1724](https://github.com/moeru-ai/airi/pull/1724) — `feat(stage-tamagotchi-godot): add Godot stage G0 sidecar preview` (historical/retired upstream record only)
 
 **What it actually is**
-Electron ↔ Godot lifecycle, settings entry, WebSocket handshake, export/packaging contract. **Preview / skeleton.**
+Electron ↔ Godot lifecycle, settings entry, WebSocket handshake, export/packaging contract. **Preview / skeleton.** Historical/retired upstream record only.
 
 **Relevance to your fork**
-Requires Godot 4 dev toolchain + packaging work. Only after #1697 and after manual upstream trial.
+Historical sidecar claim only; not current or planned. (Requires Godot 4 dev toolchain + packaging work — retained as record.)
 
-**Sync class:** `ignore` (paused)
+**Sync class:** `ignore (retired; no revival)`
 
 ---
 
-#### [#1830](https://github.com/moeru-ai/airi/pull/1830) — `feat(stage-tamagotchi): add experimental Godot stage sidecar`
+#### [#1830](https://github.com/moeru-ai/airi/pull/1830) — `feat(stage-tamagotchi): add experimental Godot stage sidecar` (historical/retired upstream record only)
 
 **What it actually is**
 **VRM-only** sidecar display path + massive vendored VRM/MToon addons.
 
 **Relevance to your fork**
-Duplicates VRM capability you already have in Three.js unless Godot buys something specific (performance, shaders, platform). High cost, low proven benefit.
+Historical sidecar claim only; not current or planned. (Duplicates VRM capability you already have in Three.js unless Godot buys something specific (performance, shaders, platform). High cost, low proven benefit — retained as record.)
 
-**Sync class:** `ignore` (paused)
+**Sync class:** `ignore (retired; no revival)`
 
 ---
 

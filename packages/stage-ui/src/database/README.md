@@ -79,9 +79,7 @@ that moves from port 5173 to 5174 loads the same global config but presents an e
 They are still on disk under the other port's `IndexedDB/*.indexeddb.leveldb` folder.
 
 Pin the port to avoid it — `start_airi.bat` in the repo root prompts for one and exports
-`AIRI_RENDERER_PORT` before `pnpm -F @proj-anima/stage-tamagotchi run dev`; the advanced
-path is `apps/stage-tamagotchi/electrobun.config.ts` plus
-`electron-vite dev --config electrobun.config.ts`.
+`AIRI_RENDERER_PORT` before `pnpm -F @proj-anima/stage-tamagotchi run dev`; the advanced path is `apps/stage-tamagotchi/electrobun.config.ts` plus `hutch.config.ts`, driven by `pnpm -F @proj-anima/stage-tamagotchi run dev` (`hutch run dev`).
 
 ## Related
 

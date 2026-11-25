@@ -34,7 +34,7 @@ if [ -n "${AIRI_USER_DATA_DIR:-}" ]; then
   mkdir -p "$AIRI_USER_DATA_DIR"
 fi
 
-# Ensure workspace dependencies and binaries (turbo, electron-vite, tsx, etc.) are installed
+# Ensure workspace dependencies and binaries (turbo, hutch, tsx, etc.) are installed
 if [ ! -d "node_modules" ] || [ ! -f "node_modules/.bin/turbo" ] || [ ! -f "node_modules/.bin/tsx" ]; then
   echo "[0/2] Installing/updating project dependencies (pnpm install)..."
   pnpm install || { echo "Error: pnpm install failed."; exit 1; }

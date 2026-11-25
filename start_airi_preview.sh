@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # AIRI Tamagotchi - Production Preview Starter (macOS/Linux)
-# Builds packages, builds the app, and previews the production bundle via electron-vite.
+# Builds packages, builds the app, and starts the packaged production bundle (hutch/electrobun).
 
 # Safeguard: prevent VS Code from forcing Electron into Node mode
 unset ELECTRON_RUN_AS_NODE
@@ -43,8 +43,4 @@ echo "[2/3] Building Tamagotchi production assets..."
 pnpm -F @proj-anima/stage-tamagotchi run build
 
 echo "[3/3] Starting Tamagotchi in Preview Mode..."
-if [ -f "apps/stage-tamagotchi/electron.vite.config.local.ts" ]; then
-  pnpm -F @proj-anima/stage-tamagotchi start --config electron.vite.config.local.ts -- "$@"
-else
-  pnpm -F @proj-anima/stage-tamagotchi start -- "$@"
-fi
+pnpm -F @proj-anima/stage-tamagotchi start -- "$@"

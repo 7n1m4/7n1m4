@@ -29,12 +29,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static final SettingsTopology _catalog = settingsCatalogTopology;
 
   final TextEditingController _language = TextEditingController();
-  // Null until a real settings.get completes: saving an empty section would
-  // make the daemon fill every missing key with serde defaults and wipe the
-  // user's unrelated settings.
   Map<String, dynamic>? _general;
-  bool _loaded = false;
+  Map<String, dynamic>? _runtimeStatus;
+  List<Map<String, dynamic>> _providers = const <Map<String, dynamic>>[];
   bool _settingsBusy = false;
+  bool _loaded = false;
   String? _settingsError;
   String? _settingsStatus;
   StreamSubscription<DaemonStatus>? _statusSub;
@@ -45,13 +44,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _wasConnected = widget.client.snapshot.isConnected;
     _statusSub = widget.client.statusStream.listen((status) {
-      final connected = status.state == DaemonConnectionState.connected;
-      final regainedConnection = connected && !_wasConnected;
-      _wasConnected = connected;
-      // A reconnect gets a fresh daemon state; reload before allowing Save.
-      if (regainedConnection && mounted) unawaited(_loadGeneral());
+      if (status.state == DaemonConnectionState.connected && !_wasConnected) {
+        unawaited(_loadGeneral());
+        unawaited(_loadRuntimeState());
+      }
+      _wasConnected = status.state == DaemonConnectionState.connected;
     });
     unawaited(_loadGeneral());
+    unawaited(_loadRuntimeState());
   }
 
   @override
@@ -61,7 +61,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  /// Real read call site for the daemon's typed `general` settings section.
   Future<void> _loadGeneral() async {
     setState(() {
       _settingsBusy = true;
@@ -88,9 +87,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// Real write call site: send the whole section back with one field changed
-  /// (the daemon validates the full typed shape). Refuses to write until a
-  /// fresh read has populated the section.
+  Future<void> _loadRuntimeState() async {
+    try {
+      final runtime = await widget.client.call('runtime.status');
+      final providers = await widget.client.call('providers.list');
+      if (!mounted) return;
+      final providerList = providers.data is Map<String, dynamic>
+          ? (providers.data as Map<String, dynamic>)['providers']
+          : null;
+      setState(() {
+        _runtimeStatus = runtime.data is Map<String, dynamic>
+            ? runtime.data as Map<String, dynamic>
+            : null;
+        _providers = providerList is List
+            ? providerList.whereType<Map<String, dynamic>>().toList(growable: false)
+            : const <Map<String, dynamic>>[];
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _runtimeStatus = null;
+          _providers = const <Map<String, dynamic>>[];
+        });
+      }
+    }
+  }
+
   Future<void> _saveGeneral() async {
     final loaded = _general;
     if (!_loaded || loaded == null) return;
@@ -146,6 +168,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final children = <Widget>[
       const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
       const SizedBox(height: 8),
+      if (_runtimeStatus != null)
+        Text('Runtime: ${_runtimeStatus!['app']} ${_runtimeStatus!['version']}')
+      else
+        const Text('Runtime: unavailable'),
+      if (_providers.isNotEmpty)
+        Text('Providers: ${_providers.length} enabled')
+      else
+        const Text('Providers: unavailable'),
       for (final node in _catalog.orderedChildren(_catalog.rootId))
         if (node.visible)
           if (node.id == 'sys-general')

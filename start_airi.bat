@@ -14,9 +14,4 @@ echo [2/2] Starting Tamagotchi on Port %PORT_NUM%...
 set AIRI_RENDERER_PORT=%PORT_NUM%
 set ELECTRON_RUN_AS_NODE=
 
-:: Try to use local config if it exists, otherwise use default
-if exist "apps\stage-tamagotchi\electron.vite.config.local.ts" (
-    call pnpm -F @proj-anima/stage-tamagotchi run dev --config electron.vite.config.local.ts
-) else (
-    call pnpm -F @proj-anima/stage-tamagotchi run dev
-)
+call pnpm -F @proj-anima/stage-tamagotchi run dev

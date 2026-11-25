@@ -94,8 +94,7 @@ mod tests {
     }
 
     fn call(fixture: &Fixture, method: &str, payload: serde_json::Value) -> serde_json::Value {
-        dispatch(fixture, method, &payload)
-            .unwrap_or_else(|e| panic!("{method} failed: {e}"))
+        dispatch(fixture, method, &payload).unwrap_or_else(|e| panic!("{method} failed: {e}"))
     }
 
     fn card_document(name: &str) -> serde_json::Value {
@@ -163,14 +162,18 @@ mod tests {
             .unwrap_or_else(|e| panic!("typed CardListReply must decode {listed}: {e}"));
         assert!(!list.truncated);
         assert!(
-            list.cards
-                .iter()
-                .any(|c| c == &CardInfo { id: id.clone(), name: "Aria".to_string() }),
+            list.cards.iter().any(|c| c
+                == &CardInfo {
+                    id: id.clone(),
+                    name: "Aria".to_string()
+                }),
             "cards.list must expose the created card: {listed}"
         );
 
         let got = call(&fixture, "cards.get", serde_json::json!({ "id": &id }));
-        let card = got["card"].as_object().expect("full-fidelity card document");
+        let card = got["card"]
+            .as_object()
+            .expect("full-fidelity card document");
         assert_eq!(card["data"]["name"], "Aria");
         assert_eq!(card["data"]["description"], "full fidelity description");
         assert_eq!(card["data"]["personality"], "curious");
@@ -183,11 +186,7 @@ mod tests {
         assert_eq!(meta.id, id);
         assert!(!meta.liked && !meta.bookmarked);
 
-        let deleted = call(
-            &fixture,
-            "cards.delete",
-            serde_json::json!({ "id": &id }),
-        );
+        let deleted = call(&fixture, "cards.delete", serde_json::json!({ "id": &id }));
         assert_eq!(deleted["deleted"], true);
         let gone = call(&fixture, "cards.get", serde_json::json!({ "id": &id }));
         let gone: CardGetReply = serde_json::from_value(gone).unwrap();
@@ -209,10 +208,7 @@ mod tests {
             "missing card must be null, not a fabricated document: {reply:?}"
         );
 
-        for payload in [
-            serde_json::json!({ "id": "   " }),
-            serde_json::json!({}),
-        ] {
+        for payload in [serde_json::json!({ "id": "   " }), serde_json::json!({})] {
             let err = dispatch(&fixture, "cards.get", &payload)
                 .expect_err("missing or blank id must be rejected");
             assert_eq!(err.code(), "rpc_handler_error");
@@ -242,7 +238,11 @@ mod tests {
         assert_eq!(listed.cards.len(), 2);
         let original = call(&fixture, "cards.get", serde_json::json!({ "id": first.id }));
         assert_eq!(original["card"]["data"]["name"], "Imported Twice");
-        let renamed = call(&fixture, "cards.get", serde_json::json!({ "id": second.id }));
+        let renamed = call(
+            &fixture,
+            "cards.get",
+            serde_json::json!({ "id": second.id }),
+        );
         assert_eq!(renamed["card"]["data"]["name"], "Imported Twice (2)");
     }
 
@@ -253,7 +253,11 @@ mod tests {
         send(&fixture, "keep-session", "keep me");
         send(&fixture, "drop-session", "delete me");
 
-        let before = call(&fixture, "sessions.list", serde_json::json!({ "limit": 10 }));
+        let before = call(
+            &fixture,
+            "sessions.list",
+            serde_json::json!({ "limit": 10 }),
+        );
         let before: Vec<String> = before["sessions"]
             .as_array()
             .unwrap()
@@ -271,7 +275,11 @@ mod tests {
         let deleted: SessionDeleteReply = serde_json::from_value(deleted).unwrap();
         assert!(deleted.deleted);
 
-        let after = call(&fixture, "sessions.list", serde_json::json!({ "limit": 10 }));
+        let after = call(
+            &fixture,
+            "sessions.list",
+            serde_json::json!({ "limit": 10 }),
+        );
         let after: Vec<String> = after["sessions"]
             .as_array()
             .unwrap()
@@ -346,7 +354,10 @@ mod tests {
         assert_eq!(history["messages"][0]["content"], "hello over RPC");
 
         let anonymous = send(&fixture, "", "anonymous turn");
-        assert!(!anonymous.session_id.is_empty(), "ack must mint a session id");
+        assert!(
+            !anonymous.session_id.is_empty(),
+            "ack must mint a session id"
+        );
     }
 
     #[test]
@@ -446,7 +457,9 @@ mod tests {
             }),
         );
         assert_eq!(saved["ok"], true);
-        assert!(!serde_json::to_string(&saved).unwrap().contains("write-only-secret"));
+        assert!(!serde_json::to_string(&saved)
+            .unwrap()
+            .contains("write-only-secret"));
 
         let listed = call(&fixture, "providers.list", serde_json::json!({}));
         let reply: ProvidersListReply = serde_json::from_value(listed).unwrap();
@@ -522,5 +535,4 @@ mod tests {
             assert!(verbs.contains_key(method), "{method} must be registered");
         }
     }
-
 }

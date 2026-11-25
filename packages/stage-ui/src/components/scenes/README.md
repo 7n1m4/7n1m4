@@ -36,13 +36,7 @@ sentiment/trigger analyzer and micro-pacer live in
   renderer instead of window positioning).
 - **Immediate save** — any user resize/drag persists at once; with
   `captionFollowStagePosition` the relative offset `(dx, dy)` is recalculated and stored.
-- **Theme (`captionThemeMode`)** — `dark` (translucent dark capsule), `light` (translucent
-  light capsule, high-contrast text), `system` (inherit global mode). Opacity is a backing
-  alpha percentage (0% transparent, 20% light, 50% medium, 80% opaque).
-  Drift: the `caption-theme-mode` control-strip case calls `switchToNextTheme()` from
-  `useTheme()` (global theme cycle: light/dark/system), not a caption-specific persisted
-  field; no `captionThemeMode` field exists in `stores/settings/captions.ts` — this is a
-  global-theme alias, not a caption setting.
+- **Theme (drift)** — `caption-theme-mode` in `use-control-strip-action.ts` calls `switchToNextTheme()` from `useTheme()` (global light/dark/system cycle); no caption-specific persisted field exists in `stores/settings/captions.ts`, so the dark/light capsule styling in `CaptionPanel.vue` is not user-switchable yet.
 - **Head-tethered (this directory)** — `headTetheredCaptionEnabled` (independent toggle,
   `captions-layout` group, second row after the `caption` master toggle), fixed
   `headTetheredCaptionOffset = { x: 0, y: -15 }`, `headTetheredCaptionFollowStrength` 0–100.

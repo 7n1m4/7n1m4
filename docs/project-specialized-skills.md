@@ -334,7 +334,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 
 #### 4.6 `airi-release-packaging-deploy`
 - **Target Domain**: Shipping AIRI artifacts and deploying services — Hutch/Electrobun desktop artifacts, Linux release CI, static Web Stage Pages deploys, edge-worker deploys.
-- **Key Paths**: `.github/workflows/release-linux-desktop.yml`, `.github/workflows/deploy-frontends.yml`, `apps/stage-tamagotchi/` (`hutch.config.ts`, `electrobun.config.ts`, `artifacts/`). The Capacitor `apps/stage-pocket/` was purged; there is no mobile release channel, and the root `release:win`/`release:mac` wrappers are stale.
+- **Key Paths**: `.github/workflows/release-linux-desktop.yml`, `.github/workflows/deploy-frontends.yml`, `apps/stage-tamagotchi/` (`hutch.config.ts`, `electrobun.config.ts`, `artifacts/`). The Capacitor `apps/stage-pocket/` was purged (2026-11-13); mobile is the Flutter app (`apps/flutter`) with no packaging channel yet, and the root `release:win`/`release:mac` wrappers are stale.
 - **Content**: Version stamping, tag/notes workflow, user-centric release-note voice, Hutch build/artifact inspection, `gh release upload` auth quirks, nightly/dispatch Linux CI, GitHub Pages Web Stage deployment, and Cloudflare worker deploys.
 
 #### 4.7 `airi-code-testing-hygiene`

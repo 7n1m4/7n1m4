@@ -16,6 +16,7 @@ class ConnectionSettings {
     this.scheme = defaultScheme,
     this.path = defaultPath,
     this.authToken = '',
+    this.caCertPath,
   });
 
   static const String defaultHost = '127.0.0.1';
@@ -35,12 +36,17 @@ class ConnectionSettings {
   /// Shared gateway token. Held in memory only — secure persistence is deferred.
   final String authToken;
 
+  /// `caCertPath` from the daemon's `GetGatewayConfig` reply: the locally
+  /// minted CA a `wss://` connection must trust. Null on loopback `ws://`.
+  final String? caCertPath;
+
   ConnectionSettings copyWith({
     String? host,
     int? port,
     String? scheme,
     String? path,
     String? authToken,
+    String? caCertPath,
   }) {
     return ConnectionSettings(
       host: host ?? this.host,
@@ -48,6 +54,7 @@ class ConnectionSettings {
       scheme: scheme ?? this.scheme,
       path: path ?? this.path,
       authToken: authToken ?? this.authToken,
+      caCertPath: caCertPath ?? this.caCertPath,
     );
   }
 

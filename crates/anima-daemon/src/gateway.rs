@@ -1040,11 +1040,17 @@ impl Gateway {
                     config_path,
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
-                        let session_id = value
-                            .get("session_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let session_id = match serde_json::from_value::<
+                            anima_channel::wire::ChatCancelRequest,
+                        >(value.clone())
+                        {
+                            Ok(req) => req.session_id,
+                            Err(_) => value
+                                .get("session_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        };
                         let cancelled = core.chat_cancel(&session_id);
                         if cancelled {
                             publisher.token_delta(
@@ -2550,6 +2556,68 @@ mod tests {
         }
         assert_eq!(a_deltas, 1, "A's pump must not relay B's delta");
         assert_eq!(b_deltas, 1, "B's pump must not relay A's delta");
+    }
+
+    #[test]
+    fn chat_cancel_accepts_camel_case_request_ids() {
+        // ROOT CAUSE: the handler reads only `session_id`, while `ChatCancelRequest`
+        // serializes `sessionId`/`requestId`, so a valid canonical request cancels
+        // an empty session. Here we prove the canonical session id reaches the
+        // handler while the legacy snake_case fallback preserves the prior no-turn behavior.
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::Arc;
+        struct PendingMock;
+        #[async_trait]
+        impl anima_llm::ChatProvider for PendingMock {
+            fn id(&self) -> &str {
+                "cancel-test"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::pending::<
+                    Result<ChatChunk, anima_llm::LlmError>,
+                >()))
+            }
+        }
+        let svc = gateway.core.chat_service().expect("chat service");
+        svc.register_client("cancel-test", Arc::new(PendingMock));
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "cancel-test".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+        let send_handlers = handlers(&gateway);
+        let send = send_handlers.get("chat.send").unwrap();
+        send(
+            "chat.send",
+            &serde_json::json!({"sessionId":"cancel-session","content":"stop me"}),
+        )
+        .expect("chat.send Ok");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let handlers = std::sync::Arc::new(handlers(&gateway));
+        let reply = anima_channel::dispatch::RpcRegistry::dispatch(
+            &anima_channel::RpcContext::new("127.0.0.1", 6121),
+            "chat.cancel",
+            &serde_json::json!({ "sessionId": "cancel-session", "requestId": "req-1" }),
+            &handlers,
+        )
+        .expect("dispatch must succeed for canonical camelCase payload");
+        assert_eq!(
+            reply["cancelled"], true,
+            "canonical camelCase cancel must reach the in-flight session"
+        );
     }
 
     #[test]

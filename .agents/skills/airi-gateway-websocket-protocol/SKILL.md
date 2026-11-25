@@ -17,7 +17,7 @@ description: >-
 
 ## When to Use
 
-- Extending or debugging the WebSocket Gateway connection between the desktop application and external companion clients (e.g. the unified Rust native app — see `proposal-unified-rust-native-app.md`, VS Code extensions, or custom Python agents).
+- Extending or debugging the WebSocket Gateway connection between the desktop application and external companion clients (e.g. the Flutter app `apps/flutter` as a remote thin client of `anima-daemon`, VS Code extensions, or custom Python agents). The proposed unified Rust native app was superseded 2026-11-25 (`proposal-unified-rust-native-app.md`, historical record).
 - Modifying gateway security, auth token verification, token regeneration, or hostname binding (`127.0.0.1` vs `0.0.0.0`).
 - Troubleshooting TLS certificate creation, SAN domain updates, or connection dropouts over local WiFi.
 - Wiring frontend settings UI in `packages/stage-pages/src/pages/settings/` to `electronGetServerChannelConfig` and `electronApplyServerChannelConfig`.
@@ -25,7 +25,7 @@ description: >-
 ## Architecture & Security Contracts
 
 ```text
-[ External Client (Rust native app / VS Code) ]
+[ External Client (Flutter app / VS Code) ]
                  │
                  ▼  ws://[IP]:6121 (or wss://)
 [ Channel Server (desktop Main Process) ]

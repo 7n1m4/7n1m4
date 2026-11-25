@@ -6,7 +6,7 @@ description: >-
 
 # AIRI Release, Packaging & Deploy
 
-Deployment surface map for shipping AIRI. Desktop releases are built by Hutch/Electrobun and published from `apps/stage-tamagotchi/artifacts/`; Linux has a GitHub Actions release workflow, while Windows/macOS are local release operations. There is no mobile release channel. Web Stage deploys as a static GitHub Pages frontend; edge workers deploy per-user via Cloudflare.
+Deployment surface map for shipping AIRI. Desktop releases are built by Hutch/Electrobun and published from `apps/stage-tamagotchi/artifacts/`; Linux has a GitHub Actions release workflow, while Windows/macOS are local release operations. Mobile ships through the Flutter app (`apps/flutter`), which has no separate release channel yet. Web Stage deploys as a static GitHub Pages frontend; edge workers deploy per-user via Cloudflare.
 
 ## 1. Surface Map
 
@@ -14,7 +14,7 @@ Deployment surface map for shipping AIRI. Desktop releases are built by Hutch/El
 |---|---|---|---|
 | Linux desktop | `stage-tamagotchi` | Hutch/Electrobun tarball and `*-update.json` sidecars under `apps/stage-tamagotchi/artifacts/` | `.github/workflows/release-linux-desktop.yml` |
 | Windows/macOS desktop | `stage-tamagotchi` | Platform artifacts emitted by `pnpm -F @proj-anima/stage-tamagotchi run build` under `apps/stage-tamagotchi/artifacts/` | Local/manual release flow; verify generated files before publishing |
-| Mobile | none | none | No release channel; `apps/stage-pocket` and Capacitor tooling were removed |
+| Mobile | `apps/flutter` | Flutter app ships to Android/iOS; no packaging channel yet | Flutter app ships to Android/iOS; no packaging channel yet (`apps/stage-pocket` and Capacitor tooling were purged 2026-11-13) |
 | Web Stage | `stage-web` | `apps/stage-web/dist/` | `.github/workflows/deploy-frontends.yml` → GitHub Pages at `/airi/web-stage/` |
 | Edge relay | `apps/stage-edge` | Cloudflare Worker (per-user) | Built into users' accounts via OAuth PKCE during onboarding; see `airi-cloud-relay-infrastructure` |
 
@@ -51,7 +51,7 @@ Release workflow:
 
 ## 4. Mobile
 
-There is no mobile release channel. The Capacitor app and `packages/cap-vite` were purged. Any future mobile distribution belongs to the proposed unified Rust native app and should not be documented as shipping until that app exists.
+Mobile is the Flutter app (`apps/flutter`) — the same primary, sole active renderer used on desktop — as a remote thin client of the desktop `anima-daemon` (`docs/design-flutter-godot-pivot.md`). The Capacitor app and `packages/cap-vite` were purged (2026-11-13), and the proposed unified Rust native (Slint) app was superseded 2026-11-25 (`proposal-unified-rust-native-app.md`, historical record). No Flutter packaging/release channel exists yet; do not document Android/iOS installers as shipping until one is added.
 
 ## 5. Web Stage / GitHub Pages / Edge
 
@@ -67,7 +67,7 @@ There is no mobile release channel. The Capacitor app and `packages/cap-vite` we
 - **Renderer heap:** Hutch drops some Node heap flags; `hutch.config.ts` restates `NODE_OPTIONS=--max-old-space-size=12288` for the Vite renderer build.
 - **Release auth:** clear invalid `GITHUB_TOKEN` overrides for `gh` commands and ensure `gh` has `workflow` scope when dispatching workflows.
 - **Fork vs upstream asymmetry:** release scripts and workflows target `dasilva333/airi`; do not assume upstream CI parity.
-- **No mobile release:** requests to release Android/iOS must be redirected to the nonexistent unified Rust native app scope.
+- **Mobile release:** mobile is the Flutter app (`apps/flutter`); no packaging channel exists yet. Redirect Android/iOS release requests to the Flutter client scope, not the superseded unified Rust native app.
 
 ## Verification
 

@@ -122,7 +122,7 @@ class AiriProcess:
             return "UTILITY", "Helper Utility"
         elif "server-filesystem" in cmd_lower:
             return "MCP", "Filesystem MCP Server"
-        elif "electron-vite" in cmd_lower:
+        elif "hutch" in cmd_lower and "dev" in cmd_lower:
             return "VITE-DEV", "Vite Dev Server (Node)"
         elif "electron" in cmd_lower or "airi" in cmd_lower:
             return "MAIN", "Electron Browser Main"
@@ -137,7 +137,7 @@ def is_airi_candidate(cmd: str) -> bool:
     if "/airi.app/contents/macos/airi" in cmd_lower or "airi helper" in cmd_lower:
         return True
 
-    if "stage-tamagotchi" in cmd_lower and ("electron" in cmd_lower or "electron-vite" in cmd_lower):
+    if "stage-tamagotchi" in cmd_lower and ("electrobun" in cmd_lower or "hutch" in cmd_lower):
         return True
 
     return False
