@@ -111,6 +111,17 @@ Anima is no longer "a desktop pet app". It is pivoting to the **agent-runtime co
 - Preserve the distinction between recommendations and authorization. A proposal is not approval to implement, and approval for one operation is not blanket permission for future operations.
 - At handoff, provide a concise summary of what changed, what was verified, what remains uncertain, and any decisions the user still needs to make.
 
+## 10. Dual-Memory Protocol
+
+- **Beads = execution state** (issues, dependencies, status, acceptance). **Mnemopi = semantic/episodic knowledge** (lessons, constraints, decisions). Use both; neither replaces the other.
+- **Start of work:** pull `bd ready`, `bd show <id>` for the target, and `recall` relevant Mnemopi memories before implementing.
+- **Unresolved constraints:** append to the bead with `bd --sandbox update <id> --append-notes "..."`.
+- **Non-obvious fixes:** retain the lesson in Mnemopi tagged `[bd-<id>]` so it links back to the bead.
+- **Sub-problems:** file as Beads issues with a `discovered-from:` dependency on the parent.
+- **Stale memories:** prune with `memory_edit` when facts no longer hold.
+- **Closeout order:** verify acceptance, retain lessons, file debt, then close the bead with a reason.
+- **No automatic `bd sync`** under the solo override; use `bd --sandbox` for all writes.
+
 <!-- BEGIN PI-BEADS-COMPANION -->
 ## Beads companion
 
