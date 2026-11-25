@@ -2,28 +2,25 @@
 
 # Plan: retirement gate for opt-in TS remote sync in stage-web
 
-- **Status:** proposed gate, not authorization to delete (2026-11-22)
+- **Status:** gate approved 2026-11-25 by maintainer; final removal in progress under `airi-3cp`/`airi-h8du` (originally proposed 2026-11-22). The endpoint set below is the cutover scope; verify code removal before marking any group retired.
 - **Design bead:** `airi-3mp`
-- **Final-removal bead:** `airi-3cp` — **DO NOT START**; it depends on this design and stays blocked
-  until every exit criterion below is green and approval is recorded.
-- **Authority:** [`decision-server-endpoints.md`](./decision-server-endpoints.md) keeps these
-  endpoints temporarily; Wave 5 decision C in
+- **Final-removal beads:** `airi-3cp` (apps/server, packages/server-shared) and `airi-h8du` (Vue/stage-ui/i18n callers) — **APPROVED 2026-11-25, IN PROGRESS**. Two disjoint workers execute the cutover; this design defines their boundary, not a fresh gate.
+- **Authority:** [`decision-server-endpoints.md`](./decision-server-endpoints.md) records these endpoints as the cutover scope; Wave 5 decision C in
   [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md) requires daemon business-logic
   parity **and** Flutter frontend parity **and** explicit approval before the Electrobun/Vue
-  **desktop TS shell/business logic** can be retired. This plan applies that gate to the opt-in TS
-  remote-sync mirror only.
+  **desktop TS shell/business logic** can be retired. The maintainer recorded that approval on
+  2026-11-25; this plan applies the gate to the opt-in TS remote-sync mirror only.
 
 **Retirement boundary.** Parity comes first: daemon-owned business logic plus the Flutter window
 companion exercising those flows over daemon RPC must be proven before the
 opt-in TS remote-sync mirror or the Electrobun TS shell is retired. The Vue **web** UI renderer
 (`apps/stage-web`) is a maintained full-parity renderer and the behaviour reference; it is **not**
-what this gate retires, and neither is the Flutter renderer. `airi-3cp` remains
-**DO NOT START** until the exit criteria below are green, and no deletion is authorized here.
+what this cutover retires, and neither is the Flutter renderer. The maintainer approved the cutover on 2026-11-25 after a NO-GO gate audit; removal now proceeds under `airi-3cp`/`airi-h8du`. This plan still defines the boundary: Flutter/Vue renderer scope and gateway trust gates are unchanged.
 
 ## Current state (source verified, not an endorsement)
 
 No Rust REST equivalent exists. `anima-daemon` exposes authenticated WebSocket RPC handlers
-(`crates/anima-daemon/src/gateway.rs:680-1890`: `renderer_handlers` registers 36 `renderer.*` verbs), not HTTP routes. The TypeScript layer is
+(`crates/anima-daemon/src/gateway.rs:680-1841`: `renderer_handlers` registers 36 `renderer.*` verbs), not HTTP routes. The TypeScript layer is
 **not gone**: `apps/server` still mounts the routes and `packages/stage-ui` still contains the Hono
 client, better-auth client, and remote branches.
 
@@ -31,7 +28,7 @@ client, better-auth client, and remote branches.
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`/`POST /api/auth/*`                                                     | Optional account/session path for the Vue web and Electrobun references. Sign-in is user-initiated and may precede a session, so "opt-in" means default-off storage plus explicit navigation, not an authenticated-only gate.                                                   | `packages/stage-ui/src/libs/auth.ts:7-20,22-48,62-93`; `apps/stage-web/src/pages/auth/login.vue:2-5,24,35,87`; `packages/stage-ui/src/components/auth/LoginDrawer.vue` |
 | `/api/characters` `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` | Local-first compatibility mirror for the Vue reference; remote runs only after the local write and only when the auth store is authenticated. Daemon `cards.list`/`.get`/`.import`/`.create`/`.update`/`.delete` are implemented (`gateway.rs:1301-1391`). This is not a hosted card registry. | `packages/stage-ui/src/stores/characters.ts:79-215`; callers in `apps/stage-web/src/pages/settings/characters/` and `packages/stage-pages/src/pages/v2/index.vue`      |
-| `/api/providers` `GET /`, `POST /`, `PATCH /:id`, `DELETE /:id`              | Same default-off, local-first mirror. The daemon already has `providers.list`/`.save`/`.delete` RPC handlers (`gateway.rs:736-780`), so these routes must not become a second authoritative writer.                                                                             | `packages/stage-ui/src/stores/provider-catalog.ts:16-145`; callers in `packages/stage-pages/src/pages/v2/settings/providers/`                                          |
+| `/api/providers` `GET /`, `POST /`, `PATCH /:id`, `DELETE /:id`              | Same default-off, local-first mirror. The daemon already has `providers.list`/`.save`/`.delete` RPC handlers (`gateway.rs:736-800`), so these routes must not become a second authoritative writer.                                                                             | `packages/stage-ui/src/stores/provider-catalog.ts:16-145`; callers in `packages/stage-pages/src/pages/v2/settings/providers/`                                          |
 
 Gate mechanics: `remoteSyncEnabled` is stored at `settings/privacy/remote-sync-enabled` with default
 `false` (`packages/stage-ui/src/stores/settings/general.ts:33`); the settings checkbox is in
@@ -53,7 +50,7 @@ unverifiable claim is not evidence. All rows are mandatory; none may be waived b
 
 | #   | Criterion and observable test                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Verifier (owner / evidence)                                                          |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 1   | **Daemon logic — providers.** Every Vue provider operation has a daemon RPC equivalent with contract tests and a documented migration from the local store: list/create/update/delete semantics match `providers.list`/`.save`/`.delete` (`gateway.rs:736-780`; contract tests `providers_save_partial_update_preserves_unrelated_config_and_enabled`, `providers_save_secret_rotation_contract`, `providers_delete_reports_whether_a_row_was_removed` in `gateway.rs`), including validation state and secrets handling. `cargo test -p anima-daemon` passes.                                                                                                                                                          | Daemon owner; Rust tests and parity-checklist row                                    |
+| 1   | **Daemon logic — providers.** Every Vue provider operation has a daemon RPC equivalent with contract tests and a documented migration from the local store: list/create/update/delete semantics match `providers.list`/`.save`/`.delete` (`gateway.rs:736-800`; contract tests `providers_save_partial_update_preserves_unrelated_config_and_enabled`, `providers_save_secret_rotation_contract`, `providers_delete_reports_whether_a_row_was_removed` in `gateway.rs`), including validation state and secrets handling. `cargo test -p anima-daemon` passes.                                                                                                                                                          | Daemon owner; Rust tests and parity-checklist row                                    |
 | 2   | **Daemon logic — characters.** Character CRUD is daemon-owned, not a TS stub: either `cards.list`/`get`/`import` and create/update/delete are implemented with conformance tests, or an explicit ADR supersedes that scope and defines the local-only ownership. Daemon card CRUD is implemented (`gateway.rs:1301-1391`). Business logic no longer lives exclusively in `stores/characters.ts`.                                                                                          | Daemon owner; ADR/contract tests and parity-checklist row                            |
 | 3   | **Daemon logic — auth/session.** The reference no longer depends on better-auth for a functional path: the daemon supplies the identity/trust contract needed by remote clients, **or** the account/session UX is deliberately removed from the reference with a written BYOS identity decision. No user flow is silently broken when `/api/auth/*` disappears. **This criterion is currently blocked**: `airi-79o` (open) owns the BYOS identity/auth decision and must not be resolved by this gate.                                                                                                                                                           | Daemon owner + Vue reference owner; design decision plus request-level test evidence |
 | 4   | **Flutter parity.** The Flutter app exercises the end-to-end flows for providers and characters (and the decision from #3) over daemon RPC. `flutter test` passes, and the parity checklist marks these rows implemented, not stub/TS-core-remaining. The Vue web renderer stays a maintained full-parity behaviour reference throughout; this row does not authorize retiring it.                                                                                                              | Flutter owner; `flutter test`, checklist                |
@@ -78,13 +75,12 @@ unverifiable claim is not evidence. All rows are mandatory; none may be waived b
   hosted database solely because these routes exist.
 - Deleting local-first behaviour. Local writes stay; only remote mirroring and its config disappear.
 
-## Follow-up sequence when the gate passes
+## Follow-up sequence (approved cutover)
 
-Owner of `airi-3cp`: Vue reference maintainer; verifiers: daemon and Flutter owners. Start only
-after criterion 8 is recorded.
+Owner of `airi-3cp`: Vue reference maintainer; verifiers: daemon and Flutter owners. Criterion 8 (maintainer approval) is recorded 2026-11-25; `airi-h8du` owns the disjoint Vue/stage-ui/i18n slice.
 
 1. Link the dated evidence and approvals in `airi-3cp`; update
-   `docs/feature-parity-checklist.md` and this plan's status to "gate passed".
+   `docs/feature-parity-checklist.md` and this plan's status to "cutover complete" once source verification passes.
 2. Repoint Vue character/provider/auth callers to the daemon RPC/local path, keeping the Vue web
    renderer intact; update focused tests.
    Remove `useLocalFirstRequest` remote branches, `composables/api.ts` (`hc<AppType>`),
@@ -98,4 +94,4 @@ after criterion 8 is recorded.
 5. Run the verification from criteria 1, 4 and 5 once on the integrated result; confirm the `rg`
    inventory is empty of production callers. Close `airi-3cp` with the commands and results.
 
-Until those steps land, the endpoints, Hono client, and `SERVER_URL` remain in place.
+As of 2026-11-25 the endpoints, Hono client, and `SERVER_URL` are still in source; the cutover is in progress under `airi-3cp`/`airi-h8du`. Treat a group as retired only after its code is verified gone.

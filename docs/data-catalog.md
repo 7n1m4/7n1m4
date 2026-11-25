@@ -2,7 +2,7 @@
 
 A comprehensive inventory of every persisted store, namespace, and key in the AIRI codebase — their shapes, file locations, sync behaviors, and relationships. Intended as a reference for implementing selective sync, adding new stores, or debugging persistence issues.
 
-**Architecture note:** the Rust daemon/backend is the single source of truth for daemon-mode state. The Flutter window companion is the maintained full-parity renderer/client of that backend; the Vue web UI is reference only; the Godot renderer is retired; the TypeScript-owned stores inventoried below are migration reference only where the daemon has not yet ported a domain. Retiring TS business logic (the gated `airi-3cp` remote-sync slice) does not retire the Flutter renderer; gateway trust gates and `airi-3cp` DO NOT START remain in force unless the user explicitly says otherwise.
+**Architecture note:** the Rust daemon/backend is the single source of truth for daemon-mode state. The Flutter window companion is the maintained full-parity renderer/client of that backend; the Vue web UI is reference only; the Godot renderer is retired; the TypeScript-owned stores inventoried below are migration reference only where the daemon has not yet ported a domain. Retiring TS business logic (the maintainer-approved, in-progress `airi-3cp`/`airi-h8du` remote-sync cutover) does not retire the Flutter renderer; gateway trust gates remain in force.
 
 ---
 

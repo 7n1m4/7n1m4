@@ -9,7 +9,7 @@
 - **Cross-links:** [`design-daemon-gateway.md`](./design-daemon-gateway.md) (WS :6121 topology,
   TLS policy, threat model) · [`design-daemon-client.md`](./design-daemon-client.md)
   (thin-client rule, decision 1) · [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md)
-  (pivot decision 8 — "D-Bus stays for privileged verbs; tray/GUI drives Flutter/Godot
+  (historical pivot decision 8 — "D-Bus stays for privileged verbs; tray/GUI drives Flutter/Godot
   process lifecycle") · [`analysis-slint-logic-inventory.md`](./analysis-slint-logic-inventory.md)
   row U7 (the Slint tray/hotkey/autostart bridge is client-local)
 - **Superseded 2026-11-25:** Godot was purged; Flutter is sole active renderer on desktop/mobile.

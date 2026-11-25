@@ -7,7 +7,7 @@
 **Status:** active for the Flutter/daemon contract; Godot content superseded 2026-11-25 · **Date:** 2026-11-21 (Godot clauses superseded 2026-11-25) · **Owner:** project lead
 **Scope:** Flutter is the sole active renderer on desktop and mobile; Godot rows are historical records only.
 
-This document is the authoritative design contract for the client/daemon split. The user-directed architecture (2026-11-25, superseding earlier multi-renderer wording) is: **the Rust daemon/backend is the single source of truth, and Flutter is the primary and sole active renderer on desktop and mobile, at full feature parity with the Vue stage UI including native character/model rendering.** Removing TypeScript *business logic* does not reduce the renderer's surface. Gateway trust gates and the `airi-3cp` DO NOT START gate remain in force unless the user explicitly says otherwise. This document is deliberately written in the same register as [`design-daemon-gateway.md`](./design-daemon-gateway.md), [`design-daemon-client.md`](./design-daemon-client.md) and [`design-electrobun-port.md`](./design-electrobun-port.md): decisions, evidence, waves and exit criteria — not a status log. Completion state belongs in Beads; when code contradicts this document, the code wins and this document gets fixed.
+This document is the authoritative design contract for the client/daemon split. The user-directed architecture (2026-11-25, superseding earlier multi-renderer wording) is: **the Rust daemon/backend is the single source of truth, and Flutter is the primary and sole active renderer on desktop and mobile, at full feature parity with the Vue stage UI including native character/model rendering.** Removing TypeScript *business logic* does not reduce the renderer's surface. Gateway trust gates remain in force; `airi-3cp`/`airi-h8du` are maintainer-approved and in progress (2026-11-25) for TS remote-sync business logic only. This document is deliberately written in the same register as [`design-daemon-gateway.md`](./design-daemon-gateway.md), [`design-daemon-client.md`](./design-daemon-client.md) and [`design-electrobun-port.md`](./design-electrobun-port.md): decisions, evidence, waves and exit criteria — not a status log. Completion state belongs in Beads; when code contradicts this document, the code wins and this document gets fixed.
 
 ## 0. How to read this document: verified vs net-new
 
@@ -294,7 +294,7 @@ behaviour reference. It may be retired ONLY AFTER BOTH (a) ALL of its business l
 Rust into `anima-daemon` AND (b) Flutter reaches full frontend parity — gated on the parity
 checklist (`airi-wxp.6.4`) and explicit approval, not in this wave. That gate retires TS business
 logic and the Electrobun shell, never the Flutter surface; the opt-in TS remote-sync removal
-(`airi-3cp`) is a separate gated slice with the same boundary. The shim-retirement work
+(`airi-3cp`/`airi-h8du`) is a separate, maintainer-approved cutover in progress with the same boundary. The shim-retirement work
 (airi-vxt) is delivered but its shims must keep working while the app lives.
 
 **Status (2026-11-21, re-verified 2026-11-25):** Still in progress. Auth/OAuth

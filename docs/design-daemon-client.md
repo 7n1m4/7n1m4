@@ -2,7 +2,7 @@
 
 **Status:** accepted direction; transport (Slice A), the daemon core-service split (Slices B/C), and the slint-side ownership deletion (Slice D) are implemented; the gateway has since grown far past the original single handler.
 **Scope:** `crates/anima-channel` Rust client; no daemon business logic in the client layer.
-**Architecture (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; Flutter is the sole active renderer on desktop/mobile with full Vue parity and native rendering; Vue/Electrobun are behavior references; Godot is retired. "Thin client" below means no competing state writer, not a reduced UI surface. TS business-logic retirement (the gated `airi-3cp` remote-sync slice) never retires the Vue renderer; gateway trust gates and the `airi-3cp` DO NOT START gate stay in force unless the user explicitly says otherwise.
+**Architecture (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; Flutter is the sole active renderer on desktop/mobile with full Vue parity and native rendering; Vue/Electrobun are behavior references; Godot is retired. "Thin client" below means no competing state writer, not a reduced UI surface. TS business-logic retirement (the maintainer-approved, in-progress `airi-3cp`/`airi-h8du` remote-sync cutover) never retires the Vue renderer; gateway trust gates stay in force.
 
 ## Decisions
 

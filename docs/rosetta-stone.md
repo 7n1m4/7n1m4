@@ -2,7 +2,7 @@
 
 Concept-to-file-path index for rapid context retrieval. Use this to find where anything lives — UI, data, providers, modules, audio, memory, or the integration plumbing between them.
 
-> **Architecture in one line (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; **Flutter (`apps/flutter`) is the primary and sole active renderer on desktop and mobile**, at full feature parity with the Vue stage UI including native character/model rendering. "Thin client" means no competing state writer, never a reduced UI surface. The Godot renderer was purged from the active architecture (historical files only); the Vue web UI (`apps/stage-web`) and the Electrobun desktop app remain the behaviour reference while parity is incomplete, not a second active renderer. TS business-logic retirement (the still-gated `airi-3cp` remote-sync slice) is a logic slice only; gateway trust gates and `airi-3cp` DO NOT START remain unless the user explicitly says otherwise. Canonical overview: [`docs/README.md`](./README.md); per-capability status: [`docs/feature-parity-checklist.md`](./feature-parity-checklist.md).
+> **Architecture in one line (user-directed 2026-11-25):** the Rust daemon/backend is the single source of truth; **Flutter (`apps/flutter`) is the primary and sole active renderer on desktop and mobile**, at full feature parity with the Vue stage UI including native character/model rendering. "Thin client" means no competing state writer, never a reduced UI surface. The Godot renderer was purged from the active architecture (historical files only); the Vue web UI (`apps/stage-web`) and the Electrobun desktop app remain the behaviour reference while parity is incomplete, not a second active renderer. TS business-logic retirement (the maintainer-approved, in-progress `airi-3cp`/`airi-h8du` remote-sync cutover) is a logic slice only; gateway trust gates remain in force. Canonical overview: [`docs/README.md`](./README.md); per-capability status: [`docs/feature-parity-checklist.md`](./feature-parity-checklist.md).
 >
 > **Relationship to `.agents/skills/`:** The skills directory contains deep-dive domain guides (staged entry points, pitfalls, SOPs). This Rosetta Stone is the dense index layer — use it to locate where something lives; load the corresponding skill for implementation procedure.
 
@@ -37,7 +37,7 @@ Concept-to-file-path index for rapid context retrieval. Use this to find where a
 > - **`BroadcastChannel`** — cross-window sync. Two API styles: `useBroadcastChannel` (VueUse) and `new BroadcastChannel`. Naming is inconsistent (`airi-*` vs `airi:*` vs `airi::*`). §13.
 > - **`defineProvider()`** — modular backend registry. §6.
 > - **`AiriCard` / `AiriExtension`** — character card schema (CCv2/CCv3 + `extensions.airi`). §3, §7.
-> - **`stage-tamagotchi`** — the Electron desktop app (NOT the legacy Tauri `crates/`). §14.
+> - **`stage-tamagotchi`** — the Electrobun desktop app (NOT the legacy Tauri `crates/`). §14.
 > - **Window managers vs UI** — every window has a main-process *manager* (`main/windows/<name>/`) and a renderer *page/component*. §2 pairs them.
 
 ## Migrated to code docs
@@ -83,9 +83,9 @@ Architecture-only Markdown policy: this index and `docs/` keep architecture, dec
 
 | Concept | Path |
 | :--- | :--- |
-| **Control Strip (Main Window)** \| `apps/stage-tamagotchi/src/main/windows/main/index.ts` (Electron) \| `packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue` (UI) |
-| **Actor Stage (Floating Island)** \| `apps/stage-tamagotchi/src/main/windows/stage/index.ts` (Electron) \| `packages/stage-ui/src/components/scenes/RendererStage.vue` (UI) |
-| **Chatbox Window** \| `apps/stage-tamagotchi/src/main/windows/chat/index.ts` (Electron) \| `apps/stage-tamagotchi/src/renderer/pages/chat.vue` (UI) \| `apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue` (Host) |
+| **Control Strip (Main Window)** \| `apps/stage-tamagotchi/src/main/windows/main/index.ts` (Electrobun) \| `packages/stage-ui/src/components/scenarios/layout/ControlStrip.vue` (UI) |
+| **Actor Stage (Floating Island)** \| `apps/stage-tamagotchi/src/main/windows/stage/index.ts` (Electrobun) \| `packages/stage-ui/src/components/scenes/RendererStage.vue` (UI) |
+| **Chatbox Window** \| `apps/stage-tamagotchi/src/main/windows/chat/index.ts` (Electrobun) \| `apps/stage-tamagotchi/src/renderer/pages/chat.vue` (UI) \| `apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue` (Host) |
 | **Control Island (Original)** | ❌ **DEPRECATED / REMOVED** — `stage-islands/controls-island/` removed in `e10223f2e`. Replaced by `ControlStripHost.vue` (scenes) + `controls-island` settings store. |
 | **Gemini Control Island** | ❌ **DEPRECATED / REMOVED** — `gemini-controls.vue` removed in `e10223f2e`. Gemini Bidi session moved to `packages/stage-ui/src/stores/modules/live-session.ts` + `pages/notice/gemini.vue` panel. |
 | **Whisperbox (Input)** | `packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue` |
@@ -99,7 +99,7 @@ Architecture-only Markdown policy: this index and `docs/` keep architecture, dec
 | **System Tray** | `apps/stage-tamagotchi/src/main/tray/index.ts` |
 | **Caption Overlay** \| `apps/stage-tamagotchi/src/renderer/pages/caption.vue` (UI) \| `apps/stage-tamagotchi/src/main/windows/caption/` (Manager) |
 | **Widgets Host** \| `apps/stage-tamagotchi/src/renderer/pages/widgets.vue` \| `apps/stage-tamagotchi/src/main/windows/widgets/index.ts` (Manager) |
-| **Onboarding V3 (Canonical)** | `packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/onboarding-v3.vue` (UI) \| `apps/stage-tamagotchi/src/renderer/pages/onboarding-v3.vue` (Page `/onboarding-v3`) \| `apps/stage-tamagotchi/src/main/windows/onboarding/index.ts` (Electron Window) \| Spec: [`docs/design-onboarding-v3.md`](./design-onboarding-v3.md). *(V2 under `v2/` is deprecated reference)* |
+| **Onboarding V3 (Canonical)** | `packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/onboarding-v3.vue` (UI) \| `apps/stage-tamagotchi/src/renderer/pages/onboarding-v3.vue` (Page `/onboarding-v3`) \| `apps/stage-tamagotchi/src/main/windows/onboarding/index.ts` (Electrobun window) \| Spec: [`docs/design-onboarding-v3.md`](./design-onboarding-v3.md). *(V2 under `v2/` is deprecated reference)* |
 
 ---
 
@@ -524,8 +524,8 @@ A game layer on top of the Actor Stage with deep Live2D integration. Implements 
 
 | Concept | Path |
 | :--- | :--- |
-| **Config file** | `%AppData%/airi/mcp.json` (Electron `userData`) |
-| **Electron service manager** | `apps/stage-tamagotchi/src/main/services/airi/mcp-servers/index.ts` — stdio connection, lifecycle, tool listing/delegation |
+| **Config file** | `%AppData%/airi/mcp.json` (Electrobun `userData`) |
+| **Electrobun service manager** | `apps/stage-tamagotchi/src/main/services/airi/mcp-servers/index.ts` — stdio connection, lifecycle, tool listing/delegation |
 | **IPC Eventa contracts** | `electronMcpListTools`, `electronMcpCallTool` in `apps/stage-tamagotchi/src/shared/eventa.ts` |
 | **Renderer bridge** | `packages/stage-ui/src/stores/mcp-tool-bridge.ts` — exposes `listTools()`, `callTool()`, `getRuntimeStatus()` cross-window via `window.__AIRI_MCP_BRIDGE__` |
 | **Builtin meta-tools** | `apps/stage-tamagotchi/src/renderer/stores/tools/builtin/mcp.ts` — `mcp_list_tools`, `mcp_call_tool` |
@@ -615,7 +615,7 @@ Cross-window communication relies on named `BroadcastChannel` instances. This is
 | `apps/flutter` | Flutter — primary and sole active renderer on desktop and mobile (`lib/daemon_client/`, `lib/speech/`, `lib/features/`, `lib/ui/`); full stage-UI surface including native character/model rendering. Holds view state and client-local audio only. |
 | `godot/` | ❌ Retired 2026-11-25 — Godot purged from the active architecture by user decision; not a maintained surface or parity target. Historical research: `docs/research-godot-renderer-spike.md`. |
 | `apps/stage-tamagotchi` | Electrobun app (main + renderer). Behaviour reference for the Flutter port; re-backed to the daemon when it answers on the session bus, with an in-app fallback elsewhere. Its TS shell is parity-gated, not a second renderer. |
-| `apps/stage-web` | Vue web UI — behaviour reference for Flutter parity, hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml` (build with `pnpm run build:web:pages`). Its temporary opt-in TS remote-sync backend (`apps/server`) is a separate gated business-logic slice, not a renderer dependency. |
+| `apps/stage-web` | Vue web UI — behaviour reference for Flutter parity, hosted at `/airi/web-stage/` on GitHub Pages via `.github/workflows/deploy-frontends.yml` (build with `pnpm run build:web:pages`). Its opt-in TS remote-sync backend (`apps/server`) is a separate business-logic slice under the maintainer-approved, in-progress `airi-3cp`/`airi-h8du` cutover, not a renderer dependency. |
 | `apps/stage-pocket` | ❌ Purged 2026-11. Capacitor mobile app replaced by Flutter (`apps/flutter`), which ships to Android/iOS as a thin daemon client. |
 | `apps/server` | Dedicated backend service for the Web Stage (`apps/stage-web`) topology (WebSocket channel server, API proxy, storage). Required for web-stage deployments. |
 | `.github/workflows/deploy-frontends.yml` | Frontends CI deploy workflow (builds Docs to `/airi/` root and Web Stage to `/airi/web-stage/`; local build via `pnpm run build:pages`) |

@@ -1,14 +1,14 @@
 # Architectural Design: Lightweight Desktop Update Checker, 24-Hour GitHub Sourcing & Release Notes Drawer
 
 **Status:** Proposed Architecture & Design Specification
-**Scope:** Desktop Companion (`apps/stage-tamagotchi` Electron) / Settings Hub (`packages/stage-pages/src/pages/settings/index.vue`)
+**Scope:** Desktop Companion (`apps/stage-tamagotchi` Electrobun) / Settings Hub (`packages/stage-pages/src/pages/settings/index.vue`)
 **Authoritative References:**
 - [`.agents/skills/airi-release-packaging-deploy/SKILL.md`](../.agents/skills/airi-release-packaging-deploy/SKILL.md) — Release cadence, tag formats (`v0.9.x-stable.YYYYMMDD`), and binary artifacts.
 - [`docs/data-catalog.md`](./data-catalog.md) — Storage keys and `localStorage` namespace inventory.
 - [`packages/stage-pages/src/pages/settings/index.vue`](../packages/stage-pages/src/pages/settings/index.vue) — Settings Hub host surface.
 - [`packages/stage-ui/src/composables/use-build-info.ts`](../packages/stage-ui/src/composables/use-build-info.ts) — Source for currently installed application version.
 - [`packages/stage-ui/src/components/markdown/`](../packages/stage-ui/src/components/markdown/) — Native `<MarkdownRenderer />` component.
-- [`apps/stage-tamagotchi/electron-builder.config.ts`](../apps/stage-tamagotchi/electron-builder.config.ts) — Electron publish target and repository metadata (`dasilva333/airi`).
+- [`apps/stage-tamagotchi/electrobun.config.ts`](../apps/stage-tamagotchi/electrobun.config.ts) — Electrobun desktop packaging config; release metadata now lives in the release scripts below.
 - [`scripts/release/publish-win.js`](../scripts/release/publish-win.js) & [`scripts/release/publish-mac.js`](../scripts/release/publish-mac.js) — Desktop release scripts and GitHub tag publishing flow.
 
 ---
@@ -33,7 +33,7 @@ Instead of an automated binary self-replacer, AIRI introduces a **serverless, li
 - Renders a non-intrusive notification banner strictly within the **Settings Hub** between the window header and the quick access buttons.
 - Features an expandable release notes drawer rendered natively with `<MarkdownRenderer />`.
 - Allows users to dismiss (`✕`) the banner, snoozing notifications until a **new, subsequent version** is released.
-- Targets **`stage-tamagotchi` (Electron) only**, remaining completely inert on `stage-web` and `stage-pocket`.
+- Targets **`stage-tamagotchi` (Electrobun) only**, remaining completely inert on `stage-web` and `stage-pocket`.
 
 ---
 
