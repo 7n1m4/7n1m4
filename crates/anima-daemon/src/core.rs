@@ -307,13 +307,24 @@ impl CoreService {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "missing id".to_string())?;
+        let existing = repo
+            .get(id)
+            .map_err(|_| "provider query failed".to_string())?;
+        // A PATCH that omits `kind` (e.g. `{id, enabled:false}`) reuses the stored
+        // kind; an explicit unknown kind still errors.
         let kind_text = payload
             .get("kind")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "missing kind".to_string())?;
-        let kind: anima_store::ProviderKind =
-            serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
-                .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let kind: anima_store::ProviderKind = match kind_text {
+            Some(text) => serde_json::from_value(serde_json::Value::String(text.to_string()))
+                .map_err(|_| format!("unknown provider kind: {text}"))?,
+            None => existing
+                .as_ref()
+                .map(|p| p.kind.clone())
+                .ok_or_else(|| "missing kind".to_string())?,
+        };
         let rotate_secrets = payload
             .get("rotateSecrets")
             .map(|v| {
@@ -323,9 +334,6 @@ impl CoreService {
             .transpose()?
             .unwrap_or(false);
 
-        let existing = repo
-            .get(id)
-            .map_err(|_| "provider query failed".to_string())?;
         let stored_config = existing
             .as_ref()
             .and_then(|p| p.config.as_object().cloned())
@@ -583,12 +591,14 @@ impl CoreService {
     }
 
     /// Request cancellation of an in-flight generation.
+    ///
+    /// A multi-thread runtime is a whole reactor; building one per cancel is
+    /// pure overhead, and `block_on` is callable from many threads.
     pub fn chat_stop(&self, session_id: &str) -> Result<bool, String> {
         let svc = self
             .chat_service()
             .ok_or_else(|| "store unavailable".to_string())?;
-        let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-        rt.block_on(svc.stop(session_id.to_string()))
+        chat_runtime().block_on(svc.stop(session_id.to_string()))
             .map_err(|e| e.to_string())
     }
 
@@ -734,6 +744,29 @@ impl CoreService {
         self.session_export_jsonl(session_id)
     }
 
+    /// Export a session bounded by [`anima_core::sessions::EXPORT_MAX_BYTES`],
+    /// returning the JSONL payload when it fits.
+    ///
+    /// `Ok(Some(jsonl))` = complete snapshot, `Ok(None)` = over the bound with no
+    /// payload produced.
+    pub fn session_export_bounded_jsonl(&self, session_id: &str) -> Result<Option<String>, String> {
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        match anima_core::sessions::export_bounded(&db, session_id)
+            .map_err(|e| e.to_string())?
+        {
+            anima_core::sessions::ExportOutcome::Complete(jsonl) => Ok(Some(jsonl)),
+            anima_core::sessions::ExportOutcome::TooLarge { .. } => Ok(None),
+        }
+    }
+
     /// Import a JSONL session snapshot into the daemon-owned store.
     pub fn session_import_jsonl(
         &self,
@@ -768,6 +801,21 @@ impl CoreService {
         })
     }
 }
+
+/// The process-wide Tokio runtime for background chat work (turns and cancels).
+///
+/// Matches the gateway's chat runtime shape.
+fn chat_runtime() -> &'static tokio::runtime::Runtime {
+    use std::sync::OnceLock;
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RT.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("daemon chat runtime")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

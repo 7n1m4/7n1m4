@@ -1074,8 +1074,44 @@ impl Gateway {
                     if session_id.is_empty() {
                         return Err("missing session_id".to_string());
                     }
-                    let messages = core.chat_stream(session_id).map_err(|e| e.to_string())?;
-                    let messages: Vec<serde_json::Value> = messages
+                    let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
+                    // The client sends the `createdAt` of the last message it
+                    // already holds; `rowid = i64::MAX` includes every row at
+                    // that timestamp.
+                    let cursor = value
+                        .get("cursor")
+                        .and_then(|v| v.as_i64())
+                        .map(|created_at| (created_at, i64::MAX));
+                    let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                    let repo = anima_store::MessageRepo::new(db);
+                    // `list_page` only walks forward, so the newest page is reached by
+                    // paging from the cursor (or the start of the session) and keeping the
+                    // tail. The walk stops as soon as `limit + 1` rows are held, so the
+                    // read is bounded by the page size rather than by the session length.
+                    let mut rows: Vec<(anima_store::StoredMessage, i64)> = Vec::new();
+                    let mut page_cursor = cursor;
+                    loop {
+                        let page = repo
+                            .list_page(session_id, limit + 1, page_cursor)
+                            .map_err(|e| e.to_string())?;
+                        let short = page.len() < limit + 1;
+                        page_cursor = page.last().map(|(m, rowid)| (m.created_at, *rowid));
+                        rows.extend(page);
+                        if short || rows.len() >= limit + 1 {
+                            break;
+                        }
+                    }
+                    let truncated = rows.len() > limit;
+                    // Keep the newest `limit` rows, then restore the oldest-first order
+                    // the reply has always used.
+                    let mut rows: Vec<anima_store::StoredMessage> = rows
+                        .into_iter()
+                        .rev()
+                        .take(limit)
+                        .map(|(m, _)| m)
+                        .collect();
+                    rows.reverse();
+                    let messages: Vec<serde_json::Value> = rows
                         .into_iter()
                         .map(|m| {
                             serde_json::json!({
@@ -1088,7 +1124,12 @@ impl Gateway {
                             })
                         })
                         .collect();
-                    Ok(serde_json::json!({ "sessionId": session_id, "messages": messages }))
+                    Ok(serde_json::json!({
+                        "sessionId": session_id,
+                        "messages": messages,
+                        "limit": limit,
+                        "truncated": truncated,
+                    }))
                 }),
             );
         }
@@ -1338,7 +1379,9 @@ impl Gateway {
                     // RPC cannot materialize the whole sessions table.
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
                     let repo = anima_store::SessionRepo::new(db);
-                    let listed = repo.list().map_err(|e| e.to_string())?;
+                    // The store applies `limit + 1` in SQL, so the extra row
+                    // is the only way to know whether more exist.
+                    let listed = repo.list_recent(limit + 1).map_err(|e| e.to_string())?;
                     let truncated = listed.len() > limit;
                     let sessions: Vec<_> = listed.into_iter().take(limit).collect();
                     Ok(serde_json::json!({
@@ -1358,9 +1401,17 @@ impl Gateway {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
+                    // Never report success with a partial snapshot: an oversized
+                    // session is an explicit error naming the bound.
                     let jsonl = core
-                        .session_export(&session_id)
-                        .map_err(|e| e.to_string())?;
+                        .session_export_bounded_jsonl(&session_id)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| {
+                            format!(
+                                "session export exceeds the {} byte limit",
+                                anima_core::sessions::EXPORT_MAX_BYTES
+                            )
+                        })?;
                     Ok(serde_json::json!({ "jsonl": jsonl }))
                 }),
             );

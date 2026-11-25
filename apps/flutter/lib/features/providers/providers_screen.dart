@@ -30,6 +30,15 @@ class _ProviderRow {
   final bool enabled;
 }
 
+// Mirrors `anima_store::ProviderKind`, which rejects any other tag.
+const List<String> _providerKinds = <String>[
+  'open-ai-compatible',
+  'anthropic',
+  'google-gemini',
+  'aws-bedrock',
+  'local-server',
+];
+
 class ProvidersScreen extends StatefulWidget {
   const ProvidersScreen({super.key, required this.client});
   final DaemonClient client;
@@ -39,8 +48,8 @@ class ProvidersScreen extends StatefulWidget {
 }
 
 class _ProvidersScreenState extends State<ProvidersScreen> {
+  String _kind = _providerKinds.first;
   final TextEditingController _id = TextEditingController();
-  final TextEditingController _kind = TextEditingController();
   final TextEditingController _model = TextEditingController();
   final TextEditingController _baseUrl = TextEditingController();
   final TextEditingController _apiKey = TextEditingController();
@@ -61,7 +70,6 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   @override
   void dispose() {
     _id.dispose();
-    _kind.dispose();
     _model.dispose();
     _baseUrl.dispose();
     _apiKey.dispose();
@@ -137,7 +145,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
 
   Future<void> _save() async {
     final id = _id.text.trim();
-    final kind = _kind.text.trim();
+    final kind = _kind;
     if (id.isEmpty || kind.isEmpty) {
       setState(() {
         _error = 'Provider id and kind are required.';
@@ -145,15 +153,21 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       });
       return;
     }
-    await _mutate('providers.save', <String, dynamic>{
+    final payload = <String, dynamic>{
       'id': id,
       'kind': kind,
       'model': _model.text.trim(),
       'baseUrl': _baseUrl.text.trim(),
       'enabled': _enabled,
-      // Write-only: never prefill this field from a list reply, never echo it.
-      if (_apiKey.text.isNotEmpty) 'apiKey': _apiKey.text,
-    }, (data) {
+    };
+    // Write-only: never prefill this field from a list reply, never echo it.
+    // The daemon keeps a stored credential unless rotation is opted into,
+    // so only a typed key rotates.
+    if (_apiKey.text.isNotEmpty) {
+      payload['apiKey'] = _apiKey.text;
+      payload['rotateSecrets'] = true;
+    }
+    await _mutate('providers.save', payload, (data) {
       final savedId = (data is Map ? data['id'] : null)?.toString() ?? id;
       _status = 'Saved provider $savedId';
       _apiKey.clear();
@@ -177,6 +191,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
 
   /// Partial update: the daemon keeps stored credentials when a save omits
   /// them, so toggling enabled must never send a (possibly empty) key.
+  /// It omits `rotateSecrets` too, so a toggle never rotates the stored credential.
   Future<void> _setEnabled(_ProviderRow row, bool enabled) async {
     await _mutate('providers.save', <String, dynamic>{
       'id': row.id,
@@ -189,7 +204,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
 
   void _clearForm() {
     _id.clear();
-    _kind.clear();
+    _kind = _providerKinds.first;
     _model.clear();
     _baseUrl.clear();
     _apiKey.clear();
@@ -199,7 +214,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   void _edit(_ProviderRow row) {
     setState(() {
       _id.text = row.id;
-      _kind.text = row.kind;
+      _kind = _providerKinds.contains(row.kind) ? row.kind : _providerKinds.first;
       _model.text = row.model;
       _baseUrl.text = row.baseUrl;
       _apiKey.clear();
@@ -243,9 +258,14 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                             controller: _id,
                             decoration: const InputDecoration(labelText: 'Provider ID'),
                           ),
-                          TextField(
-                            controller: _kind,
+                          DropdownButtonFormField<String>(
+                            value: _kind,
                             decoration: const InputDecoration(labelText: 'Kind'),
+                            items: <DropdownMenuItem<String>>[
+                              for (final kind in _providerKinds)
+                                DropdownMenuItem<String>(value: kind, child: Text(kind)),
+                            ],
+                            onChanged: (value) => setState(() => _kind = value ?? _providerKinds.first),
                           ),
                           TextField(
                             controller: _model,

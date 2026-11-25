@@ -62,6 +62,34 @@ fn metadata_eq(left: &serde_json::Value, right: &serde_json::Value) -> bool {
     canonical(left) == canonical(right)
 }
 
+/// Hard ceiling on the bytes one [`export_jsonl`] call may return.
+pub const EXPORT_MAX_BYTES: usize = 8 * 1024 * 1024;
+
+/// Error returned when a session snapshot exceeds [`EXPORT_MAX_BYTES`].
+pub const EXPORT_TOO_LARGE: &str = "session export exceeds the 8 MiB limit";
+
+/// Outcome of a bounded export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportOutcome {
+    /// Complete snapshot.
+    Complete(String),
+    /// Snapshot is larger than [`EXPORT_MAX_BYTES`]; nothing is returned.
+    TooLarge {
+        /// Total bytes the snapshot would need.
+        bytes: u64,
+    },
+}
+
+impl ExportOutcome {
+    /// The JSONL payload, or an error naming the bound.
+    pub fn into_jsonl(self) -> Result<String> {
+        match self {
+            Self::Complete(jsonl) => Ok(jsonl),
+            Self::TooLarge { bytes } => anyhow::bail!("{EXPORT_TOO_LARGE} (needs {bytes} bytes)"),
+        }
+    }
+}
+
 /// Compare full snapshot state for the duplicate/conflict decision.
 fn snapshots_equal(
     incoming: &Snapshot,
@@ -94,34 +122,56 @@ fn snapshots_equal(
     })
 }
 
-/// Export a session and its messages as JSON Lines.
+/// Export a session and its messages as JSON Lines in bounded form.
 ///
-/// Line 1 is a session header, subsequent lines are messages in
-/// chronological order:
-///
-/// ```json
-/// {"type":"session","session":{...}}
-/// {"type":"message","message":{...}}
-/// ```
-///
-/// Each line is a self-contained JSON object; trailing newline included.
-/// Errors when the session does not exist.
-pub fn export_jsonl(db: &Database, session_id: &str) -> Result<String> {
+/// Returns either an [`ExportOutcome::Complete`](ExportOutcome::Complete)
+/// snapshot or an [`ExportOutcome::TooLarge`](ExportOutcome::TooLarge) when the
+/// snapshot exceeds [`EXPORT_MAX_BYTES`]; never a partial payload.
+pub fn export_bounded(db: &Database, session_id: &str) -> Result<ExportOutcome> {
+    const EXPORT_PAGE: usize = 256;
+
     let session = SessionRepo::new(db.clone())
         .get(session_id)?
         .with_context(|| format!("session not found: {session_id}"))?;
-    let messages = MessageRepo::new(db.clone()).list(session_id)?;
+    let messages = MessageRepo::new(db.clone());
 
     let mut out = String::new();
+    let mut total: u64 = 0;
     let header = serde_json::json!({ "type": "session", "session": session });
-    out.push_str(&serde_json::to_string(&header)?);
-    out.push('\n');
-    for message in messages {
-        let line = serde_json::json!({ "type": "message", "message": message });
-        out.push_str(&serde_json::to_string(&line)?);
-        out.push('\n');
+    let header_line = format!("{}\n", serde_json::to_string(&header)?);
+    total += header_line.len() as u64;
+    if total > EXPORT_MAX_BYTES as u64 {
+        return Ok(ExportOutcome::TooLarge { bytes: total });
     }
-    Ok(out)
+    out.push_str(&header_line);
+
+    let mut cursor: Option<(i64, i64)> = None;
+    loop {
+        let page = messages.list_page(session_id, EXPORT_PAGE, cursor)?;
+        let short = page.len() < EXPORT_PAGE;
+        for (message, rowid) in page {
+            let created_at = message.created_at;
+            let line = serde_json::json!({ "type": "message", "message": message });
+            let msg_line = format!("{}\n", serde_json::to_string(&line)?);
+            total += msg_line.len() as u64;
+            if total > EXPORT_MAX_BYTES as u64 {
+                return Ok(ExportOutcome::TooLarge { bytes: total });
+            }
+            out.push_str(&msg_line);
+            cursor = Some((created_at, rowid));
+        }
+        if short {
+            break;
+        }
+    }
+    Ok(ExportOutcome::Complete(out))
+}
+
+/// Export a session and its messages as JSON Lines.
+///
+/// Errors when the session does not exist or exceeds [`EXPORT_MAX_BYTES`].
+pub fn export_jsonl(db: &Database, session_id: &str) -> Result<String> {
+    export_bounded(db, session_id)?.into_jsonl()
 }
 
 /// Outcome of importing a JSONL session snapshot.

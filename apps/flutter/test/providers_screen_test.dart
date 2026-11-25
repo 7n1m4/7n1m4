@@ -69,6 +69,13 @@ Future<_RecordingProviderClient> _pump(
   return client;
 }
 
+Future<void> selectKind(WidgetTester tester, String value) async {
+  await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Kind'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(value).last);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('save writes through providers.save and refreshes the list',
       (tester) async {
@@ -76,7 +83,7 @@ void main() {
 
     await tester.enterText(
         find.widgetWithText(TextField, 'Provider ID'), 'p-new');
-    await tester.enterText(find.widgetWithText(TextField, 'Kind'), 'llama-cpp');
+    await selectKind(tester, 'anthropic');
     await tester.enterText(find.widgetWithText(TextField, 'Model'), 'qwen');
     await tester.enterText(
         find.widgetWithText(TextField, 'Base URL'), 'http://localhost:11434/v1');
@@ -92,11 +99,12 @@ void main() {
     );
     expect(saveCall.payload, <String, dynamic>{
       'id': 'p-new',
-      'kind': 'llama-cpp',
+      'kind': 'anthropic',
       'model': 'qwen',
       'baseUrl': 'http://localhost:11434/v1',
       'enabled': true,
       'apiKey': 'TOP-SECRET',
+      'rotateSecrets': true, // a typed key is the rotation opt-in
     });
     // The daemon returns its canonical id in the reply; the screen shows that.
     expect(find.text('Saved provider p1'), findsOneWidget);
@@ -110,19 +118,18 @@ void main() {
     expect(find.textContaining('TOP-SECRET'), findsNothing);
   });
 
-  testWidgets('save validates required fields before calling the daemon',
+  testWidgets('save validates the provider id before calling the daemon',
       (tester) async {
     final client = await _pump(tester);
 
-    await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
         .onPressed!();
     await tester.pump();
 
     expect(client.calls.where((c) => c.action == 'providers.save'), isEmpty);
+    // The kind dropdown always holds a supported value, so only the id can be missing.
     expect(find.text('Provider id and kind are required.'), findsOneWidget);
-    expect(find.text('Saved provider p1'), findsNothing);
   });
 
   testWidgets('save RPC failure shows the daemon error, no success status',
@@ -137,7 +144,7 @@ void main() {
     };
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
-    await tester.enterText(find.widgetWithText(TextField, 'Kind'), 'openai');
+    await selectKind(tester, 'google-gemini');
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
         .onPressed!();
@@ -203,11 +210,14 @@ void main() {
     );
     // The daemon preserves the stored key on a partial update; sending an
     // empty key here would rotate or clear a managed credential.
+    // rotateSecrets must also be absent so the daemon does not rotate.
     expect(saveCall.payload, <String, dynamic>{
       'id': 'p-openai',
       'kind': 'open-ai-compatible',
       'enabled': false,
     });
+    expect(saveCall.payload!.containsKey('rotateSecrets'), isFalse,
+        reason: 'a toggle must not rotate a managed credential');
     expect(find.text('Disabled provider p-openai'), findsOneWidget);
   });
 
@@ -238,7 +248,7 @@ void main() {
     // A save reports only what the daemon answered ({ok, id}) — the screen
     // adds no validation verdict of its own.
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
-    await tester.enterText(find.widgetWithText(TextField, 'Kind'), 'openai');
+    await selectKind(tester, 'google-gemini');
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
         .onPressed!();
@@ -270,5 +280,59 @@ void main() {
           ),
       isTrue,
     );
+  });
+
+  testWidgets('save without an API key omits the rotation opt-in', (tester) async {
+    final client = await _pump(tester);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p2');
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+        .onPressed!();
+    await tester.pumpAndSettle();
+
+    final saveCall = client.calls.firstWhere(
+      (c) => c.action == 'providers.save',
+    );
+    expect(saveCall.payload, <String, dynamic>{
+      'id': 'p2',
+      'kind': 'open-ai-compatible',
+      'model': '',
+      'baseUrl': '',
+      'enabled': true,
+    });
+    expect(saveCall.payload!.containsKey('apiKey'), isFalse);
+    expect(saveCall.payload!.containsKey('rotateSecrets'), isFalse);
+  });
+
+  testWidgets('only daemon-supported provider kinds can be selected', (tester) async {
+    final client = await _pump(tester);
+
+    await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Kind'));
+    await tester.pumpAndSettle();
+    for (final label in <String>[
+      'open-ai-compatible',
+      'anthropic',
+      'google-gemini',
+      'aws-bedrock',
+      'local-server',
+    ]) {
+      // The closed dropdown shows the current value while the open menu lists every supported kind.
+      expect(find.text(label), findsWidgets);
+    }
+    expect(find.text('llama-cpp'), findsNothing);
+    await tester.tap(find.text('aws-bedrock').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p3');
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+        .onPressed!();
+    await tester.pumpAndSettle();
+
+    final saveCall = client.calls.firstWhere(
+      (c) => c.action == 'providers.save',
+    );
+    expect(saveCall.payload!['kind'], 'aws-bedrock');
   });
 }

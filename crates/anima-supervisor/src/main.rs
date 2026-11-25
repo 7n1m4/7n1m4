@@ -12,6 +12,7 @@ mod logging;
 
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use tray_item::TrayItem;
 
@@ -22,12 +23,28 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+fn reap_child_slot(slot: &Mutex<Option<Child>>) {
+    if let Ok(mut guard) = slot.lock() {
+        if let Some(child) = guard.as_mut() {
+            if let Ok(Some(_)) = child.try_wait() {
+                let pid = child.id();
+                *guard = None;
+                eprintln!("anima-supervisor: reaped child pid {pid}");
+            }
+        }
+    }
+}
+
+fn child_slot_is_running(slot: &mut Option<Child>) -> bool {
+    match slot {
+        None => false,
+        Some(child) => child.try_wait().ok().flatten().is_none(),
+    }
+}
+
 fn spawn_flutter() -> Result<(), String> {
     let mut guard = FLUTTER.lock().map_err(|e| e.to_string())?;
-    if guard
-        .as_mut()
-        .map_or(false, |c| c.try_wait().ok().flatten().is_none())
-    {
+    if child_slot_is_running(&mut guard) {
         return Ok(());
     }
     let bin = env_or("ANIMA_FLUTTER_BIN", "flutter");
@@ -65,10 +82,7 @@ fn restart_flutter() {
 
 fn spawn_godot() -> Result<(), String> {
     let mut guard = GODOT.lock().map_err(|e| e.to_string())?;
-    if guard
-        .as_mut()
-        .map_or(false, |c| c.try_wait().ok().flatten().is_none())
-    {
+    if child_slot_is_running(&mut guard) {
         return Ok(());
     }
     let bin = env_or("ANIMA_GODOT_BIN", "godot");
@@ -158,9 +172,52 @@ fn main() {
             eprintln!("anima-supervisor: tray registered");
             // Keep the process alive.
             loop {
-                std::thread::sleep(std::time::Duration::from_secs(3600));
+                reap_child_slot(&FLUTTER);
+                reap_child_slot(&GODOT);
+                std::thread::sleep(Duration::from_secs(1));
             }
         }
         Err(e) => eprintln!("anima-supervisor: tray menu build failed: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static TEST_SLOT: Mutex<Option<Child>> = Mutex::new(None);
+
+    #[test]
+    fn reap_and_running() {
+        // exited child
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let _ = child.wait();
+        {
+            let mut g = TEST_SLOT.lock().unwrap();
+            *g = Some(child);
+        }
+        reap_child_slot(&TEST_SLOT);
+        assert!(TEST_SLOT.lock().unwrap().is_none());
+
+        // live child
+        let child = Command::new("sleep")
+            .arg("2")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut slot = Some(child);
+        assert!(child_slot_is_running(&mut slot));
+        if let Some(mut c) = slot.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        assert!(!child_slot_is_running(&mut slot));
     }
 }

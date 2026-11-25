@@ -588,6 +588,26 @@ impl SessionRepo {
             .collect()
     }
 
+    /// List the most recent sessions by `updated_at`, capped by `limit`.
+    pub fn list_recent(&self, limit: usize) -> Result<Vec<StoredSession>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let mut stmt = conn.prepare(
+            "select id, title, created_at, updated_at, metadata from sessions order by updated_at desc, rowid desc limit ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(SessionRow {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+                metadata: row.get(4)?,
+            })
+        })?;
+        rows.map(|r| r.map_err(Into::into).and_then(row_to_session))
+            .collect()
+    }
+
     /// Get a session by id.
     pub fn get(&self, id: &str) -> Result<Option<StoredSession>> {
         let conn = self.db.conn.lock().expect("database mutex poisoned");
@@ -770,13 +790,84 @@ impl MessageRepo {
                 content: row.get(3)?,
                 created_at: row.get(4)?,
                 metadata: row.get(5)?,
+                rowid: None,
             })
         })?;
         rows.map(|r| r.map_err(Into::into).and_then(row_to_message))
             .collect()
     }
 
-    /// List every message in the store, oldest first.
+    /// Paginate messages for a session, oldest first.
+    ///
+    /// `before` is the `(created_at, rowid)` cursor of the last row of the
+    /// previous page; paging never skips or repeats a row even when timestamps
+    /// tie.
+    pub fn list_page(
+        &self,
+        session_id: &str,
+        limit: usize,
+        before: Option<(i64, i64)>,
+    ) -> Result<Vec<(StoredMessage, i64)>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let mut out = Vec::new();
+        match before {
+            Some((created_at_cursor, rowid_cursor)) => {
+                let mut stmt = conn.prepare(
+                    "select id, session_id, role, content, created_at, metadata, rowid
+                     from messages where session_id = ?1
+                       and (created_at > ?2 or (created_at = ?2 and rowid > ?3))
+                     order by created_at asc, rowid asc limit ?4",
+                )?;
+                let rows = stmt.query_map(
+                    params![session_id, created_at_cursor, rowid_cursor, limit],
+                    |row| {
+                        Ok(MessageRow {
+                            id: row.get(0)?,
+                            session_id: row.get(1)?,
+                            role: row.get(2)?,
+                            content: row.get(3)?,
+                            created_at: row.get(4)?,
+                            metadata: row.get(5)?,
+                            rowid: Some(row.get(6)?),
+                        })
+                    },
+                )?;
+                for row in rows {
+                    let mr: MessageRow = row?;
+                    let rowid = mr.rowid.unwrap_or(0);
+                    let msg = row_to_message(mr)?;
+                    out.push((msg, rowid));
+                }
+            }
+            None => {
+                let mut stmt = conn.prepare(
+                    "select id, session_id, role, content, created_at, metadata, rowid
+                     from messages where session_id = ?1
+                     order by created_at asc, rowid asc limit ?2",
+                )?;
+                let rows = stmt.query_map(params![session_id, limit], |row| {
+                    Ok(MessageRow {
+                        id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        created_at: row.get(4)?,
+                        metadata: row.get(5)?,
+                        rowid: Some(row.get(6)?),
+                    })
+                })?;
+                for row in rows {
+                    let mr: MessageRow = row?;
+                    let rowid = mr.rowid.unwrap_or(0);
+                    let msg = row_to_message(mr)?;
+                    out.push((msg, rowid));
+                }
+            }
+        }
+        Ok(out)
+    }
+
     ///
     /// Used by the data-vault export and the session-media scrub, which both
     /// need a full scan. Potentially large on long histories — callers should
@@ -795,6 +886,7 @@ impl MessageRepo {
                 content: row.get(3)?,
                 created_at: row.get(4)?,
                 metadata: row.get(5)?,
+                rowid: None,
             })
         })?;
         rows.map(|r| r.map_err(Into::into).and_then(row_to_message))
@@ -816,6 +908,7 @@ impl MessageRepo {
                         content: row.get(3)?,
                         created_at: row.get(4)?,
                         metadata: row.get(5)?,
+                        rowid: None,
                     })
                 },
             )
@@ -863,6 +956,8 @@ struct MessageRow {
     content: String,
     created_at: i64,
     metadata: String,
+    /// Only the paging query selects `rowid`, so the other queries leave it `None`.
+    rowid: Option<i64>,
 }
 
 fn row_to_message(row: MessageRow) -> Result<StoredMessage> {
@@ -1415,6 +1510,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+
     fn test_db() -> Database {
         let dir = tempdir().expect("tempdir");
         Database::open(&dir.path().join("test.sqlite")).expect("open db")
@@ -1472,6 +1568,74 @@ mod tests {
             repo.get::<String>("theme").unwrap().as_deref(),
             Some("dark")
         );
+    }
+
+    #[test]
+    fn list_recent_returns_only_the_requested_rows() {
+        let db = test_db();
+        for i in 0..12 {
+            SessionRepo::new(db.clone())
+                .create(&format!("s{i}"), &format!("session {i}"))
+                .unwrap();
+        }
+        let rows = SessionRepo::new(db).list_recent(5).unwrap();
+        assert_eq!(rows.len(), 5);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["s11", "s10", "s9", "s8", "s7"]);
+    }
+
+    #[test]
+    fn message_list_page_walks_every_row_without_repeats() {
+        let db = test_db();
+        let sessions = SessionRepo::new(db.clone());
+        let messages = MessageRepo::new(db.clone());
+        sessions.create("s1", "Test").unwrap();
+        sessions.create("s2", "Other").unwrap();
+        for i in 0..7 {
+            messages
+                .insert(&StoredMessage {
+                    id: format!("m{i}"),
+                    session_id: "s1".to_string(),
+                    role: "user".to_string(),
+                    content: format!("msg {i}"),
+                    created_at: 10 + i,
+                    metadata: serde_json::json!({}),
+                })
+                .unwrap();
+        }
+        messages
+            .insert(&StoredMessage {
+                id: "other".to_string(),
+                session_id: "s2".to_string(),
+                role: "user".to_string(),
+                content: "other".to_string(),
+                created_at: 10,
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let expected: Vec<String> = messages
+            .list("s1")
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+
+        let mut collected: Vec<String> = Vec::new();
+        let mut cursor: Option<(i64, i64)> = None;
+        loop {
+            let page = messages.list_page("s1", 3, cursor).unwrap();
+            let short = page.len() < 3;
+            for (msg, rowid) in page {
+                collected.push(msg.id);
+                cursor = Some((msg.created_at, rowid));
+            }
+            if short {
+                break;
+            }
+        }
+        assert_eq!(collected, expected);
+        assert!(!collected.iter().any(|id| id == "other"));
     }
 
     #[test]

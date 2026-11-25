@@ -710,7 +710,13 @@ class DaemonClient {
       'session_id': sessionId,
     });
     final data = reply.data;
-    return (data is Map<String, dynamic> ? data['jsonl'] : null)?.toString() ?? '';
+    if (data is! Map<String, dynamic> || data['jsonl'] is! String) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid sessions.export reply.',
+      );
+    }
+    return data['jsonl'] as String;
   }
 
   /// Explicit shutdown: no reconnect is scheduled.

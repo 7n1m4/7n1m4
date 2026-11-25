@@ -12,6 +12,11 @@ import 'package:anima_control/features/sessions/sessions_screen.dart';
 
 import 'support/fakes.dart';
 
+// Contract: crates/anima-core/src/sessions.rs `parse_snapshot`.
+const _validSnapshot =
+    '{"type":"session","session":{"id":"s1","title":"t","created_at":1,"updated_at":1,"metadata":{}}}\n'
+    '{"type":"message","message":{"id":"m1","session_id":"s1","role":"user","content":"hi","created_at":1,"metadata":{}}}\n';
+
 class _RecordingSessionsClient extends FakeChatClient {
   final List<String> actions = <String>[];
   String importStatus = 'applied';
@@ -60,7 +65,7 @@ void main() {
     final client = await _pump(tester);
 
     await tester.enterText(
-        find.widgetWithText(TextField, 'JSONL snapshot'), '{"a":1}');
+        find.widgetWithText(TextField, 'JSONL snapshot'), _validSnapshot);
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Import'))
         .onPressed!();
@@ -81,7 +86,7 @@ void main() {
       client.importStatus = status;
 
       await tester.enterText(
-          find.widgetWithText(TextField, 'JSONL snapshot'), '{"a":1}');
+          find.widgetWithText(TextField, 'JSONL snapshot'), _validSnapshot);
       tester
           .widget<FilledButton>(find.widgetWithText(FilledButton, 'Import'))
           .onPressed!();
@@ -98,6 +103,7 @@ void main() {
     final client = await _pump(tester);
     client.importFails = true;
 
+    // malformed body rejected by daemon parser; only RPC error path exercised
     await tester.enterText(
         find.widgetWithText(TextField, 'JSONL snapshot'), '{"a":1}');
     tester

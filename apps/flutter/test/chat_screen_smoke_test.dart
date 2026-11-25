@@ -86,7 +86,7 @@ void main() {
     expect(find.byIcon(Icons.send), findsOneWidget);
   });
 
-  testWidgets('only a real connected transition clears a mid-turn buffer',
+  testWidgets('a real reconnect keeps the active mid-turn bubble',
       (tester) async {
     final client = await sentScreen(tester);
     client.emitEvent(tokenDelta(delta: 'Hel'));
@@ -103,16 +103,17 @@ void main() {
     await tester.pump();
     expect(find.text('Hello world'), findsOneWidget);
 
-    // A genuine disconnect -> reconnect still resets the stuck turn.
+    // A genuine disconnect -> reconnect keeps the open turn; the daemon still streams the same message id.
     client.emitStatus(DaemonConnectionState.reconnecting);
     await tester.pump();
     client.emitStatus(DaemonConnectionState.connected);
     await tester.pump();
-    expect(find.byIcon(Icons.send), findsOneWidget);
-    client.emitEvent(tokenDelta(delta: 'X'));
-    await tester.pump();
+    expect(find.byIcon(Icons.stop), findsOneWidget);
     expect(find.text('Hello world'), findsOneWidget);
-    expect(find.text('X'), findsOneWidget);
+    client.emitEvent(tokenDelta(delta: '!'));
+    await tester.pump();
+    expect(find.text('Hello world!'), findsOneWidget);
+    expect(find.text('!'), findsNothing);
   });
 
   testWidgets('ChatScreen unregisters its event listener on dispose', (tester) async {

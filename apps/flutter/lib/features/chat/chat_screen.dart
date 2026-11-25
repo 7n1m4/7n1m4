@@ -47,24 +47,14 @@ class _ChatScreenState extends State<ChatScreen> {
     _unsubscribeEvent = widget.client.onEvent(_onEvent);
     _wasConnected = widget.client.snapshot.isConnected;
     if (_wasConnected) _requestEmotionEvents();
-    // A reconnect lands on a fresh socket with no in-flight turn from this
-    // screen's point of view: drop the stuck "sending" state instead of
-    // leaving the input disabled until a full app relaunch. The status stream
-    // also emits on core/error updates, so only a real transition counts.
+    // A reconnect drops the stuck Stop state, but the open turn and its
+    // assistant bubble survive because the daemon keeps streaming the same
+    // message_id; only a real disconnect -> connected transition counts.
     _statusSub = widget.client.statusStream.listen((status) {
       final connected = status.state == DaemonConnectionState.connected;
       final regainedConnection = connected && !_wasConnected;
       _wasConnected = connected;
       if (regainedConnection) _requestEmotionEvents();
-      if (regainedConnection && mounted) {
-        setState(() {
-          _sending = false;
-          _assistantStreaming = false;
-          _activeMessageId = null;
-          _deltaBuffer.clear();
-          _cue = null;
-        });
-      }
     });
     final initial = widget.initialSessionId;
     if (initial != null && initial.isNotEmpty) {
@@ -125,15 +115,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final isFinal = data['final'] == true;
     if (!mounted) return;
     setState(() {
-      // The daemon can stream a terminal delta with an empty message_id. Key
-      // the bubble on an explicit stream-active flag, not on message_id being
-      // non-empty, or every such token creates its own assistant bubble.
-      final newTurn =
-          !_assistantStreaming ||
-          (mid.isNotEmpty &&
-              _activeMessageId != null &&
-              _activeMessageId != mid);
-      if (newTurn) {
+      // The delta always lands on the open bubble: a genuinely new turn
+      // starts a new assistant bubble; otherwise the delta appends to it.
+      // _messages.last is the open assistant bubble (the chat.send ack never
+      // appends a message), so the delta text is written there.
+      final newTurn = mid.isNotEmpty &&
+          _activeMessageId != null &&
+          _activeMessageId != mid;
+      final firstTurn = !_assistantStreaming;
+      if (firstTurn || newTurn) {
         _messages.add(_ChatMessage.assistant(''));
         _deltaBuffer.clear();
         _assistantStreaming = true;
@@ -141,9 +131,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mid.isNotEmpty) _activeMessageId = mid;
       if (delta.isNotEmpty) {
         _deltaBuffer.write(delta);
-        final last = _messages.last;
-        _messages[_messages.length - 1] =
-            last.copyWith(text: _deltaBuffer.toString());
+        final idx = _messages.length - 1;
+        if (idx >= 0) {
+          final last = _messages[idx];
+          _messages[idx] = last.copyWith(text: _deltaBuffer.toString());
+        }
       }
       if (isFinal) {
         _assistantStreaming = false;
@@ -157,7 +149,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Parse the fully accumulated turn once: GenUI handles split JSON tokens.
   Future<void> _finishGenUiTurn() async {
-    final index = _messages.length - 1;
+    final index = _lastAssistantIndex() ?? -1;
     if (index < 0 || _messages[index].isUser) return;
     final target = _messages[index];
     final output = target.text;
@@ -165,7 +157,8 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final turn = await _parseGenUi(output);
-    if (!mounted || index >= _messages.length || _messages.last.isUser) {
+    if (!mounted || index >= _messages.length || _messages.last.isUser ||
+        _messages[index].text != output) {
       return;
     }
     setState(() {
@@ -301,6 +294,13 @@ class _ChatScreenState extends State<ChatScreen> {
       surfaceIds: parsed.surfaceIds,
       genUiFailed: parsed.failed,
     );
+  }
+
+  int? _lastAssistantIndex() {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (!_messages[i].isUser) return i;
+    }
+    return null;
   }
 
   Future<AiriGenUiTurn> _parseGenUi(String output) async {
