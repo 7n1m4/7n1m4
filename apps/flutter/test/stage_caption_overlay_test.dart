@@ -84,10 +84,10 @@ void main() {
   });
 
   group('StageCaptionStyle', () {
-    test('daemon caption settings map to scale, alpha and docking', () {
+    test('daemon camelCase caption settings map to scale, alpha and docking', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{
         'docking': 'top',
-        'font_size': 150,
+        'fontSize': 150,
         'opacity': 40,
       });
       expect(style.docking, StageCaptionDocking.top);
@@ -96,10 +96,29 @@ void main() {
       expect(style.alpha, 0.4);
     });
 
+    test('legacy snake_case caption settings still map when camelCase is absent', () {
+      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+        'docking': 'top',
+        'font_size': 150,
+        'opacity': 40,
+      });
+      expect(style.scale, 1.5);
+      expect(style.alpha, 0.4);
+      expect(style.isTop, isTrue);
+      expect(
+        StageCaptionStyle.fromSettings(<String, dynamic>{
+          'fontSize': 90,
+          'font_size': 150,
+        }).scale,
+        0.9,
+      );
+    });
+
     test('malformed settings fall back to defaults; head aliases bottom', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{
         'docking': 'nonsense',
         'font_size': 'big',
+        'fontSize': 'big',
         'opacity': null,
       });
       expect(style.docking, StageCaptionDocking.bottom);

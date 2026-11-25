@@ -671,6 +671,35 @@ class DaemonClient {
     return data is Map<String, dynamic> && data['ok'] == true;
   }
 
+  /// List models for a provider (`providers.models`).
+  Future<(String providerId, List<Map<String, dynamic>> models)> providersModels(
+    String providerId,
+  ) async {
+    final reply = await _callOk(
+      'providers.models',
+      payload: <String, dynamic>{'providerId': providerId},
+    );
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'providers.models returned invalid shape',
+      );
+    }
+    final id = data['providerId'] as String?;
+    final models = data['models'];
+    if (id == null || id.isEmpty || models is! List) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'providers.models returned invalid shape',
+      );
+    }
+    return (
+      id,
+      models.whereType<Map<String, dynamic>>().toList(),
+    );
+  }
+
   /// Recent short-term-memory summaries (`stmm.list`).
   Future<List<Map<String, dynamic>>> stmmList({int limit = 50}) async {
     final reply = await _callOk(

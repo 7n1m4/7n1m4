@@ -785,6 +785,38 @@ void main() {
     expect(await writing, isTrue);
   });
 
+  test('providersModels decodes the reply and rejects a non-map payload', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final ok = client.providersModels('p1');
+    final okRequest = lastRequest(fake);
+    expect(okRequest['action'], 'providers.models');
+    expect(okRequest['payload'], <String, dynamic>{'providerId': 'p1'});
+    reply(fake, okRequest, <String, dynamic>{
+      'providerId': 'p1',
+      'models': <Map<String, dynamic>>[<String, dynamic>{'id': 'm1'}],
+    });
+    final decoded = await ok;
+    expect(decoded.$1, 'p1');
+    expect(decoded.$2, hasLength(1));
+    expect(decoded.$2.first['id'], 'm1');
+
+    // A non-map data payload is a protocol error, not a cast crash.
+    final malformed = client.providersModels('p1');
+    reply(fake, lastRequest(fake), <Object>['not', 'a', 'map']);
+    await expectLater(
+      malformed,
+      throwsA(
+        isA<DaemonClientException>().having(
+          (e) => e.kind,
+          'kind',
+          DaemonFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
   // --- Event subscribers and pre-auth transport recovery -------------------
 
   test('event listeners are independent and unsubscribe cleanly', () async {

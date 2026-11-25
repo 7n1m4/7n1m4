@@ -226,15 +226,11 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       _modelsProviderId = row.id;
     });
     try {
-      final reply = await _call('providers.models', payload: <String, dynamic>{'providerId': row.id});
-      final data = reply.data;
-      final list = data is Map ? data['models'] : null;
       final models = <_ProviderModel>[];
-      if (list is List) {
-        for (final item in list) {
-          if (item is Map<String, dynamic>) {
-            models.add(_ProviderModel.fromJson(item));
-          }
+      final (_, modelsReply) = await widget.client.providersModels(row.id);
+      for (final item in modelsReply) {
+        if (item is Map<String, dynamic>) {
+          models.add(_ProviderModel.fromJson(item));
         }
       }
       if (mounted) {
@@ -246,7 +242,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         });
       }
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
+      if (mounted) setState(() => _modelsError = e.message);
     } catch (e) {
       if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
     } finally {

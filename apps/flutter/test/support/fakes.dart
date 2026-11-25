@@ -4,6 +4,7 @@
 // No socket and no daemon: every frame and status is delivered explicitly.
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
 
@@ -98,10 +99,25 @@ class FakeChatClient extends DaemonClient {
   Completer<Map<String, dynamic>>? deferredSettings;
   int settingsLoads = 0;
   Map<String, dynamic>? lastSettingsWritten;
+  void Function(String section, Map<String, dynamic> settings)? onSet;
 
   @override
   Future<Map<String, dynamic>> settingsGet(String section) async {
     settingsLoads++;
+    final handler = onCall;
+    if (handler != null) {
+      try {
+        final reply = handler('settings.get', {'section': section});
+        final data = reply.data;
+        if (data is Map<String, dynamic>) {
+          return data['settings'] as Map<String, dynamic>;
+        }
+        final decoded = jsonDecode(data as String);
+        return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+      } catch (_) {
+        return <String, dynamic>{};
+      }
+    }
     final deferred = deferredSettings;
     if (deferred != null) return deferred.future;
     return settingsToLoad;
@@ -109,6 +125,10 @@ class FakeChatClient extends DaemonClient {
 
   @override
   Future<bool> settingsSet(String section, Map<String, dynamic> settings) async {
+    final setHandler = onSet;
+    if (setHandler != null) {
+      setHandler(section, settings);
+    }
     lastSettingsWritten = settings;
     return true;
   }

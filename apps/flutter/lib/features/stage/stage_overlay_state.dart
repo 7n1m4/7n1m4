@@ -191,7 +191,7 @@ class StageCaptionStyle {
 
   static StageCaptionStyle fromSettings(Map<String, dynamic>? settings) {
     if (settings == null) return const StageCaptionStyle();
-    final size = settings['font_size'];
+    final size = settings['fontSize'] ?? settings['font_size'];
     final alpha = settings['opacity'];
     return StageCaptionStyle(
       docking: dockingFrom(settings['docking']),

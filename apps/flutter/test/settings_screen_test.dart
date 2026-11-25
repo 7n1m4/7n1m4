@@ -15,8 +15,23 @@ void main() {
         home: Scaffold(body: SettingsScreen(client: client, onOpenConnections: () {})),
       );
 
-  FilledButton saveButton(WidgetTester tester) =>
-      tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save general'));
+  FilledButton saveButton(WidgetTester tester, String label) =>
+      tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
+
+  /// The settings screen is a single `ListView`; cards below the fold are
+  /// built lazily, so `find` only matches painted ones. Scroll until the
+  /// button we need is visible (same as a user scrolling).
+  Future<void> reveal(WidgetTester tester, String label) async {
+    final button = find.widgetWithText(FilledButton, label);
+    final scroll = find.byType(Scrollable).first;
+    for (var i = 0; i < 40 && button.evaluate().isEmpty; i++) {
+      await tester.drag(scroll, const Offset(0, -400));
+      await tester.pumpAndSettle();
+    }
+  }
+
+  /// The sections the screen reads, in load order.
+  const sections = <String>['general', 'captions', 'control-strip'];
 
   testWidgets('Save is disabled until a real load and preserves unrelated keys',
       (tester) async {
@@ -30,7 +45,8 @@ void main() {
 
     // The section has not arrived yet: saving an empty map would make the
     // daemon refill every missing field with serde defaults.
-    expect(saveButton(tester).onPressed, isNull);
+    await reveal(tester, 'Save general');
+    expect(saveButton(tester, 'Save general').onPressed, isNull);
 
     pending.complete(<String, dynamic>{
       'language': 'en',
@@ -41,9 +57,9 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(saveButton(tester).onPressed, isNotNull);
-    await tester.enterText(find.byType(TextField), 'ja');
-    saveButton(tester).onPressed!();
+    expect(saveButton(tester, 'Save general').onPressed, isNotNull);
+    await tester.enterText(find.widgetWithText(TextField, 'Language code'), 'ja');
+    saveButton(tester, 'Save general').onPressed!();
     await tester.pump();
 
     expect(client.lastSettingsWritten, isNotNull);
@@ -67,7 +83,14 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(saveButton(tester).onPressed, isNull);
+    for (final label in <String>[
+      'Save general',
+      'Save captions',
+      'Save floating controls',
+    ]) {
+      await reveal(tester, label);
+      expect(saveButton(tester, label).onPressed, isNull);
+    }
   });
 
   testWidgets('a reconnect reloads the general section', (tester) async {
@@ -80,18 +103,17 @@ void main() {
 
     await tester.pumpWidget(screen(client));
     await tester.pump();
-    expect(client.settingsLoads, 1);
+    expect(client.settingsLoads, sections.length);
 
     // A repeated connected status is not a reconnect.
     client.emitStatus(DaemonConnectionState.connected);
     await tester.pump();
-    expect(client.settingsLoads, 1);
+    expect(client.settingsLoads, sections.length);
 
     client.emitStatus(DaemonConnectionState.reconnecting);
     await tester.pump();
     client.emitStatus(DaemonConnectionState.connected);
     await tester.pump();
-    expect(client.settingsLoads, 2,
+    expect(client.settingsLoads, sections.length * 2,
         reason: 'fresh daemon state is reloaded before Save is allowed again');
   });
-}

@@ -458,3 +458,54 @@ Use these examples when reviewing overlapping descriptions. They are expected ow
 | Add a desktop workspace route | airi-desktop-chatbox | Workspace reference only |
 | Resume a lifetime job from its dialog | airi-memory-ui-pages | Controls; provisioning skill for job engine |
 | Persona refresh deletes environmental context | airi-prompt-builder-engine | Context classification and pruning |
+
+---
+
+## 5. Ratchet evaluation workflow
+
+Procedures for building a trusted eval around one LLM flow and hill-climbing it. This is a workflow, not a discoverable skill: it has no `.agents/skills/` entry and is not counted in the §4 inventory.
+
+### When to use
+
+- A prompt, skill/instruction file, tool description, model choice, or agent harness needs to get measurably better and "looks better in a few tries" is not evidence.
+- An existing eval should be reused rather than rebuilt: keep its cases, grader, and runner, and add only a thin adapter to the layout below.
+- Not for ordinary bug fixing (use `airi-code-testing-hygiene`), for choosing verification commands (`airi-codebase-verification`), or for one-off prompt wording opinions.
+
+### Hard rules
+
+- The host owns truth: approvals (content-hashed), the frozen split, completeness, held-out isolation, and keep/revert. Never hand-edit `.omp/ratchet/<flow>/_state.json`; apply gate verdicts exactly as returned.
+- The only number that counts is the **test-split delta vs baseline**. Train movement is process, not result.
+- Read scores only. Train transcripts go to a fresh analyzer; test transcripts never exist outside the runner.
+- One idea per round. Describe the failing behavior; never paste case content into the tuned surface (that is the surface under test).
+- Cases carry positives *and* no-op negatives (should-fire and should-not-fire). Pick cases because a human can say why they are hard, never because today's model fails them, and never use a compared model's output as gold.
+- Prefer the cheapest deterministic grader that measures the property (programmatic check → blind pairwise judge → pointwise rubric of checkable claims → human spot-check). Judge model ≠ model under test; ground truth must be unreachable from the prompt, tools, and sandbox.
+- Runner contract: `results.jsonl` (one row per case × rep) and `errors.jsonl` with a failure class — never a zero row for an infra failure — plus `traces/` for train ids only. Resume idempotent on (case, rep), hard per-case wall-clock ceiling, jittered backoff, strict scoring, fresh state per trial.
+- Headless (no `ask`): never build and never approve. Continue only a flow whose approvals are all `current`; otherwise stop and say an interactive session is required.
+
+### Build order
+
+1. Grill once: flow and real entry point, input source (production transcripts > tickets > user-written > synthesis anchored on real examples), goal, the `change` surface, off-limits, stop rule.
+2. Cases (15–100) → `init(cases, harness, change, off_limits, command)` → `approve("inputs")`.
+3. Grader + runner, then pilot 3–5 cases and read one full row; pre-flight an oracle (~100%), a null (~0%), a determinism re-grade, and an induced API error landing in `errors.jsonl` → `approve("grader")`.
+4. `split(...)` stratified by tag, `plan(goal, reps, stop, command)`; check the noise floor (`≈ 1/sqrt(n_test · reps)`) against the smallest gain worth acting on → `approve("plan")` (last stop).
+5. `check("baseline")` → run → `gate("baseline")`; heed near-ceiling, train/test mismatch, and infra warnings.
+6. Climb unattended: `train(prev)` → one fresh analyzer returns a single unified diff → de-fluff and edit only `change` paths → `check("vN")` → run → `gate("vN")`. Verdicts: `keep` build on it, `revert` reverse-apply the patch, `rerun` resume errored slots or append reps, `plateau` categorize causes (`artifact_gap` / `grader` / `harness` / `structural` / `variance`) instead of grinding, `done` report.
+7. Report at the best round: status table, test delta with intervals (within noise → recommend not merging), `[REQUIRED]` vs `[TUNE]` tags, before/after train pairs, untried levers.
+
+### Optimizing engineering skills
+
+- Generalize failure modes: avoid case-specific names, strings, or IDs in `change_paths`; make edits broad enough to fix the class, not the instance.
+- Respect no-op cases: run pre-edit path/caller checks before mutating, and verify should-not-fire cases still pass.
+- One hypothesis per round: describe the failing behavior and change only the minimal surface needed to test it.
+- Prune bloat or flat scores only if the change is simpler; do not trade clarity for marginal movement.
+- Diagnose grader breakdown before mutating: check scope, false positives, missed requirements, and ordering before touching the skill surface.
+
+Changing the grader, reps, or price overrides mid-loop invalidates approvals by design — re-approve through the dialog. Changing cases after the baseline cannot be re-approved into the same flow: start a new flow.
+
+### Orchestration
+
+The parent owns approvals, gates, and Beads; workers own disjoint preparation slices (case authoring, runner, grader) with non-overlapping paths, since `change` paths may not overlap `cases`/`harness`. Workers never run builds, linters, or the eval itself; the parent gates each round and reports one status line per round. A `reviewer` pass over a round diff is a worker slice, not a gate.
+
+### Global skill
+
+The full procedure, API, and stall taxonomy live in the global managed skill `ratchet-workflow` (`help://eval/ratchet` in omp). Read it before the first round; this section only records the project's binding rules and where the flow directory lives.
