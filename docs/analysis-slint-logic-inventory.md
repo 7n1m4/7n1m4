@@ -3,6 +3,7 @@
 
 **Status:** survey · **Date:** 2026-11-21 · **Scope:** `crates/anima-slint/src/**` at HEAD `bad8fc69`
 
+
 **Owner:** E1-T1 / bead `airi-wxp.1` · **Read-only source survey** (this file is the only write)
 
 This document makes [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md) §4 (move/delete
