@@ -70,6 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       <_SettingsSection, GlobalKey>{
     for (final section in _SettingsSection.values) section: GlobalKey(),
   };
+  final GlobalKey _statusKey = GlobalKey();
   final Map<_SettingsSection, _SectionDraft> _drafts =
       <_SettingsSection, _SectionDraft>{
     for (final section in _SettingsSection.values)
@@ -197,6 +198,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (section == _SettingsSection.controlStrip) {
       draft.values = Map<String, dynamic>.from(draft.values)
         ..['backgroundTint'] = _tint.text.trim();
+      if (draft.values.containsKey('buttons')) {
+        draft.values['buttons'] = _completeStripButtons(draft.values['buttons']);
+      }
     }
     final updated = Map<String, dynamic>.from(draft.values);
     setState(() {
@@ -293,6 +297,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       if (_settingsStatus != null)
         Padding(
+          key: _statusKey,
           padding: const EdgeInsets.only(top: 8),
           child: Text(_settingsStatus!),
         ),
@@ -305,6 +310,177 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildGeneralCard(BuildContext context) {
+    return _buildCard(
+      _SettingsSection.general,
+      children: <Widget>[
+        TextField(
+          controller: _language,
+          enabled: !_settingsBusy && _loaded,
+          decoration: const InputDecoration(labelText: 'Language code'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCaptionsCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.captions]!;
+    final values = draft.values;
+    final enabled = draft.loaded && !_settingsBusy;
+    return _buildCard(
+      _SettingsSection.captions,
+      children: <Widget>[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['enabled'] != false,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.captions, 'enabled', value)
+              : null,
+          title: const Text('Show captions'),
+        ),
+        _percentField(
+          label: 'Font size (%)',
+          value: values['fontSize'] ?? values['font_size'],
+          min: 50,
+          max: 200,
+          enabled: enabled,
+          onChanged: (value) {
+            // Migrate a stale snake_case spelling to camelCase in the same edit,
+            // removing font_size when fontSize is not yet present, then set fontSize.
+            final draft = _drafts[_SettingsSection.captions]!;
+            final current = draft.values;
+            if (current['fontSize'] == null && current['font_size'] != null) {
+              draft.values = Map<String, dynamic>.from(current)..remove('font_size');
+            }
+            _edit(_SettingsSection.captions, 'fontSize', value);
+          },
+        ),
+        _percentField(
+          label: 'Opacity (%)',
+          value: values['opacity'],
+          min: 0,
+          max: 100,
+          enabled: enabled,
+          onChanged: (value) =>
+              _edit(_SettingsSection.captions, 'opacity', value),
+        ),
+        DropdownButtonFormField<String>(
+          initialValue: _dockingValue(values['docking']),
+          decoration: const InputDecoration(labelText: 'Docking'),
+          items: const <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(value: 'top', child: Text('Top')),
+            DropdownMenuItem<String>(value: 'bottom', child: Text('Bottom')),
+            DropdownMenuItem<String>(value: 'head', child: Text('Head (bottom alias)')),
+            DropdownMenuItem<String>(value: 'none', child: Text('Hidden')),
+          ],
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.captions, 'docking', value)
+              : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildControlStripCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.controlStrip]!;
+    final values = draft.values;
+    final enabled = draft.loaded && !_settingsBusy;
+    final storedButtons = _stripStoredButtons(values['buttons']);
+    final enabledButtons = <String>{
+      for (final entry in storedButtons)
+        if (entry['enabled'] == true && entry['id'] is String)
+          entry['id'] as String,
+    };
+    return _buildCard(
+      _SettingsSection.controlStrip,
+      children: <Widget>[
+        DropdownButtonFormField<String>(
+          initialValue: _edgeWire(values['dockedEdge']),
+          decoration: const InputDecoration(labelText: 'Docked edge'),
+          items: const <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(value: 'left', child: Text('Left')),
+            DropdownMenuItem<String>(value: 'right', child: Text('Right')),
+            DropdownMenuItem<String>(value: 'top', child: Text('Top')),
+            DropdownMenuItem<String>(value: 'bottom', child: Text('Bottom')),
+          ],
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.controlStrip, 'dockedEdge', value)
+              : null,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['collapsed'] == true,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.controlStrip, 'collapsed', value)
+              : null,
+          title: const Text('Collapsed to the docked edge'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['captionOpen'] == true,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.controlStrip, 'captionOpen', value)
+              : null,
+          title: const Text('Caption overlay open'),
+        ),
+        TextField(
+          enabled: enabled,
+          controller: _tint,
+          decoration: const InputDecoration(labelText: 'Background tint'),
+        ),
+        const SizedBox(height: 8),
+        const Text('Buttons', style: TextStyle(fontWeight: FontWeight.bold)),
+        for (final id in kStageStripCatalog)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            value: enabledButtons.contains(id),
+            title: Text(_stripButtonLabel(id)),
+            onChanged: enabled
+                ? (value) => _edit(
+                      _SettingsSection.controlStrip,
+                      'buttons',
+                      _toggleStripButton(
+                          values['buttons'], enabledButtons, id, value ?? false),
+                    )
+                : null,
+          ),
+      ],
+    );
+  }
+
+  /// A bounded percentage field. The clamp applies as the user types; an
+  /// empty field edits nothing.
+  Widget _percentField({
+    required String label,
+    required Object? value,
+    required double min,
+    required double max,
+    required bool enabled,
+    required ValueChanged<double> onChanged,
+  }) {
+    return TextFormField(
+      key: ValueKey<String>(label),
+      enabled: enabled,
+      initialValue: value is num && value.isFinite
+          ? _formatNumber(value.toDouble())
+          : _formatNumber(min),
+      keyboardType: TextInputType.number,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+      ],
+      decoration: InputDecoration(labelText: label),
+      onChanged: (text) {
+        final parsed = double.tryParse(text);
+        if (parsed != null && parsed != value) onChanged(parsed.clamp(min, max));
+      },
+    );
+  }
+
+  Widget _buildCard(
+    _SettingsSection section, {
+    required List<Widget> children,
+  }) {
+    final draft = _drafts[section]!;
     return Card(
       key: _cardKeys[section],
       child: Padding(
@@ -361,3 +537,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 }
+
+/// Wire value of a stored caption docking (`top`/`bottom`/`head`/`none`);
+/// anything unrecognized reads as the daemon's own default, `none`.
+String _dockingValue(Object? value) => switch (value) {
+      'top' => 'top',
+      'bottom' => 'bottom',
+      'head' => 'head',
+      'none' => 'none',
+      _ => 'none',
+    };
+
+/// Wire value of a stored docked edge (`ControlStripDockedEdge`); anything
+/// unrecognized reads as the daemon default, `right`.
+String _edgeWire(Object? value) => switch (value) {
+      'left' => 'left',
+      'top' => 'top',
+      'bottom' => 'bottom',
+      _ => 'right',
+    };
+
+/// The daemon's `buttons` array as a list of entries in stored order. A
+/// missing or malformed list falls back to the daemon's own default set
+/// (`StageControlStripSettings`), never to an invented arrangement.
+List<Map<String, dynamic>> _stripStoredButtons(Object? raw) {
+  final result = <Map<String, dynamic>>[];
+  final seen = <String>{};
+  if (raw is List) {
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final id = entry['id'];
+      if (id is! String || !seen.add(id)) continue;
+      result.add(Map<String, dynamic>.from(entry));
+    }
+  }
+  if (raw is! List && result.isEmpty) {
+    for (final id in kStageStripCatalog) {
+      result.add(<String, dynamic>{'id': id, 'enabled': true});
+    }
+  }
+  return result;
+}
+
+/// Return the stored buttons plus any catalog entries the daemon omitted, so
+/// saving an unrelated field does not silently shrink the stored catalog.
+List<Map<String, dynamic>> _completeStripButtons(Object? raw) {
+  final result = _stripStoredButtons(raw);
+  final seen = result
+      .where((entry) => entry['id'] is String)
+      .map((entry) => entry['id'] as String)
+      .toSet();
+  for (final id in kStageStripCatalog) {
+    if (seen.add(id)) {
+      result.add(<String, dynamic>{'id': id, 'enabled': false});
+    }
+  }
+  return result;
+}
+
+/// Write the daemon's `buttons` array back with `id` toggled to `value`: the
+/// stored entry keeps its position and fields with only `enabled` flipped,
+/// a missing entry is appended, and the daemon's default catalog entries
+/// follow in daemon order.
+List<Map<String, dynamic>> _toggleStripButton(
+  Object? raw,
+  Set<String> enabled,
+  String id,
+  bool value,
+) {
+  final next = <String>{...enabled};
+  if (value) {
+    next.add(id);
+  } else {
+    next.remove(id);
+  }
+  final result = <Map<String, dynamic>>[];
+  final seen = <String>{};
+  for (final entry in _stripStoredButtons(raw)) {
+    final entryId = entry['id'];
+    if (entryId is! String || !kStageStripCatalog.contains(entryId)) {
+      // An id this build does not surface is carried through untouched.
+      result.add(entry);
+      continue;
+    }
+    result.add(<String, dynamic>{...entry, 'enabled': next.contains(entryId)});
+    seen.add(entryId);
+  }
+  for (final entry in kStageStripCatalog) {
+    if (seen.contains(entry)) continue;
+    result.add(<String, dynamic>{'id': entry, 'enabled': next.contains(entry)});
+    seen.add(entry);
+  }
+  return result;
+}
+
+String _stripButtonLabel(String id) => switch (id) {
+      'chat' => 'Chat toggle',
+      'actor-characters' => 'Characters',
+      'mic' => 'Microphone',
+      'stage' => 'Actor stage',
+      'stage-atmosphere' => 'Stage & chat theme',
+      'caption' => 'Captions',
+      _ => id,
+    };
+
+String _formatNumber(double value) => value == value.roundToDouble()
+    ? value.toStringAsFixed(0)
+    : value.toString();
