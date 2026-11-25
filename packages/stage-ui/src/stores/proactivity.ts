@@ -21,8 +21,8 @@ import { computed, onUnmounted, ref, toRaw, watch } from 'vue'
 import { useLlmmarkerParser } from '../composables/llm-marker-parser'
 import { categorizeResponse, createStreamingCategorizer } from '../composables/response-categoriser'
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
+import { LOCAL_USER_ID } from '../local-user'
 import { logMemoryProbe } from '../utils/memory-sentinel'
-import { useAuthStore } from './auth'
 import { useBackgroundStore } from './background'
 import { useChatOrchestratorStore } from './chat'
 import { useChatContextStore } from './chat/context-store'
@@ -56,7 +56,6 @@ let proactivityEpoch = 0
 export const useProactivityStore = defineStore('proactivity', () => {
   const airiCardStore = useAiriCardStore()
   const { activeCard, activeCardId } = storeToRefs(airiCardStore)
-  const { userId } = storeToRefs(useAuthStore())
   const chatSession = useChatSessionStore()
   const chatOrchestrator = useChatOrchestratorStore()
   const chatContext = useChatContextStore()
@@ -380,7 +379,7 @@ export const useProactivityStore = defineStore('proactivity', () => {
   }
 
   async function collectCharacterConversationMessages(characterId: string) {
-    const currentUserId = userId.value || 'local'
+    const currentUserId = LOCAL_USER_ID
     const index = await chatSessionsRepo.getIndex(currentUserId)
     const characterSessions = index?.characters?.[characterId]
     if (!characterSessions)

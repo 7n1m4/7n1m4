@@ -12,7 +12,7 @@ import * as v from 'valibot'
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
 import { echoChipsRepo } from '../database/repos/echo-chips.repo'
 import { layeredMemory } from '../libs/search/layered-memory'
-import { useAuthStore } from './auth'
+import { LOCAL_USER_ID } from '../local-user'
 import { mergeById } from './chat/session-message-merge'
 import { useChatSessionStore } from './chat/session-store'
 import { useLLM } from './llm'
@@ -123,7 +123,6 @@ function normalizeChipType(input: any): EchoChipType {
 }
 
 export const useEchoesStore = defineStore('echo-chips', () => {
-  const { userId } = storeToRefs(useAuthStore())
   const { cards, activeCardId } = storeToRefs(useAiriCardStore())
   const { activeProvider: globalProviderId, activeModel: globalModelId } = storeToRefs(useConsciousnessStore())
   const providersStore = useProvidersStore()
@@ -154,7 +153,7 @@ export const useEchoesStore = defineStore('echo-chips', () => {
   }
 
   function getCurrentUserId() {
-    return userId.value || 'local'
+    return LOCAL_USER_ID
   }
 
   const sortedChips = computed(() => {
