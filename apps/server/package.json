@@ -5,14 +5,12 @@
   "private": true,
   "scripts": {
     "apply:env": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE",
-    "auth:generate": "pnpm run apply:env -- better-auth generate --config src/scripts/auth.ts --output src/schemas/accounts.ts -y",
     "dev": "pnpm run apply:env -- tsx --watch src/app.ts",
     "start": "tsx src/app.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "pnpm run apply:env -- drizzle-kit push"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.5.3",
     "@dotenvx/dotenvx": "^1.52.0",
     "@electric-sql/pglite": "catalog:",
     "@guiiai/logg": "catalog:",
@@ -33,7 +31,6 @@
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "@proj-anima/drizzle-orm-browser-migrator": "^0.1.6",
     "@proj-anima/server-schema": "workspace:*",
-    "better-auth": "^1.4.19",
     "drizzle-orm": "^0.45.1",
     "drizzle-valibot": "catalog:",
     "hono": "catalog:",
@@ -43,7 +40,6 @@
     "valibot": "catalog:"
   },
   "devDependencies": {
-    "@better-auth/cli": "^1.4.21",
     "@types/pg": "^8.11.11",
     "drizzle-kit": "^0.31.9"
   }

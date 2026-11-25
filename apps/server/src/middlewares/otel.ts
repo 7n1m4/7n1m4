@@ -1,7 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
 
-import type { HonoEnv } from '../types/hono'
-
 import { context, SpanStatusCode, trace } from '@opentelemetry/api'
 
 const tracer = trace.getTracer('airi-server-hono')
@@ -13,11 +11,11 @@ const tracer = trace.getTracer('airi-server-hono')
 export function otelMiddleware(otelMetrics: {
   httpRequestDuration: { record: (value: number, attributes?: Record<string, string | number>) => void }
   httpActiveRequests: { add: (value: number, attributes?: Record<string, string>) => void }
-}): MiddlewareHandler<HonoEnv> {
+}): MiddlewareHandler {
   return async (c, next) => {
     const startTime = performance.now()
     const method = c.req.method
-    // Route *pattern* (e.g. /api/characters/:id), never the raw path — keeps
+    // Route *pattern* (e.g. /api/items/:id), never the raw path — keeps
     // otel label/span cardinality bounded regardless of id space.
     const path = (c.req as any).routePath ?? c.req.path
 

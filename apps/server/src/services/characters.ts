@@ -7,10 +7,6 @@ import { createNotFoundError } from '../utils/error'
 import * as schema from '../schemas/characters'
 import * as userCharacterSchema from '../schemas/user-character'
 
-// Client-writable columns only; server-managed counters, ownership, and
-// identity fields are never accepted from a PATCH body.
-const UPDATABLE_KEYS = ['version', 'coverUrl', 'avatarUrl', 'creatorRole'] as const
-
 export function createCharacterService(db: Database) {
   return {
     async findById(id: string) {
@@ -24,35 +20,6 @@ export function createCharacterService(db: Database) {
           avatarModels: true,
           i18n: true,
           prompts: true,
-          likes: true,
-          bookmarks: true,
-          cover: true,
-        },
-      })
-    },
-
-    async findByOwnerId(ownerId: string) {
-      return await db.query.character.findMany({
-        where: and(
-          eq(schema.character.ownerId, ownerId),
-          isNull(schema.character.deletedAt),
-        ),
-        with: {
-          i18n: true,
-          capabilities: true,
-          likes: true,
-          bookmarks: true,
-          cover: true,
-        },
-      })
-    },
-
-    async findAll() {
-      return await db.query.character.findMany({
-        where: isNull(schema.character.deletedAt),
-        with: {
-          i18n: true,
-          capabilities: true,
           likes: true,
           bookmarks: true,
           cover: true,
@@ -157,92 +124,6 @@ export function createCharacterService(db: Database) {
           return { bookmarked: true }
         }
       })
-    },
-
-    async create(data: {
-      character: schema.NewCharacter
-      cover?: Omit<schema.NewCharacterCover, 'characterId'>
-      capabilities?: Omit<schema.NewCharacterCapability, 'characterId'>[]
-      avatarModels?: Omit<schema.NewAvatarModel, 'characterId'>[]
-      i18n?: Omit<schema.NewCharacterI18n, 'characterId'>[]
-      prompts?: Omit<schema.NewCharacterPrompt, 'characterId'>[]
-    }) {
-      return await db.transaction(async (tx: any) => {
-        // Counters and lifecycle timestamps are server-owned; a POST body must not
-        // seed them (the schema defaults them to 0 / now).
-        const {
-          likesCount: _likesCount,
-          bookmarksCount: _bookmarksCount,
-          interactionsCount: _interactionsCount,
-          forksCount: _forksCount,
-          createdAt: _createdAt,
-          updatedAt: _updatedAt,
-          deletedAt: _deletedAt,
-          ...characterValues
-        } = data.character
-        const [inserted] = await tx.insert(schema.character).values(characterValues).returning()
-
-        if (data.cover) {
-          await tx.insert(schema.characterCovers).values({
-            ...data.cover,
-            characterId: inserted.id,
-          })
-        }
-
-        if (data.capabilities?.length) {
-          await tx.insert(schema.characterCapabilities).values(
-            data.capabilities.map(c => ({ ...c, characterId: inserted.id })),
-          )
-        }
-
-        if (data.avatarModels?.length) {
-          await tx.insert(schema.avatarModel).values(
-            data.avatarModels.map(a => ({ ...a, characterId: inserted.id })),
-          )
-        }
-
-        if (data.i18n?.length) {
-          await tx.insert(schema.characterI18n).values(
-            data.i18n.map(i => ({ ...i, characterId: inserted.id })),
-          )
-        }
-
-        if (data.prompts?.length) {
-          await tx.insert(schema.characterPrompts).values(
-            data.prompts.map(p => ({ ...p, characterId: inserted.id })),
-          )
-        }
-
-        return inserted
-      })
-    },
-
-    async update(id: string, data: Partial<schema.NewCharacter>) {
-      const patch: Record<string, unknown> = {}
-      for (const key of UPDATABLE_KEYS) {
-        if (data[key] !== undefined)
-          patch[key] = data[key]
-      }
-      if (Object.keys(patch).length === 0)
-        return undefined // Nothing the client is allowed to change
-      const rows = await db.update(schema.character)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(and(
-          eq(schema.character.id, id),
-          isNull(schema.character.deletedAt),
-        ))
-        .returning()
-      return rows[0]
-    },
-
-    async delete(id: string) {
-      return await db.update(schema.character)
-        .set({ deletedAt: new Date() })
-        .where(and(
-          eq(schema.character.id, id),
-          isNull(schema.character.deletedAt),
-        ))
-        .returning()
     },
   }
 }

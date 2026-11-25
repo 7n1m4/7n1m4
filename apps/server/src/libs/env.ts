@@ -4,21 +4,10 @@ import { env, exit } from 'node:process'
 
 import { useLogger } from '@guiiai/logg'
 import { injeca } from 'injeca'
-import { minLength, nonEmpty, object, optional, parse, pipe, string } from 'valibot'
+import { nonEmpty, object, optional, parse, pipe, string } from 'valibot'
 
 const EnvSchema = object({
-  API_SERVER_URL: optional(string(), 'http://localhost:3000'),
-
   DATABASE_URL: pipe(string(), nonEmpty('DATABASE_URL is required')),
-
-  BETTER_AUTH_SECRET: pipe(string(), nonEmpty('BETTER_AUTH_SECRET is required'), minLength(32, 'BETTER_AUTH_SECRET must be at least 32 characters')),
-
-  // Social logins are optional: an email/password-only instance must boot without
-  // inventing OAuth apps. Each provider is registered only when its pair is set.
-  AUTH_GOOGLE_CLIENT_ID: optional(string()),
-  AUTH_GOOGLE_CLIENT_SECRET: optional(string()),
-  AUTH_GITHUB_CLIENT_ID: optional(string()),
-  AUTH_GITHUB_CLIENT_SECRET: optional(string()),
 
   // OpenTelemetry
   OTEL_SERVICE_NAMESPACE: optional(string(), 'airi'),

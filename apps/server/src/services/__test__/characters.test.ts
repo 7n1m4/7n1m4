@@ -21,35 +21,15 @@ describe('characterService', () => {
       email: 'test@example.com',
     }).returning()
     testUser = user
-  })
 
-  it('create should handle full character creation', async () => {
-    const characterData = {
+    await db.insert(schema.character).values({
       id: 'char-1',
-      version: '1.0',
-      coverUrl: 'url',
-      characterId: 'cid',
       ownerId: testUser.id,
       creatorId: testUser.id,
-    }
-
-    const result = await service.create({
-      character: characterData,
-      i18n: [{ language: 'en', name: 'Aster', description: 'desc', tags: [] }],
-      cover: { foregroundUrl: 'fg', backgroundUrl: 'bg' },
+      version: '1.0',
+      coverUrl: 'cover',
+      characterId: 'cid',
     })
-
-    expect(result.id).toBe('char-1')
-
-    const found = await service.findById('char-1')
-    expect(found?.i18n[0].name).toBe('Aster')
-    expect(found?.cover?.foregroundUrl).toBe('fg')
-  })
-
-  it('findAll should return characters with relations', async () => {
-    const result = await service.findAll()
-    expect(result.length).toBeGreaterThan(0)
-    expect(result[0].i18n).toBeDefined()
   })
 
   it('like should toggle like status and update counter', async () => {
@@ -88,17 +68,5 @@ describe('characterService', () => {
 
     char = await service.findById(charId)
     expect(char?.bookmarksCount).toBe(0)
-  })
-
-  it('update should update character fields', async () => {
-    await service.update('char-1', { version: '2.0' })
-    const char = await service.findById('char-1')
-    expect(char?.version).toBe('2.0')
-  })
-
-  it('delete should soft delete character', async () => {
-    await service.delete('char-1')
-    const char = await service.findById('char-1')
-    expect(char).toBeUndefined()
   })
 })
