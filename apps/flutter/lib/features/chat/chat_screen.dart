@@ -6,10 +6,15 @@ import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
+import 'chat_composer_controller.dart';
 import 'genui_surface_controller.dart';
 
 /// Minimal chat surface: sends `chat.send` RPCs and renders streamed
 /// `token.delta` events. View state only; the daemon owns sessions.
+///
+/// Draft, send/stop state and `chat.cancel` live in [ChatComposerController];
+/// this widget owns the transcript, the delta reconciliation by `message_id`
+/// and GenUI rehydration.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.client, this.initialSessionId});
 
@@ -23,16 +28,13 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _input = TextEditingController();
   final List<_ChatMessage> _messages = <_ChatMessage>[];
   final AiriGenUiSession _genUi = AiriGenUiSession();
-  String? _sessionId;
+  late final ChatComposerController _composer;
   String? _activeMessageId;
   final StringBuffer _deltaBuffer = StringBuffer();
-  bool _sending = false;
   bool _assistantStreaming = false;
   bool _historyUnavailable = false;
-  String? _error;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   bool _wasConnected = false;
@@ -44,6 +46,13 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _composer = ChatComposerController(
+      client: widget.client,
+      sessionId: widget.initialSessionId,
+      onMessageCommitted: (text) {
+        if (mounted) setState(() => _messages.add(_ChatMessage.user(text)));
+      },
+    );
     _unsubscribeEvent = widget.client.onEvent(_onEvent);
     _wasConnected = widget.client.snapshot.isConnected;
     if (_wasConnected) _requestEmotionEvents();
@@ -58,7 +67,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     final initial = widget.initialSessionId;
     if (initial != null && initial.isNotEmpty) {
-      _sessionId = initial;
       unawaited(_loadHistory());
     }
   }
@@ -68,7 +76,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _statusSub?.cancel();
     _unsubscribeEvent?.call();
     _requestEventRpc('event.unsubscribe');
-    _input.dispose();
+    _composer.dispose();
     _genUi.dispose();
     super.dispose();
   }
@@ -106,10 +114,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (event.topic != EventTopic.tokenDelta) return;
     final data = event.data;
     final sid = data['session_id'] as String? ?? '';
-    if (_sessionId != null && sid.isNotEmpty && sid != _sessionId) return;
+    if (_composer.sessionId != null && sid.isNotEmpty && sid != _composer.sessionId) {
+      return;
+    }
     // The chat.send ack can arrive after the first delta; remember the session
     // from the stream so a Stop press cancels the right turn.
-    if (_sessionId == null && sid.isNotEmpty) _sessionId = sid;
+    if (_composer.sessionId == null && sid.isNotEmpty) _composer.sessionId = sid;
     final mid = data['message_id'] as String? ?? '';
     final delta = data['delta'] as String? ?? '';
     final isFinal = data['final'] == true;
@@ -141,10 +151,12 @@ class _ChatScreenState extends State<ChatScreen> {
         _assistantStreaming = false;
         _activeMessageId = null;
         _deltaBuffer.clear();
-        _sending = false;
       }
     });
-    if (isFinal) _finishGenUiTurn();
+    if (isFinal) {
+      _composer.finishTurn();
+      _finishGenUiTurn();
+    }
   }
 
   /// Parse the fully accumulated turn once: GenUI handles split JSON tokens.
@@ -195,77 +207,32 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<void> _send() async {
-    final text = _input.text.trim();
-    if (text.isEmpty || _sending) return;
-    if (!widget.client.snapshot.isConnected) {
-      setState(() => _error = 'Not connected to the daemon.');
-      return;
-    }
+  /// Stop the in-flight turn via the daemon's `chat.cancel` verb.
+  Future<void> _stop() async {
+    final cancelled = await _composer.stopGeneration();
+    if (!mounted || !cancelled) return;
     setState(() {
-      _error = null;
-      _sending = true;
-      _messages.add(_ChatMessage.user(text));
-      _input.clear();
+      _assistantStreaming = false;
+      _activeMessageId = null;
+      _deltaBuffer.clear();
     });
-    try {
-      final reply = await widget.client.call('chat.send', payload: <String, dynamic>{
-        'sessionId': _sessionId ?? '',
-        'content': text,
-        'genUi': true,
-      });
-      if (!mounted) return;
-      if (reply.ok && reply.data is Map<String, dynamic>) {
-        // ChatSendReply is serde camelCase on the wire (sessionId/messageId);
-        // snake_case here left the session unset so Stop cancelled nothing.
-        final data = reply.data as Map<String, dynamic>;
-        final sid = data['sessionId'] as String?;
-        if (sid != null && sid.isNotEmpty) _sessionId = sid;
-        final mid = data['messageId'] as String?;
-        if (mid != null && mid.isNotEmpty) _activeMessageId = mid;
-        // The ack is early: the turn is still streaming. Leave _sending set so
-        // Stop stays live until a final delta, a cancel ack, or an error.
-      } else if (!reply.ok) {
-        setState(() {
-          _error = reply.error?.message ?? 'chat.send failed';
-          _sending = false;
-        });
-      }
-    } on Object catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e is DaemonClientException
-            ? e.message
-            : 'Could not send message: $e';
-        _sending = false;
-      });
-    }
   }
 
-  /// Stop the in-flight turn via the daemon's `chat.cancel` verb.
-  Future<void> _cancel() async {
-    setState(() => _error = null);
-    try {
-      final cancelled = await widget.client.cancelChat(_sessionId ?? '');
-      if (!mounted) return;
-      setState(() {
-        _sending = false;
-        _assistantStreaming = false;
-        _activeMessageId = null;
-        _deltaBuffer.clear();
-        if (!cancelled) _error = 'No active turn to cancel.';
-      });
-    } on DaemonClientException catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.message);
+  /// The composer's two-state button: Stop while a turn is open, Send
+  /// otherwise (`WhisperComposerBar.onSubmit`).
+  void _onSubmit() {
+    if (_composer.showStop) {
+      unawaited(_stop());
+      return;
     }
+    unawaited(_composer.handleSend());
   }
 
   /// Replay prior turns when a session is opened. Missing history (empty
   /// session) and an unregistered/failing `chat.history` are both non-fatal:
   /// the user can still chat, the screen just starts empty.
   Future<void> _loadHistory() async {
-    final sid = _sessionId;
+    final sid = _composer.sessionId;
     if (sid == null || sid.isEmpty) return;
     try {
       final turns = await widget.client.chatHistory(sid);
@@ -317,6 +284,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _composer,
+      builder: (context, _) => _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
+    final sending = _composer.isComposing;
+    final error = _composer.error;
     return Column(
       children: <Widget>[
         Expanded(
@@ -356,10 +332,10 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
         ),
-        if (_error != null)
+        if (error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(_error!,
+            child: Text(error,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         if (_cue != null)
@@ -402,19 +378,19 @@ class _ChatScreenState extends State<ChatScreen> {
               children: <Widget>[
                 Expanded(
                   child: TextField(
-                    controller: _input,
-                    enabled: !_sending,
+                    controller: _composer.input,
+                    enabled: !sending,
                     decoration: const InputDecoration(hintText: 'Message'),
-                    onSubmitted: (_) => _send(),
+                    onSubmitted: (_) => _onSubmit(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: _sending ? _cancel : _send,
-                  icon: _sending
+                  onPressed: _onSubmit,
+                  icon: sending
                       ? const Icon(Icons.stop)
                       : const Icon(Icons.send),
-                  tooltip: _sending ? 'Stop' : 'Send',
+                  tooltip: sending ? 'Stop' : 'Send',
                 ),
               ],
             ),

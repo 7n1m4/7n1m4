@@ -5,10 +5,105 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/chat/chat_screen.dart';
+import 'package:anima_control/features/chat/chat_composer_controller.dart';
 
 import 'support/fakes.dart';
 
+class _FailingCancelClient extends FakeChatClient {
+  @override
+  Future<bool> cancelChat(String sessionId) async => false;
+}
+
 void main() {
+  group('ChatComposerController', () {
+    test('empty draft never sends', () async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      final actions = <String>[];
+      client.onCall = (action, payload) {
+        actions.add(action);
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+      };
+      final controller = ChatComposerController(client: client);
+      expect(await controller.handleSend(), isNull);
+      expect(actions, isEmpty);
+    });
+    test('a failed send restores the draft and clears composing', () async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      client.onCall = (action, payload) => RpcReply(
+            action: action,
+            ok: false,
+            error: const RpcError(code: 'internal', message: 'boom'),
+          );
+      final controller = ChatComposerController(client: client);
+      controller.input.text = 'hi';
+      expect(await controller.handleSend(), isNull);
+      expect(controller.isComposing, isFalse);
+      expect(controller.input.text, 'hi');
+      expect(controller.error, 'boom');
+    });
+    test('the early ack keeps composing until the turn ends', () async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      client.onCall = (action, payload) => RpcReply(
+            action: action,
+            ok: true,
+            data: action == 'chat.send'
+                ? <String, dynamic>{
+                    'sessionId': 's1',
+                    'messageId': 'm-1',
+                  }
+                : <String, dynamic>{},
+          );
+      final controller = ChatComposerController(client: client);
+      controller.input.text = 'hi';
+      expect(await controller.handleSend(), 'm-1');
+      expect(controller.isComposing, isTrue);
+      expect(controller.input.text, '');
+      expect(controller.sessionId, 's1');
+      controller.finishTurn();
+      expect(controller.isComposing, isFalse);
+    });
+    test('stopGeneration clears composing and reports a failed cancel', () async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      client.onCall = (action, payload) => RpcReply(
+            action: action,
+            ok: true,
+            data: action == 'chat.send'
+                ? <String, dynamic>{
+                    'sessionId': 's1',
+                    'messageId': 'm-1',
+                  }
+                : <String, dynamic>{},
+          );
+      final controller = ChatComposerController(client: client);
+      controller.input.text = 'hi';
+      await controller.handleSend();
+      expect(await controller.stopGeneration(), isTrue);
+      expect(controller.isComposing, isFalse);
+      expect(client.cancelledSessions, <String>['s1']);
+
+      final failingClient = _FailingCancelClient();
+      addTearDown(failingClient.dispose);
+      final controller2 = ChatComposerController(client: failingClient);
+      controller2.input.text = 'hi';
+      failingClient.onCall = (action, payload) => RpcReply(
+            action: action,
+            ok: true,
+            data: action == 'chat.send'
+                ? <String, dynamic>{
+                    'sessionId': 's1',
+                    'messageId': 'm-1',
+                  }
+                : <String, dynamic>{},
+          );
+      await controller2.handleSend();
+      await controller2.stopGeneration();
+      expect(controller2.error, 'No active turn to cancel.');
+    });
+  });
   testWidgets('ChatScreen renders with a disconnected client', (tester) async {
     final client = DaemonClient();
     addTearDown(client.dispose);
