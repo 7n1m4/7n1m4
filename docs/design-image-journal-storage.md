@@ -10,7 +10,7 @@
 | :--- | :--- |
 | Entry types (`ImageJournalEntry`, `CreateImageJournalEntryInput`) | [`packages/stage-ui/src/types/image-journal.ts`](packages/stage-ui/src/types/image-journal.ts) |
 | Live gallery / persistence (`type: 'journal'` entries, per-character scoping) | [`packages/stage-ui/src/stores/background.ts`](packages/stage-ui/src/stores/background.ts) |
-| LLM tool (`image_journal` `create` / `apply` / `set_as_background`) | [`apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts`](apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts) |
+| LLM tool (`image_journal` `create` / `apply` (with `set_as_background` as an alias for `apply`)) | [`apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts`](apps/stage-tamagotchi/src/renderer/stores/tools/builtin/image-journal.ts) |
 | Card flag (`extensions.airi.imageJournal.selfie`) | [`packages/stage-ui/src/types/card.schema.ts`](packages/stage-ui/src/types/card.schema.ts) |
 
 ## Model
@@ -18,8 +18,8 @@
 The image journal is a durable, append-only, per-character (`activeCardId`) art
 history; the on-screen widget is a **viewport** into it, not the source of truth.
 Entries are stored as background-store `journal` entries (blob-backed);
-`image_journal.create` appends a new entry and `image_journal.apply` /
-`set_as_background` promotes one to the stage background (surfacing the active
+`image_journal.create` appends a new entry and `image_journal.apply` (or its
+alias `set_as_background`) promotes one to the stage background (surfacing the active
 background back into the proactivity/sensor layer as ambient self-context).
 
 > Note: in-code `image_journal.create` image generation is currently gated off

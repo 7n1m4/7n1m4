@@ -663,7 +663,7 @@ While the WebGPU in-situ conditioning engine is fully operational inside `@crysc
   - Expose an export bridge via `web-rwkv` adapter: `exportStateCartridge(cartridgeId: string): Promise<Blob>`.
   - **Standalone Action**: Add an "Export State Cartridge (.state)" action button in Step 4 and the Companion Card Editor triggering a direct browser file download (e.g. `AIRI-<CompanionName>-1.5B.state`).
   - **ZIP Package Modal Integration (`CardExportDialog.vue`)**:
-    - As defined in [`docs/design-airi-card.md`](./design-airi-card.md) §6 and [`docs/design-character-card-import-export.md`](./design-character-card-import-export.md) §3, integrate the cartridge into the **AIRI Package Spec v2 ZIP bundle**.
+    - As defined in [`docs/design-airi-card.md`](./design-airi-card.md) "Import / export pipeline" section (ZIP package v2 layout includes `states/`) and [`docs/design-character-card-import-export.md`](./design-character-card-import-export.md) §3, integrate the cartridge into the **AIRI Package Spec v2 ZIP bundle**.
     - Add an **"Include RWKV-7 State Cartridge (.state)"** checklist toggle in the ZIP Package segment of `CardExportDialog.vue` (auto-detected when `card.extensions?.airi?.rwkv?.stateCartridgeId` is present in OPFS).
     - Bundle the binary into the zip under `states/character.state` and register in `manifest.json`:
       ```json

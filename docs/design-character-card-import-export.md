@@ -51,7 +51,7 @@ Use it for:
 - moving a character between devices/users without losing assets
 - upstream-compatible exchange (v1) or full fork-fidelity exchange (v2)
 
-Two flavors (spec in [`docs/design-airi-card.md`](./design-airi-card.md) §6):
+Two flavors (spec in [`docs/design-airi-card.md`](./design-airi-card.md) "Import / export pipeline" section, ZIP package v1/v2 layout):
 - **v1 Upstream (`moeru-ai` standard)**: `manifest.json` (`format: 'airi-character-card'`, `version: 1`) + CCv3 `card.json` + single `models/body-model.<ext>`. No memories, no voices, no background — upstream whitelist only.
 - **v2 Extended (fork)**: `manifest.json` (`format: 'airi-card-package'`, `version: 2`) + `card.json` + `cover.png` + `background.png` + `models/` + `voices/` + `states/character.state` (RWKV-7 recurrent state cartridge) + `memories/chat_sessions.json` + `README.md`. Fork-only: intentionally fails upstream validation until a v2 importer ships.
 

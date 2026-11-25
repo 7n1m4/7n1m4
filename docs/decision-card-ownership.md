@@ -28,21 +28,21 @@ Current card reality:
 
 ## Migration
 
-- **Now → daemon implementation:** no data migration. The TS store remains the working store; the daemon gains no card table until the implementation bead.
-- **At daemon implementation:** the daemon store is seeded from the user's existing local card data (the `local:airi-cards` IndexedDB document set the TS store writes today, `docs/design-airi-card.md` §1) exactly once, idempotently; re-importing the same card must not duplicate or silently overwrite (import already auto-renames duplicates, `docs/design-character-card-import-export.md:96-98`). The TS card CRUD is deleted in the same change, not left as a second writer.
+- **Now → daemon implementation:** no data migration. The daemon card store is seeded from the user's existing local card data.
+- **At daemon implementation:** the daemon store is seeded from the user's existing local card data (the `local:airi-cards` IndexedDB document set the TS store writes today, documented in `docs/data-catalog.md` §1.1) exactly once, idempotently; re-importing the same card must not duplicate or silently overwrite (import already auto-renames duplicates, `docs/design-character-card-import-export.md:96-98`). The TS card CRUD is deleted in the same change, not left as a second writer.
 - **No account migration.** Nothing in this decision creates users, accounts, or a hosted card table; the BYOS identity contract is unchanged.
 
 ## Test obligations
 
 The implementation bead must prove, at minimum:
 
-1. Daemon `cards.list` / `cards.get` / `cards.import` round-trip a real `AiriCard` with `extensions.airi` intact (full-fidelity, unknown fields preserved).
-2. `card_verbs_report_not_implemented` is removed and replaced by success-path tests; the stub branch is gone (a grep for "out of scope for the daemon port" in `crates/anima-daemon/src/gateway.rs` returns nothing).
+1. Daemon `cards.list` / `cards.get` / `cards.import` / `cards.create` / `cards.update` / `cards.delete` round-trip a real `AiriCard` with `extensions.airi` intact.
+2. Success-path tests cover all six card CRUD verbs.
 3. Flutter and Godot card CRUD go through daemon RPC and render real state — no "not available" placeholder (`apps/flutter/lib/features/cards/cards_screen.dart`), and Godot's `AllActions` matches implemented handlers.
 4. The TS card CRUD callers are gone; exactly one writer exists for card state.
 5. Import idempotence: importing the same card twice yields one card (auto-rename), and a round-trip export→import preserves the card.
 
-Until that bead lands, the current tests (`card_verbs_report_not_implemented`, the Flutter placeholder) are the correct guardrails and must keep passing.
+Until the TS retirement lands, the daemon card CRUD tests and the Flutter card screen are the correct guardrails.
 
 ## Consequences
 
