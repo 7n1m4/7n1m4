@@ -122,8 +122,19 @@ Anima is no longer "a desktop pet app". It is pivoting to the **agent-runtime co
 - **Closeout order:** verify acceptance, retain lessons, file debt, then close the bead with a reason.
 - **No automatic `bd sync`** under the solo override; use `bd --sandbox` for all writes.
 
+## 11. Async-First Execution
+
+- Default to async for independent work: parallel subagents, async bash/eval jobs, and background verification. Run synchronously only when the next step genuinely depends on the result or the user explicitly asks.
+- Make bounded slices with disjoint file ownership. A terminal pane is not isolation; do not let parallel workers touch overlapping files.
+- One coordinator owns Beads status, integration, verification, and closure. Helpers report back; they do not advance shared state on their own.
+- Use wait only when blocked, and consume results as they arrive rather than holding everything for a single batch.
+- Keep read-only research and write tasks explicitly separated. Do not mix investigation and mutation in the same worker.
+- Do not wait idly for workers, and do not serialize independent reads or checks. Fan out independent work and keep moving.
+
 <!-- BEGIN PI-BEADS-COMPANION -->
 ## Beads companion
 
 Use native harness plans, todos, memory, and subagents for execution. Beads holds durable outcomes, acceptance criteria, high-level plans, and recovery checkpoints, not every execution step. Small bounded work needs no new bead unless project rules require one. Choose worktrees separately for writer or branch isolation. Read the project workflow with `bd prime`. One coordinator owns bead updates and closure unless ownership transfers explicitly. For assigned bead-scoped work, verify acceptance, record final evidence, and close the bead within your authority before reporting it complete. Completed todos alone do not prove acceptance. Helpers report back; lifecycle events do not close issues. Keep the execution workflow's own skills and hooks separate.
+
+**Solo-work override (2026-11-25):** this workspace is currently solo. Do **not** run `bd sync` (or `bd dolt push`/`pull`) after tracker writes, including `bd close`, unless the user explicitly asks for remote handoff. Use `bd --sandbox` for local Beads writes so Dolt does not auto-push. This local instruction overrides the `bd sync` step in `bd-drive`/`BRIDGE.md` while solo mode is in effect.
 <!-- END PI-BEADS-COMPANION -->
