@@ -64,4 +64,4 @@ Check direct and virtual voices, actor overrides, transformed-empty input, provi
 
 ## Design context
 
-Read `docs/feat-audio-studio.md`, `docs/blueprint-tts-universal-speech-transformer.md`, and `docs/design-openai-compatible-tts.md` for the relevant task. They explain intent; executable provider and transformation code determine current support.
+Read `docs/feat-audio-studio.md`, `docs/blueprint-tts-universal-speech-transformer.md`, and `docs/design-openai-compatible-tts.md` for the relevant task. UST source of truth: `packages/stage-ui/src/stores/modules/README-speech-transformer.md`. They explain intent; executable provider and transformation code determine current support.

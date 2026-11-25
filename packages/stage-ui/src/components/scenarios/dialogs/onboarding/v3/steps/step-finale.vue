@@ -485,10 +485,10 @@ const honestyMatrix = computed<HonestyItem[]>(() => {
     items.push({
       id: 'artistry',
       title: 'Visual Artistry',
-      status: 'Art Engine Ready',
-      subtitle: `${d.artistryProvider || 'pollinations'}${d.artistryDirectorEnabled ? ' · Director Active' : ''}`,
+      status: 'Deprecated',
+      subtitle: 'Image generation is deprecated and disabled.',
       icon: 'i-solar:gallery-bold-duotone',
-      theme: 'green',
+      theme: 'amber',
     })
   }
 
@@ -770,7 +770,9 @@ async function handleLaunch() {
                       ? 'border-purple-500/20 bg-purple-500/5 dark:bg-purple-500/10'
                       : item.theme === 'sky'
                         ? 'border-sky-500/20 bg-sky-500/5 dark:bg-sky-500/10'
-                        : 'border-neutral-200/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40',
+                        : item.theme === 'amber'
+                          ? 'border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10'
+                          : 'border-neutral-200/80 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40',
                 ]"
               >
                 <!-- Icon -->
@@ -783,7 +785,9 @@ async function handleLaunch() {
                         ? 'bg-purple-500/15 text-purple-500'
                         : item.theme === 'sky'
                           ? 'bg-sky-500/15 text-sky-500'
-                          : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400',
+                          : item.theme === 'amber'
+                            ? 'bg-amber-500/15 text-amber-500'
+                            : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-400',
                   ]"
                 >
                   <div :class="[item.icon, 'text-lg']" />
@@ -804,10 +808,12 @@ async function handleLaunch() {
                             ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400'
                             : item.theme === 'sky'
                               ? 'bg-sky-500/20 text-sky-600 dark:text-sky-400'
-                              : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-500',
+                              : item.theme === 'amber'
+                                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                                : 'bg-neutral-200 dark:bg-neutral-800 text-neutral-500',
                       ]"
                     >
-                      <div v-if="item.theme !== 'gray'" :class="['i-solar:check-circle-bold w-3 h-3']" />
+                      <div v-if="item.theme === 'green' || item.theme === 'purple' || item.theme === 'sky'" :class="['i-solar:check-circle-bold w-3 h-3']" />
                       <div v-else :class="['i-solar:minus-circle-linear w-3 h-3']" />
                       <span>{{ item.status }}</span>
                     </span>

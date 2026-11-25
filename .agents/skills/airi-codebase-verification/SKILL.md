@@ -4,7 +4,7 @@ description: >-
   Choose/run AIRI validation: affected-workspace typecheck/build, minimal verification, lint:fix scope, git status reporting, fork release-safety checks. Use when deciding which checks a change needs.
 ---
 
-Choose the smallest validation that gives useful confidence; validation is not a ritual. Never cite `crates/` (legacy Tauri; current desktop is Electron `apps/stage-tamagotchi/`). This fork is developed directly on `main` and the remote is a release surface — never push untested changes.
+Choose the smallest validation that gives useful confidence; validation is not a ritual. Never cite `crates/` (legacy Tauri; current desktop is Electrobun/Hutch `apps/stage-tamagotchi/`). This fork is developed directly on `main` and the remote is a release surface — never push untested changes.
 
 ## Key Files/Locations
 
@@ -21,8 +21,8 @@ Choose the smallest validation that gives useful confidence; validation is not a
 ## Common Pitfalls
 
 - **Over-validating trivial edits.** A text, label, or comment-only edit normally needs no script. CSS/layout work: inspect the affected surface; run a script only when the change can affect compilation or behavior.
-- **Under-validating logic changes.** For TypeScript, Vue logic, interfaces, or imports, run `pnpm -F <workspace> typecheck`. For build configuration, entry points, packaging, or Electron integration, run the affected workspace build.
-- **Assuming build always implies typecheck.** `stage-tamagotchi` (Electron) build includes typechecking; `stage-web` build does NOT — run typecheck separately for `stage-web`.
+- **Under-validating logic changes.** For TypeScript, Vue logic, interfaces, or imports, run `pnpm -F <workspace> typecheck`. For build configuration, entry points, packaging, or desktop (Electrobun/Hutch) integration, run the affected workspace build.
+- **Assuming build always implies typecheck.** `stage-tamagotchi` (Electrobun/Hutch) build includes typechecking; `stage-web` build does NOT — run typecheck separately for `stage-web`.
 - **Treating `pnpm lint:fix` as validation.** It is a broad mutating cleanup tool, not validation. Use it only deliberately and review its whole diff.
 - **Skipping `git status`.** Always run `git status` after every commit or file modification and report exactly what remains open/unstaged/pending. Do not claim the tree is clean while unrelated changes remain.
 - **Push/commit without a green run.** Never push untested changes; a requested push still requires successful validation of the full commit. Pre-existing changes in the tree are not invisible — preserve and report them separately; do not silently include or discard them.

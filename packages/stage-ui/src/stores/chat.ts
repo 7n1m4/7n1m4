@@ -926,6 +926,11 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
         },
       })
       let streamPosition = 0
+      // <|ACTOR:…|> / <|ACT:…|> orchestration tokens are captured here (not spoken) by
+      // captureActorToken() in utils/chat-actor-slices.ts and appended to the message as dedicated
+      // slices, so the renderer/audio pipeline can swap actor, voice and effects per slice. The
+      // token text itself is preserved verbatim in rawContent; see
+      // docs/design-journal-actor-token-sync.md (architecture pointer only).
       const actorSliceState = createActorSliceState()
 
       let turnSpeechContent = ''

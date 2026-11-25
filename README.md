@@ -21,9 +21,11 @@
 </div>
 
 > [!WARNING]
-> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A long-lived Rust daemon (`anima-daemon`) is the single source of truth for state and business logic and hosts the WS/wss gateway (`anima-channel`). It drives the maintained full-parity renderers: the Flutter window companion (`apps/flutter`), the Godot renderer (`godot/`), and the Vue web UI (`apps/stage-web`), plus the Electrobun desktop app (`apps/stage-tamagotchi`) while it remains live. "Thin client" describes who owns state — not a reduced UI surface. WS/wss is the data plane; D-Bus is the control plane on Linux. Those clients hold view state and client-local audio/render state, while TypeScript stores remain the behavior reference where daemon ports are incomplete. Assumed load: one developer with local clients and one daemon, later a few trusted LAN/remote clients; not public multi-tenant.
+> **Status — mid-pivot, not a daily driver.**
 >
-> Retiring TypeScript business logic (the gated opt-in TS remote-sync slice) does **not** retire the Vue renderer: all three named renderers stay in scope at full feature parity. Docs and code drift. For the current topology, invariants, and gateway trust gates read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for the multi-renderer contract read [`docs/design-flutter-godot-pivot.md`](./docs/design-flutter-godot-pivot.md) and [`docs/feature-parity-checklist.md`](./docs/feature-parity-checklist.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md). File issues against the fork you actually intend to run.
+> Project Anima is pivoting from a desktop-pet app to the agent-runtime core of a personal agentic OS. A long-lived Rust daemon (`anima-daemon`) is the single source of truth for state and business logic and hosts the WS/wss gateway (`anima-channel`). It drives **Flutter (`apps/flutter`), the primary and sole active renderer on desktop and mobile**, at full feature parity with the Vue stage UI — including native character/model rendering. The Vue web UI (`apps/stage-web`) and the Electrobun desktop app (`apps/stage-tamagotchi`) remain the behaviour reference while that parity is incomplete; neither is a second active renderer. The Godot renderer was purged on 2026-11-25 and is no longer part of the architecture. "Thin client" describes who owns state — not a reduced UI surface. WS/wss is the data plane; D-Bus is the control plane on Linux. Flutter holds view state and client-local audio/render state, while TypeScript stores remain the behaviour reference where daemon parity is incomplete.
+>
+> Retiring TypeScript business logic (the gated opt-in TS remote-sync slice) does **not** reduce the renderer: Flutter stays in scope at full feature parity, and the Vue app remains the behaviour reference while that parity is incomplete. Docs and code drift. For the current topology, invariants, and gateway trust gates read [`docs/design-daemon-gateway.md`](./docs/design-daemon-gateway.md); for the client/daemon contract read [`docs/design-flutter-godot-pivot.md`](./docs/design-flutter-godot-pivot.md) and [`docs/feature-parity-checklist.md`](./docs/feature-parity-checklist.md); for where concepts live in the tree read [`docs/rosetta-stone.md`](./docs/rosetta-stone.md). File issues against the fork you actually intend to run.
 
 <p align="center"><strong>Presence without custody.</strong></p>
 
@@ -62,11 +64,11 @@ That is the promise of this fork: **one enduring presence across conversations, 
 | **Mind** | Interchangeable cloud or local models, provider instances, prompt composition, ACT interpretation, and cognitive pipelines |
 | **Voice** | Swappable speech and transcription engines, voice profiles, Audio Studio processing, captions, and live audio |
 | **Body** | VRM, Live2D, MMD, and Spine renderers with expressions, motion, tactile interaction, wardrobe, and texture editing |
-| **Agency** | Proactivity, MCP tools, artistry, production direction, games, and actions that can continue beyond the chat composer |
+| **Agency** | Proactivity, MCP tools, production direction, games, and actions that can continue beyond the chat composer (artistry image generation is deprecated and disabled; previously generated images remain read-only history) |
 | **World** | Desktop stages, the web stage, Discord, scenes, and other places the same character can inhabit |
 | **Sovereignty** | Local-first storage, portable character data, optional user-owned cloud sync, and no developer-operated analytics |
 
-The complete implementation catalog lives in the [feature report](https://dasilva333.github.io/airi/en/docs/chronicles/feature-report). The [showcase](https://dasilva333.github.io/airi/en/docs/showcase/) presents the major experiences visually. For an evidence-backed architectural landscape comparing 11 desktop AI companions (VPet, Project N.E.K.O., Open-LLM-VTuber, Komorebi, Amica, NekoGPT, etc.), see [**COMPARISONS.md**](COMPARISONS.md).
+The complete implementation catalog lives in the [feature report](./docs/content/en/docs/chronicles/feature-report.md). The [showcase](./docs/content/en/docs/showcase/) presents the major experiences visually. (The published `/airi/en/docs/` site no longer exists; GitHub Pages now serves the Web Stage only.) For an evidence-backed architectural landscape comparing 11 desktop AI companions (VPet, Project N.E.K.O., Open-LLM-VTuber, Komorebi, Amica, NekoGPT, etc.), see [**COMPARISONS.md**](COMPARISONS.md).
 
 ---
 
@@ -92,7 +94,7 @@ The complete implementation catalog lives in the [feature report](https://dasilv
 | [**Edit avatar textures in-app, including AI edits and model export**](https://github.com/dasilva333/airi/tree/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/components/scenarios/settings/model-settings) | ✅ | ❌ |
 | [**Reusable actor, outfit, and scene presets with model/voice/prompt bindings**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/docs/content/en/docs/manual/config/studio.md) | ✅ | ❌ |
 | [**Switch actors and voices within dialogue at playback time**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/components/scenes/ControlStripHost.vue) | ✅ | ❌ |
-| [**Autonomous scene direction with persistent visual continuity**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/stores/modules/artistry-autonomous.ts) | ✅ | ◐ Partial |
+| [**Autonomous scene direction with persistent visual continuity**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/stores/modules/artistry-autonomous.ts) | ⚠️ Deprecated | ⚠️ Deprecated |
 | [**Production Studio with cast inspection and Director decision history**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-pages/src/pages/settings/airi-card/components/tabs/ProductionStudioTab.vue) | ✅ | ❌ |
 | [**Rehearse acted dialogue and generate model-specific acting instructions**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/apps/stage-tamagotchi/src/renderer/components/chat/chat_rehearsal.vue) | ✅ | ❌ |
 | [**Reusable voice profiles with an audio-effects studio**](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/components/scenarios/settings/model-settings/audio-studio.vue) | ✅ | ❌ |
@@ -116,11 +118,12 @@ The complete implementation catalog lives in the [feature report](https://dasilv
 
 - **Studio is a scene-authoring system:** A concept can bind an avatar, voice, expression state, background, image-prompt fragment, and generation overrides. Base and Layer concepts let users compose locations, actors, outfits, and atmosphere. The implementation supports both Director-driven changes and actor-driven presets—including pinned backgrounds with autonomous generation disabled. [Studio manual](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/docs/content/en/docs/manual/config/studio.md).
 - **Actor handoff measures performance behavior:** Playback distinguishes the actor whose tokens are being parsed from the actor currently speaking. It resolves voices for synthesis ahead of time and activates the actor when their marker reaches playback. A single reply can perform multiple speaking roles with their corresponding avatars and voices.
-- **Artistry's "Partial" is specific and earned:** Upstream already evaluates recent conversation, scores whether an image is warranted, generates it, and routes it to the background, chat, a floating widget, or both. This fork adds a persistent visual scratchpad, concept selection and composition, configurable history depth, a separate Director model option, and durable decision records. The Director also distinguishes scene management from the currently speaking actor's model ownership. [Upstream implementation](https://github.com/moeru-ai/airi/blob/42e3e9e8573d3159d40e637fa11a21e13398ebda/packages/stage-ui/src/stores/modules/artistry-autonomous.ts), [Director controls](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabArtistry.vue).
-- **Studio interfaces expose depth to users:** The character configuration contains the concept registry, active stack, concept editor, and recent Director decisions. The chatbox provides dedicated Artistry surfaces (Director's Monitor, Cast Review, Scene Vault, Stage Directives) alongside a Rehearsal Room for testing dialogue, expressions, motions, and VFX through the speech/stage pipeline. [Chatbox navigation](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/apps/stage-tamagotchi/src/renderer/pages/chat.vue).
+- **Artistry is deprecated and generation is disabled (2026-11-25):** AI image generation is stubbed out — no new images are produced by any backend. Images already generated remain available as read-only history in the image journal and Scene Vault. Image control is moving to an external SAI integration, and the Director/ComfyUI pipeline is retained only as the technical seam that integration will drive.
+- **Artistry's historical "Partial" status (superseded by the deprecation above):** Upstream already evaluates recent conversation, scores whether an image is warranted, generates it, and routes it to the background, chat, a floating widget, or both. This fork adds a persistent visual scratchpad, concept selection and composition, configurable history depth, a separate Director model option, and durable decision records. The Director also distinguishes scene management from the currently speaking actor's model ownership. [Upstream implementation](https://github.com/moeru-ai/airi/blob/42e3e9e8573d3159d40e637fa11a21e13398ebda/packages/stage-ui/src/stores/modules/artistry-autonomous.ts), [Director controls](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-pages/src/pages/settings/airi-card/components/tabs/CardCreationTabArtistry.vue).
+- **Studio interfaces expose depth to users:** The character configuration contains the concept registry, active stack, concept editor, and recent Director decisions. The chatbox provides dedicated Artistry surfaces (Director's Monitor, Cast Review, Scene Vault, Stage Directives) alongside a Rehearsal Room for testing dialogue, expressions, motions, and VFX through the speech/stage pipeline. [Chatbox navigation](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/apps/stage-tamagotchi/src/renderer/pages/chat.vue). The Artistry generation surfaces are ⚠️ deprecated/disabled; the Scene Vault and image journal remain as read-only history.
 - **Live2D interactivity vs. motion editing:** This fork executes state variables, eligibility conditions, choices, chained actions, costume commands, expressions, and sound. The introspector exposes discovered switches, wardrobes, parts, and reactions through the Gimmick Deck and Model Customizer for compatible authored packages. Upstream provides a dedicated motion workbench with direct controls, recording, playback, and keyframe editing. [Gimmick introspection](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui-live2d/src/interpreter/introspector.ts), [Model Customizer](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/packages/stage-ui/src/components/scenarios/settings/model-settings/ModelCustomizer.vue).
 - **Animation and presentation deliberate limits:** Text-to-motion has generation, library storage, export, and playback paths, but the chat tool limits support to VRM. The verified production VFX path attaches auras to VRM bones. Head-following captions add mood effects and paced presentation, while the radial menu supplies companion positioning/display controls. [Motion tool format checks](https://github.com/dasilva333/airi/blob/fc46a6e5643db37445e1541bd735ccd9ce6bb34e/apps/stage-tamagotchi/src/renderer/stores/tools/builtin/generate-motion.ts).
-- **Memory and sync precision:** Upstream has saved conversations and image journaling; long-term companion-memory settings remain WIP in this snapshot. This fork consolidates conversations into persistent lifetime relationship artifacts, and supplies user-owned S3/R2 backup and selective sync. [Upstream memory page](https://github.com/moeru-ai/airi/blob/42e3e9e8573d3159d40e637fa11a21e13398ebda/packages/stage-pages/src/pages/settings/modules/memory-long-term.vue).
+- **Memory and sync precision:** Upstream has saved conversations and image journaling; long-term companion-memory settings remain WIP in this snapshot. Image journaling in this fork is read-only history while generation is disabled. This fork consolidates conversations into persistent lifetime relationship artifacts, and supplies user-owned S3/R2 backup and selective sync. [Upstream memory page](https://github.com/moeru-ai/airi/blob/42e3e9e8573d3159d40e637fa11a21e13398ebda/packages/stage-pages/src/pages/settings/modules/memory-long-term.vue).
 
 </details>
 
@@ -162,7 +165,7 @@ An AI companion interacts with your most personal thoughts, daily habits, emotio
 | :--- | :--- |
 | **Telemetry & Analytics** | **0 telemetry.** No analytics scripts, no tracking pixels (no PostHog, Plausible, or Google Analytics), and no error/crash reporting pings. |
 | **Backend & Operators** | **No server operator exists.** There is no Project Anima database or central relay. The web stage is hosted as static assets via GitHub Pages. |
-| **Local Storage** | **Local-first.** All cards, chat sessions, journals, memories, assets, and settings live in browser/Electron IndexedDB on your machine. |
+| **Local Storage** | **Local-first.** All cards, chat sessions, journals, memories, assets, and settings live in browser/desktop IndexedDB on your machine. |
 | **Cloud Synchronization** | **Optional & User-Authorized.** Syncs directly to your own Cloudflare infrastructure (Workers, R2, KV) via Cloudflare Access (PKCE). |
 | **Data Custody** | **Cloudflare and you.** The developer holds no keys, tokens, or infrastructure access. Your R2 bucket acts as your private raw backup. |
 | **What Leaves the Device?** | In local mode, nothing leaves your device. When Cloud Sync is active, application state syncs to your private R2/KV; machine-local hardware settings (audio devices, per-device Discord toggles) stay strictly local. |
@@ -375,8 +378,10 @@ pnpm dev:web
 
 ### Documentation
 
+There is no dedicated docs-site command. Documentation is authored as Markdown sources under `docs/content/` (shared sidebar in `docs/shared-sidebar.ts`) and read in-app via the in-app viewer:
+
 ~~~shell
-pnpm dev:docs
+pnpm dev:tamagotchi
 ~~~
 
 ---
@@ -393,13 +398,13 @@ The provider system supports multiple configured instances rather than treating 
 
 | Document | Use it for |
 |---|---|
-| [Showcase](https://dasilva333.github.io/airi/en/docs/showcase/) | Visual introduction to the major experiences |
-| [Feature report](https://dasilva333.github.io/airi/en/docs/chronicles/feature-report) | Detailed inventory of fork-specific capabilities |
+| [Showcase](./docs/content/en/docs/showcase/) | Visual introduction to the major experiences |
+| [Feature report](./docs/content/en/docs/chronicles/feature-report.md) | Detailed inventory of fork-specific capabilities |
 | [Rosetta Stone](./docs/rosetta-stone.md) | Canonical architecture and source-location map |
-| [Multi-renderer pivot](./docs/design-flutter-godot-pivot.md) | Rust daemon as single source of truth; Flutter, Godot and Vue full-parity renderers |
-| [Feature-parity checklist](./docs/feature-parity-checklist.md) | Per-capability status across Flutter, Godot and the Vue web UI |
+| [Flutter-first client contract](./docs/design-flutter-godot-pivot.md) | Rust daemon as single source of truth; Flutter as the full-parity renderer on desktop and mobile (historical filename) |
+| [Feature-parity checklist](./docs/feature-parity-checklist.md) | Per-capability status of the Flutter renderer against the Vue stage-UI reference |
 | [Major features](./docs/project-major-features-added.md) | Higher-level implementation catalog |
-| [Roadmap](https://dasilva333.github.io/airi/en/docs/chronicles/roadmap) | Pending ideas and planning history; implementation may move ahead of the document |
+| [Roadmap](./docs/content/en/docs/chronicles/roadmap.md) | Pending ideas and planning history; implementation may move ahead of the document |
 | [Agent guide](./AGENTS.md) | Repository-specific working rules for contributors and coding agents |
 | [Contributing guide](./.github/CONTRIBUTING.md) | Setup, development, and contribution workflow |
 

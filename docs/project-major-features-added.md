@@ -4,7 +4,7 @@ This document catalogs the high-level feature systems added to this fork, source
 
 Detailed sub-features and technical specifics live in [`docs/chronicles/feature-report.md`](./chronicles/feature-report.md). Pending/planned work lives in [`docs/chronicles/roadmap.md`](./chronicles/roadmap.md).
 
-> **Status legend:** ✅ shipped & stable · 🚧 in progress / partially shipped
+> **Status legend:** ✅ shipped & stable · 🚧 in progress / partially shipped · ⚠️ deprecated / disabled
 
 ---
 
@@ -18,7 +18,7 @@ The card editor is a multi-tab surface, not a thin metadata form:
 
 - **Acting Tab**: Three prompt layers (model expressions/ACT tokens, speech-expression tags, speech mannerisms). Aligns the model's face, TTS delivery, and character writing style.
 - **Modules Tab**: A card carries its own chat model, speech provider/voice, VRM/Live2D avatar, and preferred background. Switching characters switches the entire presentation.
-- **Artistry Tab**: Per-card image provider, model override, default prompt prefix, and provider-specific JSON options.
+- **Artistry Tab**: Per-card image provider, model override, default prompt prefix, and provider-specific JSON options. (⚠️ Deprecated — per-card generation settings are inert while image generation is disabled; existing images are unaffected.)
 - **Generation Tab**: Per-character LLM provider, model, temperature, top-p, max tokens. Designed for SillyTavern preset import compatibility.
 - **Proactivity Tab**: Defines when and how a character speaks on their own. Injects window history, system load, volume state, and usage metrics into heartbeat evaluations.
 - **Per-Character Tool Gating**: Disable tool calls per character to reduce context size and prevent errors on models that don't support tool usage (e.g. RWKV).
@@ -48,13 +48,13 @@ A standalone multi-step wizard for creating new AIRI character cards from scratc
 
 ## 4. Sparkle AI Field Generator
 
-AI-assisted content generation buttons rolled out across all AIRI Card tabs — Visual DNA, Stealth Heartbeat, Identity, Behavior, Artistry, and more. Long-form fields converted from inputs to resizable textareas. Sparkle AI context injection preserves core system prompt elements when merging Multi-Role prompts or customizing premises. Includes Multi-Role system prompt templates and Studio concept context injection. Visual Description step (Step 5) in CardImportWizard for generating visual descriptions and artistry prefix definitions. (✅)
+AI-assisted content generation buttons rolled out across all AIRI Card tabs — Visual DNA, Stealth Heartbeat, Identity, Behavior, Artistry, and more. Long-form fields converted from inputs to resizable textareas. Sparkle AI context injection preserves core system prompt elements when merging Multi-Role prompts or customizing premises. Includes Multi-Role system prompt templates and Studio concept context injection. Visual Description step (Step 5) in CardImportWizard for generating visual descriptions and artistry prefix definitions. (✅) The artistry prefix and image-generation portions are ⚠️ deprecated/disabled; generated images remain as read-only history and image control is moving to an external SAI integration.
 
 ---
 
 ## 5. Production Studio & Concept Stacking
 
-A system for architecting complex character behaviors and visuals through layered "Concepts." A Concept Registry lets you register and stack Concepts as Base (mutually exclusive) or Additive (layered) onto characters. Layer multiple prompts, artistry rules, and behaviors to create highly nuanced character manifestations. Tabbed Builder Modal for creating and managing your concept library. Manifestation Bridge synchronizes concepts with the live stage. Model Override Grid shows reactive active concept status badges. (✅)
+A system for architecting complex character behaviors and visuals through layered "Concepts." A Concept Registry lets you register and stack Concepts as Base (mutually exclusive) or Additive (layered) onto characters. Layer multiple prompts, artistry rules, and behaviors to create highly nuanced character manifestations. Artistry generation overrides are ⚠️ deprecated/inert; concept authoring itself is unaffected. Tabbed Builder Modal for creating and managing your concept library. Manifestation Bridge synchronizes concepts with the live stage. Model Override Grid shows reactive active concept status badges. (✅)
 
 ---
 
@@ -123,7 +123,7 @@ Native integration for Spine 2D models. Model settings, preview support, animati
 
 ## 12. Scene & Background Manager
 
-Character-scoped background management that upstream didn't have. Upload scene backgrounds, manage them in a gallery, choose global defaults, and override per-character via AIRI cards. Transparency-aware rendering for both Live2D (PixiJS `backgroundAlpha: 0`) and VRM (Three.js `clearAlpha: 0`). AI-Driven Background Creation — the character can generate a new image and set it as the background in one action. Backgrounds exported with cards. Photo Mode (Stage Capture) with 3-2-1 countdown and flash transition. Fullscreen lightbox picker for the stage background gallery. Responsive Media Library transforms the background picker into a full-page experience. Card previews auto-use the latest selfie as the portrait. (✅)
+Character-scoped background management that upstream didn't have. Upload scene backgrounds, manage them in a gallery, choose global defaults, and override per-character via AIRI cards. Transparency-aware rendering for both Live2D (PixiJS `backgroundAlpha: 0`) and VRM (Three.js `clearAlpha: 0`). AI-Driven Background Creation — the character can generate a new image and set it as the background in one action. ⚠️ Deprecated/disabled: generation no longer runs, but previously generated backgrounds remain selectable. Backgrounds exported with cards. Photo Mode (Stage Capture) with 3-2-1 countdown and flash transition. Fullscreen lightbox picker for the stage background gallery. Responsive Media Library transforms the background picker into a full-page experience. Card previews auto-use the latest selfie as the portrait. (✅)
 
 ---
 
@@ -139,7 +139,7 @@ A character-centric memory system replacing upstream's placeholder.
 - **Dream State**: Characters can enter a dream state where the LLM synthesizes subconscious reflections from accumulated memories and recent experiences. Dream content is injected back into the character's awareness.
 - **Trigger-Based Memory Compaction**: Background archival compaction with forking to protect context size from bloating while preserving long-term memory.
 - **Semantic Search**: Reciprocal Rank Fusion (RRF) and Maximal Marginal Relevance (MMR) for relevance/diversity balance. Native CJK tokenization for multilingual memory retrieval. Semantic lookup dialog directly inside the chatbox memory popover.
-- **Introspective Memory Feedback Loops**: Characters reflect on their own recent actions (journaling, dreaming, creating art) in their immediate context. Dream & Artistry reflective prompts let the character reference what they just dreamed or painted.
+- **Introspective Memory Feedback Loops**: Characters reflect on their own recent actions (journaling, dreaming, creating art) in their immediate context. Dream & Artistry reflective prompts let the character reference what they just dreamed or painted. The Artistry half is ⚠️ deprecated — with generation disabled, characters can only reference images that already exist in the read-only journal.
 - **Custom Journal Prompts**: Customizable system prompt template for Journal Moments.
 - **Eternal Thread**: Long-term memory archive view with token budget controls. (✅)
 
@@ -158,9 +158,9 @@ Upstream main doesn't let you switch sessions at all while using the same underl
 
 ---
 
-## 15. Artistry & Creative Generation
+## 15. Artistry & Creative Generation — DEPRECATED (generation disabled)
 
-A complete redesign of the image generation pipeline.
+A complete redesign of the image generation pipeline. **Deprecated and stubbed as of 2026-11-25: AI image generation is disabled and no new images are produced.** Images already generated remain available as read-only history in the image journal and Scene Vault. The pipeline is retained as the technical seam for the planned external SAI integration, which will own image control from outside Anima.
 
 - **Native ComfyUI API**: Direct HTTP integration with any ComfyUI instance. No middleware or WSL requirements.
 - **Replicate Cloud**: First-class remote provider with pricing transparency in the UI.

@@ -2,7 +2,7 @@
 
 A comprehensive inventory of every persisted store, namespace, and key in the AIRI codebase — their shapes, file locations, sync behaviors, and relationships. Intended as a reference for implementing selective sync, adding new stores, or debugging persistence issues.
 
-**Architecture note:** the Rust daemon/backend is the single source of truth for daemon-mode state. The Flutter window companion, Godot renderer and Vue web UI are all maintained full-parity renderers/clients of that backend; the TypeScript-owned stores inventoried below are the migration reference where the daemon has not yet ported a domain. Retiring TS business logic (the gated `airi-3cp` remote-sync slice) does not retire any renderer; gateway trust gates and `airi-3cp` DO NOT START remain in force unless the user explicitly says otherwise.
+**Architecture note:** the Rust daemon/backend is the single source of truth for daemon-mode state. The Flutter window companion is the maintained full-parity renderer/client of that backend; the Vue web UI is reference only; the Godot renderer is retired; the TypeScript-owned stores inventoried below are migration reference only where the daemon has not yet ported a domain. Retiring TS business logic (the gated `airi-3cp` remote-sync slice) does not retire the Flutter renderer; gateway trust gates and `airi-3cp` DO NOT START remain in force unless the user explicitly says otherwise.
 
 ---
 
@@ -44,12 +44,14 @@ catalog is mirrored via `local:providers` against daemon `providers.*` RPCs
 **Other `local:*` keys are not daemon mirrors and remain TS-written state** — notably
 the IndexedDB chat session store (`local:chat/sessions/*`, `local:chat/index/*`) with
 its BYOS outbox/`sync-engine.ts` reconciliation (§1, §6), memory lanes, and the
-`local:airi-cards` cache (daemon `cards.*` list/get/import are stubs; card
-management is out of daemon scope).
+`local:airi-cards` cache (daemon now owns card CRUD via `cards.create`/`cards.get`/
+`cards.list`/`cards.update`/`cards.delete`/`cards.import` (schema v7 `cards` table);
+`local:airi-cards` remains a TS-written client cache, not a daemon mirror).
 
 | Table | Shape | Repository | Sync |
 | :--- | :--- | :--- | :--- |
 | `card_metadata` (schema v6) | `card_id text primary key, liked int, bookmarked int, updated_at int` — one row per card; absent row = both flags false | `anima_store::CardMetadataRepo` (`crates/anima-store/src/lib.rs`) | none — daemon-owned local state; exposed to clients via `cards.metadata` / `cards.metadata.set` RPCs (`crates/anima-daemon/src/gateway.rs`) |
+| `cards` (schema v7) | `id text primary key, name text, document text, created_at int, updated_at int` — one row per card; `document` is the verbatim full-fidelity AiriCard JSON (opaque to the daemon), `name` a denormalized copy for listing | `anima_store::CardRepo` (`crates/anima-store/src/lib.rs`) | none — daemon-owned local state; CRUD via `cards.create`/`cards.get`/`cards.list`/`cards.update`/`cards.delete`/`cards.import` RPCs (`crates/anima-daemon/src/gateway.rs`) |
 ---
 
 

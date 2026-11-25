@@ -4,7 +4,7 @@ description: >-
   Prevent/debug File/Blob/ArrayBuffer corruption during Vue reactive-proxy serialization and IndexedDB/localforage writes. Covers toRaw, empty persisted models, lightweight asset catalogs, eager deep watchers. General repository design uses airi-data-persistence.
 ---
 
-Binary payloads die silently. Vue 3 reactive proxies plus `JSON.stringify()` will strip `File`/`Blob`/`ArrayBuffer` contents and persist an empty `{}`. Never cite `crates/` (legacy Tauri; current desktop is Electron `apps/stage-tamagotchi/`). Authoritative lessons live in Rosetta Stone §16.
+Binary payloads die silently. Vue 3 reactive proxies plus `JSON.stringify()` will strip `File`/`Blob`/`ArrayBuffer` contents and persist an empty `{}`. Never cite `crates/` (legacy Tauri; current desktop is Electrobun/Hutch `apps/stage-tamagotchi/`). Authoritative lessons live in Rosetta Stone §16.
 
 ## Key Files/Locations
 

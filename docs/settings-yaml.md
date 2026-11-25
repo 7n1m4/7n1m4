@@ -40,7 +40,7 @@ npx tsx scripts/yaml-manager.js <command> <file> [args]
 | `view-lines <file> <start> <end>` | Inspecting a small, numbered range after discovery | `npx tsx scripts/yaml-manager.js view-lines packages/i18n/src/locales/en/settings.yaml 120 150` |
 | `update <file> <path> <value>` | Inserting or replacing a scalar value at a dotted path | `npx tsx scripts/yaml-manager.js update packages/i18n/src/locales/en/settings.yaml pages.modules.mcp-server.actions.refresh "Refresh Status"` |
 | `audit <file>` | Detecting duplicate keys that YAML parsers can silently overwrite | `npx tsx scripts/yaml-manager.js audit packages/i18n/src/locales/en/settings.yaml` |
-| `sync <source> <destination>` | Listing source keys missing from a target locale | `npx tsx scripts/yaml-manager.js sync packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/ja/settings.yaml` |
+| `sync <source> <destination>` | Listing source keys missing from a target locale | `npx tsx scripts/yaml-manager.js sync packages/i18n/src/locales/en/settings.yaml packages/i18n/src/locales/ko/settings.yaml` |
 
 ## Recovery-only commands
 

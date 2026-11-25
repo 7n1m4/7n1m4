@@ -3,6 +3,17 @@ import type { Ref } from 'vue'
 
 import { ref } from 'vue'
 
+/**
+ * One entry from a Spine package's `model0.json` `hit_areas[]` manifest (per-outfit).
+ * - `name`/`id` = target skeleton bone
+ * - `type` = interaction mode (`pull` spring-damper drag, `tap`/`pat`/`tickle`/`patSmash`/`smash` gestures — resolved by name substring in `resolveAreaType`)
+ * - `spring` = `{ stiffness (default 1680), damping (default 20) }` Hooke's-law constants for `pull`
+ * - `limits` = `{ maxStretch (default 60), maxBackward (default 1), perpRatio (default 0.7) }` displacement clamps
+ * - `follower` = `{ bone, mode: 'same' | 'mirror' | 'none' }` secondary bone
+ * - `audio` = `{ pull, release, tap }` root-level WAV names
+ *
+ * Parsed in `Model.vue` from the active variant's `model0.json` and passed here as `model0HitAreas`.
+ */
 export interface SpineHitArea {
   id?: string
   name: string

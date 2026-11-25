@@ -1,8 +1,8 @@
 ---
 name: airi-desktop-lifecycle-power-throttling
 description: >-
-  Configure/debug desktop window lifecycle and power throttling: Electron powerMonitor,
-  sleep/wake suspension, screen-lock pausing, window visibility events, stagePaused,
+  Configure/debug desktop window lifecycle and power throttling: window visibility events,
+  sleep/wake suspension, screen-lock pausing, stagePaused,
   and render loop freezing. Cognitive heartbeats and prompt grounding use
   airi-proactivity-sensory-telemetry; stage UI surfaces use airi-stage-ui-surfaces.
 ---
@@ -11,15 +11,15 @@ description: >-
 
 AIRI's desktop application (`apps/stage-tamagotchi`) continuously renders high-fidelity 3D (VRM / Three.js) and 2D (Live2D, Spine, MMD) avatars at 60 FPS. To prevent severe battery drain, fan noise, and GPU context stutter on unattended or sleeping devices, AIRI implements an automated hardware and OS lifecycle power-throttling pipeline.
 
-This guide covers the end-to-end integration between native Electron power events, window state transitions, the Eventa IPC bridge, Pinia lifecycle state, and render loop freezing.
+This guide covers the end-to-end integration between desktop window state transitions, the Eventa IPC bridge, Pinia lifecycle state, and render loop freezing.
 
 ---
 
 ## Key Files & Locations
 
 - **Native Power & Window Services (Main Process)**:
-  - `apps/stage-tamagotchi/src/main/services/electron/window.ts` — hooks `params.window` (`show`, `hide`, `minimize`, `restore`, `focus`, `blur`) and native `powerMonitor` (`suspend`, `resume`, `lock-screen`, `unlock-screen`). Emits `electronWindowLifecycleChanged` and handles `electronGetWindowLifecycleState`.
-  - `apps/stage-tamagotchi/src/main/services/sensors/index.ts` — queries `powerMonitor.getSystemIdleTime()` for sensory AFK idle tracking.
+  - `apps/stage-tamagotchi/src/main/services/electron/window.ts` — hooks `params.window` (`show`, `hide`, `minimize`, `restore`, `focus`, `blur`); powerMonitor suspend/lock pushes are an explicit drop under Electrobun. Emits `electronWindowLifecycleChanged` and handles `electronGetWindowLifecycleState`.
+  - `apps/stage-tamagotchi/src/main/services/sensors/index.ts` — intended to query `powerMonitor.getSystemIdleTime()` for sensory AFK idle tracking, which currently raises a port error under Electrobun.
 - **Typed Eventa Contracts**:
   - `apps/stage-tamagotchi/src/shared/eventa.ts` — defines `ElectronWindowLifecycleReason`, `ElectronWindowLifecycleState`, `electronGetWindowLifecycleState`, and `electronWindowLifecycleChanged`.
 - **Renderer Lifecycle Store & Presentations**:
@@ -38,8 +38,8 @@ This guide covers the end-to-end integration between native Electron power event
 [OS Sleep / Lock Screen]  OR  [Window Minimize / Hide]
               │
               ▼
-   Electron `powerMonitor`  &  `BrowserWindow` Events
-   ('suspend', 'lock-screen', 'minimize', 'hide')
+   Desktop window events (powerMonitor is a port gap)
+   ('minimize', 'hide')
               │
               ▼
    `window.ts` createWindowService
@@ -70,7 +70,7 @@ AIRI separates power management into two distinct architectural tiers (see [`doc
    - **Resource Impact**: Drops CPU and active GPU core compute to near 0%.
    - **Recovery Latency**: 0 ms (textures and geometries remain bound in WebGL).
 2. **Tier 2: Deep Standby & VRAM Hibernation (`deepStandby = true`)**:
-   - **Trigger**: OS entering system sleep (`suspend`) or screen lock duration exceeding 10 minutes.
+   - **Trigger**: OS entering system sleep (`suspend`) or screen lock duration exceeding 10 minutes. Not currently emitted under Electrobun.
    - **Action**: Signals `GpuResourceCoordinator` to execute clean `.unload()` on all idle WebGPU neural models (Whisper, Kokoro, Pocket-TTS, Moondream).
    - **Resource Impact**: Reclaims up to 3–4 GB of held VRAM back to the OS and active desktop applications (games, 3D DCC tools).
    - **Recovery Latency**: Sub-2s transparent re-hydration from local browser OPFS cache on next user prompt.
@@ -82,7 +82,7 @@ AIRI separates power management into two distinct architectural tiers (see [`doc
 - `'show'` / `'hide'`: window visibility changes.
 - `'minimize'` / `'restore'`: window minimized to taskbar/dock or restored.
 - `'focus'` / `'blur'`: window focus gained or lost (does not pause stage).
-- `'suspend'`: screen locked or OS entering sleep. In `window.ts`, `visible` is forced to `false` when `reason === 'suspend'`.
+- `'suspend'`: screen locked or OS entering sleep. In `window.ts`, `visible` is forced to `false` when `reason === 'suspend'`. Not emitted under Electrobun today.
 
 ---
 
@@ -99,14 +99,14 @@ AIRI separates power management into two distinct architectural tiers (see [`doc
 ## Common Pitfalls & Known Behaviors
 
 1. **Do not confuse Cognitive AFK with Power Lifecycle**:
-   - `powerMonitor.getSystemIdleTime()` in `proactivity` measures user inactivity in seconds to evaluate whether a conversation prompt should be generated.
-   - `powerMonitor.on('suspend' | 'lock-screen')` in `window.ts` immediately halts WebGL rendering loops. They serve entirely distinct architectural concerns.
+   - The idle-time probe in proactivity is meant to measure user inactivity in seconds to decide whether a conversation prompt should be generated; it is a port gap under Electrobun.
+   - Window hide/minimize events in window.ts immediately halt WebGL rendering loops. They serve entirely distinct architectural concerns.
 2. **Audio/TTS Playback Independence**:
    - Freezing `RendererStage` only affects visual canvas rendering. If audio is actively playing via `SpeechStore` / TTS when the screen locks, audio playback continues uninterrupted to the speakers while the avatar mouth motion is paused.
 3. **Wayland / Linux Stuck Visibility**:
    - On Linux native Wayland sessions, `screen.getCursorScreenPoint()` or window state queries can occasionally report stale or stuck values due to Ozone limitations. Ensure DOM and OS signals are properly arbitration-gated (see PR #2521 / #2522).
 4. **Listener Cleanup**:
-   - `powerMonitor` is a global Electron module. Always register listeners with explicit teardown in `cleanup()` (`powerMonitor.off(...)`) on window close and app quit to avoid memory leaks.
+   - In window.ts, listeners are registered with explicit teardown in `cleanup()` on window close and app quit to avoid memory leaks.
 
 ---
 

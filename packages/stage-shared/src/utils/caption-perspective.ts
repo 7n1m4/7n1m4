@@ -11,6 +11,9 @@
  * - All outputs are raw PIXI numbers (no trailing units); the consumer
  *   decides whether to feed them into `transform: translate(...) skew(...)`,
  *   `sprite.skew.set()`, or a 3D `CSS3DObject`.
+ *
+ * Behavioral spec (channels, anchors, failure modes, test payloads):
+ * `packages/stage-ui/src/components/scenes/README.md`.
  */
 
 export interface PoseSnapshot {

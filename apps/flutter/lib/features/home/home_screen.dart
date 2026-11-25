@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
 
-/// Control/Home. Displays view state only — it never writes daemon state.
+/// Home. Displays view state only — it never writes daemon state.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.client});
 
@@ -33,8 +33,8 @@ class HomeScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     const Text(
                       'Anima keeps its state in the long-lived daemon. This window is a '
-                      'thin control/chat client: closing it does not stop the agent or '
-                      'the Godot pet.',
+                      'thin Flutter renderer and full UI: closing it does not stop the '
+                      'agent; daemon-owned state persists.',
                     ),
                   ],
                 ),

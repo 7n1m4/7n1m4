@@ -193,17 +193,7 @@ Browse the live UI component storyboard at [airi.moeru.ai/ui](https://airi.moeru
 
 ### Documentation site
 
-```shell
-pnpm dev:docs
-```
-
-> [!NOTE]
->
-> For [@antfu/ni](https://github.com/antfu-collective/ni) users, you can
->
-> ```shell
-> nr dev:docs
-> ```
+Documentation is Markdown under `docs/content/en/docs`, listed in `docs/shared-sidebar.ts`, and read by the in-app viewer (`pnpm dev:tamagotchi` → Settings → Docs). There is no docs site build or `dev:docs` script.
 
 ### Discord bot integration
 
@@ -213,7 +203,7 @@ fork. Discord ships in-process instead:
 
 1. Run the desktop app (`pnpm dev:tamagotchi`).
 2. Open Settings > Modules > Discord (route `/settings/modules/messaging-discord`, component `packages/stage-ui/src/components/modules/MessagingDiscord.vue`) and paste your bot token, stored as `settings/discord/token`.
-3. Enable the service; the renderer calls `discordServiceStart` and the Electron main process gateway in `apps/stage-tamagotchi/src/main/services/airi/discord/index.ts` connects (state in `packages/stage-ui/src/stores/modules/discord.ts`).
+3. Enable the service; the renderer calls `discordServiceStart` and the desktop main process gateway in `apps/stage-tamagotchi/src/main/services/airi/discord/index.ts` connects (state in `packages/stage-ui/src/stores/modules/discord.ts`).
 
 No database, Docker, or `@proj-anima/discord-bot` package is involved anymore.
 

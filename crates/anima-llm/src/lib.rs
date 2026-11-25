@@ -5,10 +5,13 @@
 //!
 //! - [`ProviderRegistry`] / [`PROVIDER_DEFS`]: static data-driven registry of the
 //!   44 provider ids from `docs/port-manifest/providers.md` plus the port-native
-//!   `llama-cpp-local` row (45 total). OpenAI-compatible
+//!   `llama-cpp-local` row (45 total). OpenAI-compatible wiring is driven by
+//!   [`ProviderDef`], [`ProviderKind`], [`CredentialSchema`], [`CompatFlags`], and
+//!   [`ProviderConfig`].
 //! - [`ChatProvider`]: the canonical client trait (`id` / `models` / `stream`).
 //! - [`ChatClient`]: compat trait exposing `stream_chat` (used by `airi-core`),
-//!   blanket-implemented for every [`ChatProvider`].
+//!   blanket-implemented for every [`ChatProvider`] — that blanket impl is what
+//!   `airi-core` consumes as `Arc<dyn ChatClient>`.
 //! - [`build_client`]: constructs the right client for a [`ProviderDef`].
 //!
 //! Layering: no toolkit, no `airi-store`, no `airi-core`, no `airi-i18n` — only

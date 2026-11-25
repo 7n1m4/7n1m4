@@ -7,7 +7,7 @@
 | Daemon stdout/journal | 7 days | `.cleared-<date>.jsonl` kept forever | pruned after 7 days |
 | Supervisor structured JSON | 7 days | `.cleared-<date>.jsonl` kept forever | pruned after 7 days |
 | Gateway access/auth | 7 days | `.cleared-<date>.jsonl` kept forever | pruned after 7 days |
-| Client-side (Flutter/Godot/Vue) | 7 days | `.cleared-<date>.jsonl` kept forever | pruned after 7 days |
+| Client-side (Flutter only) | 7 days | `.cleared-<date>.jsonl` kept forever | pruned after 7 days |
 
 - Active logs are pruned after **7 days** (rolling).
 - Archived logs (`.cleared-*` suffix) are retained **forever**; they are

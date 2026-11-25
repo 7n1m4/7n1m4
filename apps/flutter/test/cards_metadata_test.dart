@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Card metadata (liked/bookmarked) is the only card verb surface wired in
-// Flutter. The CRUD stub banner must stay; these tests drive the production
-// cards screen and the real DaemonClient wrappers (through `call`, which every
-// typed wrapper uses) so they fail if either surface disappears.
+// Card metadata (liked/bookmarked) and CRUD are now wired in Flutter. These
+// tests drive the production cards screen and the real DaemonClient wrappers
+// (through `call`, which every typed wrapper uses) so they fail if either
+// surface disappears.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,11 +75,21 @@ Future<_RecordingCardsClient> _pump(tester) async {
 }
 
 Future<void> _openCard(tester) async {
+  await tester.drag(find.byType(ListView), const Offset(0, -300));
+  await tester.pump();
+  await tester.ensureVisible(find.widgetWithText(ListTile, 'Card One'));
+  await tester.pumpAndSettle();
   await tester.tap(find.widgetWithText(ListTile, 'Card One'));
+  await tester.pumpAndSettle();
+  await tester.drag(find.byType(ListView), const Offset(0, -4000));
+  await tester.pump();
+  await tester.ensureVisible(find.widgetWithText(CheckboxListTile, 'Liked'));
   await tester.pumpAndSettle();
 }
 
 Future<void> _toggle(tester, String label) async {
+  await tester.ensureVisible(find.widgetWithText(CheckboxListTile, label));
+  await tester.pumpAndSettle();
   await tester.tap(find.widgetWithText(CheckboxListTile, label));
   await tester.pumpAndSettle();
 }
@@ -151,7 +161,15 @@ void main() {
 
     await _toggle(tester, 'Liked');
 
+    await tester.drag(find.byType(ListView), const Offset(0, 4000));
+    await tester.pump();
+    await tester.ensureVisible(find.text('actions off'));
+    await tester.pumpAndSettle();
     expect(find.text('actions off'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -4000));
+    await tester.pump();
+    await tester.ensureVisible(find.widgetWithText(CheckboxListTile, 'Liked'));
+    await tester.pumpAndSettle();
     expect(
       tester
           .widget<CheckboxListTile>(
@@ -162,12 +180,14 @@ void main() {
     );
   });
 
-  testWidgets('CRUD stub banner stays visible', (tester) async {
+  testWidgets('card CRUD surface is available', (tester) async {
     await _pump(tester);
 
     expect(
       find.text('Card management is not available on the local daemon.'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.widgetWithText(FilledButton, 'Create'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Import'), findsOneWidget);
   });
 }

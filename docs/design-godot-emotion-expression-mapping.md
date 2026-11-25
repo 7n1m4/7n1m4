@@ -1,5 +1,6 @@
 # Godot Emotion/Expression Mapping (from TS reference)
 
+> Superseded/retired Godot design; retained as historical mapping reference.
 Bead `airi-wxp.4.8` — OPEN/undecided. Study-only; no implementation authorized.
 Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14, §3.6, §4).
 

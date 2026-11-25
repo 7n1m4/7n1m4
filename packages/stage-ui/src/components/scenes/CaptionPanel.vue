@@ -22,6 +22,9 @@ const speakerText = ref('')
 const assistantSegments = ref<CaptionSegment[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
 
+/**
+ * Sentence Sync segment; protocol in `./README.md` §3.
+ */
 export interface CaptionSegment {
   text: string
   color: string

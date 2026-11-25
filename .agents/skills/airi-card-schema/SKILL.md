@@ -22,7 +22,7 @@ AIRI extends the standard Character Card specification with the `AiriExtension` 
 
 ### 4. UI & Parsing Overlords
 - `packages/stage-pages/src/pages/settings/airi-card/index.vue`: Main UI for managing cards and triggering exports.
-- `apps/stage-tamagotchi/src/main/index.ts`: Electron main process interceptor that listens for webview `.png` and `.json` downloads to launch the card import wizard.
+- `apps/stage-tamagotchi/src/main/index.ts`: desktop main process download interceptor (currently an explicit Electrobun port gap, see TODO(port) in main/index.ts)
 
 ## Core Standard Operating Procedures (SOPs)
 

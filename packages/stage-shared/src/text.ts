@@ -2,6 +2,9 @@
  * NOTICE: CJK characters tokenize roughly 1:1 (one char ≈ one token) while ASCII/Latin
  * text tokenizes at ~4 chars per token. Counts are summed separately so estimates remain
  * accurate for the multilingual (Japanese/Chinese/Korean) content this project targets.
+ *
+ * Kaomoji/mojibake healing is consumed by the Universal Speech Transformer; rule catalog in
+ * `packages/stage-ui/src/stores/modules/README-speech-transformer.md`.
  */
 export function estimateTokens(text: string): number {
   const trimmed = text.trim()

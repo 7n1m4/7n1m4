@@ -14,6 +14,7 @@ const { lastClickedIndex, setLastClickedIndex } = useRippleGridState()
 
 const systemItems = computed(() => {
   const items = SETTINGS_CATALOG_ITEMS
+    .filter(item => !item.hidden && !item.deprecated)
     .filter(item => item.parentId === 'area-system')
     .filter(item => isStageTamagotchi() || !item.desktopOnly)
     .sort((a, b) => a.order - b.order)

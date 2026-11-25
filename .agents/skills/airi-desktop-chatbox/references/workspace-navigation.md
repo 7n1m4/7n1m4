@@ -3,7 +3,7 @@
 ## Entry points
 
 - `apps/stage-tamagotchi/src/renderer/pages/chat.vue`: `activeSurface`, `activeSurfaceComponent`, title/icon maps, sidebar/drawer navigation.
-- `apps/stage-tamagotchi/src/main/windows/chat/index.ts`: Electron window creation and sizing.
+- `apps/stage-tamagotchi/src/main/windows/chat/index.ts`: desktop window creation and sizing.
 - `apps/stage-tamagotchi/src/renderer/components/chat/`: workspace wrappers.
 
 | Surface key | Wrapper | Responsibility |
@@ -30,7 +30,7 @@ A workspace wrapper should delegate domain behavior. Director decisions use `air
 
 ## State and verification
 
-Each Electron window has its own Pinia instance. A local mutation is not cross-window synchronization; use existing repository actions and matching broadcast contracts. See `airi-broadcast-channels` and `docs/rosetta-stone.md`.
+Each desktop window has its own Pinia instance. A local mutation is not cross-window synchronization; use existing repository actions and matching broadcast contracts. See `airi-broadcast-channels` and `docs/rosetta-stone.md`.
 
 Open every changed route through sidebar and drawer, restore its persisted selection, switch characters, and test a missing card. Verify right-panel actions on Chat View after returning from another route.
 

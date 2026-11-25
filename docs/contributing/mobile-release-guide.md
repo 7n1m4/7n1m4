@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Mobile release guide (Flutter control/chat app)
+# Mobile release guide (Flutter renderer, desktop + mobile)
 
 Scope: `apps/flutter` mobile targets only. Desktop release is `release-linux-desktop.yml`.
 

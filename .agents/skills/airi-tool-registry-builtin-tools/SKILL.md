@@ -25,7 +25,7 @@ Everything the model can *do* flows through two registries that are, today, fed 
   - Proactivity heartbeat — `llmStore.generate(..., { tools: resolveRegisteredTools, supportsTools: true })` (:707-711).
   - Gemini Live Bidi — `live-session.ts:234` (in-call function-call execution lookup) and `:482` (session tool declarations at `start()`).
 
-**Structural oddity worth knowing**: the general tool registry physically lives in the proactivity store, so web/pocket apps that never import desktop builtinTools get *no* tools on any path. Moving registry ownership into the chat orchestrator (or a shared package layer) is the pre-identified fix if you ever want web/pocket tools.
+**Structural oddity worth knowing**: the general tool registry physically lives in the proactivity store, so stage-web, which never imports desktop builtinTools, gets *no* tools on any path. Moving registry ownership into the chat orchestrator (or a shared package layer) is the pre-identified fix if you ever want stage-web tools.
 
 ## 2. The `builtinTools` Factory (`apps/stage-tamagotchi/src/renderer/stores/tools/builtin/index.ts`, 63 lines)
 
@@ -81,10 +81,9 @@ See `airi-llm-dispatch-gateway` §2/§4 and `airi-card-editor-wizard` for author
 | Discord steer interruption | **Yes** | Steer ingest (:760 style, with partial-text rollup per `airi-interaction-pipelines` §7.1) | Same |
 | Gemini Live Bidi | **Yes (native)** | Registry resolved for session declarations (:482) and per-call execution lookup (:234); native mid-turn function calls, `_geminiLiteralHandled` suppression per outputMode | Transcript only — no slice trace |
 | Web stage (landscape ChatArea) | **No** | No `setToolsResolver`, no `registerTools`, no `tools` prop passed anywhere in `apps/stage-web`. `useChatComposer` plumbing accepts `tools` (ChatArea.vue:59) but nothing supplies it | n/a |
-| Pocket stage (portrait MobileWhisperSheet / landscape) | **No** | Same as web — `MobileInteractiveArea`/`MobileWhisperSheet`/`WhisperComposerBar` all forward a `tools` prop down to `useChatComposer`, but `apps/stage-pocket` never provides one | n/a |
 | VLM image turns | **No (forced)** | `effectiveTools = undefined` (chat.ts:484) | n/a |
 
-**Fix path for web/pocket**, should it ever be wanted: the components already plumb `tools` end-to-end (`WhisperComposerBar` → `useChatComposer` → `ingest` → gateway); the gap is purely "nothing calls `setToolsResolver` / `registerTools` / passes `:tools` in web/pocket apps". Web/pocket run in the browser, so any resolver must avoid desktop-only `builtinTools` (Electron IPC, MCP bridge, artistry widgets) or provide web-safe subsets.
+**Fix path for stage-web**, should it ever be wanted: the components already plumb `tools` end-to-end (`WhisperComposerBar` → `useChatComposer` → `ingest` → gateway); the gap is purely "nothing calls `setToolsResolver` / `registerTools` / passes `:tools` in stage-web". stage-web runs in the browser, so any resolver must avoid desktop-only `builtinTools` (native IPC, MCP bridge, artistry widgets) or provide web-safe subsets.
 
 ## 5. Tool-Call Rendering per Surface
 
@@ -107,7 +106,7 @@ See `airi-llm-dispatch-gateway` §2/§4 and `airi-card-editor-wizard` for author
 
 ## 7. Pitfalls
 
-- **Registry ≠ availability**: web/pocket surfaces silently run toolless until someone wires resolvers there (§4).
+- **Registry ≠ availability**: stage-web silently runs toolless until someone wires resolvers there (§4).
 - **`generate_motion` is off by default** unless the card allowlists it.
 - **Unwired exports** (`datingSimTools`, `widgetsTools`) look registered but are not.
 - Tool errors bubble as stream `error` events, not tool-result errors (gateway §3).

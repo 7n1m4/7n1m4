@@ -1,3 +1,5 @@
+// Source of truth for the text_journal record shape, storage and retrieval rules:
+// ../database/repos/README-text-journal.md.
 import type { EmbedderStatus } from '../libs/workers/search/search-channel'
 import type { ChatGroundingMetadata, ChatStreamEvent } from '../types/chat'
 import type { TextJournalEntry, TextJournalEntrySource } from '../types/text-journal'

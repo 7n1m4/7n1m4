@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Rust leg of the lip-sync smoothing conformance fixture. The same JSON
-//! drives the Godot `LipSyncSmoother`, so both renderers must produce the
-//! exact f32 weights recorded here.
+//! Rust canonical fixture for lip-sync smoothing.
 //!
 //! ```sh
 //! cargo test -p anima-render --locked --test lipsync_conformance

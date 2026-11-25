@@ -12,6 +12,8 @@
   (pivot decision 8 — "D-Bus stays for privileged verbs; tray/GUI drives Flutter/Godot
   process lifecycle") · [`analysis-slint-logic-inventory.md`](./analysis-slint-logic-inventory.md)
   row U7 (the Slint tray/hotkey/autostart bridge is client-local)
+- **Superseded 2026-11-25:** Godot was purged; Flutter is sole active renderer on desktop/mobile.
+  Historical Godot rows below are provenance, not active design.
 
 ## The decision, in five lines
 

@@ -73,7 +73,7 @@ Each avatar format has distinct coordinate systems, bone/parameter conventions, 
 ### C. 2D Spine Skeletal Animation (`@esotericsoftware/spine-webgl`)
 - **Generator**: `packages/stage-ui-spine/src/utils/spine-preview.ts` (`loadSpineModelPreview`)
 - **Multi-Version Dynamic Loader**: Detects version from binary or JSON header (`detectSpineVersionFromBinary` / `detectSpineVersionFromJson`) and loads matched runtime (Spine 3.8 / 4.0 / 4.1 / 4.2).
-- **In-Memory Downloader Patch**: Patches `AssetManagerBase.downloader` (`patchAssetManagerForZipAssets`) to intercept texture/atlas requests and serve in-memory Blob URLs, bypassing Electron file URL bugs.
+- **In-Memory Downloader Patch**: Patches `AssetManagerBase.downloader` (`patchAssetManagerForZipAssets`) to intercept texture/atlas requests and serve in-memory Blob URLs, bypassing desktop file URL bugs.
 - **Whole-Character Union Bounding**:
   - Do NOT rely on head/chin bone joints alone (the skull, ears, hats, and tall hair extend hundreds of pixels higher; weapon props/accessories extend horizontally).
   - Synthesize a unified model bounding box from:

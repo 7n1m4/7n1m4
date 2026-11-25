@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Research: Emotion / Expression Mapping Reference (bead `airi-wxp.4.8`)
 
+> **Historical research for the retired Godot renderer; retained for mapping knowledge now to be applied in Flutter; no Godot implementation work authorized.**
+
 **Status:** reference study · **Date:** 2026-11-21 · **Source HEAD:** `bad8fc69`
 **Scope:** READ-ONLY survey of the TypeScript stack's emotion/expression machinery so the Godot 4 pet can re-derive the *knowledge* natively.
 **Guidance honored:** "study the TS glue's emotion mappings as reference; don't port the glue." This document extracts semantics, vocabularies and payload shape. It does **not** propose transplanting TS parser/store/VM code into Godot.
@@ -96,7 +98,8 @@ Backend naming conventions extracted from source:
 
 Note: the `airi-live2d-dsl-interpreter` skill also mentions `set_param` (`.agents/skills/airi-live2d-dsl-interpreter/SKILL.md:15`), but the source command enum has no such opcode (`packages/live2d-runtime/src/dsl/types.ts:91-127`; grep found no `set_param` in `packages/live2d-runtime/src`). Source wins — do not design for it.
 
-**VarFloats heap**: guards `equal / not_equal / greater / greater_equal / less / lower / lower_equal`, mutations `assign / add / subtract / init` (`packages/live2d-runtime/src/dsl/var-store.ts:14-18`); `assign rand(min,max)` is an inclusive-integer roll (`:58-63`); entry application is atomic — all guards pass before any mutation (`:135-154`). This is literally the dating-sim intimacy/affinity state (`docs/design-live2d-dsl-interpreter-spec.md:30-86,203-220`).
+**VarFloats heap**: guards `equal / not_equal / greater / greater_equal / less / lower / lower_equal`, mutations `assign / add / subtract / init` (`packages/live2d-runtime/src/dsl/var-store.ts:14-18`); `assign rand(min,max)` is an inclusive-integer roll (`:58-63`); entry application is atomic — all guards pass before any mutation (`:135-154`). This is literally the dating-sim intimacy/affinity state (`packages/live2d-runtime/src/dsl/README.md §1`).
+
 
 **Beat-sync styles** (head motion on musical beats, not emotion): `punchy-v`, `balanced-v`, `swing-lr`, `sway-sine`, with BPM-driven auto-shift (`packages/stage-ui-live2d/src/composables/live2d/beat-sync.ts:53-69,187-208`); the cross-window trigger is `BroadcastChannel('airi::beat-sync')` (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`) carrying `AnalyserBeatEvent` (`packages/stage-shared/src/beat-sync/types.ts:1-10`).
 
@@ -195,7 +198,7 @@ These stay in the reference UI and must be **reimplemented natively in Godot**, 
 4. **Host dispatch and renderer stores** — `ControlStripHost.vue` emotion handler (`:247-415`), `useModelStore` / `useLive2d` Pinia stores, their `BroadcastChannel` relays and localStorage keys (`packages/stage-ui-three/src/stores/model-store.ts:103,317-324`; `packages/stage-ui-live2d/src/stores/live2d.ts:62,87-93`). Godot owns its animation state directly.
 5. **ModelCustomizer.vue** and all settings/Rehearsal authoring UI (`.agents/skills/airi-model-customizer/SKILL.md:24-32,42-53`). The *mapping knowledge* (which key maps to which ACT slot) must be re-derived as Godot model-profile data; the editor does not move.
 6. **The Live2D scripting VM** — `packages/live2d-runtime/src/dsl/{types,interpreter,command-parser,var-store,selector,template}.ts` and the PIXI adapter in `packages/stage-ui-live2d/src/runtime/live2d-runtime-adapter.ts`. If a specific card's manifest genuinely needs creator-scripted interactions, reimplement the *behaviour* (§1.4) in GDScript behind the plugin boundary — do not embed the TS VM. Prefer daemon events for ordinary acting.
-7. **VarFloats / intimacy / NextMtn / Choices state machine** (`docs/design-live2d-dsl-interpreter-spec.md:30-86,203-230`; `packages/live2d-runtime/src/dsl/interpreter.ts:206-264`). Relationship state belongs to the daemon if it is needed at all.
+7. **VarFloats / intimacy / NextMtn / Choices state machine** (`packages/live2d-runtime/src/dsl/README.md §1/§4`; `packages/live2d-runtime/src/dsl/interpreter.ts:206-264`). Relationship state belongs to the daemon if it is needed at all.
 8. **Easing/transition engine code** — `useVRMEmote`/`useMMDEmote` composables (`packages/stage-ui-three/src/composables/vrm/expression.ts:1-304`; `packages/stage-ui-mmd/src/composables/mmd/expression.ts:1-120`). Re-derive R5–R10 in Godot's `Tween`/`AnimationTree`; do not copy the composables.
 9. **Beat-sync BroadcastChannel + BPM controller** (`packages/stage-shared/src/beat-sync/eventa.ts:21-31`; `packages/stage-ui-live2d/src/composables/live2d/beat-sync.ts:71-361`). If musical head-bobbing is wanted, add a daemon beat event later.
 10. **Prompt-template TS files** — `character-defaults.ts`, `system-v2.ts`, i18n ACT strings. Their *vocabulary content* (10 keys, 4 VFX, syntax) is knowledge to re-express in daemon prompt assembly; the files stay in the UI reference.

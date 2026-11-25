@@ -30,7 +30,7 @@ VRAM budget accounting, WebGPU hardware feature detection, memory pressure telem
 - `packages/stage-ui/src/libs/inference/gpu-resource-coordinator.ts` — `GpuResourceCoordinator`. Manages estimated VRAM budget accounting, WebGPU device locks, memory pressure telemetry, and LRU worker eviction.
 - `packages/stage-ui/src/libs/inference/gpu-worker-host.ts` — `createGpuWorkerHost`. Resilient single-tenant worker lifecycle wrapper: manages lazy worker creation, exclusive execution locks (`runExclusive`), shared GPU priority execution slots (`runOnGpu`), device-loss telemetry, exponential restart backoff, and **GPU OOM circuit breaker**.
 - `packages/stage-ui/src/libs/inference/protocol.ts` — Message protocol schemas, error classification (`classifyError`), and worker error sanitization (`serializeWorkerError`).
-- `packages/stage-ui/src/libs/inference/adapters/web-llm-channel.ts` — Single-owner WebLLM coordinator using `airi:inference:web-llm` BroadcastChannel. Elects `mainWindow` as Inference Leader to prevent duplicate VRAM allocation across multiple Electron renderers.
+- `packages/stage-ui/src/libs/inference/adapters/web-llm-channel.ts` — Single-owner WebLLM coordinator using `airi:inference:web-llm` BroadcastChannel. Elects `mainWindow` as Inference Leader to prevent duplicate VRAM allocation across multiple desktop windows.
 - `packages/stage-ui/src/libs/inference/adapters/` — Thin UI adapters bridging Pinia stores to underlying Web Workers (e.g. `whisper.ts`, `blip.ts`, `web-llm.ts`).
 
 ### Local Worker Locations
@@ -56,7 +56,7 @@ VRAM budget accounting, WebGPU hardware feature detection, memory pressure telem
 4. Add a thin adapter in `packages/stage-ui/src/libs/inference/adapters/` and register with `GpuResourceCoordinator`.
 
 ### 2. Multi-Window Inference & Single-Owner Leader Architecture
-In Electron or multi-tab web, each BrowserWindow or tab possesses an isolated V8 heap.
+In desktop or multi-tab web, each BrowserWindow or tab possesses an isolated V8 heap.
 - **Do not** instantiate independent heavy WebGPU models in secondary renderers (Chat, Dating Sim, Onboarding, Memory).
 - Use the single-owner BroadcastChannel pattern (`web-llm-channel.ts`): the primary stage window (`mainWindow`) acts as the Inference Leader and hosts the physical Web Worker / GPUDevice. Secondary windows connect as clients, forwarding `loadModel` and `generate` calls over `BroadcastChannel`.
 
@@ -68,8 +68,8 @@ In Electron or multi-tab web, each BrowserWindow or tab possesses an isolated V8
 - To recover, call `host.reset()`, which frees tokens, re-arms the error guard, and resets `isOom = false`.
 
 ### 4. Linux WebGPU & Driver Configuration
-- In Chromium/Electron, `app.commandLine.appendSwitch('enable-features', ...)` calls must be joined as a single comma-separated string (e.g. `'SharedArrayBuffer,Vulkan'`). Calling `appendSwitch` repeatedly clobbers prior features.
-- On Linux with NVIDIA GPUs, Dawn gates `shader-f16` behind `vulkan_enable_f16_on_nvidia`. Without `app.commandLine.appendSwitch('enable-dawn-features', 'vulkan_enable_f16_on_nvidia')`, WGSL shaders with `enable f16;` fail with fatal compile error `extension 'f16' is not allowed in the current environment`.
+- In apps/stage-tamagotchi, Chromium flags are set via build.{mac,win,linux}.chromiumFlags in electrobun.config.ts; enable-features must be a single comma-separated string (e.g. 'SharedArrayBuffer,Vulkan') because setting it repeatedly clobbers prior features.
+- On Linux with NVIDIA GPUs, Dawn gates `shader-f16` behind `vulkan_enable_f16_on_nvidia`. Without enable-dawn-features: 'vulkan_enable_f16_on_nvidia' in the linux chromiumFlags, WGSL shaders with `enable f16;` fail with fatal compile error `extension 'f16' is not allowed in the current environment`.
 
 ### 5. Handling Model Shard Downloads
 - Report download progress events via `progress` messages containing `loadedBytes` and `totalBytes` so UI progress bars update smoothly (e.g. in Onboarding).
@@ -77,13 +77,13 @@ In Electron or multi-tab web, each BrowserWindow or tab possesses an isolated V8
 ### 6. Automated VRAM Eviction & Standby Hibernation
 - **Active LRU Eviction Under Pressure**: `GpuResourceCoordinator` maintains an advisory budget (`estimatedVRAM * 0.70`). When total allocation reaches `CRITICAL_THRESHOLD = 0.95`, the coordinator invokes `getLRUModel()` to evict the oldest inactive model before an unrecoverable `GPUOutOfMemoryError` occurs.
 - **Inactivity TTL Countdown**: `createGpuWorkerHost` manages an inactivity timer (default: 15 minutes). If no new inference requests arrive within the TTL window, the worker triggers `.unload()` and releases its `AllocationToken`.
-- **Desktop Deep Standby Coordination**: When Electron `powerMonitor` signals extended lock (>10m) or OS `suspend`, background neural workers unmount.
+- **Desktop Deep Standby Coordination**: When the desktop lifecycle reports extended lock (>10m) or OS `suspend` (powerMonitor is a port gap under Electrobun), background neural workers unmount.
 - **Manifest Retention & Fast Re-hydration**: Unloaded workers retain their `lastLoadManifest` (`quantization`, `device`, `modelId`). When the user resumes interaction, the adapter executes `ensureLoaded()` from local OPFS/browser cache, re-mounting the pipeline in < 2s without network overhead. Full spec in `docs/design-vram-eviction-and-standby-hibernation.md`.
 
 ## 4. Known Pitfalls & Failure Modes
 
 - **Web Worker `DataCloneError`**: WebGPU error objects (`GPUPipelineError`, `GPUOutOfMemoryError`, `DOMException`) cannot be serialized by browser `structuredClone`. Always pass them through `serializeWorkerError(err)` before posting or throwing across thread boundaries.
-- **Multi-Renderer VRAM Duplication**: Spawning local LLM engines in multiple Electron renderer windows duplicates model weights in VRAM (~4 GB each), causing GPU OOM on 8 GB cards. Always route requests through the single-owner leader (`web-llm-channel.ts`).
+- **Multi-Renderer VRAM Duplication**: Spawning local LLM engines in multiple desktop windows duplicates model weights in VRAM (~4 GB each), causing GPU OOM on 8 GB cards. Always route requests through the single-owner leader (`web-llm-channel.ts`).
 - **OOM Reload Storms**: Never blindly restart a worker after `GPUOutOfMemoryError`. `GpuWorkerHost` halts restarts on OOM; downstream callers must handle the rejection and offer smaller models or manual retries.
 - **WebGPU Memory Leaks**: Failing to call `.destroy()` on `GPUBuffer` or ONNX `InferenceSession` objects during worker reload causes VRAM exhaustion and browser tab crashes.
 - **Worker Script Bundling**: Worker scripts must be bundled with Vite using `new Worker(new URL('...', import.meta.url), { type: 'module' })` to support cross-origin worker loading.

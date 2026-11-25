@@ -1,3 +1,7 @@
+# Weather asset acknowledgements
+
+Weather icon credits for the bundled assets in this directory.
+
 ## Acknowledgements
 
 - [Meteocons | Bas Milius — Full-Stack Developer](https://bas.dev/work/meteocons)

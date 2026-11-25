@@ -213,6 +213,9 @@ export function resolvePromptDirectives(draft: OnboardingV3DraftState, card: any
   }
 
   // 3. Image Journal Directive
+  // NOTE: the `image_journal` tool grant + `widgetInstruction` are preserved
+  // verbatim while generation is deprecated; `image_journal.apply` on existing
+  // journal art still works.
   const isImageJournalEnabled = Boolean(draft.modules?.artistry && draft.artistryImageJournalToolEnabled)
   if (isImageJournalEnabled) {
     toolsSet.add('image_journal')
@@ -426,6 +429,10 @@ export function populateAiriExtensions(
     },
   }
 
+  // Pure round-trip of the deprecated Artistry draft fields (provider/model/
+  // promptPrefix/autonomous*) onto `airi.artistry` — no generation is started,
+  // nothing is reset, and the fields must keep being written so existing card
+  // data survives the commit.
   if (draft.modules?.artistry) {
     airi.artistry = {
       ...airi.artistry,

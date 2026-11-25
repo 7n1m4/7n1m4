@@ -1,12 +1,12 @@
 ---
 name: airi-onboarding-v3
 description: >-
-  Build/debug canonical first-run Onboarding V3: 18 semantic steps, Quick Start (60s), 5-item sliding stepper, archetype presets, dynamic module pruning, draft store, starter card atomic commit, and Electron/Web/Pocket window routing. Deprecates legacy V2.
+  Build/debug canonical first-run Onboarding V3: 18 semantic steps, Quick Start (60s), 5-item sliding stepper, archetype presets, dynamic module pruning, draft store, starter card atomic commit, and Desktop/Electrobun/Web window routing. Deprecates legacy V2.
 ---
 
 # AIRI Onboarding (Canonical V3 Architecture)
 
-The V3 onboarding flow is the **single canonical, fully shipped first-run wizard** across all platforms (Electron `/onboarding-v3`, Web, and Pocket).
+The V3 onboarding flow is the **single canonical, fully shipped first-run wizard** across all platforms (Desktop/Electrobun `/onboarding-v3` and Web).
 
 > [!IMPORTANT]
 > **V2 is Deprecated / Legacy Reference Only**: Legacy V2 files under `packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/` are preserved strictly for historical/reference purposes. All active development, routing, and first-run experiences run on **V3** (`v3/`). Do NOT route to, mount, or rebuild V2.
@@ -24,14 +24,12 @@ The V3 onboarding flow is the **single canonical, fully shipped first-run wizard
 
 ### 2.1 Platform Mounting & Routing
 
-1. **Desktop Electron**:
+1. **Desktop**:
    - Window Manager: `apps/stage-tamagotchi/src/main/windows/onboarding/index.ts` loads `/onboarding-v3`.
    - Page Route: `apps/stage-tamagotchi/src/renderer/pages/onboarding-v3.vue` mounts `<OnboardingV3 @close="handleCloseV3" @finish="handleCloseV3" />`.
    - Tray Launch: "Start Companion Wizard" invokes `onboardingWindow.openWindow('/onboarding-v3')`.
 2. **Web Stage**:
    - `apps/stage-web/src/App.vue` imports and mounts `<OnboardingV3 />`.
-3. **Pocket Stage (Mobile)**:
-   - `apps/stage-pocket/src/App.vue` imports and mounts `<OnboardingV3 />`.
 
 ---
 

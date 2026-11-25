@@ -36,12 +36,12 @@ const generateHeadless = context ? defineInvoke(context, artistryGenerateHeadles
 const addWidget = context ? defineInvoke(context, widgetsAdd) : undefined
 
 export const imageJournalParams = z.object({
-  action: z.enum(['create', 'apply']).nullish().describe('Choose "create" to generate a new image, or "apply" to use an existing one. Defaults to "create".'),
-  prompt: z.string().nullish().describe('Visual description of the image to generate (required when creating).'),
+  action: z.enum(['create', 'apply']).nullish().describe('"create" is unavailable (image generation is deprecated); only "apply" works. Defaults to "create" for backcompat.'),
+  prompt: z.string().nullish().describe('Ignored legacy generation prompt.'),
   description: z.string().nullish().describe('Alias for prompt.'),
   text: z.string().nullish().describe('Alias for prompt.'),
   content: z.string().nullish().describe('Alias for prompt.'),
-  query: z.string().nullish().describe('Search term when applying an existing image, or prompt when creating.'),
+  query: z.string().nullish().describe('Search term when applying an existing image.'),
   title: z.string().nullish().describe('Label or title for the image entry (optional).'),
   mode: z.enum(['inline', 'widget', 'bg', 'bg_widget']).nullish().describe('Display mode: "inline" (in chat), "widget" (overlay), "bg" (environment), or "bg_widget" (both). Defaults to character preference.'),
 })
@@ -318,7 +318,7 @@ export async function executeImageJournalAction(params: any) {
 const tools: Promise<Tool>[] = [
   tool({
     name: 'image_journal',
-    description: 'Manage AI-generated images. Use "create" to generate and display images. An optional "mode" (inline, widget, bg, bg_widget) can override the default character routing preference. Use "apply" to switch to an existing image from the journal.',
+    description: 'Manage journal images. Use "apply" to switch to an existing image from the journal. An optional "mode" (inline, widget, bg, bg_widget) can override the default character routing preference. Image generation is deprecated/disabled.',
     execute: params => executeImageJournalAction(params),
     parameters: imageJournalParams,
   }),

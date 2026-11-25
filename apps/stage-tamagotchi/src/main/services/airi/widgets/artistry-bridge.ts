@@ -63,9 +63,12 @@ async function handleArtistryTrigger(params: {
   if (params.componentName !== 'comfy' && params.componentName !== 'artistry')
     return
 
-  log.log(`🔍 Intercepted widget update [${params.id}] for component: ${params.componentName}`)
-
+  // Image generation is deprecated/disabled (mirrors artistryGenerationEnabled() being false).
+  // generateHeadless already refuses, so persisted/replayed widgets must not kick off a run;
+  // only non-generating display updates (done/error/idle) are allowed to flow through.
   const props = robustParse(params.componentProps)
+  if (props.status === 'generating')
+    return
   const status = props.status
   const prompt = props.payload?.prompt || props.prompt
 

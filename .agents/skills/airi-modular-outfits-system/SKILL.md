@@ -29,7 +29,7 @@ Character outfits represent distinct visual costume variants (e.g. casual wear, 
 ### Related Specs & RFCs
 - `docs/proposal-visual-state-outfit-hook.md` — Specification for visual state outfit hooks.
 - `docs/proposal-visual-state-outfit-hook-evolution.md` — Evolution design doc for multi-costume triggers.
-- `docs/design-live2d-multimoc-changecos.md` — Architectural spec for Live2D `.moc3` costume hot-swapping.
+- `packages/stage-ui-live2d/src/runtime/README.md` — Live2D runtime README covering `.moc3` costume hot-swapping.
 
 ## 3. Core SOPs & Guidelines
 
@@ -64,5 +64,5 @@ Character outfits represent distinct visual costume variants (e.g. casual wear, 
 
 ## Related Skills & References
 
-- **Key Documents**: [[proposal-visual-state-outfit-hook]], [[proposal-visual-state-outfit-hook-evolution]], [[design-live2d-multimoc-changecos]], [[design-modular-outfits-system]], [[design-airi-card]]
+- **Key Documents**: [[proposal-visual-state-outfit-hook]], [[proposal-visual-state-outfit-hook-evolution]], `packages/stage-ui-live2d/src/runtime/README.md`, [[design-modular-outfits-system]], [[design-airi-card]]
 

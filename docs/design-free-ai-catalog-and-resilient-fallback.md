@@ -1,6 +1,7 @@
 # Architectural Design: Free AI Catalog Discovery, Multi-Instance Presets, Client-Side Resilient Fallback & Quirks Pre-Seeding
 
-**Status:** Proposed Architecture & Design Specification
+**Status:** Proposed Architecture & Design Specification (HISTORICAL — superseded 2026-11-25 by daemon-owned state and Flutter-only renderer; stage-pocket/Capacitor and Electron desktop labels are historical, not current operating surfaces)
+
 **Authoritative References:**
 - [`../.agents/skills/airi-provider-core-registry/SKILL.md`](../.agents/skills/airi-provider-core-registry/SKILL.md) — Provider definition and registry contracts.
 - [`../.agents/skills/airi-provider-store-instances/SKILL.md`](../.agents/skills/airi-provider-store-instances/SKILL.md) — Multi-instance provider store, Pinia lifecycle, and IndexedDB persistence.
@@ -28,9 +29,9 @@ In upstream AIRI (`moeru-ai/airi`), the official hosted AI offering operates as 
 
 ### 1.2 The Cross-Stage Architectural Mandate
 Unlike standalone proxy tools that require running a separate background Node.js/Docker daemon on `localhost`, **AIRI's implementation is 100% native client-side TypeScript**. It operates identically with zero daemon dependencies across:
-- **`stage-tamagotchi`**: Electron desktop companion.
+- **`stage-tamagotchi`**: Electron desktop companion. *(historical — not a current operating surface)*
 - **`stage-web`**: Pure static web stage hosted on GitHub Pages.
-- **`stage-pocket`**: Capacitor mobile stage on iOS and Android.
+- **`stage-pocket`**: Capacitor mobile stage on iOS and Android. *(historical — not a current operating surface)*
 
 ---
 
@@ -391,7 +392,7 @@ Remote catalog entries may activate known transforms by slug; they can never inj
 
 ## 8. Cross-Stage Compatibility Matrix
 
-| Feature | `stage-tamagotchi` (Electron) | `stage-web` (Browser) | `stage-pocket` (Capacitor) | Implementation Technique |
+| Feature | `stage-tamagotchi` (Electron) *(historical)* | `stage-web` (Browser) | `stage-pocket` (Capacitor) *(historical)* | Implementation Technique |
 | :--- | :--- | :--- | :--- | :--- |
 | **Authoritative Baseline** | Yes | Yes | Yes | Bundled Vite JSON asset (`catalog-baseline.json`) |
 | **Opportunistic Feed Sync** | Yes | Yes | Yes | Standard `fetch()` with CORS support |

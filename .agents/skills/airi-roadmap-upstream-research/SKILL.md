@@ -4,7 +4,7 @@ description: >-
   Review roadmap/RFCs, verify proposed versus shipped features, compare forks, plan selective upstream ports. Never inspect/fetch/rebase/push upstream without explicit authorization. Use for research and planning.
 ---
 
-Research first, port deliberately. This fork is highly divergent; the `upstream` remote is reference-only. Never push, rebase from, fetch, or otherwise inspect `upstream` unless the user explicitly authorizes it. Never cite `crates/` (legacy Tauri; current desktop is Electron `apps/stage-tamagotchi/`).
+Research first, port deliberately. This fork is highly divergent; the `upstream` remote is reference-only. Never push, rebase from, fetch, or otherwise inspect `upstream` unless the user explicitly authorizes it. Never cite `crates/` (legacy Tauri; current desktop is Electrobun/Hutch `apps/stage-tamagotchi/`).
 
 ## Key Files/Locations
 
@@ -59,7 +59,7 @@ This fork (`dasilva333/airi`) has undergone deep, structural architectural shift
    - **Filter Rule**: This fork does not support the Responses API (at least not yet, and there is no plan to do so). All upstream changes touching `/v1/responses` or OpenResponses are auto-rejects and can be safely ignored.
 9. **Native In-Process Memory & Cognition vs. External Daemon Bridges (Cortico PR #2634)**:
    - This fork is strictly 100% in-process: character memory is powered natively by the Eight Pillars (STMM daily summaries, LTMM immutable Sacred Journal, Echo chips, distilled Lifetime Artifacts, and Orama hybrid search) stored directly in client-side IndexedDB (`local:*`) and `localforage`.
-   - It requires zero secondary terminal processes, zero daemons, and maintains full parity across Desktop (Electron), Web, and Mobile (Capacitor).
+   - It requires zero secondary terminal processes, zero daemons, and maintains full parity across Desktop (Electrobun/Hutch) and Web.
    - Upstream PR #2634 proposes offloading character cognition and persona to an external Cortico daemon (`@proj-anima/cortico-bridge` on `ws://localhost:6122`), breaking single-command launch (`pnpm dev:bridge` requirement), gutting native memory settings pages, breaking Web/Mobile compatibility, and relying on raw unindexed host directory scans. **External persona daemons are auto-rejects for core adoption.**
 
 ## Upstream Radar Watchlist (High-Interest Monitored PRs)

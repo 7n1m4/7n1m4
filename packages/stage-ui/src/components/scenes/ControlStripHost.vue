@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// Source of truth for the <|ACTOR:…|> swap pipeline (chunking, scoped TTS resolution, playback barrier, model handoff): ./README-actor-token-pipeline.md
+
 import type { Live2DLipSync, Live2DLipSyncOptions } from '@proj-anima/model-driver-lipsync'
 import type { Profile } from '@proj-anima/model-driver-lipsync/shared/wlipsync'
 import type { TtsRequest } from '@proj-anima/pipelines-audio'

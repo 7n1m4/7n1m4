@@ -136,6 +136,14 @@ export const PLAYGROUND_PRESETS: PlaygroundPreset[] = [
   },
 ]
 
+/**
+ * Apply UST (Universal Speech Transformations) to text before TTS.
+ *
+ * Spec: see `./README-speech-transformer.md`.
+ * The `token` bracket action protects `<|ACTOR:…|>` / `<|ACT:…|>` payloads with
+ * `__UST_TOKEN_<n>__` placeholders (see `processBracket` below) so bracket muting never eats
+ * orchestration tokens; they are restored verbatim after bracket processing, before tilde substitution.
+ */
 export function applyUSTTransformations(text: string, ust?: VoiceProfile['ust'], language?: string): string {
   if (!ust || !ust.enabled)
     return text

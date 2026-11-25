@@ -14,6 +14,11 @@ export interface SpineModelLayout {
   texturePaths: string[]
 }
 
+/**
+ * One outfit/variant discovered in the ZIP — a subdirectory name plus its
+ * skeleton+atlas+textures layout; `premultipliedAlpha` is detected from the
+ * atlas `pma:true` header and drives WebGL blending.
+ */
 export interface SpineModelVariant {
   /** Display name derived from the folder/file name. */
   name: string
@@ -126,9 +131,9 @@ export function detectSpineLayout(entries: Record<string, string>, atlasText: Re
 }
 
 /**
- * Detects all skeleton+atlas pairs in a ZIP, returning them as named
- * variants. Useful for ZIPs containing multiple outfits/characters in
- * separate folders.
+ * Scan ZIP entries and populate one `SpineModelVariant` per subdirectory
+ * (outfit); shared root-level audio (`.wav`/`.mp3`/`.ogg`) is not duplicated
+ * per variant. Returns `[]` when no skeleton+atlas pair is found.
  */
 export function detectAllSpineLayouts(entries: Record<string, string>, atlasText: Record<string, string>): SpineModelVariant[] {
   const allFiles = Object.keys(entries)

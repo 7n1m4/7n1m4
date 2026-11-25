@@ -28,7 +28,7 @@ Fingerprint = SHA-256 of DER of CA cert, lowercase hex, grouped. Shown as text +
 2. "Show" displays fingerprint + QR + path. "Export" copies PEM to user-chosen path via native save dialog; file mode 0644. No key ever exported; `CA_KEY_FILE` excluded by allowlist (only `CA_CERT_FILE`).
 
 ### B. Install/trust (client)
-- Linux desktop: `trust anchor --store=...`? Use OS trust store via `update-ca-certificates`/`trust` (p11-kit) when root; else user NSS DB (`certutil -A -t "C,,"`) for Firefox/Chromium NSS. Flutter/Godot client: bundle CA into app trust store at runtime (rustls `RootCertStore::add`), persisted in app data dir `0600`? cert is public; store `0644` but dir `0700`.
+- Linux desktop: `trust anchor --store=...`? Use OS trust store via `update-ca-certificates`/`trust` (p11-kit) when root; else user NSS DB (`certutil -A -t "C,,"`) for Firefox/Chromium NSS. Flutter client only; Godot retired: bundle CA into app trust store at runtime (rustls `RootCertStore::add`), persisted in app data dir `0600`? cert is public; store `0644` but dir `0700`.
 - Android: Network Security Config `trust-anchors` with user CA; install via system prompt (Settings → Security → Install cert) OR app-private trust store for app-only TLS. Prefer app-private to avoid global trust; fingerprint check before accepting.
 - iOS: profile-based CA install (user must enable in Settings → General → VPN & Device Management → trust). App shows fingerprint + "Open Settings" deep link; cannot auto-trust.
 - macOS/Windows in-app fallback: OS keychain (`security add-trusted-cert` / `certmgr`) optional; default app-private rustls store + fingerprint pinning.

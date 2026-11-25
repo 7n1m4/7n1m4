@@ -1,5 +1,7 @@
 # Proposal: Partial Temporal Inheritance for AIRI Memory Isolation
 
+> **ARCHIVED — 2026-11-25: superseded, do not implement.** The flat Universe model in `docs/design-timeline-flat.md` replaced nested ancestry walking. Persisted memory now carries `universeId` (`packages/stage-ui/src/types/chat-session.ts`, `text-journal.ts`, `short-term-memory.ts`, `echo-chip.ts`, `lifetime-memory.ts`) and the codebase contains no `parentTimelineId`/`getAncestryChain`/`filterEntriesByAncestry`. This document is kept as a historical design record; inbound links from `docs/design-timeline-flat.md` and `.agents/skills/airi-memory-systems/SKILL.md` are preserved.
+
 This document outlines the detailed design for implementing **Partial Temporal Inheritance** in AIRI, mapping all **6 memory pillars** to the codebase and cataloging all user-facing UI component integration points, background processes, and the prompt construction pipeline.
 
 ---

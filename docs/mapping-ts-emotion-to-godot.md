@@ -1,5 +1,7 @@
 # TS Emotion → Godot Expression Mapping
 
+> Superseded/retired Godot mapping; retained as reference for Flutter native renderer parity.
+
 Source: `docs/research-emotion-mapping-reference.md` (§1.1, §2 R1–R14). This doc is the Godot-side *target* mapping, not a re-survey of TS internals. Bead `airi-wxp.4.8` — OPEN/undecided.
 
 ## Canonical keys (TS → Godot AnimationTree state)

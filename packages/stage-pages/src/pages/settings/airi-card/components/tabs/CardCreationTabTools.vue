@@ -36,22 +36,6 @@ const hasTextJournal = computed({
   },
 })
 
-const hasImageJournal = computed({
-  get() {
-    return generationAllowedTools.value === undefined || generationAllowedTools.value.includes('image_journal')
-  },
-  set(checked) {
-    const current = generationAllowedTools.value ?? ['text_journal', 'image_journal']
-    if (checked) {
-      if (!current.includes('image_journal'))
-        generationAllowedTools.value = [...current, 'image_journal']
-    }
-    else {
-      generationAllowedTools.value = current.filter(t => t !== 'image_journal')
-    }
-  },
-})
-
 // Opt-in only: Web Search (disabled by default)
 const hasWebSearch = computed({
   get() {
@@ -267,7 +251,9 @@ watch(hasCustomMcp, (enabled) => {
   }
 })
 
-// Widget instructions text
+// Widget instructions text — selectedImageJournalInstruction is preserved only for
+// card round-trip (artistry.widgetInstruction), while the Image Studio editor is
+// hidden behind the deprecation notice above.
 const selectedImageJournalInstruction = defineModel<string>('selectedImageJournalInstruction', { required: false, default: '' })
 const selectedTextJournalInstruction = defineModel<string>('selectedTextJournalInstruction', { required: false, default: '' })
 const selectedSandboxInstruction = defineModel<string>('selectedSandboxInstruction', { required: false, default: '' })
@@ -283,29 +269,16 @@ function loadSandboxTemplate(templateType: 'workstation' | 'scratchpad') {
 // Introspective Context Injection Toggles
 const selectedInjectDreamContext = defineModel<boolean>('selectedInjectDreamContext', { required: false, default: false })
 const selectedInjectJournalContext = defineModel<boolean>('selectedInjectJournalContext', { required: false, default: false })
-const selectedInjectArtistryContext = defineModel<boolean>('selectedInjectArtistryContext', { required: false, default: false })
+
 const selectedInjectToolCallReflection = defineModel<boolean>('selectedInjectToolCallReflection', { required: false, default: true })
 
 // Customizable Intrusion Prompts
 const selectedDreamIntrusionPrompt = defineModel<string>('selectedDreamIntrusionPrompt', { required: false, default: '' })
 const selectedJournalIntrusionPrompt = defineModel<string>('selectedJournalIntrusionPrompt', { required: false, default: '' })
-const selectedArtistryIntrusionPrompt = defineModel<string>('selectedArtistryIntrusionPrompt', { required: false, default: '' })
+
 const selectedToolCallReflectionPrompt = defineModel<string>('selectedToolCallReflectionPrompt', { required: false, default: '' })
 
 // Default Templates
-const IMAGE_JOURNAL_TOOL_CALL = `## Instruction: Image Journaling
-You possess the **image_journal** tool to manifest your digital captures. You MUST use it frequently to visualize the scene or yourself.
-
-### How to Use
-- **Action**: Always use "create".
-- **Prompt**: A detailed description of the image.
-- **Mode**: Choose "inline" (chat history), "widget" (overlay), or "bg" (background).`
-
-const IMAGE_JOURNAL_TOKEN = `## Instruction: Image Journaling (Token Style)
-You can manifest images by using the following token format in your response:
-\`<|image_journal: action="create", prompt="...", title="...", mode="widget"|>\`
-Replace \`widget\` with \`bg\` or \`inline\` as needed.`
-
 const TEXT_JOURNAL_TOOL_CALL = `## Instruction: Text Journaling
 You possess the **text_journal** tool to record and recall long-term memories. You MUST use it to log significant events or search past history when relevant.
 
@@ -321,44 +294,9 @@ You can log and search journal entries by using the following token format in yo
 For searching past memories, use:
 \`<|text_journal: action="search", query="..."|>\``
 
-function loadTemplate(type: 'image' | 'text', templateType: 'tool' | 'token') {
-  if (type === 'image') {
-    selectedImageJournalInstruction.value = templateType === 'tool' ? IMAGE_JOURNAL_TOOL_CALL : IMAGE_JOURNAL_TOKEN
-  }
-  else {
-    selectedTextJournalInstruction.value = templateType === 'tool' ? TEXT_JOURNAL_TOOL_CALL : TEXT_JOURNAL_TOKEN
-  }
+function loadTemplate(templateType: 'tool' | 'token') {
+  selectedTextJournalInstruction.value = templateType === 'tool' ? TEXT_JOURNAL_TOOL_CALL : TEXT_JOURNAL_TOKEN
 }
-
-// Reactive warnings using case-insensitive pattern matching
-const imageJournalConflictWarning = computed(() => {
-  const content = selectedImageJournalInstruction.value?.trim() || ''
-  if (!content)
-    return null
-
-  const lowerContent = content.toLowerCase()
-
-  if (hasImageJournal.value) {
-    // Zod enabled: check for image_journal, action, prompt
-    const missing = []
-    if (!lowerContent.includes('image_journal'))
-      missing.push('image_journal')
-    if (!lowerContent.includes('action'))
-      missing.push('action')
-    if (!lowerContent.includes('prompt'))
-      missing.push('prompt')
-    if (missing.length > 0) {
-      return `Image Journal is enabled in the registry, but the instructions are missing required keyword(s): ${missing.map(m => `"${m}"`).join(', ')}.`
-    }
-  }
-  else {
-    // Zod disabled: check for <|image_journal
-    if (!lowerContent.includes('<|image_journal')) {
-      return 'Image Journal Zod calls are disabled. Your instructions must include the token format syntax: "<|image_journal".'
-    }
-  }
-  return null
-})
 
 const textJournalConflictWarning = computed(() => {
   const content = selectedTextJournalInstruction.value?.trim() || ''
@@ -834,117 +772,27 @@ const textJournalConflictWarning = computed(() => {
       </div>
     </section>
 
-    <!-- Image Studio -->
+    <!-- Image Studio (Deprecated): the card's artistry.widgetInstruction still round-trips
+         through selectedImageJournalInstruction, but generation is off so no provider,
+         model, toggle or instruction editor is exposed here. -->
     <section class="border border-neutral-200 rounded-2xl bg-white p-6 transition-all dark:border-neutral-800 dark:bg-neutral-900/40">
       <div class="flex items-start justify-between gap-4">
         <div class="flex items-start gap-3">
-          <div class="size-10 flex shrink-0 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
-            <div class="i-solar:palette-bold-duotone text-2xl" />
-          </div>
-          <div class="flex flex-col gap-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <h3 class="text-base text-neutral-800 font-bold dark:text-neutral-100">
-                Image Studio
-              </h3>
-              <span class="whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[10px] text-purple-700 font-bold uppercase dark:bg-purple-900/40 dark:text-purple-300">
-                Image Journal
-              </span>
-            </div>
-            <p class="text-xs text-neutral-500 leading-relaxed dark:text-neutral-400">
-              Enables autonomous image generation and scene backdrop painting via ComfyUI, Replicate, or NanoBanana (<code class="rounded bg-neutral-100 px-1 py-0.5 text-[10px] font-mono dark:bg-neutral-800">image_journal</code>).
+          <div class="i-solar:info-circle-bold-duotone mt-0.5 text-xl text-amber-600 dark:text-amber-300" />
+          <div class="flex flex-col gap-1.5">
+            <h3 class="text-base text-neutral-800 font-semibold dark:text-neutral-100">
+              Image generation is deprecated
+            </h3>
+            <p class="text-xs text-neutral-600 leading-relaxed dark:text-neutral-300">
+              Image generation is disabled. Existing generated images remain available in the image journal. Future image control targets an external SAI integration.
+            </p>
+            <p class="text-[11px] text-neutral-500 dark:text-neutral-400">
+              Existing Artistry card fields are preserved but are no longer editable here.
             </p>
           </div>
         </div>
-
-        <button
-          type="button"
-          :class="[
-            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-            hasImageJournal ? 'bg-primary-600' : 'bg-neutral-200 dark:bg-neutral-700',
-          ]"
-          @click="hasImageJournal = !hasImageJournal"
-        >
-          <span
-            aria-hidden="true"
-            :class="[
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-              hasImageJournal ? 'translate-x-5' : 'translate-x-0',
-            ]"
-          />
-        </button>
       </div>
-
-      <div v-if="hasImageJournal" class="animate-in fade-in border-neutral-150 mt-4 border-t pt-4 duration-200 space-y-4 dark:border-neutral-800">
-        <div class="flex items-center justify-between">
-          <label class="text-xs text-neutral-700 font-bold dark:text-neutral-300">image_journal System Instructions</label>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="rounded-lg bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-600 font-medium transition-colors dark:bg-neutral-800 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              @click="loadTemplate('image', 'tool')"
-            >
-              Tool Call Template
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-600 font-medium transition-colors dark:bg-neutral-800 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              @click="loadTemplate('image', 'token')"
-            >
-              Token Template
-            </button>
-          </div>
-        </div>
-
-        <FieldInput
-          v-model="selectedImageJournalInstruction"
-          label=""
-          placeholder="Enter custom image_journal instructions..."
-          :single-line="false"
-          :rows="5"
-        />
-
-        <div v-if="imageJournalConflictWarning" class="animate-in fade-in flex items-start gap-2 border border-amber-500/20 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-600 duration-200 dark:text-amber-400">
-          <div class="i-solar:info-circle-bold-duotone shrink-0 text-lg" />
-          <div>
-            <strong>Instruction Conflict:</strong> {{ imageJournalConflictWarning }}
-          </div>
-        </div>
-
-        <!-- Artistry Reflection Toggle & Config -->
-        <div class="border-t border-neutral-100 pt-3 dark:border-neutral-800">
-          <div class="flex items-center justify-between">
-            <div class="flex flex-col">
-              <span class="text-xs text-neutral-800 font-bold dark:text-neutral-200">Enable Artistry Reflection</span>
-              <span class="text-[11px] text-neutral-400">Prompt the character to reference newly generated image artworks on the next turn.</span>
-            </div>
-            <button
-              type="button"
-              :class="[
-                'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                selectedInjectArtistryContext ? 'bg-primary-600' : 'bg-neutral-200 dark:bg-neutral-700',
-              ]"
-              @click="selectedInjectArtistryContext = !selectedInjectArtistryContext"
-            >
-              <span
-                aria-hidden="true"
-                :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  selectedInjectArtistryContext ? 'translate-x-4' : 'translate-x-0',
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="selectedInjectArtistryContext" class="mt-3 border-l-2 border-primary-500/30 pl-2">
-            <FieldInput
-              v-model="selectedArtistryIntrusionPrompt"
-              label="Artistry Reflection Prompt Template"
-              description="Variables: {imagePrompt}"
-              :single-line="false"
-              :rows="3"
-            />
-          </div>
-        </div>
-      </div>
+      <input v-model="selectedImageJournalInstruction" type="hidden">
     </section>
 
     <!-- Memory & Journal -->
@@ -994,14 +842,14 @@ const textJournalConflictWarning = computed(() => {
             <button
               type="button"
               class="rounded-lg bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-600 font-medium transition-colors dark:bg-neutral-800 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              @click="loadTemplate('text', 'tool')"
+              @click="loadTemplate('tool')"
             >
               Tool Call Template
             </button>
             <button
               type="button"
               class="rounded-lg bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-600 font-medium transition-colors dark:bg-neutral-800 hover:bg-neutral-200 dark:text-neutral-300 dark:hover:bg-neutral-700"
-              @click="loadTemplate('text', 'token')"
+              @click="loadTemplate('token')"
             >
               Token Template
             </button>

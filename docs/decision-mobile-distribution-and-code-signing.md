@@ -3,7 +3,7 @@
 
 - **Status:** accepted (2026-11-21, ponytail)
 - **Bead:** `airi-u71.7` (child of epic `airi-wxp.3`)
-- **Scope:** Flutter control/chat app (`apps/flutter`) mobile targets only. Desktop release (`release-linux-desktop.yml`) unchanged.
+- **Scope:** Flutter full stage-UI app (`apps/flutter`) mobile targets only. Desktop release (`release-linux-desktop.yml`) unchanged.
 
 ## Decision
 

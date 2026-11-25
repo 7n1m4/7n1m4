@@ -6,7 +6,7 @@ description: >-
 
 # AIRI UI Design Conventions & System Guidelines
 
-This skill defines the visual identity, component selection rules, UnoCSS class conventions, and theming practices across all AIRI user interfaces (`stage-tamagotchi`, `stage-web`, `stage-pocket`).
+This skill defines the visual identity, component selection rules, UnoCSS class conventions, and theming practices across all AIRI user interfaces (`stage-tamagotchi`, `stage-web`).
 
 Treat the stage as a space for the character, with compact floating controls around it. Treat settings as a readable sequence of labeled decisions. Use translucency and blur to relate floating controls to the character stage, and use stable neutral surfaces where users read descriptions, enter values, or compare options.
 

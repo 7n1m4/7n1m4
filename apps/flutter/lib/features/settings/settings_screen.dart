@@ -9,6 +9,7 @@ import '../cards/cards_screen.dart';
 import '../memory/memory_screen.dart';
 import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
+import 'settings_catalog.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -25,6 +26,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static final SettingsTopology _catalog = settingsCatalogTopology;
+
   final TextEditingController _language = TextEditingController();
   // Null until a real settings.get completes: saving an empty section would
   // make the daemon fill every missing key with serde defaults and wipe the
@@ -113,89 +116,121 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  void _openCatalogNode(SettingsTopologyNode node) {
+    switch (node.id) {
+      case 'sys-connection':
+        widget.onOpenConnections();
+      case 'area-providers':
+        _push(ProvidersScreen(client: widget.client));
+      case 'area-memory':
+        _push(MemoryScreen(client: widget.client));
+      case 'area-card':
+        _push(CardsScreen(client: widget.client));
+      case 'area-modules':
+        _push(SessionsScreen(client: widget.client));
+      case 'sys-general':
+        return;
+      default:
+        return;
+    }
+  }
+
+  void _push(Widget screen) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => screen),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final children = <Widget>[
+      const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+      const SizedBox(height: 8),
+      for (final node in _catalog.orderedChildren(_catalog.rootId))
+        if (node.visible)
+          if (node.id == 'sys-general')
+            _buildGeneralCard(context)
+          else
+            ListTile(
+              leading: Icon(_iconForNode(node)),
+              title: Text(node.label),
+              subtitle: node.description == null ? null : Text(node.description!),
+              onTap: () => _openCatalogNode(node),
+            ),
+    ];
+
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: <Widget>[
-        ListTile(
-          leading: const Icon(Icons.link),
-          title: const Text('Connection'),
-          subtitle: const Text('Host, port, scheme and auth token'),
-          onTap: widget.onOpenConnections,
-        ),
-        const Divider(),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text('General settings (local daemon)',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _language,
-                  enabled: !_settingsBusy,
-                  decoration: const InputDecoration(labelText: 'Language code'),
-                ),
-                if (_settingsError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(_settingsError!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ),
-                if (_settingsStatus != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(_settingsStatus!),
-                  ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: (_settingsBusy || !_loaded) ? null : _saveGeneral,
-                    child: const Text('Save general'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.extension_outlined),
-          title: const Text('Providers'),
-          subtitle: const Text('LLM providers via daemon RPC'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => ProvidersScreen(client: widget.client)),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.psychology_outlined),
-          title: const Text('Memory'),
-          subtitle: const Text('Memory stats via daemon RPC'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => MemoryScreen(client: widget.client)),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.person_outline),
-          title: const Text('Cards'),
-          subtitle: const Text('Cards settings via daemon RPC'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => CardsScreen(client: widget.client)),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.forum_outlined),
-          title: const Text('Sessions'),
-          subtitle: const Text('Session/message counts via daemon RPC'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => SessionsScreen(client: widget.client)),
-          ),
-        ),
-      ],
+      children: children,
     );
+  }
+
+  Widget _buildGeneralCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('General Preferences',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _language,
+              enabled: !_settingsBusy,
+              decoration: const InputDecoration(labelText: 'Language code'),
+            ),
+            if (_settingsError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_settingsError!,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ),
+            if (_settingsStatus != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_settingsStatus!),
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: (_settingsBusy || !_loaded) ? null : _saveGeneral,
+                child: const Text('Save general'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForNode(SettingsTopologyNode node) {
+    switch (node.id) {
+      case 'area-card':
+        return Icons.person_outline;
+      case 'area-models':
+        return Icons.people_outline;
+      case 'area-scene':
+        return Icons.image_outlined;
+      case 'area-memory':
+        return Icons.psychology_outlined;
+      case 'area-modules':
+        return Icons.forum_outlined;
+      case 'area-providers':
+        return Icons.extension_outlined;
+      case 'area-data':
+        return Icons.storage_outlined;
+      case 'sys-connection':
+        return Icons.link;
+      case 'area-stage':
+        return Icons.tune;
+      case 'area-docs':
+        return Icons.menu_book_outlined;
+      case 'area-about':
+        return Icons.info_outline;
+      default:
+        return Icons.settings_outlined;
+    }
   }
 }

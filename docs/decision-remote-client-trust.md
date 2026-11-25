@@ -17,7 +17,7 @@
   - Transport: `ws://` loopback only; `wss://` forced for any non-loopback hostname.
   - The WS RPC `gateway.config` returns only `{ hostname, port }` (`crates/anima-channel/src/dispatch.rs:424-434`, `crates/anima-channel/src/wire.rs:520-530`); it never returns `authToken`. The D-Bus `GetGatewayConfig` verb does return the shared token, but only over the same-uid session bus (`crates/anima-channel/src/control.rs:18-45`, `crates/anima-daemon/src/gateway.rs:377-393`).
   - Mutating/executing `renderer.*` verbs require literal `allowActions: true` in `config.json`; a non-loopback bind additionally requires literal `allowRemoteActions: true` (`crates/anima-daemon/src/gateway.rs:113-166`, tracked by `airi-i4i`). Absent, false, or wrong-typed flags fail closed; this is an action gate, not authorization for internet exposure.
-- Deployment vision (ratified 2026-11-24): daemon on an always-on desktop/VPS, thin Flutter/Vue/Godot clients connecting remotely over the internet. This design is the prerequisite for that.
+- Deployment vision (ratified 2026-11-24): daemon on an always-on desktop/VPS, thin Flutter/Vue clients connecting remotely over the internet. This design is the prerequisite for that. (Godot was listed historically; no longer an active client kind.)
 
 ## Decision
 
@@ -36,7 +36,7 @@ Pairing is initiated by a **locally trusted** caller (same-uid D-Bus session, 06
 2. **Out-of-band delivery.** The code is shown as text/QR in the local UI (or printed by `busctl`). The remote client operator enters it (or scans the QR). The local UI also displays `caFingerprint` when present and the operator confirms that the client's pinned CA fingerprint matches before the code is consumed. The optional client `fingerprint` (hash of a client-generated public key / device id) is displayed alongside for a second "compare these two strings" confirmation; it is not a substitute for CA pinning.
 3. **Exchange over the network.** The client opens a `wss://` connection and sends an auth frame carrying the pairing code instead of a token:
    ```json
-   { "type": "auth", "pairingCode": "<code>", "client": { "label": "...", "kind": "flutter|godot|vue|script", "fingerprint": "..." } }
+   { "type": "auth", "pairingCode": "<code>", "client": { "label": "...", "kind": "flutter|vue|script", "fingerprint": "..." } }
    ```
    (The `module:authenticate` shape carries the same under `data.pairingCode` / `data.client`.)
 4. **Minting.** The daemon validates the code (exists, unexpired, unused), consumes it, creates a `gateway_clients` row, generates a fresh per-client token (UUIDv4 or 256-bit random), stores only its hash, and replies:
@@ -57,7 +57,7 @@ Backward compatibility: a connection presenting the shared `authToken` from `con
 - **Never in URLs, query strings, logs, or browser `localStorage`.**
 - Flutter: `flutter_secure_storage` (Keychain on iOS/macOS, Keystore on Android, encrypted prefs elsewhere) — add as a dependency in `apps/flutter`.
 - Vue/Electrobun: OS keychain via Electron `safeStorage` where available; otherwise a 0600 file under `<userData>` (same posture as the daemon's config). Never `localStorage`.
-- Godot: OS credential store when available; otherwise an encrypted/0600 file under the user data dir.
+- Godot (historical): OS credential store when available; otherwise an encrypted/0600 file under the user data dir. (No longer an active client kind.)
 - Clients must support "forget this device" (delete stored token) and "re-pair" flows.
 
 ## Wire format (additive; protocol stays 1)
@@ -79,7 +79,7 @@ CREATE TABLE gateway_clients (
     id            TEXT PRIMARY KEY,        -- credential id (UUIDv4)
     label         TEXT NOT NULL,
     token_hash    TEXT NOT NULL,           -- SHA-256(token), hex; lookup key
-    client_kind   TEXT,                    -- flutter | godot | vue | script | other
+    client_kind   TEXT,                    -- flutter | vue | script | other (godot historical)
     device_id     TEXT,                    -- optional stable device id
     fingerprint   TEXT,                    -- optional out-of-band client fingerprint
     ca_fingerprint TEXT,                   -- SHA-256(CA DER) pinned at pairing time
@@ -236,7 +236,7 @@ must remain green; new tests are additive.
   under `crates/anima-channel/fixtures/golden/`, registered in
   `crates/anima-channel/tests/golden_fixtures.rs` and checked by
   `crates/anima-channel/examples/export-golden-fixtures.rs`.
-- `packages/stage-ui`/`apps/flutter`/`godot` wire-type regeneration
+- `packages/stage-ui`/`apps/flutter` wire-type regeneration (godot historical)
   (`export-wire-types`) stays drift-free; no protocol version bump.
 
 **Regression:**

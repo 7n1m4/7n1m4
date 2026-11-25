@@ -214,13 +214,13 @@ A key point of confusion in desktop automation is the distinction between displa
 
 To avoid broken UI controls or runtime exceptions on sandboxed platforms, all Capability Packs adhere to strict platform availability rules:
 
-| Capability Pack | Desktop Electron (`stage-tamagotchi`) | Web Browser (`stage-web`) | Mobile Companion (`stage-pocket`) |
+| Capability Pack | Desktop Flutter (`apps/flutter`) | Web Browser (`stage-web`) | Mobile Flutter (`apps/flutter`) |
 | :--- | :--- | :--- | :--- |
-| **🌐 Web & Research Pack** | ✅ Full Native HTTP / Scraper | ✅ Edge Reverse-Proxy Worker | ✅ Native Capacitor HTTP |
+| **🌐 Web & Research Pack** | ✅ Full Native HTTP / Scraper | ✅ Edge Reverse-Proxy Worker | ✅ Native Flutter HTTP |
 | **📁 Local Workspace Pack** | ✅ Full Stdio MCP (`npx`) | ❌ Hidden (Sandbox) | ❌ Hidden (Sandbox) |
-| **🎨 Visual Artistry Pack** | ✅ Local & Cloud Backends | ✅ Cloud & WebGPU Painter | ✅ Cloud Backends |
-| **🧠 Sacred Memory Pack** | ✅ IndexedDB + LocalForage | ✅ IndexedDB + LocalForage | ✅ Capacitor SQLite |
-| **🏃 Kinetic Motion Pack** | ✅ WebGPU + Three.js VRM | ✅ WebGPU + Three.js VRM | ❌ Unsupported |
+| **🎨 Visual Artistry Pack** | ⚠️ Deprecated | ⚠️ Deprecated | ⚠️ Deprecated |
+| **🧠 Sacred Memory Pack** | ✅ IndexedDB + LocalForage | ✅ IndexedDB + LocalForage | ✅ Flutter SQLite |
+| **🏃 Kinetic Motion Pack** | ✅ WebGPU + Three.js VRM | ✅ WebGPU + Three.js VRM | ⚠️ Parity Gap |
 | **🖥️ Desktop Computer Use** | ⏳ Planned (macOS v1) | ❌ Hidden (Sandbox) | ❌ Hidden (Sandbox) |
 | **⚙️ Custom Developer MCP** | ✅ Full `mcp.json` Stdio | ❌ Hidden | ❌ Hidden |
 

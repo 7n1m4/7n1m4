@@ -45,11 +45,6 @@ const isVrmModel = computed(() => {
 // --- Platform & capability availability ---
 const isDesktop = computed(() => isStageTamagotchi())
 
-const hasArtistry = computed(() => {
-  const provider = draftStore.state.artistryProvider || 'pollinations'
-  return Boolean(draftStore.state.modules?.artistry) && provider !== 'none'
-})
-
 // --- Music tool provisioning (streaming MCP endpoint, not stdio) ---
 const musicProvisioning = ref(false)
 const musicError = ref('')
@@ -156,7 +151,7 @@ const TOOL_CARDS: ToolCardDef[] = [
     section: 'create',
     icon: 'i-solar:palette-bold-duotone',
     tint: 'bg-purple-500/15 text-purple-500',
-    available: () => hasArtistry.value,
+    available: () => true,
     enabled: () => Boolean(draftStore.state.artistryImageJournalToolEnabled),
     setEnabled: value => draftStore.setArtistry({ imageJournalToolEnabled: value }),
   },
@@ -234,10 +229,12 @@ function descriptionKey(card: ToolCardDef): string {
 }
 
 function isCardPending(card: ToolCardDef): boolean {
-  return card.id === 'music' && musicProvisioning.value
+  return (card.id === 'music' && musicProvisioning.value) || card.id === 'image'
 }
 
 async function toggleCard(card: ToolCardDef) {
+  if (card.id === 'image')
+    return // inert while image generation is deprecated
   if (isCardPending(card))
     return
   if (card.id === 'music') {
@@ -326,11 +323,12 @@ onMounted(async () => {
                   :aria-checked="card.enabled()"
                   :aria-label="t(titleKey(card))"
                   :aria-busy="isCardPending(card)"
-                  :disabled="isCardPending(card)"
+                  :disabled="isCardPending(card) || card.id === 'image'"
+                  :aria-disabled="isCardPending(card) || card.id === 'image'"
                   :class="[
                     'relative inline-flex h-6 w-11 items-center shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
                     card.enabled() ? 'bg-primary-600' : 'bg-neutral-200 dark:bg-neutral-700',
-                    isCardPending(card) ? 'opacity-60 cursor-wait' : 'cursor-pointer',
+                    isCardPending(card) || card.id === 'image' ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
                   ]"
                   @click="toggleCard(card)"
                 >
@@ -369,6 +367,13 @@ onMounted(async () => {
             >
               {{ t(card.badge.key) }}
             </span>
+
+            <p
+              v-if="card.id === 'image'"
+              :class="['text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed']"
+            >
+              Image generation is deprecated and disabled. Existing generated images remain available in the image journal; future image control targets an external SAI integration.
+            </p>
 
             <!-- Motion creation: engine pre-warm occupies the badge slot -->
             <div v-if="card.id === 'motion' && card.enabled()" :class="['flex flex-col gap-2 pt-0.5']">

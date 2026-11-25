@@ -17,7 +17,7 @@ the user is appropriate before any TTS/LLM output is produced.
   design doc: 5-phase pipeline (Timer/Hard Gates → Sensor Polling → Heuristic Gates →
   Prompt Formulation → LLM Execution/TTS), HeartbeatConfig model, NO_REPLY contract.
 - `packages/stage-ui/src/stores/proactivity.ts` — `ProactivityStore`. Contains:
-  - **Sensor probes** via Electron invoke (lines 79-85): `sensorsGetIdleTime`,
+  - **Sensor probes** via desktop invoke (lines 79-85): `sensorsGetIdleTime`,
     `sensorsGetActiveWindow`, `sensorsGetActiveWindowHistory`, `sensorsGetSystemLoad`,
     `sensorsGetLocalTime`, `sensorsGetVolumeLevel`, `sensorsSetTrackingEnabled`.
   - **Reactive sensor state:** `idleTimeSec` (line 87), `activeWinStr`, `winHistory`
@@ -45,8 +45,8 @@ the user is appropriate before any TTS/LLM output is produced.
 - **`NO_REPLY` is a control sentinel, not content** (NOTICE line 698). It is matched by an
   exact `trim() === 'NO_REPLY'`; if you add formatting or punctuation the gate misses it and
   the agent "speaks" the sentinel. Never render it into TTS/history.
-- **Sensors only exist under Electron.** All invokes are gated on `isElectron` (line 78);
-  on web they resolve `undefined` and the payload degrades to "unknown". Guard every probe.
+- **Sensors only exist on desktop.** All invokes are gated on `isElectron` (the desktop runtime flag) (line 78);
+  under Electrobun the sensors service is best-effort with `powerMonitor.getSystemIdleTime` raising a port error, so every probe must tolerate `undefined`. Guard every probe.
 - **Probes are parallelized for a reason** — do not serialize them or you'll add latency
   up to the sum of all probes instead of the max.
 - **Rolling window history, not clipboard.** `sensorPayload` uses

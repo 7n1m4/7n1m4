@@ -15,12 +15,21 @@ class CardsScreen extends StatefulWidget {
 }
 
 class _CardsScreenState extends State<CardsScreen> {
+  final TextEditingController _importController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _documentController = TextEditingController();
+
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
   Map<String, dynamic>? _detail;
   ({String id, bool liked, bool bookmarked})? _metadata;
   bool _metadataBusy = false;
   bool _busy = false;
   String? _error;
+  String? _status;
+
+  void _setBusy(bool busy) {
+    setState(() => _busy = busy);
+  }
 
   @override
   void initState() {
@@ -28,11 +37,17 @@ class _CardsScreenState extends State<CardsScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _importController.dispose();
+    _nameController.dispose();
+    _documentController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    _setBusy(true);
+    setState(() => _error = null);
     try {
       final cards = await widget.client.cardsList();
       if (mounted) setState(() => _cards = cards);
@@ -43,10 +58,11 @@ class _CardsScreenState extends State<CardsScreen> {
     }
   }
 
-  Future<void> _open(String id) async {
+  Future<void> _open(String id, {bool clearStatus = true}) async {
+    _setBusy(true);
     setState(() {
-      _busy = true;
       _error = null;
+      if (clearStatus) _status = null;
     });
     try {
       final card = await widget.client.cardsGet(id);
@@ -55,6 +71,10 @@ class _CardsScreenState extends State<CardsScreen> {
         setState(() {
           _detail = card;
           _metadata = metadata;
+          _nameController.text = card?['name'] is String
+              ? card!['name'] as String
+              : '';
+          _documentController.text = card == null ? '' : jsonEncode(card);
         });
       }
     } on DaemonClientException catch (e) {
@@ -88,13 +108,222 @@ class _CardsScreenState extends State<CardsScreen> {
     }
   }
 
+  /// Parses the import field as a card document. A bare JSON object is the
+  /// card; a `{"card": …, "pngBase64": …}` envelope is accepted too, matching
+  /// what the daemon's `cards.import` takes.
+  ({Map<String, dynamic>? card, String? pngBase64})? _parseImport() {
+    final raw = _importController.text.trim();
+    if (raw.isEmpty) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) return null;
+    final png = decoded['pngBase64'];
+    if (png is String) return (card: null, pngBase64: png);
+    final nested = decoded['card'];
+    final card = nested is Map<String, dynamic> ? nested : decoded;
+    return (card: card, pngBase64: null);
+  }
+
+  Future<void> _import() async {
+    final parsed = _parseImport();
+    if (parsed == null) {
+      setState(() => _error = 'Paste a JSON card object to import.');
+      return;
+    }
+    _setBusy(true);
+    setState(() {
+      _error = null;
+      _status = null;
+    });
+    try {
+      final result = await widget.client.cardsImport(
+        card: parsed.card,
+        pngBase64: parsed.pngBase64,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = result.renamed
+            ? 'Imported "${result.name}" as ${result.id} (renamed)'
+            : 'Imported "${result.name}" as ${result.id}';
+        _importController.clear();
+      });
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Decodes a JSON object from [raw], setting an error and returning null when
+  /// it is missing, malformed, or not an object.
+  Map<String, dynamic>? _decodeDocument(String raw) {
+    if (raw.isEmpty) {
+      setState(() => _error = 'A JSON document is required.');
+      return null;
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      setState(() => _error = 'The document is not valid JSON.');
+      return null;
+    }
+    if (decoded is! Map<String, dynamic>) {
+      setState(() => _error = 'The document must be a JSON object.');
+      return null;
+    }
+    return decoded;
+  }
+
+  Future<void> _create() async {
+    final name = _nameController.text.trim();
+    final raw = _documentController.text.trim();
+    if (name.isEmpty || raw.isEmpty) {
+      setState(() => _error = 'A name and a JSON document are required.');
+      return;
+    }
+    final Map<String, dynamic>? decoded = _decodeDocument(raw);
+    if (decoded == null) return;
+    _setBusy(true);
+    setState(() {
+      _error = null;
+      _status = null;
+    });
+    try {
+      final result = await widget.client.cardsCreate(<String, dynamic>{
+        ...decoded,
+        'name': name,
+      });
+      if (!mounted) return;
+      setState(() {
+        _status = 'Created "${result.name}" as ${result.id}';
+        _nameController.clear();
+        _documentController.clear();
+      });
+      await _load();
+      await _open(result.id, clearStatus: false);
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveDetail() async {
+    final current = _detail;
+    if (current == null) return;
+    final id = current['id'];
+    if (id is! String || id.isEmpty) return;
+    final Map<String, dynamic>? document = _decodeDocument(
+      _documentController.text,
+    );
+    if (document == null) return;
+    final typedName = _nameController.text.trim();
+    final name = typedName;
+    if (name.isEmpty) {
+      setState(() => _error = 'A name is required.');
+      return;
+    }
+    _setBusy(true);
+    setState(() {
+      _error = null;
+      _status = null;
+    });
+    try {
+      final result = await widget.client.cardsUpdate(id, <String, dynamic>{
+        ...document,
+        'name': name,
+      });
+      if (!mounted) return;
+      setState(() => _status = 'Saved "${result.name}" (${result.id})');
+      await _load();
+      await _open(id, clearStatus: false);
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete(String id, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Delete card?'),
+        content: Text('Delete "$name" ($id)? This cannot be undone.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    _setBusy(true);
+    setState(() {
+      _error = null;
+      _status = null;
+    });
+    try {
+      final deleted = await widget.client.cardsDelete(id);
+      if (!mounted) return;
+      setState(() {
+        _status = deleted ? 'Deleted "$name"' : '"$name" was already gone';
+        if (deleted) {
+          _detail = null;
+          _metadata = null;
+        }
+      });
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// One list row. The id and name are resolved once so the row's callbacks
+  /// cannot disagree about which card they act on.
+  Widget _cardRow(Map<String, dynamic> card) {
+    final id = (card['id'] as String?) ?? '';
+    final name = (card['name'] as String?) ?? id;
+    return ListTile(
+      title: Text(name),
+      subtitle: Text(id),
+      onTap: () => _open(id),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete),
+        tooltip: 'Delete card',
+        onPressed: _busy ? null : () => _delete(id, name),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final detail = _detail;
     return Scaffold(
+      // The refresh spinner is an inline body state, never a route: a pushed
+      // modal route would hide the list from the widget tree (and from tests)
+      // for the whole request.
       appBar: AppBar(
         title: const Text('Cards'),
         actions: <Widget>[
-          IconButton(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _busy ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: _busy
@@ -102,37 +331,114 @@ class _CardsScreenState extends State<CardsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
-                // Card CRUD is out of scope for the local daemon port:
-                // cards.import returns a not-implemented error. Never show a
-                // false "import succeeded" state here. Local metadata is the
-                // one card verb surface that is implemented.
-                const Card(
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                if (_status != null) Text(_status!),
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Text('Card management is not available on the local daemon.'),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'Import a card',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _importController,
+                          decoration: const InputDecoration(
+                            labelText: 'Card JSON (object or envelope)',
+                          ),
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton(
+                            onPressed: _busy ? null : _import,
+                            child: const Text('Import'),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                if (_error != null)
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'New card',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(labelText: 'Name'),
+                        ),
+                        TextField(
+                          controller: _documentController,
+                          decoration: const InputDecoration(
+                            labelText: 'Card JSON document',
+                          ),
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton(
+                            onPressed: _busy ? null : _create,
+                            child: const Text('Create'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const ListTile(title: Text('Cards'), dense: true),
                 if (_cards.isEmpty)
                   const ListTile(title: Text('No cards available'), dense: true)
                 else
                   for (final c in _cards)
-                    ListTile(
-                      title: Text((c['name'] as String?) ?? (c['id'] as String?) ?? ''),
-                      subtitle: Text((c['id'] as String?) ?? ''),
-                      onTap: () => _open((c['id'] as String?) ?? ''),
-                    ),
-                if (_detail != null)
+                    _cardRow(c),
+                if (detail != null)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(jsonEncode(_detail)),
+                          Text(jsonEncode(detail)),
+                          TextField(
+                            controller: _nameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Name',
+                            ),
+                          ),
+                          TextField(
+                            controller: _documentController,
+                            decoration: const InputDecoration(
+                              labelText: 'Card JSON document',
+                            ),
+                            maxLines: 3,
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton(
+                              onPressed: _busy ? null : _saveDetail,
+                              child: const Text('Save'),
+                            ),
+                          ),
                           if (_metadata != null) ...<Widget>[
                             CheckboxListTile(
                               title: const Text('Liked'),

@@ -34,8 +34,8 @@ The Control Strip Customizer is the **user-facing "Customizer"** — a floating,
 
 ## 2. Exhaustive File Index
 
-### Main Process & Electron IPC
-- **`apps/stage-tamagotchi/src/main/windows/customizer/index.ts`**: Creates and manages the floating customizer drawer window (`/customizer`). Handles IPC group navigation (`set-customizer-group`) and window visibility state (`customizer-window-state`).
+### Main Process & Eventa IPC
+- **`apps/stage-tamagotchi/src/main/windows/customizer/index.ts`**: Creates and manages the floating customizer drawer window (`/customizer`). Handles window visibility state (`customizer-window-state`); the raw `set-customizer-group` dispatch was removed.
 - **`apps/stage-tamagotchi/src/shared/eventa.ts`**: Eventa IPC contracts:
   - `electronCustomizerToggleVisibility`: Toggles window visibility or opens directly to a specified control group.
   - `electronGetCustomizerWindowState`: Returns current visibility boolean.
@@ -110,24 +110,9 @@ const toggleCustomizer = useElectronEventaInvoke(electronCustomizerToggleVisibil
 await toggleCustomizer({ enabled: true, group: 'captions-layout' })
 ```
 
-### Main Process Group Dispatch (`index.ts`):
-```typescript
-// main/windows/customizer/index.ts
-if (group && currentWindow) {
-  currentWindow.webContents.send('set-customizer-group', group)
-}
-```
+### Group Selection (renderer-local state):
 
-### Renderer Group Listener (`customizer.vue`):
-```typescript
-// renderer/pages/customizer.vue
-window.electron.ipcRenderer.on('set-customizer-group', (_event, group: string) => {
-  const el = document.getElementById(`group-${group}`)
-  if (el) {
-    el.scrollIntoView({ behavior: 'smooth' })
-  }
-})
-```
+The raw `set-customizer-group` dispatch was removed. Group selection is now renderer-local state inside `customizer.vue`; no `set-customizer-group` listener is installed, and the main process no longer pushes group changes via `webContents.send`.
 
 ---
 

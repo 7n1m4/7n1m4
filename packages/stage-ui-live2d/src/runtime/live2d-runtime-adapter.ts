@@ -327,7 +327,7 @@ export class Live2DRuntimeAdapter {
     },
     onCostumeWillSwap: (modelFile: string, index?: number) => {
       void index
-      // change_cos is DEFERRED (see docs/design-live2d-change-cos-challenge.md). Keeping this
+      // change_cos is DEFERRED (see `runtime/README.md` §change_cos bottleneck). Keeping this
       // as a render-side hint no-op preserves surface compatibility until the ingestion fix lands.
       void modelFile
     },

@@ -38,4 +38,4 @@ Avoid eager deep watchers on streaming history or large store objects. Use targe
 
 Preserve `healMozibake` Unicode handling: code points, not blind UTF-16 `charCodeAt` conversion. Check emoji and non-Latin text after any repair change.
 
-Test reasoning plus text, text/tool/text, multiple actors, no actor tags, edit/retry/delete/fork, image/text journal previews, and grounding toggles. Check a second window and web/pocket when changing shared components. For CPU/layout regressions, read `docs/archive/linux-wayland-chat-cpu-spikes.md` and `docs/rosetta-stone.md` §16.
+Test reasoning plus text, text/tool/text, multiple actors, no actor tags, edit/retry/delete/fork, image/text journal previews, and grounding toggles. Check a second window and stage-web when changing shared components. For CPU/layout regressions, read `docs/archive/linux-wayland-chat-cpu-spikes.md` and `docs/rosetta-stone.md` §16.

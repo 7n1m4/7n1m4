@@ -9,7 +9,8 @@
 //! config rows, not new code: [`ProviderKind::OpenAiCompatible`] and
 //! [`ProviderKind::LocalServer`] share one client implementation.
 //!
-//! See `README.md` in this crate for the implemented-vs-stubbed matrix.
+//! Implemented-vs-stubbed status per row lives in the crate-level docs
+//! (see [`crate`]) and in each row's [`CompatFlags::note`].
 
 use serde::{Deserialize, Serialize};
 

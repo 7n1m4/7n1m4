@@ -5,7 +5,7 @@
 | Input | Entry / boundary | Inference |
 | --- | --- | --- |
 | Desktop typed text | `apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue:handleSend` | `chat.ts:ingest` |
-| Shared web/pocket / Whisper input | `packages/stage-ui/src/composables/use-chat-composer.ts` | `ingest` |
+| Shared web / Whisper input | `packages/stage-ui/src/composables/use-chat-composer.ts` | `ingest` |
 | App microphone STT | app stage page, hearing pipeline transcription callback | `ingest` after transcription |
 | Discord classic voice | main Discord PCM capture; `stores/modules/discord.ts:onClassicSpeechCaptured` | STT then `ingest` with Discord source metadata |
 | Proactivity | `packages/stage-ui/src/stores/proactivity.ts` | Separate generation; shared response/speech hooks |

@@ -632,18 +632,10 @@ const isFilesystemMcpEnabled = computed({
   },
 })
 
-// Toggle 4: Visual Artistry (1-Click Free via Pollinations, image_journal tool only)
-const isArtistryToolEnabled = computed({
-  get: () => Boolean(draftStore.state.artistryImageJournalToolEnabled),
-  set: (val) => {
-    draftStore.state.modules.artistry = val
-    draftStore.setArtistry({
-      provider: val ? 'pollinations' : 'none',
-      imageJournalToolEnabled: val,
-      directorEnabled: false, // Clean tool access without background AA loop
-    })
-  },
-})
+// Toggle 4: Visual Artistry — deprecated. UI control replaced by a deprecation notice below.
+// `isArtistryToolEnabled` is kept read-only so the atomic commit can still seed
+// modules.artistry / artistryImageJournalToolEnabled / artistryVisualPrompt.
+const isArtistryToolEnabled = computed(() => Boolean(draftStore.state.artistryImageJournalToolEnabled))
 
 // ==========================================
 // 7. Option C: Deferred Pre-flight Setup Modal
@@ -1424,7 +1416,7 @@ async function handleStartChatting() {
       </div>
     </div>
 
-    <!-- 3. Subconscious Behavior Strip (4 Clean Toggles) -->
+    <!-- 3. Subconscious Behavior Strip (3 toggles + Artistry deprecation notice) -->
     <div :class="['rounded-2xl border border-neutral-200/80 dark:border-white/10 bg-white/60 dark:bg-neutral-900/30 p-3.5 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs shadow-sm backdrop-blur-sm']">
       <!-- 1. Memory (LTMM) -->
       <div :class="['flex items-center justify-between gap-2 p-1.5 rounded-xl border border-neutral-200/60 dark:border-white/5 bg-white/40 dark:bg-white/[0.02]']">
@@ -1489,25 +1481,15 @@ async function handleStartChatting() {
         </label>
       </div>
 
-      <!-- 4. Visual Artistry (1-Click Free Pollinations, image_journal tool only) -->
-      <div :class="['flex items-center justify-between gap-2 p-1.5 rounded-xl border border-neutral-200/60 dark:border-white/5 bg-white/40 dark:bg-white/[0.02]']">
-        <div :class="['flex items-center gap-2 min-w-0']">
-          <div :class="['h-6 w-6 rounded-lg bg-pink-500/15 text-pink-400 flex items-center justify-center text-xs shrink-0']">
-            <div :class="['i-solar:palette-round-bold-duotone text-sm']" />
-          </div>
-          <div :class="['flex flex-col min-w-0']">
-            <span :class="['font-bold text-neutral-900 dark:text-white text-[11px] truncate']">Visual Artistry</span>
-            <span :class="['text-[10px] text-neutral-400 leading-none truncate']">1-click free Pollinations.</span>
-          </div>
+      <!-- 4. Visual Artistry (deprecated) -->
+      <div :class="['flex items-start gap-2 p-1.5 rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10']">
+        <div :class="['h-6 w-6 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center text-xs shrink-0']">
+          <div :class="['i-solar:palette-round-bold-duotone text-sm']" />
         </div>
-        <label :class="['relative inline-flex items-center cursor-pointer shrink-0']">
-          <input
-            v-model="isArtistryToolEnabled"
-            type="checkbox"
-            :class="['sr-only peer']"
-          >
-          <div :class="['w-8 h-4.5 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-empty after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-cyan-500']" />
-        </label>
+        <div :class="['flex flex-col min-w-0']">
+          <span :class="['font-bold text-neutral-900 dark:text-white text-[11px]']">Visual Artistry</span>
+          <span :class="['text-[10px] text-amber-600 dark:text-amber-400 leading-snug']">Image generation is deprecated and disabled. Existing generated images remain available in the image journal.</span>
+        </div>
       </div>
     </div>
 

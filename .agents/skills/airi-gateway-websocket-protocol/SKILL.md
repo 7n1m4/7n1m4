@@ -9,7 +9,7 @@ description: >-
 ## Key Files/Locations
 
 - `crates/anima-channel/src/wire.rs` — **Rust-canonical wire types** (D2): the frame vocabulary both sides speak (`GatewayClientFrame` / `GatewayServerFrame`, heartbeat, RPC replies). The checked-in TypeScript bindings at `packages/server-shared/src/types/generated/anima-channel.ts` are re-exported from `@proj-anima/server-shared/types`; regenerate with `pnpm run check:wire-types` (write mode: `cargo run -p anima-channel --example export-wire-types`). CI fails the `Wire Types Drift Check` job when they disagree — never edit the generated file.
-- `apps/stage-tamagotchi/src/main/services/airi/channel-server/index.ts` — Electron **main-process** service: manages the channel server runtime on port `6121` (overridable via `env.SERVER_CHANNEL_PORT`), cryptographic `authToken` handshake, auto-healing config store `server-channel/config.json`, mkcert local CA/TLS cert generation (`certHasAllDomains`), and LAN IP discovery (`getLocalIPs()`).
+- `apps/stage-tamagotchi/src/main/services/airi/channel-server/index.ts` — desktop **main-process** service: manages the channel server runtime on port `6121` (overridable via `env.SERVER_CHANNEL_PORT`), cryptographic `authToken` handshake, auto-healing config store `server-channel/config.json`, mkcert local CA/TLS cert generation (`certHasAllDomains`), and LAN IP discovery (`getLocalIPs()`).
 - `apps/stage-tamagotchi/src/shared/eventa.ts` — Typed eventa IPC contracts: `electronGetServerChannelConfig`, `electronApplyServerChannelConfig`; payload schemas for `hostname`, `authToken`, and `tlsConfig`.
 - `packages/server-runtime/src/server/index.ts` — Core WebSocket server implementation and protocol dispatch.
 - `docs/arch-gateway-security-hardening.md` — Authoritative security design document: WebSocket token handshake, origin header validation, LAN attack mitigations.
@@ -28,7 +28,7 @@ description: >-
 [ External Client (Rust native app / VS Code) ]
                  │
                  ▼  ws://[IP]:6121 (or wss://)
-[ Channel Server (Electron Main Process) ]
+[ Channel Server (desktop Main Process) ]
                  │
         ┌────────┴────────┐
         ▼                 ▼
@@ -45,7 +45,7 @@ description: >-
 
 ## Common Pitfalls
 
-- **Main Process Isolation**: The WebSocket server runs strictly in the Electron main process. Never attempt to bind network sockets directly inside renderer components.
+- **Main Process Isolation**: The WebSocket server runs strictly in the desktop main process. Never attempt to bind network sockets directly inside renderer components.
 - **Port Collisions**: If port 6121 is occupied by a lingering instance, check `SERVER_CHANNEL_PORT` or kill orphan processes before restarting.
 - **LAN Access vs Loopback**: If mobile native clients cannot connect, verify that `hostname` is explicitly set to `0.0.0.0` and that the desktop OS firewall permits incoming traffic on port 6121.
 - **Token Invalidation**: When regenerating the token via `electronApplyServerChannelConfig`, active external connections will be closed and must re-authenticate with the new token.

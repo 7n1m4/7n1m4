@@ -3,7 +3,7 @@
 ## Distinct input owners
 
 - Desktop: `apps/stage-tamagotchi/src/renderer/components/InteractiveArea.vue` owns drafts, attachments, producer suggestions, send and Stop. It does not use `useChatComposer`.
-- Shared web/pocket input: `packages/stage-ui/src/composables/use-chat-composer.ts`. Inspect its consuming surface before changing behavior.
+- Shared web input: `packages/stage-ui/src/composables/use-chat-composer.ts`. Inspect its consuming surface before changing behavior.
 - WhisperDock shell: `packages/stage-ui/src/components/scenarios/chat/WhisperDock.vue`; composer controls live in `WhisperComposerBar.vue`.
 - Shared suggestions: `packages/stage-ui/src/composables/use-producer.ts`.
 - Landscape layout and transcript hosting: `packages/stage-layouts/src/components/Widgets/ChatArea.vue` and its layout consumers.

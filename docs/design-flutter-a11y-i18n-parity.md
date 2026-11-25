@@ -1,4 +1,4 @@
-# Design: Flutter control/chat a11y and i18n parity vs Vue
+# Design: Flutter renderer a11y and i18n parity vs Vue
 
 **Status:** design (E3-T7). **Bead:** `airi-wxp.3.7` (parent `airi-wxp.3` E3).
 **Reference:** Vue web app (`apps/stage-web`, `apps/stage-tamagotchi`) remains the full-UI behaviour reference (E0-D1).

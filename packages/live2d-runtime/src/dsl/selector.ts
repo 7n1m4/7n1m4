@@ -66,7 +66,10 @@ function passesTimeLimit(entry: DslEntry, clock?: IClockLike): boolean {
   return month >= seasonStart || month <= seasonEnd // wraps year boundary
 }
 
-/** Filter a group's entries to those currently eligible (guards + intimacy + time). */
+/**
+ * Filter a group's entries to those currently eligible (guards + intimacy + time).
+ * Gate semantics: see ./README.md §4.
+ */
 export function filterEligibleEntries(entries: readonly DslEntry[], ctx: SelectionContext): DslEntry[] {
   return entries.filter(e =>
     passesGuards(e, ctx.vars)

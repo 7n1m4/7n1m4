@@ -1,116 +1,90 @@
 ---
 name: airi-release-packaging-deploy
 description: >-
-  Package/release/deploy AIRI: versioning, tags, release scripts, Electron installers, CI signing/notarization, auto-update feeds, Capacitor APK/IPA, Docker images, GitHub Pages, edge-worker publishing. Cloud relay implementation uses airi-cloud-relay-infrastructure.
+  Package/release/deploy AIRI: Hutch/Electrobun desktop artifacts, Linux CI, static Web Stage Pages deployment, versioning, tags, release notes, edge-worker publishing. Cloud relay implementation uses airi-cloud-relay-infrastructure.
 ---
 
 # AIRI Release, Packaging & Deploy
 
-Deployment surface map for shipping AIRI. Desktop releases are manual + script-assisted on the fork; Electron CI builds cover Win/macOS/Linux; there is currently no mobile release channel (the Capacitor app was purged 2026-11-13; the unified Rust native app will add one); stage-web ships as Docker/OCI; edge workers deploy per-user via Cloudflare.
+Deployment surface map for shipping AIRI. Desktop releases are built by Hutch/Electrobun and published from `apps/stage-tamagotchi/artifacts/`; Linux has a GitHub Actions release workflow, while Windows/macOS are local release operations. There is no mobile release channel. Web Stage deploys as a static GitHub Pages frontend; edge workers deploy per-user via Cloudflare.
 
 ## 1. Surface Map
 
 | Surface | App | Artifacts | Ship path |
 |---|---|---|---|
-| Windows | `stage-tamagotchi` | `AIRI-<ver>.exe` + `.zip` (portable) | Local: `pnpm run release:win` (fork `dasilva333/airi`) |
-| macOS | `stage-tamagotchi` | `AIRI-<ver>.dmg` (arm64 + x64) | Local: `pnpm run release:mac` (notarized) |
-| Linux | `stage-tamagotchi` | `.deb`, `.rpm`, `.flatpak` (x64 + arm64) | CI only (`release-linux-desktop.yml`, incl. Flatpak via flathub SDK) |
-| Mobile (planned) | unified Rust native app (`crates/anima-slint`) | TBD | Purged 2026-11-13; see `docs/proposal-unified-rust-native-app.md` |
-| Web & Docs | `stage-web` / `docs` | static sites | `deploy-frontends.yml` → GitHub Pages (`/airi/` & `/airi/web-stage/`) |
-| Edge relay | `apps/stage-edge` | Cloudflare Worker (per-user) | Built into users' accounts via OAuth PKCE during onboarding; see `airi-cloud-relay-infrastructure` skill |
+| Linux desktop | `stage-tamagotchi` | Hutch/Electrobun tarball and `*-update.json` sidecars under `apps/stage-tamagotchi/artifacts/` | `.github/workflows/release-linux-desktop.yml` |
+| Windows/macOS desktop | `stage-tamagotchi` | Platform artifacts emitted by `pnpm -F @proj-anima/stage-tamagotchi run build` under `apps/stage-tamagotchi/artifacts/` | Local/manual release flow; verify generated files before publishing |
+| Mobile | none | none | No release channel; `apps/stage-pocket` and Capacitor tooling were removed |
+| Web Stage | `stage-web` | `apps/stage-web/dist/` | `.github/workflows/deploy-frontends.yml` → GitHub Pages at `/airi/web-stage/` |
+| Edge relay | `apps/stage-edge` | Cloudflare Worker (per-user) | Built into users' accounts via OAuth PKCE during onboarding; see `airi-cloud-relay-infrastructure` |
 
-## 2. Desktop Stable Release (Windows & macOS)
+## 2. Desktop Build & Release
 
-Canonical references: **`docs/content/en/docs/contributing/windows-release-guide.md`** and **`docs/content/en/docs/contributing/macos-release-guide.md`**. The workflow unified by `scripts/release/publish-win.js` / `publish-mac.js`:
+Canonical build entrypoints:
 
-1. **Release notes first.** Inspect commits (`git log [previous-tag]..HEAD --oneline`); draft user-facing notes saved to `release-notes.md` (uncommitted) following these communication standards:
-   - **User-Centric Framing**: Speak from the user's experience instead of exposing internal plumbing. Emphasize what the user can now do and what annoyance was removed (e.g. *"You can now retry a failed message directly from the chat"* instead of *"Refactored chat action menu state"*; *"Previously, provider dropdowns were cut off on narrow screens. We fixed this so..."*).
-   - **Audience Hierarchy**: Group notes logically:
-     - `## ✨ Product Updates` (User-facing enhancements across Local models, Chat, Stage, Providers).
-     - `### 🛠️ To Developers` (Plugin SDK, API contracts, desktop window managers).
-     - `### 🧪 To Contributors` (Packaging scripts, CI/CD, internal harnesses, audit tools).
-     - `### ⚠️ Upgrade Notes` (Only when manual user action or configuration migration is required).
-   - **Traceable Footnotes & Upstream Attribution**: Keep bullet points punchy and readable without inline commit SHA clutter. When features, fixes, or localizations derive from upstream PRs (tracked in `docs/UPSTREAM_RADAR.md` or port commits), always cite and thank the upstream authors and PR links (e.g., `Special thanks to upstream contributor @author for PR [#1234](url)`).
-   - Present inline in natural Markdown (never inside an unrendered raw code fence).
-2. **Version stamp.** `apps/stage-tamagotchi/package.json` → `[major].[minor].[patch]-stable.[YYYYMMDD]`.
-3. **Tag.** `git tag v<version> && git push origin v<version>` (fork remote; never touch upstream without authorization).
-4. **Build + publish.** `pnpm run release:win` or `pnpm run release:mac`.
-   - Windows supports `--build-only` (stop after build for smoke test, then `pnpm run release:win --upload-only`) since Win installers need interactive smoke testing; macOS uploads directly.
-   - `publish-mac.js` automatically dispatches the `Release: Linux Desktop` workflow (`release-linux-desktop.yml`) on GitHub Actions right after uploading macOS assets, enabling concurrent cloud compilation of Linux x64/arm64 packages while the user transitions to Windows.
-   - `publish-win.js` automatically runs release asset verification (`node scripts/github/ci-status.mjs --release`) after uploading Windows binaries to confirm all 14 cross-platform assets are attached.
-   - Both scripts: `git -c http.sslVerify=false pull && fetch --tags --force`, warn if version date-stamp ≠ today (multi-machine drift: someone forgot to push), physical `node_modules` override cleanup (discord.js/undici/ws etc. copied packages removed before Vite bundling), `NODE_OPTIONS=--max-old-space-size=12288`, `GH_SSL_NO_VERIFY=true`, `GITHUB_TOKEN` deleted so `gh` falls back to keyring auth, artifact discovery (`AIRI-<ver>*.exe|zip` / `.dmg`), release creation/upload to `--repo dasilva333/airi --clobber` using `release-notes.md` if present.
-5. **Manual fallback:** `pnpm -F @proj-anima/stage-tamagotchi run build:win|build:mac`, then `GITHUB_TOKEN="" GH_SSL_NO_VERIFY="true" gh release upload [tag] <artifact> --repo dasilva333/airi --clobber`.
+- `pnpm -F @proj-anima/stage-tamagotchi run dev` — Hutch development runner.
+- `pnpm -F @proj-anima/stage-tamagotchi run build` — `hutch run build`; prepares Electrobun, builds the Vite renderer, and writes release artifacts under `apps/stage-tamagotchi/artifacts/`.
+- `apps/stage-tamagotchi/electrobun.config.ts` — app identity, Bun main-process entrypoint, CEF renderer settings, icons, and platform build options.
+- `apps/stage-tamagotchi/hutch.config.ts` — Hutch commands, including renderer Vite build and typecheck wrappers.
 
-### Windows-specific
-- Always ship the portable `.zip` alongside the `.exe` (WDAC/AppLocker/SmartScreen blocks unsigned installers). CLI error "An Application Control policy has blocked this file" → advise Properties→Unblock, `Unblock-File`, admin run, or the zip.
-- Code signing for the `.exe` is a standing action item (see guide §6).
-- `app.asar` / `airi.exe` file locks are pre-checked by the script; if locked, ask the USER to close the holding process. **Never run `taskkill` autonomously** per the guide's hard rule.
+Release workflow:
 
-### macOS-specific
-- `build:mac` produces `.dmg` + `.app` in `apps/stage-tamagotchi/dist`; arch flags `--arm64` (default on Apple Silicon) / `--x64`.
-- Notarization entitlements in `build/entitlements.mac.plist`; CI uses `CSC_CONTENT` + `APPLE_ID` secrets; local builds need the Apple Developer cert in keychain.
-- `electron-builder.config.ts` `extendInfo` must keep `NSMicrophoneUsageDescription` + `NSCameraUsageDescription`.
+1. **Release notes first.** Inspect commits since the previous tag and draft user-facing notes. Group product updates, developer/contributor notes, and upgrade notes separately. Keep notes user-centric and avoid raw commit SHAs in the narrative.
+2. **Version stamp.** Update `apps/stage-tamagotchi/package.json` and commit the version change through the normal repository workflow.
+3. **Tag.** Create and push `v<version>` only when the user or release policy authorizes it.
+4. **Build.** Run `pnpm -F @proj-anima/stage-tamagotchi run build`.
+5. **Inspect artifacts.** Publish only files actually emitted under `apps/stage-tamagotchi/artifacts/`; do not assume `.exe`, `.dmg`, `.deb`, `.rpm`, `.flatpak`, `app.asar`, or `dist/win-unpacked` paths unless a current build produced them.
+6. **Upload.** For manual GitHub releases, use `gh release upload <tag> <artifact> --repo dasilva333/airi --clobber` only after artifact inspection.
 
-## 3. Electron Linux CI / CD (`.github/workflows/release-linux-desktop.yml`)
+> [!CAUTION]
+> Root `release:win` / `release:mac` wrappers still exist, but `scripts/release/publish-win.js` and `publish-mac.js` inspect obsolete electron-builder paths. Do not treat them as authoritative until they are ported to Hutch/Electrobun artifact discovery.
 
-Triggers: `release: prereleased` (auto-publish), `workflow_dispatch` (manual, `build_only` / `artifacts_only` / `tag`), nightly `schedule` (cron `0 0 * * *`).
+## 3. Linux CI / CD
 
-Build matrix: `ubuntu-latest` (x64: deb, rpm, Flatpak via flathub SDK), `ubuntu-24.04-arm` (arm64: deb, rpm, Flatpak). Windows and macOS desktop releases are built locally via `publish-win.js` and `publish-mac.js`.
+`.github/workflows/release-linux-desktop.yml` is the current desktop release automation.
 
-- Publish policy: `--publish=never` for electron-builder; artifacts renamed and uploaded via `softprops/action-gh-release` to the release tag.
-- Linux runners run `jlumbroso/free-disk-space` first (historic "No space left" archive failures).
+- Triggers: GitHub `release: prereleased`, manual `workflow_dispatch`, and nightly schedule.
+- Matrix: `ubuntu-latest` for linux-x64 and `ubuntu-24.04-arm` for linux-arm64.
+- Build command: `pnpm -F @proj-anima/stage-tamagotchi run build`.
+- Artifact path: `apps/stage-tamagotchi/artifacts/*`.
+- Uploads use `actions/upload-artifact` for nightly/manual artifact runs and `softprops/action-gh-release` for release publication.
 
-## 4. Mobile — superseded (2026-11-13)
+## 4. Mobile
 
-The Capacitor app `apps/stage-pocket` was **purged** (web tech on mobile rejected; see `docs/proposal-unified-rust-native-app.md`). All Android APK / iOS IPA release flows, the `packages/cap-vite` tool, and the `dev:pocket:*` scripts are deleted. Mobile distribution will be designed for the unified Rust native app (Slint, desktop + mobile from one screen-size-reactive codebase) and documented here when it exists. There is no mobile release channel until then.
+There is no mobile release channel. The Capacitor app and `packages/cap-vite` were purged. Any future mobile distribution belongs to the proposed unified Rust native app and should not be documented as shipping until that app exists.
 
-## 5. Web & Docs Frontends / GitHub Pages / Edge
+## 5. Web Stage / GitHub Pages / Edge
 
-- **Docker:** Retired and removed. Web Stage is deployed continuously alongside the documentation as static frontends on GitHub Pages.
-- **Docs & Web Stage on GitHub Pages:** `.github/workflows/deploy-frontends.yml` → on push to `main` touching `docs/**`, `apps/stage-web/**`, or `packages/**` (or manual `workflow_dispatch`):
-   - Builds Docs with `BASE_URL=/airi/` → `docs/.vitepress/dist`
-   - Builds Web Stage with `BASE_URL=/airi/web-stage/` → `apps/stage-web/dist`
-   - Bundles Web Stage into docs output (`docs/.vitepress/dist/web-stage`)
-   - Deploys static bundle to GitHub Pages: Docs at `https://<user>.github.io/airi/` and Web Stage at `https://<user>.github.io/airi/web-stage/`.
-   - Local verification script: `pnpm run build:pages` (full bundle) or `pnpm run build:web:pages` (`stage-web` only).
-   - Architecture & details in `docs/design-web-stage-pages-deployment.md`.
-- **Edge relay:** `apps/stage-edge` is NOT centrally deployed — each user provisions their own Cloudflare Worker + KV + R2 via OAuth PKCE during onboarding (CloudflareStageDeployer). See the `airi-cloud-relay-infrastructure` skill for maintainer-side flows.
+- `.github/workflows/deploy-frontends.yml` builds `apps/stage-web` with `BASE_URL=/airi/web-stage/` and uploads `apps/stage-web/dist` to GitHub Pages.
+- Root `pnpm run build:pages` builds packages and Web Stage for the Pages subpath.
+- Root `pnpm run build:web:pages` builds only Web Stage for the Pages subpath.
+- Web Stage uses Vite's `BASE_URL` and Vue Router history base; do not reintroduce a separate VitePress/docs Pages build.
+- `apps/stage-edge` is not centrally deployed; each user provisions their own Cloudflare Worker + KV + R2 through onboarding.
 
- ## 6. Common Pitfalls
+## 6. Common Pitfalls
 
- - **`node:crypto` externalization in renderer builds.** Symptom: `Module "node:crypto" has been externalized for browser compatibility`. Fix lives in `electron.vite.config.ts` browser aliases + `src/renderer/shims/node-crypto.ts` shim; DuckDB leaks `bundles/default-node` into renderer — intercepted via the `force-node-crypto-shim` resolveId plugin. Same vector for `process`/`module`/`path` leaks. (windows-release-guide §2.)
- - **Release date-stamp mismatch warning.** If publish scripts warn the version date differs from today, another machine/agent likely forgot to push — sync tags before re-running, don't override blindly.
- - **Invalid `GITHUB_TOKEN` env overrides keyring** causing 401s on `gh release create`; always clear it for release commands. `gh` needs `workflow` scope: `gh auth refresh -h github.com -s workflow`.
- - **Engines:** root requires Node `>=20.14.0 <28.0.0`, pnpm `>=10`. macOS guide documents past lockfile failures when Node outpaced the cap.
- - **Build-breaking strictness:** TS6133 unused imports fail the pre-build typecheck; broken Vue template end-tags fail with `unplugin-vue-named-template-pre` — run `pnpm run typecheck:web` to localize.
- - **Resilient asset downloads:** build-time font/model fetches should use `packages/stage-shared/src/ts/resilient.ts` retry wrapper to survive flaky networks.
- - **taskkill ban:** never kill `node.exe`/`electron.exe` en masse to unstuck builds; coordinate with the user instead (guide §5, CAUTION).
- - **Fork vs upstream asymmetry:** the release scripts target `dasilva333/airi`; SignPath signing and several CI guards only fire on `moeru-ai/airi`. Don't assume parity.
- - **There is no mobile release channel.** The Capacitor `stage-pocket` was purged 2026-11-13 (`docs/proposal-unified-rust-native-app.md`); any "release android/ios" request means the Rust native app does not exist yet — say so, and discuss scope with the user before doing anything.
+- **Stale electron-builder assumptions:** old scripts/docs may mention `dist`, `win-unpacked`, `app.asar`, DMG/ZIP discovery, or deb/rpm/flatpak packaging. Treat those as historical unless a current Hutch/Electrobun build emitted the file.
+- **Renderer heap:** Hutch drops some Node heap flags; `hutch.config.ts` restates `NODE_OPTIONS=--max-old-space-size=12288` for the Vite renderer build.
+- **Release auth:** clear invalid `GITHUB_TOKEN` overrides for `gh` commands and ensure `gh` has `workflow` scope when dispatching workflows.
+- **Fork vs upstream asymmetry:** release scripts and workflows target `dasilva333/airi`; do not assume upstream CI parity.
+- **No mobile release:** requests to release Android/iOS must be redirected to the nonexistent unified Rust native app scope.
 
- ## When to Use
+## Verification
 
- - Running or troubleshooting `release:win` / `release:mac`, version stamping, tagging, release-note drafting.
- - Interpreting or fixing `release-linux-desktop.yml` or `deploy-frontends.yml`.
- - Hutch/Electrobun packaging and artifacts under `apps/stage-tamagotchi/artifacts/`; the old electron-builder config and artifact scripts (`artifacts-metadata.ts`, `rename-artifacts`) were deleted with wave 5 of the port.
- - Any "why did the build fail" involving renderer Node-module leakage, disk space, or file locks.
+- Desktop build: `pnpm -F @proj-anima/stage-tamagotchi run build`.
+- Narrow typecheck: `pnpm -F @proj-anima/stage-tamagotchi typecheck`.
+- CI interpretation: inspect `.github/workflows/release-linux-desktop.yml` and upload paths under `apps/stage-tamagotchi/artifacts/`.
+- Pages build: `pnpm run build:web:pages`.
+- After release edits, report changed files and any remaining stale release wrappers rather than claiming unsupported installers exist.
 
- ## Verification
+### Authoritative Documents
 
- - Desktop local release: the publish scripts re-verify tag/artifact existence themselves; a successful run ends with the GitHub release URL printed and the artifacts visible there.
- - Build-only validation without release: `pnpm run release:win --build-only` (smoke test window), or `pnpm -F @proj-anima/stage-tamagotchi run build:win|build:mac` for compile-level confidence. Typecheck/build per the `airi-codebase-verification` skill before any push.
- - Mobile: no channel exists — state this explicitly when asked to cut a mobile release.
- - After any file modification: `git status` and report open/unstaged files verbatim.
-
- ### Authoritative Documents
-
- - [docs/content/en/docs/contributing/windows-release-guide.md](docs/content/en/docs/contributing/windows-release-guide.md) — Windows stable-release workflow, lessons learned, WDAC/codesign action items, build-safety rules.
- - [docs/content/en/docs/contributing/macos-release-guide.md](docs/content/en/docs/contributing/macos-release-guide.md) — macOS release workflow, notarization/entitlements, troubleshooting.
- - [docs/delivery/AIRI-customer-deployment-guide.zh-CN.md](docs/delivery/AIRI-customer-deployment-guide.zh-CN.md) — customer-facing deployment guide (zh-CN).
- - `.github/workflows/release-linux-desktop.yml` · `.github/workflows/deploy-frontends.yml` — automation surfaces described above.
-- [docs/rosetta-stone.md](docs/rosetta-stone.md) — repo layout & persistence references for anything release-adjacent.
+- `.github/workflows/release-linux-desktop.yml` — current desktop release automation.
+- `.github/workflows/deploy-frontends.yml` — current static Web Stage Pages deployment.
+- [docs/design-electrobun-port.md](../../../docs/design-electrobun-port.md) — Electrobun/Hutch port status and remaining gaps.
+- [docs/rosetta-stone.md](../../../docs/rosetta-stone.md) — repo layout and path index.
 
 ## Related Skills & References
 
 - **Peer Skills**: [[airi-cloud-relay-infrastructure]], [[airi-codebase-verification]]
-- **Key Documents**: [[windows-release-guide]], [[macos-release-guide]], [[release-notes]], [[zh-CN]], [[rosetta-stone]]
+- **Key Documents**: [[design-electrobun-port]], [[rosetta-stone]]

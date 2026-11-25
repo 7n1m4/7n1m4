@@ -6,7 +6,7 @@
 //!   * The daemon is never started/stopped/restarted here except via
 //!     `systemctl --user start anima-daemon` ("Start core" convenience) —
 //!     systemd remains the single restart authority.
-//!   * Launch/stop/restart applies to client processes only (Flutter, Godot).
+//!   * Launch/stop/restart applies to the Flutter client process only.
 
 mod logging;
 
@@ -17,7 +17,6 @@ use std::time::Duration;
 use tray_item::TrayItem;
 
 static FLUTTER: Mutex<Option<Child>> = Mutex::new(None);
-static GODOT: Mutex<Option<Child>> = Mutex::new(None);
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -80,48 +79,6 @@ fn restart_flutter() {
     let _ = spawn_flutter();
 }
 
-fn spawn_godot() -> Result<(), String> {
-    let mut guard = GODOT.lock().map_err(|e| e.to_string())?;
-    if child_slot_is_running(&mut guard) {
-        return Ok(());
-    }
-    let bin = env_or("ANIMA_GODOT_BIN", "godot");
-    let dir = env_or("ANIMA_GODOT_DIR", "godot");
-    let args: Vec<String> = env_or("ANIMA_GODOT_ARGS", "")
-        .split_whitespace()
-        .map(str::to_string)
-        .collect();
-    let mut cmd = Command::new(&bin);
-    if args.is_empty() {
-        cmd.arg("--path").arg(&dir);
-    } else {
-        cmd.args(&args);
-    }
-    let child = cmd
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("godot spawn failed: {e}"))?;
-    eprintln!("anima-supervisor: started godot (pid {})", child.id());
-    *guard = Some(child);
-    Ok(())
-}
-
-fn stop_godot() {
-    if let Ok(mut guard) = GODOT.lock() {
-        if let Some(mut c) = guard.take() {
-            let _ = c.kill();
-            let _ = c.wait();
-            eprintln!("anima-supervisor: stopped godot");
-        }
-    }
-}
-
-fn restart_godot() {
-    stop_godot();
-    let _ = spawn_godot();
-}
-
 fn start_core() {
     // Still systemd's child — never a direct daemon spawn.
     let _ = Command::new("systemctl")
@@ -134,7 +91,6 @@ fn start_core() {
 
 fn quit() {
     stop_flutter();
-    stop_godot();
     std::process::exit(0);
 }
 
@@ -158,11 +114,6 @@ fn main() {
         })?;
         tray.add_menu_item("Stop Flutter", || stop_flutter())?;
         tray.add_menu_item("Restart Flutter", || restart_flutter())?;
-        tray.add_menu_item("Start Godot Pet", || {
-            let _ = spawn_godot();
-        })?;
-        tray.add_menu_item("Stop Godot Pet", || stop_godot())?;
-        tray.add_menu_item("Restart Godot Pet", || restart_godot())?;
         tray.add_menu_item("Start Core (systemd)", || start_core())?;
         tray.add_menu_item("Quit", || quit())?;
         Ok(())
@@ -173,7 +124,6 @@ fn main() {
             // Keep the process alive.
             loop {
                 reap_child_slot(&FLUTTER);
-                reap_child_slot(&GODOT);
                 std::thread::sleep(Duration::from_secs(1));
             }
         }

@@ -64,7 +64,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 - **Content**: Service injection via `injeca`, main process window manager lifecycles (Control Strip, Stage, Chat, Caption, Widgets, Settings), renderer routing via Vite, and web app entry.
 
 #### 1.2 `airi-ipc-eventa`
-- **Target Domain**: Typed Electron IPC/RPC Contracts & Cross-Window Messaging.
+- **Target Domain**: Typed eventa IPC/RPC Contracts & Cross-Window Messaging.
 - **Key Paths**: `apps/stage-tamagotchi/src/shared/eventa.ts`, `packages/electron-eventa/`.
 - **Content**: Defining typed `eventa` IPC calls, main-to-renderer event emissions, avoiding the Eventa context serializer pitfall, and handling `BroadcastChannel` cross-window event relays.
 
@@ -86,7 +86,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 #### 1.6 `airi-card-schema`
 - **Target Domain**: Character Card Specifications (CCv2/CCv3) & AIRI Extension Schema.
 - **Key Paths**: `packages/stage-ui/src/types/card.schema.ts`, `packages/stage-ui/src/stores/modules/airi-card.ts`, `packages/ccc/src/define/card.ts` (base `Card` shape), `docs/design-airi-card.md`.
-- **Content**: `AiriCard` and `AiriExtension` structure, Valibot schema validation, PNG `tEXt` chunk writing (`chara` keyword → base64 UTF-8 JSON → zlib CRC-32 per PNG tEXt chunk rules), and Electron webview `will-download` interception for `.png` card imports.
+- **Content**: `AiriCard` and `AiriExtension` structure, Valibot schema validation, PNG `tEXt` chunk writing (`chara` keyword → base64 UTF-8 JSON → zlib CRC-32 per PNG tEXt chunk rules), and (desktop port gap) webview `will-download` interception for `.png` card imports.
 
 #### 1.7 `airi-cloud-relay-infrastructure`
 - **Target Domain**: Serverless Edge Workers, BYOS Cloud Sync & Remote Proxy Infrastructure.
@@ -99,9 +99,9 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 - **Content**: The unstorage interceptor + outbox queue architecture, LWW vs mergeable-key vs manifest reconciliation rules, voice-profile reconciliation with quota gates, Google Drive AppData bootstrap + Edge Vault credential recovery, loop prevention (`isImportingRemoteData`), anti-contraction safeguard, and selective restore (metadata required, heavy blobs opt-in). Peer skill: `airi-cloud-relay-infrastructure` (edge relay side).
 
 #### 1.9 `airi-desktop-lifecycle-power-throttling`
-- **Target Domain**: Electron Window Lifecycle & OS Power Throttling (`powerMonitor`, `stagePaused`, Render Loop Freezing, Multi-Tier Deep Standby & VRAM Hibernation).
+- **Target Domain**: Desktop Window Lifecycle & OS Power Throttling (window events, `stagePaused`, Render Loop Freezing, Multi-Tier Deep Standby & VRAM Hibernation).
 - **Key Paths**: `apps/stage-tamagotchi/src/main/services/electron/window.ts`, `apps/stage-tamagotchi/src/shared/eventa.ts`, `apps/stage-tamagotchi/src/renderer/stores/stage-window-lifecycle.ts`, `apps/stage-tamagotchi/src/renderer/pages/index.vue`, `packages/stage-ui/src/components/scenes/ControlStripHost.vue`, `docs/design-vram-eviction-and-standby-hibernation.md`.
-- **Content**: Native Electron window state changes (`show`/`hide`/`minimize`/`restore`/`focus`/`blur`) and `powerMonitor` hooks (`suspend`/`resume`/`lock-screen`/`unlock-screen`), `ElectronWindowLifecycleState` eventa bridge, `stagePaused` state calculation, Tier 1 instant render loop freezing (3D/2D animation loops paused), Tier 2 Deep Standby VRAM hibernation (unmounting idle neural inference workers when screen locked > 10m or OS suspended, reclaiming 3–4GB VRAM), and sub-2s transparent re-hydration.
+- **Content**: Desktop window state changes (`show`/`hide`/`minimize`/`restore`/`focus`/`blur`); the `powerMonitor` suspend/lock hooks are an explicit Electrobun port drop, the `ElectronWindowLifecycleState` eventa bridge, `stagePaused` state calculation, Tier 1 instant render loop freezing (3D/2D animation loops paused), Tier 2 Deep Standby VRAM hibernation (unmounting idle neural inference workers when screen locked > 10m or OS suspended, reclaiming 3–4GB VRAM), and sub-2s transparent re-hydration.
 
 ---
 
@@ -129,7 +129,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 
 #### 2.5 `airi-live2d-dsl-interpreter`
 - **Target Domain**: Live2D Scripting DSL Virtual Machine & Kinetic Staging Engine.
-- **Key Paths**: `docs/design-live2d-dsl-interpreter-spec.md`, `docs/handoff-live2d-dsl-phase2.md`, `packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue`.
+- **Key Paths**: `packages/live2d-runtime/src/dsl/README.md`, `docs/handoff-live2d-dsl-phase2.md`, `packages/stage-ui-live2d/src/components/scenes/live2d/Model.vue`.
 - **Content**: `pixi-live2d-display` instruction parser, `VarFloats` reactive heap (conditional guards & state modifiers), Sequencer pipeline (`start_mtn`, `clear_exp`), `change_cos` zero-latency WebGL costume hot-swapping, and `Live2DStageManager` delta ticking loop.
 
 #### 2.6 `airi-generative-motion-vrma`
@@ -153,7 +153,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 - **Content**: Floating glassmorphic configuration panel (opened from Control Strip / tray / hotkey) tweaking stage, captions, actor/wardrobe, Gemini, and system-window state in real time via direct Pinia store binding. `desktopOnly` items gate the desktop multi-window managers. **Disambiguation**: this is the *floating window*; the embedded settings widget is `airi-model-customizer`.
 
 #### 2.10 `airi-caption-subsystem`
-- **Target Domain**: Captions/subtitles across all render surfaces — standalone Electron caption window, DatingSim inline panel, head-tethered comic-bubble plank, and the shared `'airi-caption-overlay'` BroadcastChannel streaming protocol.
+- **Target Domain**: Captions/subtitles across all render surfaces — standalone desktop caption window, DatingSim inline panel, head-tethered comic-bubble plank, and the shared `'airi-caption-overlay'` BroadcastChannel streaming protocol.
 - **Key Paths**: `apps/stage-tamagotchi/src/main/windows/caption/`, `apps/stage-tamagotchi/src/renderer/pages/caption.vue`, `packages/stage-ui/src/components/scenes/CaptionPanel.vue`, `packages/stage-ui/src/components/scenes/HeadTetheredCaption.vue`, `packages/stage-ui/src/composables/use-speech-caption-player.ts`, `packages/stage-ui/src/stores/settings/captions.ts`.
 - **Content**: The segment/isActive streaming protocol, CaptionPanel segment highlighting, Live2D baked-in motion Text captions, Sentence-Sync TTS player, caption settings (docking, follow-stage, head-tether, opacity, layout mode), and the desktop-only-with-shared-in-scene-behavior distinction. Peer skills: `airi-broadcast-channels`, `airi-audio-pipeline`.
 
@@ -189,7 +189,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 #### 3.2 `airi-mcp-integration`
 - **Target Domain**: Model Context Protocol (MCP) Server Integration.
 - **Key Paths**: `apps/stage-tamagotchi/src/main/services/airi/mcp-servers/`, `packages/stage-ui/src/stores/mcp-tool-bridge.ts`, `mcp.json`.
-- **Content**: Electron stdio MCP service manager, tool listing and invocation IPC bridge (`window.__AIRI_MCP_BRIDGE__`), builtin meta-tools (`mcp_list_tools`, `mcp_call_tool`), and configuration schemas.
+- **Content**: stdio MCP service manager, tool listing and invocation IPC bridge (`window.__AIRI_MCP_BRIDGE__`), builtin meta-tools (`mcp_list_tools`, `mcp_call_tool`), and configuration schemas.
 
 #### 3.3 `airi-discord-integration`
 - **Target Domain**: Discord Bot Integration & Multi-Modal Routing.
@@ -318,7 +318,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 #### 4.3 `airi-codebase-verification`
 - **Target Domain**: Validation Commands & Verification Workflows.
 - **Key Paths**: `AGENTS.md`, workspace `package.json` scripts.
-- **Content**: Selecting minimal verification targets (`pnpm -F <workspace> typecheck`, workspace builds), handling Electron vs web typechecks, git status reporting rules, and fork release safety constraints.
+- **Content**: Selecting minimal verification targets (`pnpm -F <workspace> typecheck`, workspace builds), handling desktop vs web typechecks, git status reporting rules, and fork release safety constraints.
 
 #### 4.4 `airi-prefix-cache-alignment`
 - **Target Domain**: LLM Prefix Cache Alignment & Prompt Compilation Optimization.
@@ -331,9 +331,9 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 - **Content**: Evaluating unbuilt features, reading architectural proposals, inspecting upstream repository changes, comparing divergent fork paths, and planning feature implementations safely without scope creep.
 
 #### 4.6 `airi-release-packaging-deploy`
-- **Target Domain**: Shipping AIRI artifacts and deploying services — stable releases, electron-builder packaging, CI matrix, mobile packaging, Docker/docs deploys, edge-worker deploys.
-- **Key Paths**: `release-tamagotchi.yml`, `apps/stage-tamagotchi/` (Electrobun packaging, `release:win`/`release:mac`), `apps/stage-web/` (Docker/Pages). The Capacitor `apps/stage-pocket/` and the `apps/stage-edge/` worker were purged; there is no mobile release channel.
-- **Content**: Version stamping/git-tag/notes workflow, user-centric release note voice ("You can now...", audience breakdown, footnote commit tracing), SignPath code signing + Apple notarization (CSC_CONTENT/APPLE_ID), `latest*.yml` auto-update feeds, ghcr.io Docker images, GitHub Pages docs deployment, Cloudflare worker deploys, and gh CLI release-upload auth quirks.
+- **Target Domain**: Shipping AIRI artifacts and deploying services — Hutch/Electrobun desktop artifacts, Linux release CI, static Web Stage Pages deploys, edge-worker deploys.
+- **Key Paths**: `.github/workflows/release-linux-desktop.yml`, `.github/workflows/deploy-frontends.yml`, `apps/stage-tamagotchi/` (`hutch.config.ts`, `electrobun.config.ts`, `artifacts/`). The Capacitor `apps/stage-pocket/` was purged; there is no mobile release channel, and the root `release:win`/`release:mac` wrappers are stale.
+- **Content**: Version stamping, tag/notes workflow, user-centric release-note voice, Hutch build/artifact inspection, `gh release upload` auth quirks, nightly/dispatch Linux CI, GitHub Pages Web Stage deployment, and Cloudflare worker deploys.
 
 #### 4.7 `airi-code-testing-hygiene`
 - **Target Domain**: TypeScript Reactive Safety, Deep Module Cohesion, Fallback Precedence, Vitest Bug Reproduction & Import Boundary Hygiene.
@@ -381,7 +381,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 
 #### 5.7 `airi-modular-outfits-system`
 - **Target Domain**: Character `outfits` in the `AiriExtension` schema, Live2D/VRM costume variants, and visual-asset manifestations.
-- **Key Paths**: `packages/stage-ui/src/types/card.schema.ts` (`outfits` field), `packages/stage-ui/src/stores/modules/airi-card.ts`, `docs/design-modular-outfits-system.md`, `docs/design-live2d-multimoc-changecos.md`.
+- **Key Paths**: `packages/stage-ui/src/types/card.schema.ts` (`outfits` field), `packages/stage-ui/src/stores/modules/airi-card.ts`, `docs/design-modular-outfits-system.md`, `packages/stage-ui-live2d/src/runtime/README.md`.
 - **Content**: `AiriOutfit` structure, outfit→display-model and outfit→visual_asset manifestation mapping, and how outfit switching propagates through the card and renderer. Pitfalls: not a standalone store — it rides on the card schema (Phase 1.5) and Live2D/VRM rendering (Phase 2.1). Cross-link to both.
 
 #### 5.8 `airi-provider-ui-pages`
@@ -417,7 +417,7 @@ The catalog contains 71 discoverable skills. Desktop chatbox and interaction pip
 #### 5.14 `airi-gateway-websocket-protocol`
 - **Target Domain**: Local WebSocket Gateway & Channel Server Protocol.
 - **Key Paths**: `apps/stage-tamagotchi/src/main/services/airi/channel-server/index.ts`, `apps/stage-tamagotchi/src/shared/eventa.ts`, `packages/server-runtime/src/server/index.ts`, `docs/arch-gateway-security-hardening.md`.
-- **Content**: Electron main-process channel server on port `6121` (`SERVER_CHANNEL_PORT`), mandatory cryptographic `authToken` handshake, auto-healing `server-channel/config.json`, loopback (`127.0.0.1`) vs LAN (`0.0.0.0`) binding, mkcert TLS certificate management, and pairing with mobile (`stage-pocket`) / extension clients.
+- **Content**: desktop main-process channel server on port `6121` (`SERVER_CHANNEL_PORT`), mandatory cryptographic `authToken` handshake, auto-healing `server-channel/config.json`, loopback (`127.0.0.1`) vs LAN (`0.0.0.0`) binding, mkcert TLS certificate management, and pairing with extension clients.
 
 #### 5.15 `airi-docs-site-maintenance`
 - **Target Domain**: Documentation Website Pipeline & Single-Source-of-Truth Sync.

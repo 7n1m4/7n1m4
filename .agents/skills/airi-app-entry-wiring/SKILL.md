@@ -1,17 +1,17 @@
 ---
 name: airi-app-entry-wiring
 description: >-
-  Wire/debug application startup: Electron window creation, injeca dependency injection, renderer entry points, Vite routing, web bootstrap. Use for initialization order or missing windows; stage layout uses airi-stage-ui-surfaces.
+  Wire/debug application startup: Electrobun (Bun) main-process window creation, injeca dependency injection, renderer entry points, Vite routing, web bootstrap. Use for initialization order or missing windows; stage layout uses airi-stage-ui-surfaces.
 ---
 
 # AIRI App Entry Wiring & Bootstrap
 
-This skill provides comprehensive guidelines for understanding and modifying the application lifecycle, from the Electron main process bootstrap through window management, dependency injection (DI) via `injeca`, and Vite-powered renderer routing.
+This skill provides comprehensive guidelines for understanding and modifying the application lifecycle, from the Electrobun (Bun) main-process bootstrap through window management, dependency injection (DI) via `injeca`, and Vite-powered renderer routing.
 
 ## 1. Overview & Surface Map
 
 AIRI initializes in three distinct phases:
-1. **Process Bootstrap & Hardware Flags** (`main/index.ts`): Early Chromium / Dawn command-line switch configuration before `app.whenReady()` (Vulkan, WebGPU, SharedArrayBuffer, Wayland portal flags).
+1. **Process Bootstrap & Hardware Flags** (`main/index.ts`): Top-level-await bootstrap plus `chromiumFlags` in `electrobun.config.ts` before window creation (Vulkan, WebGPU, SharedArrayBuffer, Wayland portal flags).
 2. **Composition Root & Dependency Injection** (`injeca` in `main/index.ts`): Typed DI container wiring core services (`serverChannel`, `mcpStdioManager`, window managers, `i18n`, `appConfig`).
 3. **Window Lifecycle & Routing**: Main window (Control Strip `#/`) boots first; secondary windows (Chatbox `#/chat`, Actor Stage `#/actor`, Onboarding, Settings) mount dynamically with `@moeru/eventa` IPC and `BroadcastChannel` cross-window synchronization.
 
@@ -58,7 +58,7 @@ Every UI window is backed by a Main Process Window Manager located in `apps/stag
 ### Window Manager Rules
 - Always extend existing window manager patterns (e.g., `setupSettingsWindowReusableFunc`).
 - Ensure window configuration (bounds, visibility) is fully resolved before calling `.show()`.
-- Use the guarded `BrowserWindow.prototype` methods (already present in `index.ts`) to avoid calling methods on destroyed window objects.
+- Use the window registry + `isDestroyed()` guard before touching window objects; never call methods on destroyed windows.
 - Do not assume a specific window is the "main window". The Control Strip is the true main window (`isMainWindow: true`).
 
 ### 3. Eventa IPC Contract
@@ -91,29 +91,29 @@ Renderer logic is located in `apps/stage-tamagotchi/src/renderer/`.
 
 ### 5. Web App Entry
 
-The standalone web version (non-Electron) lives in `apps/stage-web/`.
+The standalone web version lives in `apps/stage-web/`.
 - **Entry point:** `apps/stage-web/src/App.vue`
 - **Vite Config:** `vite.config.ts`
 It shares most UI components from `packages/stage-ui/` but lacks Main Process features (no IPC).
 
 ### 6. Chromium Command-Line Switches & Hardware Feature Enablement
 
-Hardware switches are configured in `apps/stage-tamagotchi/src/main/index.ts` before `app.whenReady()`.
+Hardware switches are configured via `build.{mac,win,linux}.chromiumFlags` in `electrobun.config.ts` before window creation.
 
-- **Single `enable-features` rule**: Always join multiple Chromium features into a single comma-delimited string (e.g. `app.commandLine.appendSwitch('enable-features', ['SharedArrayBuffer', 'Vulkan', ...].join(','))`). Calling `appendSwitch('enable-features', ...)` multiple times silently overwrites earlier features in Chromium.
-- **Dawn NVIDIA Vulkan `shader-f16`**: On Linux, Dawn gates `shader-f16` for WGSL compute shaders behind `vulkan_enable_f16_on_nvidia`. Must append `app.commandLine.appendSwitch('enable-dawn-features', 'vulkan_enable_f16_on_nvidia')` so WebLLM `q4f16` models (e.g. Qwen 3.5) compile shaders without fatal syntax errors.
+- **Single `enable-features` rule**: Always join multiple Chromium features into a single comma-delimited string (e.g. `enable-features: ['SharedArrayBuffer', 'Vulkan', ...].join(',')`). Setting `enable-features` multiple times silently overwrites earlier features in Chromium.
+- **Dawn NVIDIA Vulkan `shader-f16`**: On Linux, Dawn gates `shader-f16` for WGSL compute shaders behind `vulkan_enable_f16_on_nvidia`. Add `enable-dawn-features: 'vulkan_enable_f16_on_nvidia'` to the linux chromiumFlags so WebLLM `q4f16` models (e.g. Qwen 3.5) compile shaders without fatal syntax errors. Currently this gap is only logged.
 
 ## 4. Known Pitfalls & Failure Modes
 
-- **Chromium Switch Clobbering**: Calling `app.commandLine.appendSwitch('enable-features', ...)` sequentially with different arguments overwrites prior features instead of combining them. Always merge feature flags into a single comma-separated list.
-- **Missing Dawn NVIDIA f16 on Linux**: Without `enable-dawn-features: vulkan_enable_f16_on_nvidia`, WebLLM crashes on Linux/NVIDIA during pipeline creation with `extension 'f16' is not allowed in the current environment`.
+- **Chromium Switch Clobbering**: Setting `enable-features` multiple times in `build.{mac,win,linux}.chromiumFlags` of `electrobun.config.ts` overwrites prior features instead of combining them. Always merge feature flags into a single comma-separated list.
+- **Missing Dawn NVIDIA f16 on Linux**: Without `enable-dawn-features: vulkan_enable_f16_on_nvidia` in the linux chromiumFlags, WebLLM crashes on Linux/NVIDIA during pipeline creation with `extension 'f16' is not allowed in the current environment`.
 - **Vue 3 Proxy Destruction**: When sending objects across Eventa IPC, never send reactive proxies. Always pass through `toRaw()` to preserve binary/plain-object serialization.
-- **IPC Handler Leaks / Re-registration**: `ipcMain.setMaxListeners(0)` is set temporarily, but event handlers should be cleaned up with window disposal to avoid memory leaks.
+- **Eventa Bus Disposal**: Eventa handlers and contexts must be disposed with window disposal to avoid leaks; do not rely on `ipcMain.setMaxListeners(0)`.
 
 ## 5. Verification Workflows
 
 - **Typecheck**: `pnpm -F @proj-anima/stage-tamagotchi typecheck` (verifies both Node and Web targets).
-- **Build / Packaging**: `pnpm -F @proj-anima/stage-tamagotchi build` (runs full Vite and Electron build).
+- **Build / Packaging**: `pnpm -F @proj-anima/stage-tamagotchi build` (runs `hutch run build`: Hutch/Electrobun).
 - **Local Dev**: Run `pnpm run dev` and confirm that all primary windows mount without IPC timeout or `Object has been destroyed` errors.
 
 ### Authoritative Design & Architecture Documents

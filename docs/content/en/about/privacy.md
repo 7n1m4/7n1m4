@@ -1,3 +1,8 @@
+---
+title: Privacy Policy
+description: Privacy Policy of Project Anima
+---
+
 **Privacy Policy**
 
 This privacy policy applies to the Anima app (as known as Project Anima app, hereby referred to as "Application") for mobile devices that was created by Project Anima team (hereby referred to as "Service Provider") as an Open Source service and partially Paid commercial service. This service is intended for use "AS IS".

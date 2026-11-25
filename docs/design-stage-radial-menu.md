@@ -10,7 +10,7 @@ The Stage Radial Menu is an in-scene, bone-tethered circular quick-action wheel 
 
 The Stage Radial Menu is a self-contained AIRI overlay built on AIRI's Unified Head-Tethering Subsystem & Stage Config Overlay:
 
-- Sourced from [`docs/design-head-tethered-captions.md`](./design-head-tethered-captions.md), [`docs/design-actor-stage.md`](./design-actor-stage.md), and [`StageConfigOverlay.vue`](../packages/stage-ui/src/components/scenarios/StageConfigOverlay.vue).
+- Sourced from [`packages/stage-ui/src/components/scenes/README.md`](../packages/stage-ui/src/components/scenes/README.md), [`docs/design-actor-stage.md`](./design-actor-stage.md), and [`StageConfigOverlay.vue`](../packages/stage-ui/src/components/scenarios/StageConfigOverlay.vue).
 - Core mechanics: unified `getHeadPose()` contract across all 4 avatar runtimes (Live2D, VRM, MMD, Spine), 3D NDC-to-pixel projection, polar slice geometry, cursor angle tracking with magnetic segment snapping, and Euler angle perspective deformation.
 
 ```text
@@ -136,6 +136,6 @@ The menu includes lightweight, Web Audio API synthesized sound cues (no external
 ## Related Documents & Skills
 
 - [`docs/design-actor-stage.md`](./design-actor-stage.md) — Actor Stage Viewport Specification.
-- [`docs/design-head-tethered-captions.md`](./design-head-tethered-captions.md) — 4-Model Head-Tethering & Spatial Anchors.
+- [`packages/stage-ui/src/components/scenes/README.md`](../packages/stage-ui/src/components/scenes/README.md) — 4-Model Head-Tethering & Spatial Anchors.
 - [[airi-stage-ui-surfaces]] — Cross-app stage and control surfaces.
 - [[airi-character-rendering]] — 3D & 2D avatar rendering runtimes.

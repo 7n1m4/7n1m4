@@ -25,6 +25,28 @@
 //!    the bounded fan-out in [`event_bus`]. Events are one-way: producers
 //!    publish through [`EventBus`], never by writing to a client socket.
 //!
+//! ## Client connection contract
+//!
+//! Endpoint `ws://127.0.0.1:6121` (loopback default), path `/ws`; protocol
+//! literal `airi-channel/1`.
+//! - First frame must be JSON auth: `{"type":"auth","authToken":"<uuid-v4>"}`.
+//! - Success replies `{"type":"auth","ok":true}`; failure is a typed error
+//!   frame followed by close 1008.
+//! - Config path (auto-healed, mode 0600): XDG `$XDG_DATA_HOME/airi-slint/server-channel/config.json`
+//!   (Linux), `~/Library/Application Support/airi-slint/server-channel/config.json`
+//!   (macOS), `%APPDATA%\airi-slint\server-channel\config.json` (Windows);
+//!   override via `AIRI_SERVER_CHANNEL_CONFIG`. Exposed over D-Bus as
+//!   `GetGatewayConfig`.
+//! - Wire names are camelCase with named fields `authToken`, `uptimeSeconds`,
+//!   `sessionStartedMs`.
+//! - Beyond loopback: `wss://` with the locally minted CA; never disable
+//!   verification.
+//! - Reconnect is owned by clients; auth failures are terminal; token rotation
+//!   does not force-close existing sessions.
+//! - Helpers `daemon_connect` / `daemon_connect_with_ca`; `fromUri` (Dart)
+//!   exist so each client constructs its own transport.
+//! - Client conformance: Rust drift check and Flutter `dart test`.
+//!
 //! ## Security posture (read before enabling on a network)
 //!
 //! - **TLS is supported, not automatic.** With a `tlsConfig` flag in the

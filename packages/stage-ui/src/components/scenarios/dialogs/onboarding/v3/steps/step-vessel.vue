@@ -192,8 +192,9 @@ const isActiveCommitted = computed(() => {
 })
 
 // Editable visual-style descriptor: seeded from the browsed model's prompt on
-// selection (via applyVesselToDraft), then freely editable. Stored in the draft
-// and consumed by Artistry, so moving/editing it never changes the pipeline.
+// selection (via applyVesselToDraft), then freely editable. Deprecated: image
+// generation is off; the value is only preserved as airi.artistry.promptPrefix
+// on the committed card.
 const descriptorText = computed({
   get: () => draft.state.artistryVisualPrompt ?? activeModel.value.prompt,
   set: (val: string) => {
@@ -447,8 +448,8 @@ function handleDrop(e: DragEvent) {
               rows="4"
               :class="['w-full flex-1 min-h-28 resize-y rounded-lg border border-neutral-200/80 dark:border-white/10 bg-white/80 dark:bg-black/30 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-700 dark:text-neutral-300 outline-none transition focus:border-primary-500 break-words']"
             />
-            <span :class="['text-[11px] text-neutral-400 dark:text-neutral-500']">
-              {{ t('onboarding.steps.vessel.visualStyleHint') }}
+            <span :class="['text-[11px] text-amber-600 dark:text-amber-400']">
+              Image generation is deprecated and disabled; this descriptor is preserved on the card but is not used until an external image integration lands.
             </span>
           </div>
         </div>

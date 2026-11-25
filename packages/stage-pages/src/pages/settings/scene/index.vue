@@ -183,11 +183,11 @@ function selectAtmosphere(id: StageAtmosphere) {
           <Button
             variant="secondary"
             :class="['h-10 px-3.5 rounded-xl font-medium border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30 flex items-center justify-center gap-2 transition-all']"
-            title="Generate custom AI backgrounds with Pollinations in the Artistry Playground"
+            title="Image generation is deprecated — existing journal artwork is still available"
             @click="router.push('/settings/modules/artistry')"
           >
             <div :class="['i-solar:magic-stick-3-bold-duotone text-lg text-purple-500']" />
-            <span class="hidden sm:inline">AI Generator</span>
+            <span class="hidden sm:inline">Artistry (Deprecated)</span>
           </Button>
 
           <Button
@@ -539,23 +539,23 @@ function selectAtmosphere(id: StageAtmosphere) {
               <div class="i-solar:magic-stick-3-bold-duotone" />
             </div>
             <span class="mt-2 text-xs text-neutral-800 font-bold dark:text-neutral-200">
-              Generate AI Scenes
+              Artistry Studio (Deprecated)
             </span>
             <span class="mt-0.5 max-w-44 text-[10px] text-neutral-500 dark:text-neutral-400">
-              Free instant generation with Pollinations & ComfyUI
+              Image generation is disabled; existing journal artwork is still available
             </span>
           </div>
 
           <!-- Top Badge -->
           <div class="pointer-events-none absolute inset-x-3 top-3 z-1 flex items-center justify-end">
             <div class="border border-purple-500/20 rounded-lg bg-purple-500/15 px-2 py-0.5 text-[10px] text-purple-700 font-bold dark:text-purple-300">
-              FREE AI
+              DEPRECATED
             </div>
           </div>
 
           <!-- Bottom Bar -->
           <div class="absolute inset-x-0 bottom-0 z-1 flex items-center justify-between from-black/80 via-black/50 to-transparent bg-gradient-to-t px-3.5 pb-2.5 pt-6 text-xs text-white font-medium">
-            <span>Open Artistry Studio</span>
+            <span>Open Artistry</span>
             <div class="i-solar:arrow-right-line-duotone text-sm transition-transform group-hover:translate-x-1" />
           </div>
         </div>
@@ -619,14 +619,14 @@ function selectAtmosphere(id: StageAtmosphere) {
           <div class="min-w-0 flex flex-1 flex-col gap-1">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="text-sm text-neutral-900 font-bold sm:text-base dark:text-neutral-100">
-                Want custom scenes for your companion?
+                Image generation is deprecated
               </h3>
               <span class="border border-emerald-500/20 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] text-emerald-600 font-bold dark:text-emerald-400">
-                100% FREE AI
+                DEPRECATED
               </span>
             </div>
             <p class="max-w-2xl text-xs text-neutral-600 leading-relaxed dark:text-neutral-300">
-              Dream up infinite rooms, anime landscapes, and scenery in seconds using zero-config generative AI providers like <strong>Pollinations AI</strong> (no API keys or accounts required), or link your local <strong>ComfyUI</strong> workflows in the <strong>Artistry Studio</strong>.
+              Image generation is disabled. Existing journal artwork is still available, and future external SAI integration is planned.
             </p>
           </div>
         </div>
@@ -641,7 +641,7 @@ function selectAtmosphere(id: StageAtmosphere) {
           @click="router.push('/settings/modules/artistry')"
         >
           <div class="i-solar:magic-stick-3-bold-duotone text-base" />
-          <span>Open Artistry Studio</span>
+          <span>Open Artistry</span>
           <div class="i-solar:arrow-right-line-duotone text-sm" />
         </Button>
       </div>

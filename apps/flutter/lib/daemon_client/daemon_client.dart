@@ -29,6 +29,28 @@ export 'reconnect_policy.dart' show ReconnectPolicy;
 export 'rpc.dart' show CoreStatus, RpcError, RpcReply, RpcRequest;
 export 'transport.dart' show DaemonTransport, DaemonTransportFactory, TransportClosed;
 
+class CardWriteResult {
+  const CardWriteResult({
+    required this.id,
+    required this.name,
+    this.updated = false,
+  });
+  final String id;
+  final String name;
+  final bool updated;
+}
+
+class CardImportResult {
+  const CardImportResult({
+    required this.id,
+    required this.name,
+    this.renamed = false,
+  });
+  final String id;
+  final String name;
+  final bool renamed;
+}
+
 enum DaemonConnectionState {
   disconnected,
   connecting,
@@ -518,6 +540,24 @@ class DaemonClient {
     return raw.whereType<Map<String, dynamic>>().toList(growable: false);
   }
 
+  static Object? _field(RpcReply reply, String key) {
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) return null;
+    return data[key];
+  }
+
+  static String _requiredString(RpcReply reply, String key) {
+    final v = _field(reply, key);
+    if (v is! String) {
+      final action = reply.action.isEmpty ? key : reply.action;
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid $key in $action reply.',
+      );
+    }
+    return v;
+  }
+
   /// Stop an in-flight chat turn (`chat.cancel`).
   Future<bool> cancelChat(String sessionId) async {
     final reply = await _callOk('chat.cancel', payload: <String, dynamic>{
@@ -621,8 +661,10 @@ class DaemonClient {
   }
 
   /// All character cards (`cards.list`).
-  Future<List<Map<String, dynamic>>> cardsList() async {
-    final reply = await _callOk('cards.list');
+  Future<List<Map<String, dynamic>>> cardsList({int limit = 50}) async {
+    final reply = await _callOk('cards.list', payload: <String, dynamic>{
+      'limit': limit,
+    });
     return _objects(reply, 'cards');
   }
 
@@ -635,6 +677,34 @@ class DaemonClient {
     if (data is! Map<String, dynamic>) return null;
     final card = data['card'];
     return card is Map<String, dynamic> ? card : null;
+  }
+
+  /// Create a character card (`cards.create`).
+  Future<CardWriteResult> cardsCreate(Map<String, dynamic> document) async {
+    final reply = await _callOk('cards.create', payload: <String, dynamic>{
+      'name': document['name'],
+      'document': document,
+    });
+    return _cardWriteResult(
+      reply,
+      fallbackName: document['name'] is String ? document['name'] as String : '',
+    );
+  }
+
+  /// Update a character card (`cards.update`).
+  Future<CardWriteResult> cardsUpdate(
+    String id,
+    Map<String, dynamic> document,
+  ) async {
+    final reply = await _callOk('cards.update', payload: <String, dynamic>{
+      'id': id,
+      'document': document,
+    });
+    return _cardWriteResult(
+      reply,
+      fallbackName: document['name'] is String ? document['name'] as String : '',
+      requireUpdated: true,
+    );
   }
 
   /// Daemon-owned local metadata (liked/bookmarked) for one card
@@ -692,10 +762,70 @@ class DaemonClient {
   }
 
   /// Import a character card (`cards.import`).
-  Future<void> cardsImport(Map<String, dynamic> card) async {
-    await _callOk('cards.import', payload: <String, dynamic>{
-      'card': card,
+  Future<CardImportResult> cardsImport({
+    Map<String, dynamic>? card,
+    String? pngBase64,
+  }) async {
+    if (card == null && pngBase64 == null) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'cards.import needs either a card document or pngBase64.',
+      );
+    }
+    final payload = <String, dynamic>{
+      if (card != null) 'card': card,
+      if (pngBase64 != null) 'pngBase64': pngBase64,
+    };
+    final reply = await _callOk('cards.import', payload: payload);
+    final data = reply.data;
+    if (data is! Map<String, dynamic>) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.import reply.',
+      );
+    }
+    return CardImportResult(
+      id: _requiredString(reply, 'id'),
+      name: _requiredString(reply, 'name'),
+      renamed: data['renamed'] == true,
+    );
+  }
+
+  /// Delete a character card (`cards.delete`).
+  Future<bool> cardsDelete(String id) async {
+    final reply = await _callOk('cards.delete', payload: <String, dynamic>{
+      'id': id,
     });
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.delete reply.',
+      );
+    }
+    return data['deleted'] as bool;
+  }
+
+  static CardWriteResult _cardWriteResult(
+    RpcReply reply, {
+    required String fallbackName,
+    bool requireUpdated = false,
+  }) {
+    final rawUpdated = _field(reply, 'updated');
+    final updated = rawUpdated is bool ? rawUpdated : false;
+    if (requireUpdated && !updated) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.update reply.',
+      );
+    }
+    return CardWriteResult(
+      id: _requiredString(reply, 'id'),
+      name: _field(reply, 'name') is String
+          ? _field(reply, 'name') as String
+          : fallbackName,
+      updated: updated,
+    );
   }
 
   /// All chat sessions (`sessions.list`).
@@ -717,6 +847,24 @@ class DaemonClient {
       );
     }
     return data['jsonl'] as String;
+  }
+
+  /// Delete one chat session and its messages (`sessions.delete`).
+  ///
+  /// Returns whether the session existed. A missing session is `false`, not an
+  /// error, so callers can treat a stale row as an idempotent delete.
+  Future<bool> sessionsDelete(String sessionId) async {
+    final reply = await _callOk('sessions.delete', payload: <String, dynamic>{
+      'sessionId': sessionId,
+    });
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid sessions.delete reply.',
+      );
+    }
+    return data['deleted'] as bool;
   }
 
   /// Explicit shutdown: no reconnect is scheduled.

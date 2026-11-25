@@ -20,6 +20,7 @@ export const MUTATION_OPS: readonly MutationOp[] = ['assign', 'add', 'subtract',
 /** Deterministic RNG injection point for `rand(min,max)` (defaults to Math.random). */
 export type RandomSource = () => number
 
+/** op tables/semantics in `./README.md` §1. */
 export class ReactiveVarStore {
   private variables = new Map<string, number>()
   private readonly random: RandomSource

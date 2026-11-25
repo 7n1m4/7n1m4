@@ -1,19 +1,19 @@
 ---
 name: airi-ipc-eventa
 description: >-
-  Define/debug typed Electron main/renderer IPC and RPC: @moeru/eventa contracts, defineInvokeEventa, defineStreamInvokeHandler, streaming RPC, channel piping, renderer calls, main handlers. Window-to-window BroadcastChannel relays use airi-broadcast-channels.
+  Define/debug typed desktop main/renderer IPC and RPC over the eventa bus: @moeru/eventa contracts, defineInvokeEventa, defineStreamInvokeHandler, streaming RPC, channel piping, renderer calls, main handlers. Window-to-window BroadcastChannel relays use airi-broadcast-channels.
 ---
 
 # AIRI IPC & Eventa Protocol
 
-This skill defines typed IPC/RPC and streaming communication boundaries across AIRI using `@moeru/eventa`. It covers contract definitions in `shared/eventa.ts`, unary/streaming RPC implementations across Electron's Main and Renderer processes, multi-hop channel routing, and transport adapters.
+This skill defines typed IPC/RPC and streaming communication boundaries across AIRI using `@moeru/eventa`. It covers contract definitions in `shared/eventa.ts`, unary/streaming RPC implementations across the desktop main and renderer processes over the eventa bus, multi-hop channel routing, and transport adapters.
 
 ---
 
 ## 1. Key Code Paths
 
-- **Shared Contracts:** `apps/stage-tamagotchi/src/shared/eventa.ts` (the canonical registry for all Electron IPC events and RPC invoke contracts).
-- **Main Process Adapters & Contexts:** `packages/electron-eventa/src/`, `apps/stage-tamagotchi/src/main/services/electron/` (e.g. `window.ts`, `screen.ts`, `powerMonitor.ts`).
+- **Shared Contracts:** `apps/stage-tamagotchi/src/shared/eventa.ts` (the canonical registry for all desktop IPC events and RPC invoke contracts over the eventa bus).
+- **Main Process Adapters & Contexts:** `packages/electron-eventa/src/`, `apps/stage-tamagotchi/src/main/eventa-bus.ts` (in-process bus), `apps/stage-tamagotchi/src/main/rpc/index.ts` (bootstrap), and `apps/stage-tamagotchi/src/main/services/electron/*` handlers (e.g. `window.ts`, `screen.ts`).
 - **Main Process Domain Handlers:** `apps/stage-tamagotchi/src/main/windows/**/rpc/index.electron.ts`.
 - **Renderer Invocations:** Composable and component calls in `apps/stage-tamagotchi/src/renderer/` (invoking typed RPC or listening to broadcast events).
 - **Multi-Window Relays:** High-frequency, window-to-window communication uses `BroadcastChannel` (see `airi-broadcast-channels`).
@@ -137,23 +137,23 @@ Each transport wraps a native platform boundary into a typed Eventa context:
 
 | Boundary | Import Path | Transport Object |
 | :--- | :--- | :--- |
-| **Electron Main** | `@moeru/eventa/adapters/electron/main` | `ipcMain`, `webContents` |
-| **Electron Renderer** | `@moeru/eventa/adapters/electron/renderer` | `ipcRenderer` |
+| **Electron Main (legacy)** | `@moeru/eventa/adapters/electron/main` | `ipcMain`, `webContents` |
+| **Electron Renderer (legacy)** | `@moeru/eventa/adapters/electron/renderer` | `ipcRenderer` |
 | **Web Worker** | `@moeru/eventa/adapters/webworkers` | `Worker` / `self` |
 | **Worker Threads** | `@moeru/eventa/adapters/worker-threads` | Node.js `Worker` / `parentPort` |
 | **WebSocket** | `@moeru/eventa/adapters/websocket/native` | `WebSocket` |
 | **BroadcastChannel** | `@moeru/eventa/adapters/broadcast-channel` | `BroadcastChannel` |
 
-- **Cross-Window Boundary Rule**: For Electron main-to-renderer communication, initialize contexts via the Electron adapters. For lightweight window-to-window synchronization that bypasses the Electron main thread, use native `BroadcastChannel` or `@moeru/eventa/adapters/broadcast-channel` (see `airi-broadcast-channels`).
+- **Cross-Window Boundary Rule**: The Electron adapters are legacy; stage-tamagotchi uses `@moeru/eventa/adapters/electron/main` against the in-process bus in `src/main/eventa-bus.ts` (no Electron runtime). For lightweight window-to-window synchronization that bypasses the main thread, use native `BroadcastChannel` or `@moeru/eventa/adapters/broadcast-channel` (see `airi-broadcast-channels`).
 
 ---
 
 ## 4. Known Pitfalls & Failure Modes
 
-1. **Proxy Serialization Failure**: Eventa uses structured cloning over Electron IPC. Passing Vue reactive proxies, functions, `Symbol`s, circular graphs, or class instances with non-serializable methods will throw cloning errors. Always sanitize payloads with `toRaw()` or extract plain objects before invoking.
+1. **Proxy Serialization Failure**: Eventa uses structured cloning over IPC. Passing Vue reactive proxies, functions, `Symbol`s, circular graphs, or class instances with non-serializable methods will throw cloning errors. Always sanitize payloads with `toRaw()` or extract plain objects before invoking.
 2. **Reverse Generic Parameters**: Writing `defineInvokeEventa<Req, Res>` instead of `<Res, Req>` is a frequent bug. The response type **always** comes first.
 3. **Destroyed Window Exceptions**: Main-process handlers that interact with a renderer's `BrowserWindow` must check `!window.isDestroyed()` before calling `webContents.send()` or querying bounds.
-4. **Cross-Window IPC Leakage**: In Electron multi-window setups (Actor Stage vs Control Strip), shared `ipcMain` listeners can process invocations from unintended windows. Always verify `window.webContents.id === options?.raw?.ipcMainEvent?.sender?.id` or configure window-scoped eventa contexts (`onlySameWindow: true`).
+4. **Cross-Window IPC Leakage**: In multi-window setups (Actor Stage vs Control Strip), shared `ipcMain` listeners can process invocations from unintended windows. Always verify `window.webContents.id === options?.raw?.ipcMainEvent?.sender?.id` or configure window-scoped eventa contexts (`onlySameWindow: true`).
 
 ---
 

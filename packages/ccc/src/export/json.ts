@@ -2,7 +2,15 @@ import type { Card } from '../define'
 import type { CharacterCardV3 } from './types/character_card_v3'
 
 /**
- * Exports a Card object to CharacterCardV3 format
+ * Serializes an AIRI `Card` into a Character Card Spec V3 object (`{ spec: 'chara_card_v3', spec_version: '3.0', data }`).
+ *
+ * `greetings[0]` → `data.first_mes`, `greetings.slice(1)` → `alternate_greetings`;
+ * `messageExample` is formatted to the `<START>`-delimited `mes_example` string;
+ * `extensions` carries `depth_prompt`/`fav`/`talkativeness` defaults merged with the card's
+ * own extensions (including `extensions.airi`).
+ *
+ * This is the only correct way to build a CCv3 `card.json` — do not hand-roll the envelope.
+ *
  * @param data The card data to export
  * @returns A CharacterCardV3 compatible object
  */

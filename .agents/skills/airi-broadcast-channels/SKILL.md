@@ -1,12 +1,12 @@
 ---
 name: airi-broadcast-channels
 description: >-
-  Wire/debug window-to-window BroadcastChannel messaging: state sync, chat relay, caption streaming, channel registry, payload types, VueUse lifecycle, eventa broadcast contexts. Electron main/renderer IPC uses airi-ipc-eventa.
+  Wire/debug window-to-window BroadcastChannel messaging: state sync, chat relay, caption streaming, channel registry, payload types, VueUse lifecycle, eventa broadcast contexts. desktop main/renderer IPC uses airi-ipc-eventa.
 ---
 
 # AIRI Broadcast Channels
 
-Multi-window AIRI (Electron chat + stage + caption + widgets, or web split panes) uses browser `BroadcastChannel`s as its primitive for window-to-window state sync and commands. This skill maps the verified registry, the established lifecycle rules, and the failure modes to design around.
+Multi-window AIRI (desktop chat + stage + caption + widgets, or web split panes) uses browser `BroadcastChannel`s as its primitive for window-to-window state sync and commands. This skill maps the verified registry, the established lifecycle rules, and the failure modes to design around.
 
 ## 1. Live Channel Registry (verified)
 

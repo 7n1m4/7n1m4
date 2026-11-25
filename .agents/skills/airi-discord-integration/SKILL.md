@@ -8,7 +8,7 @@ description: >-
 
 ## Key Files/Locations
 
-- `apps/stage-tamagotchi/src/main/services/airi/discord/index.ts` — Electron **main-process** gateway service: owns the `discord.js` `Client` (`GatewayIntentBits`, `Partials`), `@discordjs/voice` voice connections, and IPC-exposed operations (`discordServiceRegisterCommands`, `discordServiceSendMessage`, `discordServiceReplyInteraction`, `discordServiceSendTyping`, `discordServiceGetStatus`, `discordServiceLeave`, `discordService*` cloud-relay ops).
+- `apps/stage-tamagotchi/src/main/services/airi/discord/index.ts` — desktop **main-process** gateway service: owns the `discord.js` `Client` (`GatewayIntentBits`, `Partials`), `@discordjs/voice` voice connections, and IPC-exposed operations (`discordServiceRegisterCommands`, `discordServiceSendMessage`, `discordServiceReplyInteraction`, `discordServiceSendTyping`, `discordServiceGetStatus`, `discordServiceLeave`, `discordService*` cloud-relay ops).
 - `packages/stage-ui/src/stores/modules/discord.ts` — renderer orchestration store: slash-command registration gated by `COMMANDS_VERSION` (currently **11**; bump to force re-registration, `lastRegisteredVersion` skips re-register below it), `visionEnabled` (`settings/discord/visionEnabled`, default `true`), `sendImageToDiscord` (native IPC bypass via `toRaw({ channelId, base64, content, filename })`), message → `chatOrchestrator.ingest` routing, `/vision` command toggling VLM processing.
 - `packages/stage-ui/src/stores/chat.ts` — `performSend(sendingMessage, options, generation, sessionId)`: chat pipeline Discord messages flow through; tools fall through to `toolsResolver.value` (e.g. `builtinTools`) and are stripped only on VLM turns (`chat.ts` ~line 1127 evaluation).
 - `packages/stage-ui/src/stores/modules/cloudflare.ts` — OAuth session + `CloudflareStageDeployer` facade + Edge Vault (`saveToEdgeVault`/`fetchFromEdgeVault`).
@@ -25,7 +25,7 @@ description: >-
 
 ## Common Pitfalls
 
-- **Main vs renderer.** The Discord gateway client runs ONLY in the Electron main process; the renderer store talks to it over IPC (`discordService*` eventa contracts). Never import `discord.js` into renderer code.
+- **Main vs renderer.** The Discord gateway client runs ONLY in the desktop main process; the renderer store talks to it over IPC (`discordService*` eventa contracts). Never import `discord.js` into renderer code.
 - **Vision routing.** Image attachments are matched against `data:([^;]+);base64,...` and ingested via `chatOrchestrator.ingest` as base64 data-URLs ONLY when `visionEnabled` is on; VLM provider/model come from `useVisionStore` (`activeProvider`/`activeModel`), and the `/vision` slash command toggles it. Stripping tools on VLM turns applies to ALL sources, not just Discord.
 - **Tools fallthrough.** Tools are NOT passed explicitly by the Discord store — `performSend` falls back to `toolsResolver.value` (set to `builtinTools` in the page), so all built-in tools (journal, widgets, stickers, MCP, dating sim) work from Discord automatically. Don't add special-casing unless stripping for a VLM turn.
 - **Command registration caching.** Slash commands re-register only when `COMMANDS_VERSION` is bumped above `lastRegisteredVersion`; global commands can take up to an hour to propagate — register per-guild during development.
@@ -35,7 +35,7 @@ description: >-
 
 Discord is the primary consumer of Cloud Relay: the local gateway service and the Edge worker are two execution surfaces for the same bot.
 
-- **Legacy (Gen 1):** local Electron gateway service (`services/airi/discord/index.ts`) owns the `discord.js` client and handles interactions on device.
+- **Legacy (Gen 1):** local desktop gateway service (`services/airi/discord/index.ts`) owns the `discord.js` client and handles interactions on device.
 - **Edge (Cloud Relay):** when the user deploys, the Worker (`apps/stage-edge`) handles the `/discord` webhook with Ed25519 verification, Type-5 defer + PATCH to `messages/@original`, KV `context/rolling`, and the 2000-char trim; local client pauses its own loop (`executionMode: 'remote'`).
 - **`cloudRelayInstances`** (manual-reset localStorage, keyed by `scriptName`) = `{ scriptName, workerUrl, namespaceId, memoryMode ('fixed'|'unlimited', default 'unlimited'), deployedAt, cardId, sessionId }`. `fetchCloudRelayMemories(namespaceId, key='context/rolling')` pulls remote history back into the local session for the memory-review modal.
 - Slash commands register to BOTH surfaces via `registerSlashCommands(discordBotToken)` during `deployWorker`; keep the command list in sync between `services/airi/discord/index.ts` and `apps/stage-edge/src/discord/client.ts`.

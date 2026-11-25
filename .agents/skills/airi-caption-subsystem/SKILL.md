@@ -1,12 +1,12 @@
 ---
 name: airi-caption-subsystem
 description: >-
-  Build/debug captions and subtitles: Electron overlay, DatingSim panel, Live2D speech bubbles and motion captions, Sentence-Sync TTS highlighting, streaming segments, docking, themes, visibility. Caption behavior across surfaces.
+  Build/debug captions and subtitles: desktop overlay window, DatingSim panel, Live2D speech bubbles and motion captions, Sentence-Sync TTS highlighting, streaming segments, docking, themes, visibility. Caption behavior across surfaces.
 ---
 
 # AIRI Caption & Subtitle Subsystem
 
-Captions are a single **publisher/ subscriber BroadcastChannel protocol** (`airi-caption-overlay`) feeding up to three conceptually distinct render surfaces. Know which surface you're touching before editing — windowed features only exist on desktop Electron; the in-scene plank and dating-sim panel are renderer-agnostic.
+Captions are a single **publisher/ subscriber BroadcastChannel protocol** (`airi-caption-overlay`) feeding up to three conceptually distinct render surfaces. Know which surface you're touching before editing — windowed features only exist on the desktop shell; the in-scene plank and dating-sim panel are renderer-agnostic.
 
 ```text
                     Speech STT / LLM / TTS / motion Text
@@ -20,14 +20,14 @@ Captions are a single **publisher/ subscriber BroadcastChannel protocol** (`airi
      ▼                           ▼                            ▼
  1. Standalone                2. Dating-Sim                3. Head-Tethered
     Caption Window               Inline Caption               Plank (in-scene)
-    (Electron-only)             (DatingSimOverlay)           (Live2D-only MVP)
+    (desktop-only)             (DatingSimOverlay)           (Live2D-only MVP)
 ```
 
 ---
 
 ## 1. The Three Render Surfaces
 
-### 1.1 Standalone caption window (desktop Electron only)
+### 1.1 Standalone caption window (desktop only)
 - **Main**: `apps/stage-tamagotchi/src/main/windows/caption/index.ts` (~785 lines) — frameless transparent BrowserWindow; owns **follow-stage position/visibility** (the main process is the single owner), display-matrix hashing, bounds clamping, initial-bounds resolution-breakpoint sizing. Emits `caption-window-state` (`isOpen: boolean`) to the main window's webContents on show/hide (:590, :599, :632).
 - **Page**: `apps/stage-tamagotchi/src/renderer/pages/caption.vue` (~226 lines) — renders `CaptionPanel`; wires caption-window drag handle + hide button (`toggleVisibility` via `electronCaptionToggleVisibility`), mirrors follow-stage toggles back into `settingsStore` via the `captionFollowStagePositionChanged` / `captionFollowStageVisibilityChanged` listens, and watches `settingsStore.captionLayoutMode` for single/multi reflow.
 - **Toggle ownership** — renderer `apps/stage-tamagotchi/src/renderer/pages/index.vue`:
@@ -47,7 +47,7 @@ Captions are a single **publisher/ subscriber BroadcastChannel protocol** (`airi
 - **Live2D adapter**: `packages/stage-ui-live2d/src/composables/live2d/head-tethered-caption.ts` — builds the comic-bubble PIXI Graphics/Text, injects `BatchRenderer` into the live renderer when missing, reads Cubism pose params via `coreModel.getParameterValueById` (alias table for `ParamAngleX` / `PARAM_ANGLE_X` variants), and applies the fake-perspective transform.
 - **Math**: `packages/stage-shared/src/utils/caption-perspective.ts` — `poseToCaptionTransform(...)` is the shared single-source for future Spine/VRM/MMD adapters. Current exports are consumed only by Live2D.
 - **Mount**: `RendererStage.vue:504` — `<HeadTetheredCaption v-if="stageModelRenderer === 'live2d'" :live2d-scene-ref="live2dSceneRef" />`. The wrapper gets the *component instance*, not the resolved PIXI app; the adapter polls internally.
-- **Status**: Live2D only. Spine/VRM/MMD have **no** tethered adapter yet; the design doc (`docs/design-head-tethered-captions.md` §3.1) pre-specifies Spine (PIXI child, bone-driven worldTransform), VRM, and MMD (three.js CSS3DSprite / canvas-sprite, head-bone quaternion). Nothing ports yet — leave `caption-perspective.ts` renderer-agnostic if you add an adapter, and read this doc before starting.
+- **Status**: Live2D only. Spine/VRM/MMD have **no** tethered adapter yet; the scenes README (`packages/stage-ui/src/components/scenes/README.md` §4) pre-specifies Spine (PIXI child, bone-driven worldTransform), VRM, and MMD (three.js CSS3DSprite / canvas-sprite, head-bone quaternion). Nothing ports yet — leave `caption-perspective.ts` renderer-agnostic if you add an adapter, and read this doc before starting.
 
 ---
 
@@ -98,7 +98,7 @@ Captions come from **inline `Text` + `Language` fields on `model3.json` `FileRef
 - Head-tethered (in-scene, independent and may co-run with windowed): `headTetheredCaptionEnabled` (default false, Live2D-only MVP), `headTetheredCaptionOffset {x,y}` (default `{0,-15}`), `headTetheredCaptionFollowStrength` (default 100).
 - Barrel: `packages/stage-ui/src/stores/settings/index.ts:116-129` exposes all of the above as flat refs (`showCaptions`, `captionDocking`, `captionLayoutMode`, `headTetheredCaptionEnabled` …) — `useSettings` consumers read them flat, never via a nested `captions` object.
 
-> Note: docking has four states including `'head'`; the **window** cannot render tether math (Electron windows can't skew). The `'head'` docking mode + head-tethered plank are separate toggles: docking `'head'` moves the *rectangle* near the head; `headTetheredCaptionEnabled` renders the *in-scene* transformable plank. They can both be on.
+> Note: docking has four states including `'head'`; the **window** cannot render tether math (desktop windows can't skew). The `'head'` docking mode + head-tethered plank are separate toggles: docking `'head'` moves the *rectangle* near the head; `headTetheredCaptionEnabled` renders the *in-scene* transformable plank. They can both be on.
 
 ---
 
@@ -123,8 +123,8 @@ Wiring: `use-control-strip-action.ts` handles `head-tethered-caption`, `caption-
 
 ## 6. Known Drift / Documentation Warnings
 
-- `docs/design-captions-widget-system.md` spec mentions **`captionThemeMode`** (`light|dark|system`) with a caption-background-theme cycler — no corresponding field exists in `stores/settings/captions.ts` and no `caption-theme-mode` case in either `use-control-strip-action.ts` or `ControlStrip.vue` handlers (only icon/label branches, :1233/:1359). If you're asked to implement this, it's a real gap, not a rename.
-- `docs/design-head-tethered-captions.md` pre-specifies Spine/VRM/MMD tethered adapters that **do not exist yet**; treat its platform table as plan-of-record, not inventory.
+- `packages/stage-ui/src/components/scenes/README.md` §2 spec mentions **`captionThemeMode`** (`light|dark|system`) with a caption-background-theme cycler — no corresponding field exists in `stores/settings/captions.ts` and a `caption-theme-mode` case exists in `use-control-strip-action.ts` but the persisted field is still missing. If you're asked to implement this, it's a real gap, not a rename.
+- `packages/stage-ui/src/components/scenes/README.md` §4 pre-specifies Spine/VRM/MMD tethered adapters that **do not exist yet**; treat its platform table as plan-of-record, not inventory.
 - Some older skills/docs still name the caption settings `settingsStore.captionFollowStage…` nested fields; flattened barrel refs in `settings/index.ts` are current.
 
 ---
@@ -174,7 +174,7 @@ Wiring: `use-control-strip-action.ts` handles `head-tethered-caption`, `caption-
 
 ## Related Skills & References
 
-- **Key Documents**: [[design-head-tethered-captions]], [[design-live2d-caption]], [[design-captions-widget-system]], [[catalog-control-strip]], [[rosetta-stone]]
+- **Key Documents**: [scenes README](../../../packages/stage-ui/src/components/scenes/README.md), [[design-live2d-caption]]
 
 ### Authoritative Design & Architecture Documents
 

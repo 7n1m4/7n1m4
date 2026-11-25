@@ -7,6 +7,9 @@ import { useSpeechStore } from '../stores/modules/speech'
 import { useProvidersStore } from '../stores/providers'
 import { useSettingsUserProfile } from '../stores/settings/user-profile'
 
+/**
+ * Sentence Sync producer. Protocol in `../components/scenes/README.md` §3.
+ */
 interface CaptionSegment {
   text: string
   color: string

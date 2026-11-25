@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Research: Godot 4 renderer spike (E4-T1 / E4-T2)
 
-**Status:** research spike · **Date:** 2026-11-21 · **Scope:** `godot/**` scaffold plus backend/plugin research for Wave 4 of the authoritative [Flutter control surface + on-demand Godot pet design](./design-flutter-godot-pivot.md).
+**Status:** retired 2026-11-25 (research retained as historical backend-license context, not an implementation plan) · **Date:** 2026-11-21 · **Scope:** `godot/**` scaffold plus backend/plugin research for Wave 4 of the authoritative [Flutter control surface + on-demand Godot pet design](./design-flutter-godot-pivot.md).
 **Method:** in-tree documents and source were read at `bad8fc69`. Per the pivot's cross-links and the header of [`UPSTREAM_RADAR.md`](./UPSTREAM_RADAR.md), **no upstream AIRI fetch, merge, rebase or push was performed**; the upstream sidecar section below is reconstructed only from local docs. External facts (vendor/plugin docs) came from public web documentation retrieved 2026-11-21 and are cited by URL in §7.
 
 ## 0. Conclusions

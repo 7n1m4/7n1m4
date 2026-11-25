@@ -23,12 +23,12 @@ class AboutScreen extends StatelessWidget {
               children: <Widget>[
                 Text('Anima', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
                 SizedBox(height: 8),
-                Text('Control + chat thin client of anima-daemon.'),
+                Text('Full stage UI driven by anima-daemon.'),
                 SizedBox(height: 12),
                 Text(
-                  'The daemon owns all core state. The Godot pet renderer runs '
-                  'on demand and outlives this window. The Vue web app remains '
-                  'the full-UI behaviour reference.',
+                  'The daemon owns all core state. Flutter renders models natively '
+                  'on desktop and mobile. The Vue web app remains the full-UI '
+                  'behaviour reference.',
                 ),
               ],
             ),

@@ -23,8 +23,8 @@ Own desktop chat surfaces and shared transcript presentation. Read only the refe
 - Actor grammar: [ACT tokens](../airi-acting-cue-act-tokens/SKILL.md); Studio decisions: [Director](../airi-director-orchestration/SKILL.md).
 - Memory generation/persistence belongs to the corresponding memory skill. A preview or grounding toggle is not the injection implementation.
 
-Paths in references are repository-relative. Verify source before applying older design documents. Desktop, portrait mobile, landscape web/pocket, and WhisperDock have different composition paths; do not assume shared bubbles mean shared input state.
+Paths in references are repository-relative. Verify source before applying older design documents. Desktop, portrait mobile, landscape web, and WhisperDock have different composition paths; do not assume shared bubbles mean shared input state.
 
 ## Verification
 
-Check the affected surface with streaming text, tool output, empty history, and a switched character/session. For code changes, typecheck affected workspaces: `@proj-anima/stage-tamagotchi`, `@proj-anima/stage-ui`, or `@proj-anima/stage-layouts`, using `pnpm -F <workspace> typecheck`. Shared renderer changes also need a web/pocket smoke check. Use the selected reference's behavioral checks.
+Check the affected surface with streaming text, tool output, empty history, and a switched character/session. For code changes, typecheck affected workspaces: `@proj-anima/stage-tamagotchi`, `@proj-anima/stage-ui`, or `@proj-anima/stage-layouts`, using `pnpm -F <workspace> typecheck`. Shared renderer changes also need a stage-web smoke check. Use the selected reference's behavioral checks.

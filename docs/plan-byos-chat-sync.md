@@ -15,7 +15,7 @@ never stores user chat history in an AIRI-hosted database or object store.
 
 The daemon remains the source of truth for daemon mode:
 `crates/anima-store` (`sessions`, `messages`) is written only by the daemon.
-Thin clients (Flutter, Godot, the Vue reference) call daemon RPCs; they do not
+Thin clients (Flutter, the Vue reference) call daemon RPCs; they do not
 invent a second HTTP chat API.
 
 BYOS reconciliation for the TypeScript/IndexedDB store already exists and
@@ -29,7 +29,7 @@ custody.
 ## Transport
 
 ```text
-Flutter / Godot / Vue
+Flutter / Vue
         │  authenticated anima-channel RPC
         ▼
   local daemon (SQLite: sessions, messages)
@@ -50,7 +50,7 @@ paired daemon on another device  ──────────┐
 - No AIRI-hosted custody: the gateway/relay only carries the authenticated
   RPC; it does not persist chat snapshots. A paired daemon, or the user's own
   S3/R2/local FS, is the only durable copy outside the two daemons.
-- Flutter and Godot participate by calling the daemon RPCs (for example
+- Flutter participates by calling the daemon RPCs (for example
   `DaemonClient.sessionsExport()` in
   `apps/flutter/lib/daemon_client/daemon_client.dart`). They never call an
   AIRI REST endpoint for chat sync.
@@ -93,8 +93,8 @@ never resurrects or deletes a session implicitly.
    `packages/stage-ui/src/stores/chat/session-store.ts`; delete the
    `/api/chats/sync` route, its service/schema, and its tests. Local
    IndexedDB persistence and BYOS reconciliation are unchanged.
-4. **Thin-client adoption.** Flutter/Godot call `sessions.export` /
-   `sessions.import` through their daemon clients. The Vue reference uses the
+4. **Thin-client adoption.** Flutter calls `sessions.export` /
+   `sessions.import` through its daemon client. The Vue reference uses the
    daemon RPC when running in daemon mode and BYOS otherwise.
 
 ## Non-goals

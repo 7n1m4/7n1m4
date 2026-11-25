@@ -1,3 +1,5 @@
+// Key layout and storage rules: ../README.md. Journal record shape, merge and retrieval:
+// README-text-journal.md.
 import type { TextJournalEntry } from '../../types/text-journal'
 
 import { storage } from '../storage'

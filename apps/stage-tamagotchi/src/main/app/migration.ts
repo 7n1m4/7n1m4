@@ -12,7 +12,6 @@ const ESSENTIAL_DATA_DIRS = [
   'blob_storage',
   'extensions',
   'plugins',
-  'godot-stage',
   'Dictionaries',
 ]
 

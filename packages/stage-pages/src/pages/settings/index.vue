@@ -53,7 +53,7 @@ watch(
  * Grouped dynamically by clusterGroup into CHARACTER & SCENE, INTELLIGENCE, and SYSTEM.
  */
 const settingsGroups = computed(() => {
-  const hubItems = SETTINGS_CATALOG_ITEMS.filter(item => item.parentId === 'hub')
+  const hubItems = SETTINGS_CATALOG_ITEMS.filter(item => item.parentId === 'hub' && !item.hidden && !item.deprecated)
   const groupsMap = new Map<string, { id: string, title: string, items: Array<{ title: string, description: string, icon: string, to: string }> }>()
 
   for (const item of hubItems) {

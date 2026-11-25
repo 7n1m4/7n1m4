@@ -33,6 +33,7 @@ export interface VMOptions {
   language?: string
 }
 
+/** See module/spec map in `./README.md`. */
 export class DSLVirtualMachine {
   readonly vars: ReactiveVarStore
   private readonly groups = new Map<string, DslMotionGroup>()

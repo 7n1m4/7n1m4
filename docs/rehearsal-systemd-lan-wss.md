@@ -63,7 +63,7 @@ implementation; execution happens on a real host.
 
 ### B.2 Trusted client success
 
-1. Client (Flutter/Godot/native) obtains CA fingerprint out-of-band (QR or text from host settings UI).
+1. Client (Flutter/native) obtains CA fingerprint out-of-band (QR or text from host settings UI).
 2. Client installs/trusts CA into its trust store (app-private rustls `RootCertStore` or OS store per `docs/design-daemon-ca-distribution.md` §3.B).
 3. Client connects `wss://<host-ip>:6121`, sends `authToken` first message.
 4. Expect: TLS handshake succeeds, auth accepted, `core.status` RPC returns.

@@ -2,6 +2,7 @@
 # Analysis: Slint business-logic inventory for the big-bang cutover
 
 **Status:** survey · **Date:** 2026-11-21 · **Scope:** `crates/anima-slint/src/**` at HEAD `bad8fc69`
+
 **Owner:** E1-T1 / bead `airi-wxp.1` · **Read-only source survey** (this file is the only write)
 
 This document makes [`design-flutter-godot-pivot.md`](./design-flutter-godot-pivot.md) §4 (move/delete
@@ -87,7 +88,7 @@ second-writer hazard if the item is moved without also retiring its Slint owner.
 | ID | Item (file:line) | Class | What it owns | Target daemon module + public API | Order / writer risk |
 |---|---|---|---|---|---|
 | E1 | `bridges/daemon.rs:194-384, 492-562, 564-623` | **DAEMON** (pure logic) | Wake-briefing composer, duration/clock math, wake-edge step; digest reply classification; audit JSONL tail shaping. | Fold into existing `wake_facts.rs`, `screen.rs`, `audit.rs`: `compose_briefing`, `wake_edge_step`, `classify_digest`, `audit_tail_json`, `archive_audit`. | M8. State already daemon-owned — **port logic only**, never a second awareness state. |
-| E2 | `bridges/daemon.rs:125-139, 861-897` | **DAEMON** (privileged verb) | `clear_audit()` archive-by-rename (`.cleared-<ts>`), 64 KiB tail cap; no truncation. | `audit.rs::archive_audit()` exposed via D-Bus/privileged RPC; **no Flutter/Godot delete button** (retention policy). | M8. ⚠ Must not gain a GUI deletion path. Preserve `airi-slint/audit` path (`anima-channel/src/audit.rs:14-27`). |
+| E2 | `bridges/daemon.rs:125-139, 861-897` | **DAEMON** (privileged verb) | `clear_audit()` archive-by-rename (`.cleared-<ts>`), 64 KiB tail cap; no truncation. | `audit.rs::archive_audit()` exposed via D-Bus/privileged RPC; **no Flutter delete button** (retention policy). | M8. ⚠ Must not gain a GUI deletion path. Preserve `airi-slint/audit` path (`anima-channel/src/audit.rs:14-27`). |
 | E3 | `bridges/daemon.rs:77-102, 899-955` | **DAEMON** | Wake-briefing opt-in blob (`settings/awareness`), edge detector, notify-rust session-bus notification, first-observation priming. | `wake_facts.rs::{enabled, check_tick, notify}`; opt-in flag moves to `settings.rs`. | M8, depends M2/E1. Master pause switch wins (`:101-102`). |
 | E4 | `bridges/daemon.rs:109-150, 625-664, 664-994` | **DROP** | D-Bus client proxy, 1 s polling mirror, `DaemonState` fields, 800 ms timeouts. | Flutter/Godot call daemon over WS `rpc`/events; no D-Bus from clients. | M8/M10. Slint-only transport; logic survives in E1–E3. |
 | E5 | `bridges/mcp.rs:41-686` | **DAEMON** | `airi/mcp.json` config, stdio/remote server CRUD, probe + tool calls; bearer token and sensitive headers redacted (`:23-28, 49-105`). | `integrations/mcp.rs::McpService::{servers, add, remove, set_enabled, probe, call_tool}`. | M8. ⚠ `REDACTED` sentinel round-trip (`:86-103`) must survive; never return tokens over WS. |
@@ -100,7 +101,7 @@ second-writer hazard if the item is moved without also retiring its Slint owner.
 
 | ID | Item (file:line) | Class | What it owns | Target daemon module + public API | Order / writer risk |
 |---|---|---|---|---|---|
-| A1 | `bridges/capture.rs:36-890` | **CLIENT-LOCAL** | Captures directory (`<profile>/captures`), list/clear of `capture-<digits>.png`, Wayland portal `Screenshot` D-Bus worker with consent dialog, X11 grab unimplemented. | Flutter/Godot capture UI owns the portal call (user consent requires a GUI process). Daemon gains an optional ingest RPC (`vision/ingest.rs`) only if the realtime pipeline consumes the PNG; no daemon-side portal code. | M10 (+ M9 for ingest). ⚠ Corrects pivot §4.1's "audio" grouping; do not move the portal worker into a headless daemon. |
+| A1 | `bridges/capture.rs:36-890` | **CLIENT-LOCAL** | Captures directory (`<profile>/captures`), list/clear of `capture-<digits>.png`, Wayland portal `Screenshot` D-Bus worker with consent dialog, X11 grab unimplemented. | Flutter capture UI owns the portal call (user consent requires a GUI process). Daemon gains an optional ingest RPC (`vision/ingest.rs`) only if the realtime pipeline consumes the PNG; no daemon-side portal code. | M10 (+ M9 for ingest). ⚠ Corrects pivot §4.1's "audio" grouping; do not move the portal worker into a headless daemon. |
 
 **Audio wiring gap (no Slint logic to port).** `hearing.rs` and `speech.rs` store **intent only**
 (`hearing.rs:17-38, 265-282`; `speech.rs:41-44, 185-196`). The real pipeline is net-new: `anima-daemon`'s
@@ -116,8 +117,8 @@ It belongs in M9, not in a mechanical bridge port.
 | U3 | `bridges/spine.rs:2-129` | **DROP** | `SpineControllerState` UI-facing model/skin/play/poke calls. | Godot plugin; `anima-render/src/spine/*` is the reusable core. | Wave 6. |
 | U4 | `spine_rt.rs:2-239` | **DROP** | Process-wide spine session, bundle load, tracks, smoke check. | Same as U3. | Wave 6. |
 | U5 | `spine_render.rs:2-372` | **DROP** | CPU rasterizer + `slint::Image::from_rgba8` adapter (`:326-334`). | Slint-specific; **not** the reusable renderer. | Wave 6. |
-| U6 | `ui/**/*.slint` — **1,728 lines** total | **DROP** | `bootstrap.slint` (54), `main.slint` (37), `I18n.slint` (22), `Theme.slint` (42), `SpineStage.slint` (34), `shell/{MainShell 188, ChatWindow 215, SettingsWindow 112, AboutWindow 163, Splash 78}`, `components/*` (16 files, 783). | Flutter widgets + Godot scenes; Vue web app (`apps/stage-web`) is the behaviour reference, not this markup. | Wave 6. |
-| U7 | `bridges/desktop.rs:2-424` | **CLIENT-LOCAL** | Tray (ksni), global hotkeys (x11rb), autostart (XDG/LaunchAgent/registry, `:281-320`), notifications, action pump. | Net-new tray/launcher drives Flutter/Godot **process lifecycle only** (pivot decision 8); daemon owns state. | M10. ⚠ Must not become a second privileged data path. |
+| U6 | `ui/**/*.slint` — **1,728 lines** total | **DROP** | `bootstrap.slint` (54), `main.slint` (37), `I18n.slint` (22), `Theme.slint` (42), `SpineStage.slint` (34), `shell/{MainShell 188, ChatWindow 215, SettingsWindow 112, AboutWindow 163, Splash 78}`, `components/*` (16 files, 783). | Flutter widgets; Vue web app (`apps/stage-web`) is the behaviour reference, not this markup. | Wave 6. |
+| U7 | `bridges/desktop.rs:2-424` | **CLIENT-LOCAL** | Tray (ksni), global hotkeys (x11rb), autostart (XDG/LaunchAgent/registry, `:281-320`), notifications, action pump. | Net-new tray/launcher drives Flutter **process lifecycle only** (pivot decision 8); daemon owns state. | M10. ⚠ Must not become a second privileged data path. |
 
 ## 8. Migration order (dependency-ordered; big-bang cutover)
 

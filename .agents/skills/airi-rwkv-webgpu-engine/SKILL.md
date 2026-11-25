@@ -8,7 +8,7 @@ description: >-
 
 # AIRI RWKV-7 WebGPU Engine & Prefab Pipeline
 
-This domain skill governs the integration, execution, and model lifecycle of RWKV recurrent neural networks (specifically RWKV-7 "Goose" G1) running locally in the browser and Electron desktop via WebGPU.
+This domain skill governs the integration, execution, and model lifecycle of RWKV recurrent neural networks (specifically RWKV-7 "Goose" G1) running locally in the browser and the Electrobun desktop via WebGPU.
 
 ## 1. Overview & Architecture
 
@@ -23,7 +23,7 @@ AIRI supports RWKV models across two primary surfaces:
 | Model | Parameters | Layers | DL Size (Raw) | Int8 Prefab | NF4 Prefab | Sweet Spot / Usage |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **0.1B** | 0.1B | 12 | 382 MB | — | — | Nano fallback, lightweight classification |
-| **0.4B** | 0.4B | 24 | 902 MB | 581 MB | 437 MB | Mobile (`stage-pocket`), integrated GPUs |
+| **0.4B** | 0.4B | 24 | 902 MB | 581 MB | 437 MB | Integrated GPUs and lower-memory desktop/mobile shells |
 | **1.5B** | 1.5B | 24 | 3.06 GB | 1.88 GB | 1.28 GB | Recommended balance: roleplay, natural dialogue |
 | **2.9B** | 2.9B | 32 | 5.90 GB | ~3.7 GB | ~2.5 GB | High capacity, deep multi-step reasoning |
 

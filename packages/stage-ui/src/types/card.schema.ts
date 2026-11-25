@@ -24,8 +24,8 @@ import {
 } from 'valibot'
 
 /**
- * Message Example Item Schema
- * Validates strings starting with {{user}}: or {{char}}:
+ * Message Example Item Schema — one dialogue line.
+ * Each line must start with `{{user}}: ` or `{{char}}: ` (regex `/^\\{\\{(?:user|char)\\}\\}: /`). `MessageExampleSchema` is `Message[][]` (array of turns, each an array of lines).
  */
 export const MessageExampleItemSchema = pipe(
   string('Message example line must be a string'),
@@ -82,7 +82,8 @@ export const AiriCognitionSchema = looseObject({
 export type AiriCognition = InferOutput<typeof AiriCognitionSchema>
 
 /**
- * AIRI Extension Schema parts
+ * AIRI capability module bindings persisted under `extensions.airi.modules`.
+ * `consciousness` = active LLM provider/model (+ optional `moduleConfigs`); `speech` = TTS provider/model/`voice_id` with optional `pitch`/`rate`/`ssml`/`language`; `vrm`/`live2d` = legacy file/url display-model links (`live2d` also carries `activeExpressions`/`modelParameters`); `displayModelId` = id from the display-models store (`preset-*` / `display-model-<nanoid>`); `activeBackgroundId` = id from the unified background store; `preferredBackgroundId`/`preferredBackgroundName`/`preferredBackgroundDataUrl` = legacy background keys read-only for migration. Canonical runtime interface: `AiriExtension['modules']` in `stores/modules/airi-card.ts`.
  */
 const AiriModulesSchema = object({
   consciousness: optional(object({
@@ -207,6 +208,9 @@ const AiriScreenWatchingSchema = object({
   afkThresholdMinutes: optional(number()),
 })
 
+/**
+ * Modular outfit/accessory bundle. `type: 'base'` is exclusive (applying zeroes other base outfits' expressions first — "net zero" to avoid overlapping-clothes artifacts); `type: 'overlay'` is additive (toggles on top of current state). `expressions` maps blendshape name → weight; optional `meshes`, `tag`, `icon` (Iconify id), `defaultEnabled`. Applied by `applyOutfit(id)` in `stores/modules/airi-card.ts`; canonical interface `AiriOutfit` there.
+ */
 const AiriOutfitSchema = object({
   id: string(),
   name: string(),
@@ -314,6 +318,9 @@ export const CardCustomStickerSchema = looseObject({
 
 export type CardCustomSticker = InferOutput<typeof CardCustomStickerSchema>
 
+/**
+ * AIRI-specific card capabilities stored at `extensions.airi` (loose object — unknown keys preserved on round-trip). Canonical runtime interface: `AiriExtension` in `stores/modules/airi-card.ts`. Groups: `modules` (consciousness/speech/display/background bindings), `cognition`, `heartbeats`, `dreamState`, `shortTermMemory`/`lifetimeMemory`, `screenWatching`, `textJournal`, `sandbox`, `toolCallReflection`, grounding flags, `universeRag`/`recentTopics`, `generation`, `acting` (+ pacing/cadence/cueAllowlist/stickers), `stickers`, `outfits`, `artistry` (provider/model/`spawnMode`/`options`/autonomous* /pendingArtistryMoment), `agents`, `imageJournal` (`{ selfie }`), `visual_assets` (concept → description/prompt/isBase/artistry/manifestation), `textColor`, `active_concepts`, `eternal_record`, `proactivity_metrics`, `active_state` (live displayModelId/activeBackgroundId/active_expressions), `voice_profiles`, `rwkv` (recurrent state cartridge).
+ */
 const AiriExtensionSchema = looseObject({
   modules: optional(AiriModulesSchema),
   cognition: optional(AiriCognitionSchema),
@@ -457,7 +464,7 @@ const AiriExtensionSchema = looseObject({
 })
 
 /**
- * Main AIRI Card Schema (V1)
+ * Main AIRI Card Schema (V1) — top-level AIRI card; `name`+`version` required; extends SillyTavern/CCC V2/V3 `Card` with `extensions.airi` (`AiriExtensionSchema`) plus `createdAt`/`updatedAt` (carried by the store, not this schema). Loose object: unknown top-level keys survive import/export round-trips.
  */
 export const AiriCardSchema = looseObject({
   name: string('Card name is required'),

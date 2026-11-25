@@ -71,7 +71,7 @@ impl ChannelConfig {
     /// Construct a fresh config with a random token bound to loopback.
     ///
     /// The fresh config carries `"allowActions": true`: the healed default is
-    /// the single-user loopback daemon, where thin clients (Flutter/Godot/Vue)
+    /// the single-user loopback daemon, where thin clients (Flutter/Vue)
     /// need the mutating verbs (chat.send, settings.set, journal.append, …) to
     /// work out of the box. Non-loopback binds stay fail-closed — the gateway
     /// forces TLS there and operators must opt in explicitly. See

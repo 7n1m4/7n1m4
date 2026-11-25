@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# AIRI supervisor — owns the system tray and the client (Flutter/Godot)
+# AIRI supervisor — owns the system tray and the client (Flutter only)
 # process lifecycle. Never binds port 6121 (daemon owns it) and never
 # starts/stops/restarts the daemon (systemd owns it).
 [Unit]

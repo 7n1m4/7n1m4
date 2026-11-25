@@ -1,8 +1,9 @@
-# Anima — Flutter control + chat surface
+# Anima — Flutter stage UI (desktop + mobile)
 
-A **thin client** of `anima-daemon`. The daemon is the single owner of core state
-(settings, chat sessions, cards, memory). This app holds view state only: it can
-be closed without stopping the agent or the on-demand Godot pet window.
+Flutter is the primary renderer with native model rendering. The daemon owns core
+state (settings, chat sessions, cards, memory). The Vue/electrobun apps are
+references; Godot is purged. "Thin" means no competing state writer — view state
+only, closable without stopping the agent.
 
 Authoritative design contract: [`docs/design-flutter-godot-pivot.md`](../../docs/design-flutter-godot-pivot.md)
 (decisions 1, 3, 10 and invariants 1–3, 5) and
@@ -13,7 +14,7 @@ Authoritative design contract: [`docs/design-flutter-godot-pivot.md`](../../docs
 | Area | Files | Notes |
 | --- | --- | --- |
 | Entry + theme | `lib/main.dart`, `lib/app.dart`, `lib/theme/app_theme.dart` | Material 3 dark companion palette. **Design parity with Vue is deferred** (see below). |
-| Navigation shell | `lib/navigation/navigation_shell.dart` | Control/Home, Chat, Settings, Connections, About — thin placeholders only. |
+| Navigation shell | `lib/navigation/navigation_shell.dart` | Control/Home, Chat, Settings, Connections, About — full stage-UI navigation shell; detailed Vue-parity surfaces are tracked in docs/feature-parity-checklist.md |
 | Feature placeholders | `lib/features/**` | No business logic; settings/providers/memory/cards/sessions are future daemon RPC verbs. |
 | Connection form | `lib/connection/connection_settings.dart`, `connection_settings_screen.dart` | Host/port/`ws`↔`wss`/token, validation, derived endpoint placeholder, fail-closed TLS note. |
 | Daemon client | `lib/daemon_client/**` | Frame codec, transport abstraction, auth handshake, typed RPC, `core.status` probe, backoff, clear error states. |

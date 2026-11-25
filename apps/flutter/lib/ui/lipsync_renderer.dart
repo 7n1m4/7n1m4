@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Minimal observable renderer for client-generated `lip_sync.rms` frames.
-// The frames originate in LipSyncGenerator (local PCM -> RMS tap) and carry
-// client-stamped seq/ts_ms; they are never daemon-published and never
-// fabricated here.
+// Flutter avatar renderer's local lip-sync sink for client-generated
+// `lip_sync.rms` frames. The frames originate in LipSyncGenerator (local PCM
+// -> RMS tap) and carry client-stamped seq/ts_ms; they are never
+// daemon-published and never fabricated here.
 
 import 'dart:async';
 
@@ -13,8 +13,8 @@ import '../speech/lip_sync_rms_data.dart';
 
 /// Renders a pet that swells in proportion to the latest RMS level.
 ///
-/// This is deliberately a generic visible sink (scale + tint), mirroring the
-/// Godot generic renderer: it proves a stamped frame reached a rendering
+/// This is deliberately a generic visible sink (scale + tint) until real model
+/// mouth bindings are wired: it proves a stamped frame reached a rendering
 /// surface without claiming a real mouth mesh. Frames from a different actor,
 /// or with a non-monotonic seq, are ignored so replayed/duplicated local frames
 /// cannot drive the animation.

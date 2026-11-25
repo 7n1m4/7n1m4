@@ -1,5 +1,7 @@
 # Nan0-AIRI Integration: Architectural Realignment & Feedback
 
+> **Canonical copy (2026-11-25):** This file is the canonical copy — the root `docs/design-nan0-integration-feedback.md` is a stub that points here. The source of truth for each claim is the code and generated docs: vector search in `packages/stage-ui/src/libs/search/layered-memory.ts`, Discord command surface in `packages/stage-ui/src/stores/modules/discord.ts`, and `docs/rosetta-stone.md` / `docs/data-catalog.md`. Note the spec's own links use stale `docs/...` prefixes; paths below are repo-root-relative.
+
 This document outlines the architectural feedback and design requirements for integrating the Nan0 cognition system into the AIRI ecosystem. It serves as a guide to realign the integration strategy with AIRI's core design principles, citing established project architecture documents and database schemas.
 
 ---

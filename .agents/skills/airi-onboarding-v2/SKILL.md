@@ -10,7 +10,7 @@ description: >-
 > **DEPRECATED — DO NOT USE FOR ACTIVE DEVELOPMENT**
 > Onboarding V2 is retired and preserved solely for historical/reference purposes.
 > The active canonical implementation is **Onboarding V3** documented in `airi-onboarding-v3` and [`docs/design-onboarding-v3.md`](../../docs/design-onboarding-v3.md).
-> All platforms (Electron `/onboarding-v3`, Web, Pocket) mount **`OnboardingV3`** (`packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/`).
+> All platforms (Desktop `/onboarding-v3`, Web) mount **`OnboardingV3`** (`packages/stage-ui/src/components/scenarios/dialogs/onboarding/v3/`).
 
 ## Legacy V2 Historical Reference
 
@@ -18,13 +18,13 @@ description: >-
 
 ### Mounting (per platform)
 
-**Desktop (Electron)** — dedicated onboarding window (`main/windows/onboarding/`), page `apps/stage-tamagotchi/src/renderer/pages/onboarding.vue` mounting `OnboardingV2` directly. Three launch surfaces, all funneling into the same window via `electronOpenOnboarding` (handled by `main/services/airi/onboarding/index.ts`):
+**Desktop (Electrobun)** — dedicated onboarding window (`main/windows/onboarding/`), page `apps/stage-tamagotchi/src/renderer/pages/onboarding.vue` mounting `OnboardingV2` directly. Three launch surfaces, all funneling into the same window via `electronOpenOnboarding` (handled by `main/services/airi/onboarding/index.ts`):
 
 1. **First run**: main-window `App.vue` watches `onboardingStore.needsOnboarding` and opens the wizard automatically on fresh installs.
 2. **System tray**: "Start Companion Wizard" menu item → `onboardingWindow.openWindow('/onboarding')` (`main/tray/index.ts:80`).
 3. **Settings → AIRI Cards → Create button**: `CreateModeSelectorDialog.vue` offers 3 modes; **Companion Wizard** is the "Recommended" first option and emits `wizard` → `airi-card/index.vue:handleWizardMode()` → `onboardingStore.resetSetupState()` + `forceShowSetup()`, which re-trips the same first-run watcher (the other two modes are *Guided AI Creator* → AnimaDex `guided.vue` route, and *Advanced Manual* → card editor tabs — do not conflate those with this wizard).
 
-**Web & Pocket** — `onboarding-dialog.vue` (desktop `DialogRoot` / mobile `DrawerRoot`) mounts `OnboardingV2`; used in `apps/stage-web/src/App.vue` and `apps/stage-pocket/src/App.vue`.
+**Web** — `onboarding-dialog.vue` (desktop `DialogRoot` / mobile `DrawerRoot`) mounts `OnboardingV2`; used in `apps/stage-web/src/App.vue`.
 
 ### Orchestrator & Contract
 - `packages/stage-ui/src/components/scenarios/dialogs/onboarding/v2/onboarding-v2.vue` — orchestrator: step rail, Back/Next/Skip footer, direction transitions, `ownNav` steps (welcome, calibration render their own navigation).
@@ -143,7 +143,7 @@ The orchestrator's NOTICE comment is load-bearing: V2 previewing must never muta
 ## Verification
 
 - Typecheck: `pnpm -F @proj-anima/stage-ui typecheck` (covers orchestrator, gate, draft-store, steps).
-- Manual: launch onboarding on each platform mount (Electron window vs Dialog/Drawer); confirm Next disabled until `canProceed` true, skip appears only where `skipLabel` is set, refresh resumes from `onboarding/v2-state`+draft, `onboarding/completed`/`onboarding/skipped` are untouched until Step 7 finish or global skip, and no IndexedDB character-card writes happen on cancel.
+- Manual: launch onboarding on each platform mount (desktop window vs web dialog); confirm Next disabled until `canProceed` true, skip appears only where `skipLabel` is set, refresh resumes from `onboarding/v2-state`+draft, `onboarding/completed`/`onboarding/skipped` are untouched until Step 7 finish or global skip, and no IndexedDB character-card writes happen on cancel.
 
 ## Related Skills & References
 

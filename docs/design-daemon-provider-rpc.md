@@ -6,11 +6,11 @@
 
 ## Overview
 
-The daemon exposes provider configuration and user settings to Flutter, Godot, and Vue clients through a unified WebSocket RPC surface at port 6121. This absorbs provider registry/config/secret ownership and settings management from individual clients into the daemon, ensuring:
+The daemon exposes provider configuration and user settings to Flutter, the sole active renderer, over WS RPC; Vue/Electrobun are references and Godot is retired. This absorbs provider registry/config/secret ownership and settings management from individual clients into the daemon, ensuring:
 
 - **Single source of truth**: One authoritative store for providers and settings
 - **Secret discipline**: API keys never cross the wire in replies
-- **Client-agnostic**: Same RPC surface serves Flutter, Godot, Vue without per-client logic
+- **Client-agnostic**: Same RPC surface serves Flutter without per-client logic; historical reference clients are not obligations
 - **Fail-closed**: Unavailable store/vault returns sanitized errors (no path leak)
 
 ## RPC Actions
@@ -214,7 +214,7 @@ await client.rpc('settings.set', {
 });
 ```
 
-### Godot (C#)
+### Godot (C#) — historical/retired
 ```csharp
 var providers = await client.RpcAsync("providers.list", new { });
 var settings = await client.RpcAsync("settings.get", new { section = "chat" });
@@ -246,7 +246,7 @@ await client.rpc('settings.set', {
 ```
 ┌─────────────┐  WebSocket (port 6121)  ┌──────────────┐
 │   Flutter   │◀────────────────────────▶│              │
-│   Godot     │                            │   Daemon     │
+│   Godot (retired) │                            │   Daemon     │
 │   Vue       │◀────────────────────────▶│   Gateway    │
 └─────────────┘                            └──────┬───────┘
                                                   │

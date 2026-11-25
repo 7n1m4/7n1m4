@@ -4,7 +4,7 @@ description: >-
   Optimize/debug LLM prompt prefix caching: static/dynamic segment order, KV cache reuse, cache misses, token cost/latency across chat and automated loops. DeepSeek/OpenRouter/Gemini alignment; general prompt composition uses airi-prompt-builder-engine.
 ---
 
-Stable prefix first, volatile tail last. The whole point is layout geometry: keep the immutable system-prompt prefix ahead of volatile telemetry/history slices so providers re-use KV prefix cache instead of re-tokenizing on every automated sub-loop. Never cite `crates/` (legacy Tauri; current desktop is Electron `apps/stage-tamagotchi/`).
+Stable prefix first, volatile tail last. The whole point is layout geometry: keep the immutable system-prompt prefix ahead of volatile telemetry/history slices so providers re-use KV prefix cache instead of re-tokenizing on every automated sub-loop. Never cite `crates/` (legacy Tauri; current desktop is Electrobun/Hutch `apps/stage-tamagotchi/`).
 
 ## Key Files/Locations
 

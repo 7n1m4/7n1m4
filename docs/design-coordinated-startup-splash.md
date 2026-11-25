@@ -324,7 +324,7 @@ The core store (`packages/stage-ui/src/stores/startup-resources.ts`) is authored
 ### Phase 1: Shared Milestone Store & Invariants
 - [x] Create `packages/stage-ui/src/stores/startup-resources.ts` with registration, progression calculation, and skip/fail support.
 - [x] Author unit test suite `packages/stage-ui/src/stores/startup-resources.test.ts` verifying all state transitions, progress arithmetic, and error states.
-- [x] Add locale strings to `packages/i18n/src/locales/en/stage.yaml` and `zh-Hans/stage.yaml`.
+- [x] Add locale strings to `packages/i18n/src/locales/en/stage.yaml` and `ko/stage.yaml`.
 - [x] Run `node scripts/audit-test-catalog.mjs` to maintain 100% test catalog integrity.
 
 ### Phase 2: Main Process Splash Window & Actor Stage Manager

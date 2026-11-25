@@ -1,3 +1,4 @@
+// Structure, module seams and runtime flow: ./providers/README.md.
 import type {
   BracketAction,
   ModelInfo,

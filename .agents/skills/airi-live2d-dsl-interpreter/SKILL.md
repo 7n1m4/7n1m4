@@ -23,14 +23,14 @@ The DSL VM executes scripting instructions attached to Live2D character models:
 - `packages/stage-ui-live2d/src/components/scenes/live2d/` — Live2D stage manager and canvas renderer.
 
 ### Related Specs
-- `docs/design-live2d-dsl-interpreter-spec.md` — Formal specification document for the Live2D Scripting DSL instruction set, grammar, and VM heap architecture.
+- `packages/live2d-runtime/src/dsl/README.md` — DSL instruction set, grammar, and VM heap architecture.
 - `docs/handoff-live2d-dsl-phase2.md` — Phase 2 implementation handoff document detailing instruction dispatch and test cases.
-- `docs/design-live2d-multimoc-changecos.md` — Architectural specification for multi-moc3 costume switching (`change_cos`).
+- `packages/stage-ui-live2d/src/runtime/README.md` — Multi-moc3 costume switching (`change_cos`) runtime.
 
 ## 3. Core SOPs & Guidelines
 
 ### 1. Adding a New DSL Instruction
-1. Define the instruction syntax and opcode in `docs/design-live2d-dsl-interpreter-spec.md`.
+1. Define the instruction syntax and opcode in `packages/live2d-runtime/src/dsl/README.md`.
 2. Add the instruction parser handler inside `live2d/Model.vue` (`dispatchDsl`).
 3. Update the `VarFloats` state heap evaluator if the instruction mutates variables.
 
@@ -45,7 +45,7 @@ The DSL VM executes scripting instructions attached to Live2D character models:
 ## 5. Verification Workflows
 
 - **Typecheck**: `pnpm -F @proj-anima/stage-ui-live2d typecheck`
-- **Specification Check**: Verify instruction opcodes match `docs/design-live2d-dsl-interpreter-spec.md`.
+- **Specification Check**: Verify instruction opcodes match `packages/live2d-runtime/src/dsl/README.md` §3.
 
 ### Authoritative Design & Architecture Documents
 
@@ -59,4 +59,4 @@ The DSL VM executes scripting instructions attached to Live2D character models:
 
 ## Related Skills & References
 
-- **Key Documents**: [[design-live2d-dsl-interpreter-spec]], [[handoff-live2d-dsl-phase2]], [[design-live2d-multimoc-changecos]], [[design-live2d-dsl-test-cases]], [[design-live2d-change-cos-challenge]], [[research-live2d-special-sauce]], [[project-standalone-live2d-engine-plan]]
+- **Key Documents**: `packages/live2d-runtime/src/dsl/README.md`, `packages/stage-ui-live2d/src/runtime/README.md`

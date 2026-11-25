@@ -1,23 +1,16 @@
 ---
 name: airi-docs-site-maintenance
 description: >-
-  Maintain VitePress documentation site: shared sidebar, localized guides, Markdown frontmatter, asset resolution, public manual versus technical docs. Application translation keys use airi-i18n-localization.
+  Maintain the in-app Markdown viewer and shared sidebar: docs/content/en/**/*.md, Markdown frontmatter, asset resolution, public manual versus technical docs. Application translation keys use airi-i18n-localization.
 ---
 
 # AIRI Docs Site Maintenance
 
 ## Key Files/Locations
 
-- `docs/shared-sidebar.ts` — Canonical single-source-of-truth sidebar definition consumed by both the VitePress standalone site (`withBase('/en/docs/{link}')`) and the in-app documentation modal (relative links as-is).
-- `docs/.vitepress/config.ts` — Main VitePress configuration: multi-locale routing (`en`, `ja`, `zh-Hans`), Markdown plugins (UnoCSS, `@mdit/plugin-footnote`, `@mdit/plugin-tasklist`), navigation bars, and frontmatter asset resolvers.
-- `docs/content/en/` — English source documentation:
-  - `docs/overview/` — Introduction, versions, concept background.
-  - `docs/manual/` — End-user configuration guides (`config/`) and practical feature guides (`interacting.md`, `proactivity.md`, `vision.md`, `comfyui.md`, `memory.md`, `mcp-tools.md`, `custom-models.md`, `desktop-controls.md`).
-  - `docs/showcase/` — Visual feature galleries with `.avif` hero images.
-  - `docs/contributing/` — Community open-source setup guides and design system rules.
-  - `docs/chronicles/` — Historical release chronicles and fork feature status.
-  - `blog/` — DevLogs, DreamLogs, and seasonal community announcements.
-- `docs/content/ja/` & `docs/content/zh-Hans/` — Localized mirrors of public documentation.
+- `docs/content/en/**/*.md` — English source documentation rendered by the in-app viewer.
+- `docs/shared-sidebar.ts` — Canonical single-source-of-truth sidebar definition consumed by the in-app documentation viewer (relative links as-is).
+- `apps/stage-tamagotchi/src/renderer/pages/settings/docs/[...path].vue` — In-app Markdown viewer route.
 - `docs/*.md` (Root) — Technical developer documentation: internal RFCs, architectural deep dives, state machine specs, and maintainer checklists.
 
 ## Separation Contract: Technical vs. User-Facing Docs
@@ -31,7 +24,7 @@ description: >-
    ```yaml
    ---
    title: Page Title
-   description: Brief description for search engines and VitePress previews.
+   description: Brief description for the in-app Markdown viewer.
    ---
    ```
 2. **Asset Resolution Rules**:
@@ -41,18 +34,18 @@ description: >-
    - In blog frontmatter `preview-cover`, use `@assets('./assets/image.avif')` with existing files.
 3. **Sidebar Updates**:
    - Whenever adding or moving a page in `docs/content/`, update `docs/shared-sidebar.ts`.
-   - Never add dead links to `shared-sidebar.ts`—VitePress validation will fail the build.
+   - Never add dead links to `shared-sidebar.ts`—the in-app viewer resolves links at runtime.
 
 ## Common Pitfalls
 
 - **Broken Internal Links**: Relative markdown links must match actual files in `docs/content/`. If a document was moved to root `docs/`, link to the corresponding public manual guide or feature showcase instead.
-- **Translating Shared Sidebar**: `shared-sidebar.ts` contains `titleKey` properties for internationalization in the in-app viewer. Ensure section IDs and paths match expected locale structures.
+- **Shared Sidebar Navigation**: `shared-sidebar.ts` provides English-only viewer navigation. Ensure section IDs and paths match expected English document structures.
 - **Duplicate Architecture Files**: Do not duplicate internal design docs inside `docs/content/en/docs/advanced/`. Keep technical specs in root `docs/` and summarize user-facing functionality in `docs/manual/`.
 
 ## Verification
 
-- Validation command: `pnpm -F @proj-anima/docs build` (or `pnpm dev:docs` to preview locally).
-- Always verify that all cross-references in `docs/shared-sidebar.ts` resolve to existing markdown files.
+- Verify that all cross-references in `docs/shared-sidebar.ts` resolve to existing markdown files under `docs/content/en/`.
+- Verify the desktop docs viewer route `apps/stage-tamagotchi/src/renderer/pages/settings/docs/[...path].vue` renders the linked pages.
 
 ## Related Skills & References
 

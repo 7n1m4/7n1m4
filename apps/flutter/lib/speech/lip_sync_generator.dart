@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Bridges the local PCM tap to the existing `LipSyncRmsData` wire shape.
-// Flutter has no renderer (decision-client-local-tts-pcm.md §9.2), so this
-// generator exposes the RMS stream + event frames for consumers/tests rather
-// than pushing into a renderer.
+// bridges local PCM tap to LipSyncRmsData and feeds the Flutter renderer's
+// local lip-sync sink; frames are client-stamped and never daemon-published.
 
 import 'dart:async';
 

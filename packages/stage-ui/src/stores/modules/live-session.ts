@@ -40,6 +40,45 @@ import { useVisionStore } from './vision'
 
 export { type LatestTurnUsage, mapAiriToolToGemini, sanitizeTokenCount }
 
+/*
+ * Token usage metrics (source of truth)
+ *
+ * Persisted keys:
+ *  - `settings/gemini/voice-tokens` (live Bidi session usage)
+ *  - `settings/gemini/inference-tokens` (global lifetime inference, all providers)
+ *  - `settings/gemini/inference-prompt-tokens`
+ *  - `settings/gemini/inference-completion-tokens`
+ *  - `settings/gemini/grounding`
+ *  - `settings/gemini/output-mode`
+ *  - `airi:live-session:latest-turn-usage`
+ *  - `airi:usage-telemetry` BroadcastChannel
+ *
+ * NOTICE: the `gemini` namespace is historical — the counter aggregates all providers
+ * (OpenAI, Anthropic, …). The proposed rename to `settings/usage/global-tokens` /
+ * `settings/usage/live-tokens` is NOT applied. Read-migration snippet from the design doc:
+ *
+ * ```js
+ * // On app load
+ * if (localStorage.getItem('settings/gemini/inference-tokens')) {
+ *   const globalTokens = localStorage.getItem('settings/gemini/inference-tokens')
+ *   localStorage.setItem('settings/usage/global-tokens', globalTokens)
+ *   // Mark as migrated to avoid duplicate
+ *   localStorage.setItem('settings/gemini/_migrated', 'true')
+ * }
+ * ```
+ *
+ * `recordInferenceUsage()` (below) is the single writer and also records silent background
+ * turns (heartbeats/NO_REPLY) because those tokens are billed.
+ *
+ * No active UI renders the lifetime total today; the deprecated "Gemini Island"/"Control
+ * Island" components no longer exist.
+ *
+ * Display plan: chatbox toolbar "Lifetime" chip next to the "Session" context-width pill;
+ * Control Strip stats button with popover (global/live tokens, estimated cost, mini daily
+ * chart, reset action in the customizer). No Settings > Usage page in MVP.
+ *
+ * docs/design-token-usage-metrics.md is only an architecture pointer here.
+ */
 const MODEL = GEMINI_LIVE_MODEL
 const LIVE_WS_BASE = GEMINI_LIVE_WS_BASE
 

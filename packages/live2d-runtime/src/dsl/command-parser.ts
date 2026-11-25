@@ -104,7 +104,10 @@ function parseOne(statement: string): DslCommand {
   }
 }
 
-/** Split a command chain on `;` and parse each statement in order. */
+/**
+ * Split a command chain on `;` and parse each statement in order.
+ * Full grammar in `./README.md` §3.
+ */
 export function parseCommandChain(chain: string | undefined): DslCommand[] {
   if (!chain)
     return []

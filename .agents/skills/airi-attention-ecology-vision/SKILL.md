@@ -37,9 +37,9 @@ Promotions flow through two complementary pathways fed by the rolling visual obs
 - `packages/stage-ui/src/stores/modules/vision/orchestrator.ts` — `useVisionOrchestratorStore`. Salience gate triage (`processCapture`), sliding Chrono-Log ring buffer, entity enrichment via `useEntityLedgerStore`, attention guard worker bridge, and System-1 sentinel dispatch.
 - `packages/stage-ui/src/stores/modules/vision.ts` — `useVisionStore`. High-level vision store managing active VLM providers, prompt shims (direct vs. forward), display size caching (`getPrimaryDisplaySize`), and macOS permission wrappers (`checkPermissions`, `openPermissionSettings`).
 
-### Native Screen Capture (Electron Main Process & IPC)
-- `apps/stage-tamagotchi/src/main/services/electron/vision.ts` — Main-process `createVisionService`. Handles `visionCaptureScreen`, `visionCheckPermission`, and `visionGetPrimaryDisplaySize` Eventa handlers. Calls Electron `desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize })` and converts native bitmaps to base64 data URLs with memory telemetry probes.
-- `packages/electron-screen-capture/src/main/index.ts` & `src/main/utils.ts` — Native macOS screen capture permission checking (`hasScreenCapturePermission()`) and settings prompt invocation.
+### Native Screen Capture (Electrobun Main Process & IPC)
+- `apps/stage-tamagotchi/src/main/services/electron/vision.ts` — Main-process `createVisionService`. Handles `visionCaptureScreen`, `visionCheckPermission`, and `visionGetPrimaryDisplaySize` Eventa handlers. Display size comes from `Screen.getPrimaryDisplay()`; capture and permission raise `notImplemented(...)`.
+- `packages/electron-screen-capture/src/main/index.ts` & `src/main/utils.ts` — Native macOS screen capture permission checking (`hasScreenCapturePermission()`) and settings prompt invocation. Electron-only; not initialized by the Electrobun main process.
 
 ### Local WebGPU / WASM Inference Workers
 - `packages/stage-ui/src/workers/attention-guard/engine/vision.ts` — Stage 1 CLIP vision embedding (`Xenova/clip-vit-base-patch32`), cosine novelty scoring, and zero-shot classifier.
@@ -56,7 +56,7 @@ Promotions flow through two complementary pathways fed by the rolling visual obs
 
 ## 3. Diagnostic Console Hooks & Live Inspection
 
-When diagnosing screen-watching behavior inside Electron or Web DevTools (`Cmd+Opt+I` or `Ctrl+Shift+I`), use the built-in diagnostic hooks exposed on `window`:
+When diagnosing screen-watching behavior inside desktop or web DevTools (`Cmd+Opt+I` or `Ctrl+Shift+I`), use the built-in diagnostic hooks exposed on `window`:
 
 ```javascript
 // 1. Inspect live screen watcher state, counters, buffers, and last error
@@ -94,7 +94,7 @@ This runs `scripts/tests/attention-ecology-harness/live-desktop-dashboard.ts`, c
 
 | Failure Mode | Symptoms | Root Cause & Resolution |
 | :--- | :--- | :--- |
-| **macOS Permission Denied** | `lastError: "Screen capture permission denied."` or black / transparent thumbnails (`dataUrl < 1000 bytes`). | Electron lacks OS permission. Open **System Settings $\rightarrow$ Privacy & Security $\rightarrow$ Screen Recording**, toggle AIRI (or Electron) on, and restart the app. Verify via `visionStore.checkPermissions()`. |
+| **macOS Permission Denied** | `lastError: "Screen capture permission denied."` or black / transparent thumbnails (`dataUrl < 1000 bytes`). | Current macOS port gap for `systemPreferences.getMediaAccessStatus(screen)`. Open **System Settings $\rightarrow$ Privacy & Security $\rightarrow$ Screen Recording**, toggle AIRI (or Electron) on, and restart the app. Verify via `visionStore.checkPermissions()`. |
 | **Character Bedtime / Schedule Gate** | Logs show: `Skipped: Outside operating schedule ... character is asleep`. | `activeConfig.respectSchedule` is active and current time is outside `activeCard.extensions.airi.heartbeats.schedule` (`start`/`end`). Either adjust the operating schedule or toggle off "Respect operating schedule" in card settings. |
 | **AFK / Idle Safeguard** | Logs show: `Skipped: User is away / AFK (Xm Ys idle)`. | `pauseWhenAfk` is enabled and `proactivityStore.idleTimeSec >= afkThresholdMinutes * 60`. Move the mouse or adjust `afkThresholdMinutes` in the card editor. |
 | **Busy Pipe Mutex** | Logs show: `Skipped: Busy Pipe (user or character is speaking/typing)`. | Screen watcher defers captures while TTS speech is active (`chatOrchestrator.activeSpokenText`), the LLM is generating, the user is typing, or a Live API call is active. Observation items queue in `observationBuffer` until the pipe clears. |

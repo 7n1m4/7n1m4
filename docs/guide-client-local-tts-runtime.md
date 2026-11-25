@@ -1,19 +1,19 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Guide: client-local TTS runtime setup (Flutter / Godot)
+# Guide: client-local TTS runtime setup (Flutter only)
 
-Companion to [`decision-client-local-tts-pcm.md`](./decision-client-local-tts-pcm.md) (ratified Option B: on-device Piper-class TTS exposing PCM; Option C: real WAVE decode as fallback/test harness). This guide covers the **user-supplied binaries and models** the thin clients need. It does not claim full app-level runtime wiring or test results; check [`feature-parity-checklist.md`](./feature-parity-checklist.md) for status.
+Companion to [`decision-client-local-tts-pcm.md`](./decision-client-local-tts-pcm.md) (ratified Option B: on-device Piper-class TTS exposing PCM; Option C: real WAVE decode as fallback/test harness). This guide covers the **user-supplied binaries and models** the thin clients need. It does not claim full app-level runtime wiring or test results; check [`feature-parity-checklist.md`](./feature-parity-checklist.md) for status. Godot/C# TTS runtime is historical/retired and no longer actively configured.
 
 ## No binaries or models in the repository
 
-No proprietary binaries, TTS executables, ONNX models, voice assets, or generated audio blobs are committed to this repo. The clients reference locally installed/downloaded files. If an engine asset is missing, the engine fails loudly (`TtsEngineUnavailable` on Flutter; a configuration/process exception on Godot) — never substitute synthetic amplitudes or a fake PCM source. Option C fixtures are deterministic **real** WAVE files generated for tests, not TTS output.
+No proprietary binaries, TTS executables, ONNX models, voice assets, or generated audio blobs are committed to this repo. The clients reference locally installed/downloaded files. If an engine asset is missing, the engine fails loudly (`TtsEngineUnavailable` on Flutter; Godot/C# path is historical/retired) — never substitute synthetic amplitudes or a fake PCM source. Option C fixtures are deterministic **real** WAVE files generated for tests, not TTS output.
 
 ## Recognized engines
 
 | Client | Engine seam | What actually produces PCM | Status of runtime wiring |
 | --- | --- | --- | --- |
-| Flutter | `PiperTtsEngine` (`apps/flutter/lib/speech/piper_tts_engine.dart`) | Local `piper` CLI writes a WAVE file; `WavPcmSource` decodes it in-process | Engine seam only: the app does not select it, and Flutter has no renderer |
+| Flutter | `PiperTtsEngine` (`apps/flutter/lib/speech/piper_tts_engine.dart`) | Local `piper` CLI writes a WAVE file; `WavPcmSource` decodes it in-process | Engine seam only: the app does not select it yet |
 | Flutter | `SherpaTtsEngine` + `SherpaLoader` (`apps/flutter/lib/speech/sherpa_tts_engine.dart`) | `package:sherpa_onnx` `OfflineTts.generate()` returns real f32 samples | Adapter is optional; no `sherpa_onnx` dependency in `pubspec.yaml` and no app-level loader registration yet |
-| Godot | `PiperTtsEngine` (`godot/scripts/Audio/PiperTtsEngine.cs`) | Local `piper` CLI writes a WAVE file; `WavPcmReader` decodes it | Wired in `Main.cs` when `PIPER_MODEL` is set: pipeline → renderer + same-PCM playback |
+| Godot | `PiperTtsEngine` (`godot/scripts/Audio/PiperTtsEngine.cs`) | Local `piper` CLI writes a WAVE file; `WavPcmReader` decodes it | Historical/retired: no active config |
 | Both | `WavPcmSource` / `WavPcmReader` (Option C) | Decode a real WAVE asset/file | Available as deterministic test harness and explicit decoded-file fallback |
 
 ## Piper (both clients)
@@ -47,7 +47,7 @@ Versions checked when this guide was written (2026-11-24): upstream `rhasspy/pip
 
    Optional but recommended: save the resolved file digests (e.g. `sha256sum en_US-lessac-medium.onnx*`) alongside your deployment manifest. A direct smoke check with the installed binary, before involving either client, is `printf 'hello\n' | "$PIPER_PATH" --model "$PIPER_MODEL" --output_file /tmp/piper-smoke.wav`; verify the result is a real RIFF/WAVE file (`file /tmp/piper-smoke.wav`). This is a genuine engine synthesis check, not a fixture, and is **not** a claim that this project's client tests were run.
 
-   Note the CLI shape used by both seams: `piper --model <PIPER_MODEL> --output_file <temp.wav>` with the spoken text written to the process's stdin (both the Flutter and Godot engines do this). The downloaded release binary must accept that shape. The Godot engine exposes `sampleRate` (constructor override; default `DefaultSampleRate = 22050`) separately from the model's sidecar; set it to the actual voice sample rate when it differs (the Lessac medium example is 22050 Hz). Flutter derives sample rate from the decoded WAVE header.
+   Note the CLI shape used by both seams: `piper --model <PIPER_MODEL> --output_file <temp.wav>` with the spoken text written to the process's stdin (the Flutter engine does this; the Godot/C# engine was historical). The downloaded release binary must accept that shape. The Godot/C# engine (historical/retired) exposed `sampleRate` (constructor override; default `DefaultSampleRate = 22050`) separately from the model's sidecar; Flutter derives sample rate from the decoded WAVE header.
 
 3. Set environment variables before launching the client:
 
