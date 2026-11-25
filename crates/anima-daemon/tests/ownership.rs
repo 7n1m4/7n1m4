@@ -281,3 +281,32 @@ fn cards_settings_daemon_owned_round_trip() {
     let client_profile = tempdir().unwrap();
     assert!(!store_path(client_profile.path()).exists());
 }
+
+// Contract: `sessions.delete` is the daemon-owned delete path. The daemon is the
+// sole writer: the session row and its messages disappear together, a missing
+// session is an idempotent `false`, and the cached status counts follow the
+// delete so `core.status` cannot keep reporting a removed session.
+#[test]
+fn session_delete_is_daemon_owned_and_idempotent() {
+    let profile = tempdir().unwrap();
+    let svc = CoreService::open(Some(profile.path().to_path_buf()));
+    assert!(svc.available());
+    assert_eq!(svc.snapshot().session_count, 0);
+
+    svc.chat_send("del-own-1", "hello").unwrap();
+    assert_eq!(svc.chat_stream("del-own-1").unwrap().len(), 1);
+    // The cached counts are a startup snapshot (see `startup_counts_are_cheap_
+    // and_accurate`); the delete refreshes them, so the assertion is on the
+    // post-delete value only.
+
+    assert!(svc.session_delete("del-own-1").unwrap());
+    assert!(svc.chat_stream("del-own-1").unwrap().is_empty());
+    assert_eq!(svc.snapshot().session_count, 0);
+    assert_eq!(svc.snapshot().message_count, 0);
+
+    // Already gone: success with `false`, never an error.
+    assert!(!svc.session_delete("del-own-1").unwrap());
+
+    let client_profile = tempdir().unwrap();
+    assert!(!store_path(client_profile.path()).exists());
+}

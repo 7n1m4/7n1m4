@@ -19,11 +19,11 @@
 //! kill switch drops everything pre-audit, user flag wins over lockdown.
 
 mod audit;
-mod logging;
 mod control;
 mod core;
 mod events;
 mod gateway;
+mod logging;
 mod observe;
 mod redact;
 mod ring;
@@ -113,11 +113,19 @@ fn main() {
     }
 }
 
-fn acquire_instance_lock(dir: &std::path::Path) -> Result<anima_core::single_instance::LockGuard, ()> {
+fn acquire_instance_lock(
+    dir: &std::path::Path,
+) -> Result<anima_core::single_instance::LockGuard, ()> {
     match anima_core::single_instance::acquire(dir) {
         Ok(g) => Ok(g),
-        Err(anima_core::single_instance::SingleInstanceError::AlreadyRunning { pid, lock_path }) => {
-            eprintln!("airi-daemon: already running (pid {pid}) at {}", lock_path.display());
+        Err(anima_core::single_instance::SingleInstanceError::AlreadyRunning {
+            pid,
+            lock_path,
+        }) => {
+            eprintln!(
+                "airi-daemon: already running (pid {pid}) at {}",
+                lock_path.display()
+            );
             Err(())
         }
         Err(_) => {

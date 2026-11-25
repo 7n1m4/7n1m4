@@ -20,9 +20,9 @@ use anima_channel::wire::{
     CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload, EventSubscriptionReply,
     EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
     HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData, ProviderInfo, ProviderStatsData,
-    ProvidersListReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionImportReply,
-    SessionImportStatus, SettingsGetReply, SettingsSetReply, StatusChangedData, TokenDeltaData,
-    VaultStatsData, VaultStatusReply,
+    ProvidersListReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply,
+    SessionDeleteRequest, SessionImportReply, SessionImportStatus, SettingsGetReply,
+    SettingsSetReply, StatusChangedData, TokenDeltaData, VaultStatsData, VaultStatusReply,
 };
 
 fn fixtures_dir() -> PathBuf {
@@ -379,6 +379,16 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 content: "Hello, Anima!".into(),
                 gen_ui: false,
             })?,
+        ),
+        (
+            "sessions.delete.request",
+            serde_json::to_value(SessionDeleteRequest {
+                session_id: "sess-abc".into(),
+            })?,
+        ),
+        (
+            "sessions.delete.reply",
+            serde_json::to_value(SessionDeleteReply { deleted: true })?,
         ),
         (
             "sessions.import.reply",

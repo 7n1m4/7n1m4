@@ -241,6 +241,13 @@ mod tests {
     }
 
     #[test]
+    fn new_card_id_is_unique_in_a_tight_loop() {
+        use std::collections::HashSet;
+        let ids: HashSet<String> = (0..20_000).map(|_| new_card_id()).collect();
+        assert_eq!(ids.len(), 20_000, "new_card_id() produced duplicate ids");
+    }
+
+    #[test]
     fn appcore_chat_shares_provider_table() {
         let dir = tempdir().unwrap();
         let db = anima_store::Database::open(&dir.path().join("test.sqlite")).unwrap();

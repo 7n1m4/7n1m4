@@ -10,12 +10,72 @@ export type AuthenticatedData = {
 	authenticated: boolean,
 };
 
+/**  Reply of `cards.create`. */
+export type CardCreateReply = {
+	/**  Created card id. */
+	id: string,
+	/**  Created card name. */
+	name: string,
+};
+
+/**  Request of `cards.create`: create a new card from a document. */
+export type CardCreateRequest = {
+	/**  Card name. */
+	name: string,
+	/**  Card document. */
+	document: unknown,
+};
+
+/**  Reply of `cards.delete`. */
+export type CardDeleteReply = {
+	/**  Whether the deletion succeeded. */
+	deleted: boolean,
+};
+
+/**  Request of `cards.delete`. */
+export type CardDeleteRequest = {
+	/**  Card id. */
+	id: string,
+};
+
+/**  Reply of `cards.get`: full-fidelity card document (opaque JSON). */
+export type CardGetReply = {
+	/**  Card document, if found. */
+	card: unknown,
+};
+
+/**  Reply of `cards.import`: id, name, whether renamed for uniqueness. */
+export type CardImportReply = {
+	/**  Imported card id. */
+	id: string,
+	/**  Imported card name. */
+	name: string,
+	/**  Whether the name was renamed to avoid a collision. */
+	renamed: boolean,
+};
+
+/**  Request of `cards.import`: import a card from JSON or base64 PNG. */
+export type CardImportRequest = {
+	/**  Card document (optional when importing from PNG). */
+	card: unknown,
+	/**  Base64-encoded PNG with embedded card (optional). */
+	pngBase64: string | null,
+};
+
 /**  A minimal character-card reference surfaced to thin clients. */
 export type CardInfo = {
 	/**  Card id. */
 	id: string,
 	/**  Card name. */
 	name: string,
+};
+
+/**  Reply of `cards.list`: full list of available cards (id + name). */
+export type CardListReply = {
+	/**  Cards available locally. */
+	cards: CardInfo[],
+	/**  Whether the list was truncated. */
+	truncated: boolean,
 };
 
 /**
@@ -46,6 +106,22 @@ export type CardMetadataSetRequest = {
 	liked: boolean,
 	/**  Desired bookmarked state. */
 	bookmarked: boolean,
+};
+
+/**  Reply of `cards.update`. */
+export type CardUpdateReply = {
+	/**  Whether the update succeeded. */
+	updated: boolean,
+};
+
+/**  Request of `cards.update`: update an existing card. */
+export type CardUpdateRequest = {
+	/**  Card id. */
+	id: string,
+	/**  New name (optional). */
+	name: string | null,
+	/**  New document. */
+	document: unknown,
 };
 
 /**  The persisted channel-server configuration. */
@@ -544,6 +620,18 @@ export type RuntimeStatusReply = {
 	uptimeSeconds: number,
 	/**  Protocol identifier ([`crate::dispatch::PROTOCOL`]). */
 	protocol: string,
+};
+
+/**  Reply payload for `sessions.delete`. */
+export type SessionDeleteReply = {
+	/**  Whether the session was deleted. */
+	deleted: boolean,
+};
+
+/**  Request payload for `sessions.delete`. */
+export type SessionDeleteRequest = {
+	/**  Session id to delete. */
+	sessionId: string,
 };
 
 /**  Reply payload for `sessions.export`. */

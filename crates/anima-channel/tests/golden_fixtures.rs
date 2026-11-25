@@ -20,8 +20,8 @@ mod golden_fixtures {
         CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest, CoreStatusReply,
         EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply,
         GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply, RpcErrorObject,
-        RuntimePingReply, RuntimeStatusReply, SessionImportReply, SettingsGetReply,
-        SettingsSetReply, VaultStatusReply,
+        RuntimePingReply, RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest,
+        SessionImportReply, SettingsGetReply, SettingsSetReply, VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -261,6 +261,50 @@ mod golden_fixtures {
             value.get("session_id").is_none(),
             "chat.send.request: snake_case `session_id` is not the wire shape"
         );
+    }
+
+    // Contract: `sessions.delete` is a write: the daemon refuses it until the
+    // operator opts in, and an unknown verb must never be reported as a
+    // successful delete.
+    #[test]
+    fn sessions_delete_is_a_registered_write_verb() {
+        let source = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../anima-daemon/src/gateway.rs"),
+        )
+        .expect("daemon gateway source is present in the workspace");
+        assert!(
+            source.contains("\"sessions.delete\".to_string()"),
+            "sessions.delete must stay registered"
+        );
+        let start = source
+            .find("\"sessions.delete\".to_string()")
+            .expect("registration present");
+        // The verb is wrapped in `gated(config_path, hostname, …)`, which is the
+        // fail-closed `allowActions` check. The window stops at the next verb
+        // so a neighbouring `gated` cannot satisfy the assertion.
+        let window = &source[start..start + 300];
+        assert!(
+            window.contains("gated("),
+            "sessions.delete must be wrapped in the allowActions gate"
+        );
+    }
+
+    #[test]
+    fn session_delete_fixtures_lock_camel_case_session_id() {
+        let request = load_json("sessions.delete.request");
+        round_trip::<SessionDeleteRequest>("sessions.delete.request", &request);
+        assert!(
+            request.get("sessionId").is_some(),
+            "sessions.delete.request: camelCase `sessionId` must cross the wire"
+        );
+        assert!(
+            request.get("session_id").is_none(),
+            "sessions.delete.request: snake_case `session_id` is not the wire shape"
+        );
+
+        let reply = load_json("sessions.delete.reply");
+        round_trip::<SessionDeleteReply>("sessions.delete.reply", &reply);
+        assert_eq!(reply["deleted"], true);
     }
 
     #[test]
