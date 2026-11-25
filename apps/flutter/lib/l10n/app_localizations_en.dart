@@ -24,6 +24,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navAbout => 'About';
 
   @override
+  String get navStage => 'Stage';
+
+  @override
   String get statusGatewayHost => 'Gateway host';
 
   @override

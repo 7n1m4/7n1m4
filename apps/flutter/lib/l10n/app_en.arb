@@ -5,6 +5,7 @@
   "navSettings": "Settings",
   "navConnections": "Connections",
   "navAbout": "About",
+  "navStage": "Stage",
   "statusGatewayHost": "Gateway host",
   "statusAttempt": "Attempt",
   "connectionHost": "Host",

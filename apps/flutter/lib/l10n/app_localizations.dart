@@ -124,6 +124,12 @@ abstract class AppLocalizations {
   /// **'About'**
   String get navAbout;
 
+  /// No description provided for @navStage.
+  ///
+  /// In en, this message translates to:
+  /// **'Stage'**
+  String get navStage;
+
   /// No description provided for @statusGatewayHost.
   ///
   /// In en, this message translates to:

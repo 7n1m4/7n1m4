@@ -9,9 +9,10 @@ import '../features/chat/chat_screen.dart';
 import '../features/connections/connections_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/stage/stage_screen.dart';
 import '../ui/status_bits.dart';
 
-/// Thin navigation shell: five destinations, no business logic.
+/// Thin navigation shell: six destinations, no business logic.
 /// An adaptive NavigationRail for wide/desktop windows is deferred.
 class NavigationShell extends StatefulWidget {
   const NavigationShell({super.key, required this.client});
@@ -33,6 +34,7 @@ class _NavigationShellState extends State<NavigationShell> {
       SettingsScreen(client: widget.client, onOpenConnections: () => setState(() => _index = 3)),
       ConnectionsScreen(client: widget.client),
       const AboutScreen(),
+      StageScreen(client: widget.client),
     ];
 
     return Scaffold(
@@ -74,6 +76,11 @@ class _NavigationShellState extends State<NavigationShell> {
             icon: const Icon(Icons.info_outline),
             selectedIcon: const Icon(Icons.info),
             label: AppLocalizations.of(context)!.navAbout,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.landscape_outlined),
+            selectedIcon: const Icon(Icons.landscape),
+            label: AppLocalizations.of(context)!.navStage,
           ),
         ],
       ),
