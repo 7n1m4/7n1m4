@@ -4,7 +4,7 @@
 //! AIRI SQLite persistence layer.
 //!
 //! `Mutex<Connection>` wrapper around `rusqlite` with WAL mode, migrations via
-//! `PRAGMA user_version`, and typed repositories for settings, providers,
+//! `PRAGMA user_version`, and typed repositories for settings, providers, cards,
 //! sessions, messages, daily summaries, and the append-only journal.
 
 use std::path::Path;
@@ -22,7 +22,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// v4: wave ④ (p9-data-vault) — `scrub_runs` optimization log.
 /// v5: drop day-keyed summary embeddings (collided across summaries per day).
 /// v6: local card metadata (liked/bookmarked flags owned by the daemon).
-const SCHEMA_VERSION: i32 = 6;
+/// v7: character card documents (`cards`).
+const SCHEMA_VERSION: i32 = 7;
 /// Application data directory name.
 const APP_DIR_NAME: &str = "airi-slint";
 /// Database file name.
@@ -272,6 +273,23 @@ impl Database {
                     }
                 }
             }
+        }
+        if current < 7 {
+            // Cards authored locally in the daemon. The document column stores
+            // the AiriCard JSON verbatim for full fidelity (so nothing is lost
+            // on round-trip), while `name` is a denormalized copy for listing.
+            tx.execute_batch(
+                r#"
+                create table if not exists cards (
+                    id text primary key,
+                    name text not null,
+                    document text not null,
+                    created_at integer not null,
+                    updated_at integer not null
+                );
+                create index if not exists idx_cards_updated_at on cards(updated_at);
+                "#,
+            )?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -1756,7 +1774,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_database_is_schema_v6_with_memory_and_scrub_tables() {
+    fn fresh_database_is_schema_v7_with_memory_and_scrub_tables() {
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("fresh.sqlite");
         let db = Database::open(&path).expect("open db");
@@ -1764,7 +1782,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
 
         let summaries = SummaryRepo::new(db.clone());
         summaries
@@ -1812,7 +1830,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
 
         // v1 data survived the upgrade.
         let session = SessionRepo::new(db.clone());
@@ -1842,7 +1860,7 @@ mod tests {
         let version: i32 = db
             .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
             .expect("read user_version");
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let entries = JournalRepo::new(db).list_recent(10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "persisted");
@@ -2026,7 +2044,7 @@ mod tests {
             let version: i32 = db
                 .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
                 .expect("read user_version");
-            assert_eq!(version, 6);
+            assert_eq!(version, 7);
             let table_count: i64 = db
                 .with_connection(|c| {
                     Ok(c.query_row(
@@ -2381,6 +2399,131 @@ mod tests {
         assert!(!metadata.liked);
         assert!(metadata.bookmarked);
     }
+
+    #[test]
+    fn card_repo_round_trips_document_verbatim() {
+        let db = test_db();
+        let repo = CardRepo::new(db.clone());
+        let doc = r#"{"name":"Lain","extensions":{"airi":{"modules":{"memory":true}},"unknown":"x"},"unknownTopLevel":42}"#;
+        let card = repo.insert("c1", doc, "Lain").unwrap();
+        let got = repo.get("c1").unwrap().unwrap();
+        assert_eq!(got.id, "c1");
+        assert_eq!(got.name, "Lain");
+        assert_eq!(got.document, doc);
+        assert_eq!(got.created_at, card.created_at);
+        assert_eq!(got.updated_at, card.updated_at);
+        let recent = repo.list_recent(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].document, doc);
+    }
+
+    #[test]
+    fn card_repo_list_recent_orders_newest_first_and_honours_limit() {
+        let db = test_db();
+        let repo = CardRepo::new(db);
+        for i in 1..=3 {
+            repo.insert(&format!("c{i}"), &format!("doc {i}"), &format!("Card {i}"))
+                .unwrap();
+        }
+        let recent = repo.list_recent(2).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "c3");
+        assert_eq!(recent[1].id, "c2");
+        assert!(repo.list_recent(0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn card_repo_unique_name_appends_incrementing_suffix() {
+        let db = test_db();
+        let repo = CardRepo::new(db);
+        assert_eq!(repo.unique_name("Lain").unwrap(), "Lain");
+        assert!(!repo.name_exists("Lain").unwrap());
+        repo.insert("a", "{}", "Lain").unwrap();
+        repo.insert("b", "{}", "Lain (2)").unwrap();
+        assert!(repo.name_exists("Lain").unwrap());
+        assert!(repo.name_exists("Lain (2)").unwrap());
+        assert_eq!(repo.unique_name("Lain").unwrap(), "Lain (3)");
+    }
+
+    #[test]
+    fn card_repo_update_replaces_document_and_stamps_now() {
+        let db = test_db();
+        let repo = CardRepo::new(db);
+        let card = repo.insert("c1", "old doc", "Old").unwrap();
+        let new_doc = "new doc";
+        assert!(repo.update("c1", new_doc, "New").unwrap());
+        let got = repo.get("c1").unwrap().unwrap();
+        assert_eq!(got.document, new_doc);
+        assert_eq!(got.name, "New");
+        assert!(got.updated_at >= got.created_at);
+        assert!(got.updated_at >= card.updated_at);
+        assert!(!repo.update("missing", "x", "X").unwrap());
+    }
+
+    #[test]
+    fn card_repo_delete_is_idempotent() {
+        let db = test_db();
+        let repo = CardRepo::new(db);
+        repo.insert("c1", "doc", "Card").unwrap();
+        assert!(repo.delete("c1").unwrap());
+        assert!(!repo.delete("c1").unwrap());
+        assert!(repo.get("c1").unwrap().is_none());
+    }
+
+    #[test]
+    fn migration_from_v6_adds_cards_and_keeps_metadata() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("v6.sqlite");
+        {
+            let conn = rusqlite::Connection::open(&path).expect("open raw conn");
+            conn.execute_batch(
+                "create table card_metadata (
+                    card_id text primary key,
+                    liked integer not null default 0,
+                    bookmarked integer not null default 0,
+                    updated_at integer not null
+                );
+                insert into card_metadata (card_id, liked, bookmarked, updated_at) values ('c1', 1, 0, 5);",
+            )
+            .expect("seed v6");
+            conn.pragma_update(None, "user_version", 6_i32)
+                .expect("set v6");
+        }
+        let db = Database::open(&path).expect("reopen and migrate");
+        let version: i32 = db
+            .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
+            .expect("read user_version");
+        assert_eq!(version, 7);
+        let exists: i64 = db
+            .with_connection(|c| {
+                Ok(c.query_row(
+                    "select count(*) from sqlite_master where type='table' and name='cards'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .expect("inspect");
+        assert_eq!(exists, 1);
+        assert!(CardRepo::new(db.clone()).list_recent(10).unwrap().is_empty());
+        assert_eq!(CardMetadataRepo::new(db).get("c1").unwrap().liked, true);
+    }
+
+    #[test]
+    fn cards_table_is_created_only_once_and_reopen_is_idempotent() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("reopen-cards.sqlite");
+        let db = Database::open(&path).expect("open db");
+        CardRepo::new(db.clone())
+            .insert("c1", "doc", "Card")
+            .unwrap();
+        drop(db);
+        let db = Database::open(&path).expect("reopen db");
+        let version: i32 = db
+            .with_connection(|c| Ok(c.query_row("PRAGMA user_version", [], |row| row.get(0))?))
+            .expect("read user_version");
+        assert_eq!(version, 7);
+        assert_eq!(CardRepo::new(db).get("c1").unwrap().unwrap().name, "Card");
+    }
 }
 
 // ============================================================================
@@ -2546,4 +2689,158 @@ impl CardMetadataRepo {
         );
         Ok(())
     }
+}
+
+// ============================================================================
+// Card documents (migration v7)
+// ============================================================================
+
+/// A locally authored character card document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredCard {
+    /// Card id.
+    pub id: String,
+    /// Denormalized card name for listing.
+    pub name: String,
+    /// Verbatim AiriCard JSON text.
+    pub document: String,
+    /// Created timestamp (ms).
+    pub created_at: i64,
+    /// Updated timestamp (ms).
+    pub updated_at: i64,
+}
+
+/// Card repository.
+#[derive(Clone)]
+pub struct CardRepo {
+    db: Database,
+}
+
+impl CardRepo {
+    /// Create card repository.
+    pub fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    /// List most recent cards by updated_at.
+    pub fn list_recent(&self, limit: usize) -> Result<Vec<StoredCard>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let mut stmt = conn.prepare(
+            "select id, name, document, created_at, updated_at from cards order by updated_at desc, rowid desc limit ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(CardRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                document: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        rows.map(|r| r.map_err(Into::into).and_then(row_to_card))
+            .collect()
+    }
+
+    /// Get a card by id.
+    pub fn get(&self, id: &str) -> Result<Option<StoredCard>> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let row = conn
+            .query_row(
+                "select id, name, document, created_at, updated_at from cards where id = ?1",
+                params![id],
+                |row| {
+                    Ok(CardRow {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        document: row.get(2)?,
+                        created_at: row.get(3)?,
+                        updated_at: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+        row.map(row_to_card).transpose()
+    }
+
+    /// Insert a card document under a caller-minted id (`id` must be unique; a duplicate is a loud insert error).
+    pub fn insert(&self, id: &str, document: &str, name: &str) -> Result<StoredCard> {
+        let ts = now_ms();
+        let card = StoredCard {
+            id: id.to_string(),
+            name: name.to_string(),
+            document: document.to_string(),
+            created_at: ts,
+            updated_at: ts,
+        };
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "insert into cards (id, name, document, created_at, updated_at) values (?1, ?2, ?3, ?4, ?5)",
+            params![card.id, card.name, card.document, card.created_at, card.updated_at],
+        )?;
+        Ok(card)
+    }
+
+    /// Replace a card's document and denormalized name, stamped with now.
+    pub fn update(&self, id: &str, document: &str, name: &str) -> Result<bool> {
+        let ts = now_ms();
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let n = conn.execute(
+            "update cards set name = ?1, document = ?2, updated_at = ?3 where id = ?4",
+            params![name, document, ts, id],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Delete a card.
+    pub fn delete(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let n = conn.execute("delete from cards where id = ?1", params![id])?;
+        conn.execute("delete from card_metadata where card_id = ?1", params![id])?;
+        Ok(n > 0)
+    }
+
+    /// Whether a card with the given name already exists.
+    pub fn name_exists(&self, name: &str) -> Result<bool> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let n: i64 = conn.query_row(
+            "select count(*) from cards where name = ?1",
+            params![name],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Produce a unique name, appending a suffix when needed.
+    pub fn unique_name(&self, name: &str) -> Result<String> {
+        if !self.name_exists(name)? {
+            return Ok(name.to_string());
+        }
+        let mut i = 2;
+        loop {
+            let candidate = format!("{name} ({i})");
+            if !self.name_exists(&candidate)? {
+                return Ok(candidate);
+            }
+            i += 1;
+        }
+    }
+}
+
+struct CardRow {
+    id: String,
+    name: String,
+    document: String,
+    created_at: i64,
+    updated_at: i64,
+}
+
+fn row_to_card(row: CardRow) -> Result<StoredCard> {
+    Ok(StoredCard {
+        id: row.id,
+        name: row.name,
+        document: row.document,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
 }

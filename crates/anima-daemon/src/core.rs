@@ -5,6 +5,13 @@
 //! This is the ONLY place the daemon touches core state. It opens the
 //! application store using the same profile/identity rules Slint uses today
 //! and fails closed on open error: no empty/temp/fallback database.
+//!
+//! ## Single-writer invariant
+//! `CoreService::open` opens the profile's `airi.sqlite` once for the daemon;
+//! client profiles stay separate and never open the daemon store. A failed
+//! open yields unavailable with no empty/temp/fallback database; `status_reply`
+//! exposes only secret-free coarse health, and
+//! `crates/anima-daemon/tests/ownership.rs` covers the matrix.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -598,7 +605,8 @@ impl CoreService {
         let svc = self
             .chat_service()
             .ok_or_else(|| "store unavailable".to_string())?;
-        chat_runtime().block_on(svc.stop(session_id.to_string()))
+        chat_runtime()
+            .block_on(svc.stop(session_id.to_string()))
             .map_err(|e| e.to_string())
     }
 
@@ -610,6 +618,36 @@ impl CoreService {
     pub fn chat_cancel(&self, session_id: &str) -> bool {
         self.chat_stop(session_id).unwrap_or(false)
     }
+
+    /// Delete a session and its messages through the daemon-owned store.
+    ///
+    /// The daemon is the only writer: thin clients never touch SQLite. Returns
+    /// `true` when the session existed; `false` is a success, not an error, so
+    /// a client can treat "already gone" as an idempotent delete. The cached
+    /// status counts are refreshed on success so `core.status` does not keep
+    /// reporting a deleted session.
+    pub fn session_delete(&self, session_id: &str) -> Result<bool, String> {
+        let (svc, db) = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            let core = guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?;
+            (core.chat.clone(), core.db.clone())
+        };
+        let deleted = chat_runtime()
+            .block_on(svc.delete_session(session_id.to_string()))
+            .map_err(|e| e.to_string())?;
+        if deleted {
+            if let Ok((sessions, messages)) = Self::quick_counts(&db) {
+                let mut guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+                guard.session_count = sessions;
+                guard.message_count = messages;
+            }
+        }
+        Ok(deleted)
+    }
+
     /// Daemon-owned short-term memory (STMM) service, sharing the store and
     /// provider table. Single writer.
     pub fn stmm_service(&self) -> Option<anima_core::memory::ShortTermMemoryService> {
@@ -759,9 +797,7 @@ impl CoreService {
                 .db
                 .clone()
         };
-        match anima_core::sessions::export_bounded(&db, session_id)
-            .map_err(|e| e.to_string())?
-        {
+        match anima_core::sessions::export_bounded(&db, session_id).map_err(|e| e.to_string())? {
             anima_core::sessions::ExportOutcome::Complete(jsonl) => Ok(Some(jsonl)),
             anima_core::sessions::ExportOutcome::TooLarge { .. } => Ok(None),
         }
@@ -799,6 +835,202 @@ impl CoreService {
             },
             revision: outcome.revision,
         })
+    }
+
+    /// Daemon-owned card repository handle.
+    ///
+    /// Clones the `Database` out of the mutex and never holds `inner` across
+    /// store I/O, mirroring [`Self::card_metadata`].
+    fn card_repo(&self) -> Result<anima_store::CardRepo, String> {
+        let db = {
+            let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+            guard
+                .core
+                .as_ref()
+                .ok_or_else(|| "store unavailable".to_string())?
+                .db
+                .clone()
+        };
+        Ok(anima_store::CardRepo::new(db))
+    }
+
+    /// List cards (id + name), newest first, capped at `limit`.
+    pub fn card_list(&self, limit: usize) -> Result<Vec<anima_channel::wire::CardInfo>, String> {
+        let repo = self.card_repo()?;
+        let cards = repo
+            .list_recent(limit)
+            .map_err(|_| "store query failed".to_string())?;
+        Ok(cards
+            .into_iter()
+            .map(|c| anima_channel::wire::CardInfo {
+                id: c.id,
+                name: c.name,
+            })
+            .collect())
+    }
+
+    /// Get one card document verbatim; `Ok(None)` when the id is unknown.
+    ///
+    /// The stored text is returned as-is: no decode/re-encode round trip, so
+    /// unknown and extension fields survive; object key order is not guaranteed (serde_json Value).
+    pub fn card_get(&self, id: &str) -> Result<Option<serde_json::Value>, String> {
+        let id = normalized_card_id(id)?;
+        let repo = self.card_repo()?;
+        let card = repo
+            .get(id)
+            .map_err(|_| "store query failed".to_string())?;
+        card.map(|c| {
+            serde_json::from_str(&c.document)
+                .map_err(|_| "stored card document is not valid JSON".to_string())
+        })
+        .transpose()
+    }
+
+    /// Create a card from a full-fidelity document.
+    ///
+    /// `req.name` is the authoritative listing name; the document is stored
+    /// as JSON text; unknown and extension fields are preserved (key order is not guaranteed).
+    pub fn card_create(
+        &self,
+        req: &anima_channel::wire::CardCreateRequest,
+    ) -> Result<anima_channel::wire::CardCreateReply, String> {
+        let name = req.name.trim();
+        if name.is_empty() {
+            return Err("missing name".to_string());
+        }
+        let document = serde_json::to_string(&req.document)
+            .map_err(|_| "serialize failed".to_string())?;
+        let repo = self.card_repo()?;
+        let card = repo
+            .insert(&anima_core::new_card_id(), &document, name)
+            .map_err(|_| "store write failed".to_string())?;
+        Ok(anima_channel::wire::CardCreateReply {
+            id: card.id,
+            name: card.name,
+        })
+    }
+
+    /// Import a card from a JSON document or a base64-encoded PNG.
+    ///
+    /// Exactly one source is required. A name collision is resolved with the
+    /// TS-compatible ` (2)`, ` (3)`, … suffix and the stored document's name is
+    /// rewritten to match, so export → import round-trips.
+    pub fn card_import(
+        &self,
+        req: &anima_channel::wire::CardImportRequest,
+    ) -> Result<anima_channel::wire::CardImportReply, String> {
+        use base64::Engine;
+        let (document, name) = match (&req.card, &req.png_base64) {
+            (Some(card), None) => {
+                let name = Self::card_name_from_document(card)?;
+                (card.clone(), name)
+            }
+            (None, Some(png)) => {
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(png)
+                    .map_err(|_| "invalid pngBase64".to_string())?;
+                let card = anima_core::cards::extract_card_from_png(&bytes)
+                    .map_err(|_| "invalid pngBase64".to_string())?;
+                let json = anima_core::cards::card_to_json_bytes(&card)
+                    .map_err(|_| "invalid pngBase64".to_string())?;
+                let value: serde_json::Value =
+                    serde_json::from_slice(&json).map_err(|_| "invalid pngBase64".to_string())?;
+                let name = card.name().to_string();
+                (value, name)
+            }
+            (Some(_), Some(_)) => {
+                return Err("specify either card or pngBase64, not both".to_string())
+            }
+            (None, None) => return Err("missing card or pngBase64".to_string()),
+        };
+
+        let repo = self.card_repo()?;
+        let unique = repo
+            .unique_name(&name)
+            .map_err(|_| "store query failed".to_string())?;
+        let renamed = unique != name;
+        let document = if renamed {
+            Self::rewrite_document_name(&document, &unique)?
+        } else {
+            document
+        };
+        let document = serde_json::to_string(&document)
+            .map_err(|_| "serialize failed".to_string())?;
+        let card = repo
+            .insert(&anima_core::new_card_id(), &document, &unique)
+            .map_err(|_| "store write failed".to_string())?;
+        Ok(anima_channel::wire::CardImportReply {
+            id: card.id,
+            name: card.name,
+            renamed,
+        })
+    }
+
+    /// Replace a card's document (and optionally its name) wholesale.
+    ///
+    /// A missing id is an error, not a silent success: the client asked to
+    /// change a card it can see. The document is stored verbatim.
+    pub fn card_update(
+        &self,
+        req: &anima_channel::wire::CardUpdateRequest,
+    ) -> Result<anima_channel::wire::CardUpdateReply, String> {
+        let id = normalized_card_id(&req.id)?;
+        let repo = self.card_repo()?;
+        let existing = repo
+            .get(id)
+            .map_err(|_| "store query failed".to_string())?
+            .ok_or_else(|| "card not found".to_string())?;
+        let name = match req.name.as_deref().map(str::trim) {
+            Some("") | None => existing.name,
+            Some(name) => name.to_string(),
+        };
+        let document = serde_json::to_string(&req.document)
+            .map_err(|_| "serialize failed".to_string())?;
+        let updated = repo
+            .update(id, &document, &name)
+            .map_err(|_| "store write failed".to_string())?;
+        Ok(anima_channel::wire::CardUpdateReply { updated })
+    }
+
+    /// Delete a card. Idempotent: `deleted: false` means it was already gone.
+    pub fn card_delete(
+        &self,
+        req: &anima_channel::wire::CardDeleteRequest,
+    ) -> Result<anima_channel::wire::CardDeleteReply, String> {
+        let id = normalized_card_id(&req.id)?;
+        let repo = self.card_repo()?;
+        let deleted = repo
+            .delete(id)
+            .map_err(|_| "store write failed".to_string())?;
+        Ok(anima_channel::wire::CardDeleteReply { deleted })
+    }
+
+    /// Card name of a card document, via the shared CC v2/v3 parser.
+    fn card_name_from_document(document: &serde_json::Value) -> Result<String, String> {
+        let bytes = serde_json::to_vec(document).map_err(|_| "serialize failed".to_string())?;
+        let card = anima_core::cards::parse_card_json(&bytes)
+            .map_err(|_| "invalid card document".to_string())?;
+        Ok(card.name().to_string())
+    }
+
+    /// Rewrite a document's name in place, preserving every other field.
+    ///
+    /// Handles both the spec-wrapped form (`data.name`) and the flat legacy
+    /// form (top-level `name`).
+    fn rewrite_document_name(
+        document: &serde_json::Value,
+        name: &str,
+    ) -> Result<serde_json::Value, String> {
+        let mut doc = document.clone();
+        let value = serde_json::Value::String(name.to_string());
+        if let Some(data) = doc.get_mut("data").and_then(|v| v.as_object_mut()) {
+            data.insert("name".to_string(), value);
+        } else if let Some(obj) = doc.as_object_mut() {
+            obj.insert("name".to_string(), value);
+        } else {
+            return Err("invalid card document".to_string());
+        }
+        Ok(doc)
     }
 }
 
@@ -1076,5 +1308,244 @@ mod tests {
             stored.config["api_key"], "MANAGED-KEY",
             "false preserves default behavior"
         );
+    }
+
+    fn card_document() -> serde_json::Value {
+        serde_json::json!({
+            "spec": "chara_card_v2",
+            "data": {
+                "name": "Lain",
+                "description": "wired",
+                "extensions": { "airi": { "cognition": { "enabled": true } } },
+                "x_vendor_probe": { "nested": [1, 2, 3] }
+            }
+        })
+    }
+
+    #[test]
+    fn card_create_get_list_round_trip_full_fidelity() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let created = svc
+            .card_create(&anima_channel::wire::CardCreateRequest {
+                name: "Lain".to_string(),
+                document: card_document(),
+            })
+            .unwrap();
+        assert_eq!(created.name, "Lain");
+
+        let got = svc.card_get(&created.id).unwrap().unwrap();
+        assert_eq!(got, card_document());
+        assert_eq!(got["data"]["x_vendor_probe"]["nested"][2], 3);
+
+        let listed = svc.card_list(50).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, created.id);
+        assert_eq!(listed[0].name, "Lain");
+    }
+
+    #[test]
+    fn card_get_unknown_id_is_none_and_blank_id_is_rejected() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        assert!(svc.card_get("nope").unwrap().is_none());
+        assert_eq!(svc.card_get("   ").unwrap_err(), "missing id");
+    }
+
+    #[test]
+    fn card_list_honours_limit() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        for i in 0..3 {
+            svc.card_create(&anima_channel::wire::CardCreateRequest {
+                name: format!("Card {i}"),
+                document: serde_json::json!({ "name": format!("Card {i}") }),
+            })
+            .unwrap();
+        }
+        assert_eq!(svc.card_list(2).unwrap().len(), 2);
+        assert_eq!(svc.card_list(0).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn card_create_rejects_blank_name() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let err = svc
+            .card_create(&anima_channel::wire::CardCreateRequest {
+                name: "   ".to_string(),
+                document: card_document(),
+            })
+            .unwrap_err();
+        assert_eq!(err, "missing name");
+    }
+
+    #[test]
+    fn card_import_renames_on_collision_and_rewrites_document_name() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let req = anima_channel::wire::CardImportRequest {
+            card: Some(card_document()),
+            png_base64: None,
+        };
+        let first = svc.card_import(&req).unwrap();
+        assert_eq!(first.name, "Lain");
+        assert!(!first.renamed);
+
+        let second = svc.card_import(&req).unwrap();
+        assert!(second.renamed);
+        assert_eq!(second.name, "Lain (2)");
+        assert_ne!(first.id, second.id);
+
+        // The stored document carries the unique name so export → import
+        // round-trips instead of colliding again.
+        let doc = svc.card_get(&second.id).unwrap().unwrap();
+        assert_eq!(doc["data"]["name"], "Lain (2)");
+        assert_eq!(doc["data"]["description"], "wired");
+    }
+
+    #[test]
+    fn card_import_requires_exactly_one_source() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let missing = anima_channel::wire::CardImportRequest {
+            card: None,
+            png_base64: None,
+        };
+        assert_eq!(svc.card_import(&missing).unwrap_err(), "missing card or pngBase64");
+        let both = anima_channel::wire::CardImportRequest {
+            card: Some(card_document()),
+            png_base64: Some("AAAA".to_string()),
+        };
+        assert!(svc.card_import(&both).unwrap_err().contains("not both"));
+    }
+
+    /// A 1x1 opaque PNG, the minimum `write_card_png` accepts.
+    fn minimal_png() -> Vec<u8> {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD
+            .decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn card_import_from_png_extracts_embedded_card() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        // Build a real PNG with an embedded `chara` payload the same way the
+        // card writer does, then import it through the base64 path.
+        let card = anima_core::cards::parse_card_json(
+            serde_json::to_vec(&card_document()).unwrap().as_slice(),
+        )
+        .unwrap();
+        let png = anima_core::cards::write_card_png(&minimal_png(), &card).unwrap();
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&png);
+        let imported = svc
+            .card_import(&anima_channel::wire::CardImportRequest {
+                card: None,
+                png_base64: Some(b64),
+            })
+            .unwrap();
+        assert_eq!(imported.name, "Lain");
+        assert!(!imported.renamed);
+        let doc = svc.card_get(&imported.id).unwrap().unwrap();
+        assert_eq!(doc["data"]["name"], "Lain");
+    }
+
+    #[test]
+    fn card_update_replaces_document_and_missing_id_is_an_error() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let created = svc
+            .card_create(&anima_channel::wire::CardCreateRequest {
+                name: "Old".to_string(),
+                document: serde_json::json!({ "spec": "chara_card_v2", "data": { "name": "Old" } }),
+            })
+            .unwrap();
+
+        let updated = svc
+            .card_update(&anima_channel::wire::CardUpdateRequest {
+                id: created.id.clone(),
+                name: None,
+                document: serde_json::json!({
+                    "spec": "chara_card_v2",
+                    "data": { "name": "New", "x_extra": true }
+                }),
+            })
+            .unwrap();
+        assert!(updated.updated);
+        let doc = svc.card_get(&created.id).unwrap().unwrap();
+        assert_eq!(doc["data"]["name"], "New");
+        assert_eq!(doc["data"]["x_extra"], true);
+        // No name override: the listing name is unchanged.
+        assert_eq!(svc.card_list(50).unwrap()[0].name, "Old");
+
+        let err = svc
+            .card_update(&anima_channel::wire::CardUpdateRequest {
+                id: "missing".to_string(),
+                name: None,
+                document: serde_json::json!({}),
+            })
+            .unwrap_err();
+        assert_eq!(err, "card not found");
+    }
+
+    #[test]
+    fn card_delete_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let created = svc
+            .card_create(&anima_channel::wire::CardCreateRequest {
+                name: "Temp".to_string(),
+                document: serde_json::json!({ "name": "Temp" }),
+            })
+            .unwrap();
+        let first = svc
+            .card_delete(&anima_channel::wire::CardDeleteRequest {
+                id: created.id.clone(),
+            })
+            .unwrap();
+        assert!(first.deleted);
+        let second = svc
+            .card_delete(&anima_channel::wire::CardDeleteRequest { id: created.id })
+            .unwrap();
+        assert!(!second.deleted, "already-gone is a success, not an error");
+        assert!(svc.card_list(50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn card_io_releases_core_mutex() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let holder = {
+            let db = db.clone();
+            std::thread::spawn(move || {
+                db.with_connection(|_| {
+                    held_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap();
+            })
+        };
+        held_rx.recv().unwrap();
+
+        let io_svc = svc.clone();
+        let io = std::thread::spawn(move || io_svc.card_list(10));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let core_mutex_free = svc.inner.try_lock().is_ok();
+
+        release_tx.send(()).unwrap();
+        io.join().unwrap().unwrap();
+        holder.join().unwrap();
+
+        assert!(core_mutex_free);
     }
 }

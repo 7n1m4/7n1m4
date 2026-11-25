@@ -1104,12 +1104,8 @@ impl Gateway {
                     let truncated = rows.len() > limit;
                     // Keep the newest `limit` rows, then restore the oldest-first order
                     // the reply has always used.
-                    let mut rows: Vec<anima_store::StoredMessage> = rows
-                        .into_iter()
-                        .rev()
-                        .take(limit)
-                        .map(|(m, _)| m)
-                        .collect();
+                    let mut rows: Vec<anima_store::StoredMessage> =
+                        rows.into_iter().rev().take(limit).map(|(m, _)| m).collect();
                     rows.reverse();
                     let messages: Vec<serde_json::Value> = rows
                         .into_iter()
@@ -1223,10 +1219,11 @@ impl Gateway {
                     // and the page must see the same snapshot.
                     let (entries, truncated) = db
                         .with_connection(|conn| {
-                            let total: i64 = conn
-                                .query_row("select count(*) from journal_entries", [], |row| {
-                                    row.get(0)
-                                })?;
+                            let total: i64 = conn.query_row(
+                                "select count(*) from journal_entries",
+                                [],
+                                |row| row.get(0),
+                            )?;
                             let truncated =
                                 total > i64::try_from(JOURNAL_SEARCH_SCAN_CAP).unwrap_or(i64::MAX);
                             let mut stmt = conn.prepare(
@@ -1498,6 +1495,31 @@ impl Gateway {
                             .session_import_jsonl(jsonl)
                             .map_err(|e| e.to_string())?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "sessions.delete".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        // Decode the wire DTO at the RPC boundary so a missing
+                        // or misspelled session id is a typed failure instead of
+                        // an empty-string delete that always reports `false`.
+                        let req: anima_channel::wire::SessionDeleteRequest =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
+                        let deleted = core.session_delete(&req.session_id)?;
+                        Ok(
+                            serde_json::to_value(anima_channel::wire::SessionDeleteReply {
+                                deleted,
+                            })
+                            .map_err(|e| e.to_string())?,
+                        )
                     },
                 ),
             );
@@ -2794,7 +2816,10 @@ mod tests {
         let after = get_json(&gateway);
         assert_eq!(after["bound"], false, "wildcard config must not bind");
         let err = after["lastError"].as_str().unwrap();
-        assert!(err.contains("wildcard"), "clear load error expected, got {err}");
+        assert!(
+            err.contains("wildcard"),
+            "clear load error expected, got {err}"
+        );
     }
 
     #[test]
@@ -2826,9 +2851,7 @@ mod tests {
         assert_eq!(get_json(&gateway)["bound"], true);
 
         // Explicit tlsConfig forces a TLS rebind, which hits the cert blocker.
-        let reply = gateway.handle(&GatewayRequest::Apply(
-            r#"{"tlsConfig": {}}"#.to_string(),
-        ));
+        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"tlsConfig": {}}"#.to_string()));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(v["ok"], false, "failed rebind must surface ok:false");
         assert!(v["error"].as_str().is_some_and(|e| !e.is_empty()));
@@ -3272,7 +3295,9 @@ mod tests {
         assert_eq!(v["websocketTlsConfig"], serde_json::json!({}));
         assert_eq!(get_json(&gateway)["tlsEnabled"], true);
         // Disable TLS: plaintext is restored and reported as null.
-        let reply = gateway.handle(&GatewayRequest::Apply(r#"{"websocketTlsConfig":null}"#.into()));
+        let reply = gateway.handle(&GatewayRequest::Apply(
+            r#"{"websocketTlsConfig":null}"#.into(),
+        ));
         let v: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert!(v["websocketTlsConfig"].is_null());
         assert_eq!(get_json(&gateway)["tlsEnabled"], false);
@@ -4018,17 +4043,80 @@ mod tests {
         );
         assert_eq!(default["truncated"], true);
 
-        let clamped = list(
-            "sessions.list",
-            &serde_json::json!({ "limit": u64::MAX }),
-        )
-        .unwrap();
+        let clamped = list("sessions.list", &serde_json::json!({ "limit": u64::MAX })).unwrap();
         assert_eq!(
             clamped["sessions"].as_array().unwrap().len(),
             DEFAULT_LIST_LIMIT + 5,
             "a huge limit clamps to RPC_MAX_LIMIT, above the row count here"
         );
         assert_eq!(clamped["truncated"], false);
+    }
+
+    // Contract: `sessions.delete` removes the session and its messages through
+    // the daemon-owned store, and reports `false` (not an error) when the
+    // session is already gone.
+    #[test]
+    fn sessions_delete_removes_session_and_messages_and_reports_missing() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db);
+        sessions.create("del-1", "delete me").unwrap();
+        messages
+            .insert(&anima_store::StoredMessage {
+                id: "del-msg-1".into(),
+                session_id: "del-1".into(),
+                role: "user".into(),
+                content: "hi".into(),
+                created_at: 1,
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let delete = handlers.get("sessions.delete").unwrap();
+
+        let reply = delete(
+            "sessions.delete",
+            &serde_json::json!({ "sessionId": "del-1" }),
+        )
+        .unwrap();
+        assert_eq!(reply["deleted"], true);
+        assert!(sessions.get("del-1").unwrap().is_none());
+        assert!(messages.list("del-1").unwrap().is_empty());
+
+        // Deleting again is an idempotent success, never an error: the client
+        // must be able to clear a stale row without a special case.
+        let again = delete(
+            "sessions.delete",
+            &serde_json::json!({ "sessionId": "del-1" }),
+        )
+        .unwrap();
+        assert_eq!(again["deleted"], false);
+
+        // A malformed request is a typed boundary failure, not an empty-id
+        // delete that silently reports `false`.
+        let err = delete("sessions.delete", &serde_json::json!({}))
+            .expect_err("a request without a session id must fail");
+        assert_eq!(err, "invalid request");
+    }
+
+    // Contract: `sessions.delete` is a write, so it stays denied until the
+    // operator opts in with `allowActions`.
+    #[test]
+    fn sessions_delete_is_denied_without_actions_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let delete = handlers
+            .get("sessions.delete")
+            .expect("sessions.delete must stay registered");
+        let err = delete(
+            "sessions.delete",
+            &serde_json::json!({ "session_id": "s1" }),
+        )
+        .expect_err("delete must be denied by default");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{err}");
     }
 
     // Contract: the journal scan reads content-only columns, so a large
