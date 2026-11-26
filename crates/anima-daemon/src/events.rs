@@ -399,6 +399,7 @@ impl EventPublisher {
         };
         for cue in cues {
             self.emotion_tag(
+                Some(session_id.clone()),
                 cue.actor_id,
                 cue.tag,
                 cue.kind,
@@ -410,8 +411,12 @@ impl EventPublisher {
     }
 
     /// Publish one discrete expression cue for an actor.
+    ///
+    /// `session_id` is `Some` for cues derived from a chat turn; renderers use
+    /// it to ignore cues from sessions other than the active one.
     pub fn emotion_tag(
         &self,
+        session_id: Option<String>,
         actor_id: impl Into<String>,
         tag: impl Into<String>,
         kind: DaemonCueKind,
@@ -422,6 +427,7 @@ impl EventPublisher {
         self.publish(
             EventTopic::EmotionTag,
             EventPayload::EmotionTag(anima_channel::EmotionTagData {
+                session_id,
                 actor_id: actor_id.into(),
                 tag: tag.into(),
                 kind: kind.into(),
@@ -556,6 +562,7 @@ mod tests {
         let (publisher, lane) = subscribed_publisher();
         publisher.token_delta("session", "message", "hi", 2, true, None, None);
         publisher.emotion_tag(
+            None,
             "actor",
             "happy",
             DaemonCueKind::Motion,
@@ -588,6 +595,7 @@ mod tests {
         assert_eq!(tag.kind, anima_channel::CueKind::Motion);
         assert_eq!(tag.intensity, 0.5);
         assert_eq!(tag.duration_ms, Some(120));
+        assert!(tag.session_id.is_none());
 
         assert_eq!(drained[2].topic, EventTopic::LipSyncRms);
         let EventPayload::LipSyncRms(rms) = &drained[2].data else {
@@ -741,8 +749,11 @@ mod tests {
             None,
         );
         publisher.token_delta("s1", "m1", "<|ACT:vfx=\"fire\"|>", 1, false, None, None);
-        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"angry\"", 0, false, None, None);
-        publisher.token_delta("s2", "m2", "", 1, true, None, None);
+        // A complete marker from a second session proves the cue inherits the
+        // emitting turn's id rather than a hardcoded first-session value.
+        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"calm\"|>", 0, false, None, None);
+        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"angry\"", 1, false, None, None);
+        publisher.token_delta("s2", "m2", "", 2, true, None, None);
 
         let drained = lane.drain();
         let cues: Vec<_> = drained
@@ -752,12 +763,17 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(cues.len(), 2, "unterminated marker must not emit a cue");
+        assert_eq!(cues.len(), 3, "unterminated marker must not emit a cue");
         assert_eq!(cues[0].tag, "wave");
+        assert_eq!(cues[0].session_id.as_deref(), Some("s1"));
         assert_eq!(cues[0].kind, anima_channel::CueKind::Motion);
         assert_eq!(cues[0].duration_ms, Some(2000));
         assert_eq!(cues[1].tag, "fire");
+        assert_eq!(cues[1].session_id.as_deref(), Some("s1"));
         assert_eq!(cues[1].kind, anima_channel::CueKind::Vfx);
+        assert_eq!(cues[2].tag, "calm");
+        assert_eq!(cues[2].session_id.as_deref(), Some("s2"));
+        assert_eq!(cues[2].kind, anima_channel::CueKind::Emotion);
     }
 
     #[test]

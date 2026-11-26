@@ -79,6 +79,7 @@ mod golden_fixtures {
             "event.emotion_tag.emotion",
             "event.emotion_tag.motion_no_duration",
             "event.emotion_tag.vfx",
+            "event.emotion_tag.with_session",
         ] {
             let value = load_json(name);
             round_trip::<GatewayServerFrame>(name, &value);

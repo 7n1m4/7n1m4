@@ -984,6 +984,10 @@ pub struct LipSyncRmsData {
 /// Payload of an `emotion.tag` event: a discrete emotion for an actor.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct EmotionTagData {
+    /// Chat session id that produced the cue. Absent for cues published
+    /// outside a chat session; old daemons omit it entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Character/actor id the tag belongs to.
     pub actor_id: String,
     /// Normalized emotion key (see [`CANONICAL_EMOTION_KEYS`]) or a raw,
@@ -1599,6 +1603,7 @@ mod tests {
             GatewayEvent::new(
                 EventTopic::EmotionTag,
                 EventPayload::EmotionTag(EmotionTagData {
+                    session_id: Some("s-1".to_string()),
                     actor_id: "actor-1".to_string(),
                     tag: "happy".to_string(),
                     kind: CueKind::Emotion,
@@ -1709,6 +1714,7 @@ mod tests {
             (CueKind::Vfx, "vfx"),
         ] {
             let payload = EventPayload::EmotionTag(EmotionTagData {
+                session_id: None,
                 actor_id: "a".to_string(),
                 tag: "wave".to_string(),
                 kind,
@@ -1720,6 +1726,10 @@ mod tests {
             let value = serde_json::to_value(&payload).unwrap();
             assert_eq!(value["kind"], json!(wire));
             assert!(value.get("duration_ms").is_none(), "None must be omitted");
+            assert!(
+                value.get("session_id").is_none(),
+                "absent session must be omitted"
+            );
             let decoded: EventPayload = serde_json::from_value(value).unwrap();
             assert_eq!(decoded, payload);
         }

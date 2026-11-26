@@ -1842,6 +1842,346 @@ impl SettingsSection for McpSettings {
     const KEY: &'static str = "settings/mcp";
 }
 
+// ============================================================================
+// Onboarding V3
+// ============================================================================
+
+fn default_onboarding_user_description() -> &'static str {
+    "A hands-on, down-to-earth creator who loves building things from scratch. Prefers honest, direct conversation and cozy downtime after a long day of work."
+}
+
+fn default_onboarding_vision_prompt_direct() -> &'static str {
+    "You are currently acting as a vision-capable stand-in for the main character. Keep your responses natural, in-character, and avoid any meta-commentary about \"analyzing\" or \"describing\" the image for the user. Just react to what you see as the character would."
+}
+
+fn default_onboarding_vision_prompt_forward() -> &'static str {
+    "You are an objective image analysis model. Analyze the provided image in the context of the conversation and the user's latest message. Describe the key visual details, subjects, actions, colors, text, or any specific elements mentioned or asked about by the user, so that the primary chat LLM can respond appropriately. Keep your analysis descriptive and objective, and avoid any conversational filler."
+}
+
+/// Module bundle for one V3 archetype, mirroring `ARCHETYPE_MODULE_PRESETS`
+/// in `useOnboardingV3Draft.ts`. Unknown ids use the `casual` bundle.
+fn onboarding_module_preset(archetype: &str) -> serde_json::Value {
+    let (hearing, speech, thinking, emotions, memory, vision, proactivity, artistry, tools) =
+        match archetype {
+            "quiet" => (false, false, false, false, true, false, false, false, true),
+            "muse" => (false, true, true, true, true, true, false, true, false),
+            "copilot" => (true, true, true, false, true, false, true, false, true),
+            "roommate" => (false, true, true, true, true, false, true, false, false),
+            "swiss-army" | "performer" => (true, true, true, true, true, true, true, true, true),
+            _ => (true, true, true, true, true, true, false, false, false),
+        };
+    serde_json::json!({
+        "hearing": hearing,
+        "speech": speech,
+        "thinking": thinking,
+        "emotions": emotions,
+        "memory": memory,
+        "vision": vision,
+        "screen": false,
+        "proactivity": proactivity,
+        "artistry": artistry,
+        "tools": tools,
+    })
+}
+
+/// Shallow-overlay two JSON objects; `null` in `incoming` is ignored.
+fn overlay_json(base: &mut serde_json::Value, incoming: &serde_json::Value) {
+    if let (Some(base), Some(incoming)) = (base.as_object_mut(), incoming.as_object()) {
+        for (key, value) in incoming {
+            if !value.is_null() {
+                base.insert(key.clone(), value.clone());
+            }
+        }
+    }
+}
+
+/// Factory defaults of `onboarding/v3-draft`, minus every credential field.
+///
+/// Split into three `json!` blocks: one literal with all ~60 keys exceeds the
+/// crate's default macro recursion limit.
+fn default_onboarding_v3_draft() -> serde_json::Value {
+    let mut draft = serde_json::json!({
+        "architecture": "local",
+        "experienceArchetype": "casual",
+        "modules": onboarding_module_preset("casual"),
+        "userName": "Richy",
+        "userDescription": default_onboarding_user_description(),
+        "userGender": "male",
+        "pacingPreset": "balanced",
+        "subconsciousAsides": true,
+        "visionProvider": "",
+        "visionModel": "",
+        "visionStrategy": "direct",
+        "visionPromptShimDirect": default_onboarding_vision_prompt_direct(),
+        "visionPromptShimForward": default_onboarding_vision_prompt_forward(),
+        "artistryProvider": "pollinations",
+        "artistryModel": "",
+        "artistryDirectorEnabled": true,
+        "artistryDirectorTarget": "assistant",
+        "screenWatcherEnabled": true,
+        "screenWatcherMode": "voice-and-bubble",
+        "screenWatcherTier": "lightweight",
+        "screenWatcherInterval": 2000,
+    });
+    overlay_json(
+        &mut draft,
+        &serde_json::json!({
+            "heartbeatsEnabled": true,
+            "heartbeatsInterval": 5,
+            "operatingScheduleEnabled": true,
+            "wakeUpTime": "09:00",
+            "bedTime": "22:00",
+            "pauseOnAfk": true,
+            "afkMinutes": 5,
+            "sensorGroundingEnabled": true,
+            "salienceGatingEnabled": true,
+            "heartbeatsContextWindowHistory": true,
+            "heartbeatsContextSystemLoad": true,
+            "heartbeatsContextUsageMetrics": true,
+            "eventLedgerEnabled": true,
+            "eventLedgerSampleDepth": 6,
+            "eventLedgerDomains": ["vision", "tools", "chat", "memory", "discord"],
+            "smartSilenceDirectiveEnabled": true,
+            "memoryShortTermEnabled": true,
+            "memoryShortTermWindowSize": 3,
+            "memoryShortTermTokenBudget": 1000,
+            "memoryLongTermJournalEnabled": true,
+        }),
+    );
+    overlay_json(
+        &mut draft,
+        &serde_json::json!({
+            "memoryLifetimeEnabled": true,
+            "memoryLifetimeTier": "relational",
+            "memoryDreamStateEnabled": true,
+            "mcpWebSearchEnabled": false,
+            "mcpFilesystemEnabled": false,
+            "toolMotionGeneratorEnabled": false,
+            "toolScreenshotEnabled": false,
+            "toolTerminalEnabled": false,
+            "toolMusicEnabled": false,
+            "toolCustomMcpEnabled": false,
+            "artistryImageJournalToolEnabled": false,
+            "personaCardId": "relu",
+            "personaSource": "creator",
+            "sttProvider": "whisper-local",
+            "sttModel": "onnx-community/whisper-tiny",
+            "sttTriggerKey": "Caps",
+            "ttsProvider": "kokoro-local",
+            "ttsModel": "q4",
+            "ttsVoiceId": "af_bella",
+        }),
+    );
+    draft
+}
+
+fn onboarding_text<'a>(map: &'a serde_json::Map<String, serde_json::Value>, key: &str) -> &'a str {
+    map.get(key).and_then(|value| value.as_str()).unwrap_or("")
+}
+
+/// Drop userinfo from a URL so a custom endpoint survives a daemon round-trip
+/// without carrying embedded credentials. Non-URL values pass through.
+fn sanitize_onboarding_url(value: serde_json::Value) -> serde_json::Value {
+    let Some(url) = value.as_str() else {
+        return value;
+    };
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return value;
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let Some((_, host)) = rest[..end].rsplit_once('@') else {
+        return value;
+    };
+    serde_json::json!(format!("{scheme}://{host}{}", &rest[end..]))
+}
+
+fn scrub_onboarding_draft(draft: &mut serde_json::Map<String, serde_json::Value>) {
+    // NOTICE: `providers::strip_secret_config_keys` cannot be used here: it
+    // removes any key ending in `key`, which would delete `sttTriggerKey`
+    // (a keyboard key name, not a credential). Scrub the TS draft's known
+    // credential fields explicitly; these four names mirror the credential
+    // fields of `OnboardingV3DraftState` in `useOnboardingV3Draft.ts`.
+    for key in ["llmApiKey", "artistryApiKey"] {
+        draft.remove(key);
+    }
+    // Endpoints are user configuration, not credentials: keep them but strip
+    // embedded userinfo so a `https://user:pass@host` draft cannot leak it.
+    for key in ["llmBaseUrl", "artistryComfyServerUrl"] {
+        if let Some(value) = draft.remove(key) {
+            draft.insert(key.to_string(), sanitize_onboarding_url(value));
+        }
+    }
+}
+
+/// Apply the TS store's backwards-compatibility shims to a draft blob.
+fn normalize_onboarding_draft(draft: &mut serde_json::Value) {
+    let Some(map) = draft.as_object_mut() else {
+        return;
+    };
+    scrub_onboarding_draft(map);
+
+    // TS folds only a falsy archetype to `casual` and the legacy `performer`
+    // id to `swiss-army`; unknown future ids must survive a daemon round-trip.
+    let archetype = match onboarding_text(map, "experienceArchetype") {
+        "" => "casual".to_string(),
+        "performer" => "swiss-army".to_string(),
+        other => other.to_string(),
+    };
+    map.insert(
+        "experienceArchetype".to_string(),
+        serde_json::json!(&archetype),
+    );
+    map.insert(
+        "architecture".to_string(),
+        serde_json::json!(if onboarding_text(map, "architecture") == "cloud" {
+            "cloud"
+        } else {
+            "local"
+        }),
+    );
+
+    let preset = onboarding_module_preset(&archetype);
+    let preset_fields = preset.as_object().cloned().unwrap_or_default();
+    let mut modules = map
+        .remove("modules")
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    let sensory = modules
+        .get("sensory")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    // Only a *missing* key is legacy; TS treats an explicit value (even
+    // `null`) as authored and does not overwrite it.
+    if !modules.contains_key("screen") {
+        modules.insert("screen".to_string(), serde_json::json!(sensory));
+    }
+    if !modules.contains_key("proactivity") {
+        modules.insert("proactivity".to_string(), serde_json::json!(sensory));
+    }
+    if !modules.contains_key("vision") {
+        modules.insert(
+            "vision".to_string(),
+            serde_json::json!(matches!(
+                archetype.as_str(),
+                "casual" | "muse" | "swiss-army"
+            )),
+        );
+    }
+    for (key, value) in preset_fields {
+        modules.entry(key).or_insert(value);
+    }
+    map.insert("modules".to_string(), serde_json::Value::Object(modules));
+
+    if onboarding_text(map, "personaCardId").is_empty() {
+        map.insert("personaCardId".to_string(), serde_json::json!("relu"));
+        map.insert("personaSource".to_string(), serde_json::json!("creator"));
+    }
+    if onboarding_text(map, "sttProvider").is_empty() {
+        map.insert(
+            "sttProvider".to_string(),
+            serde_json::json!("whisper-local"),
+        );
+        map.insert(
+            "sttModel".to_string(),
+            serde_json::json!("onnx-community/whisper-tiny"),
+        );
+        map.insert("sttTriggerKey".to_string(), serde_json::json!("Caps"));
+    }
+    if onboarding_text(map, "ttsProvider").is_empty() {
+        map.insert("ttsProvider".to_string(), serde_json::json!("kokoro-local"));
+        map.insert("ttsModel".to_string(), serde_json::json!("q4"));
+        map.insert("ttsVoiceId".to_string(), serde_json::json!("af_bella"));
+    }
+    if matches!(onboarding_text(map, "userName"), "" | "User") {
+        map.insert("userName".to_string(), serde_json::json!("Richy"));
+    }
+    if matches!(
+        onboarding_text(map, "userDescription"),
+        "" | "An observer/manager of this stage."
+    ) {
+        map.insert(
+            "userDescription".to_string(),
+            serde_json::json!(default_onboarding_user_description()),
+        );
+    }
+}
+
+fn deserialize_onboarding_draft<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let incoming = serde_json::Value::deserialize(deserializer)?;
+    let has_modules = incoming
+        .as_object()
+        .is_some_and(|map| map.get("modules").is_some_and(|v| !v.is_null()));
+    let mut draft = default_onboarding_v3_draft();
+    overlay_json(&mut draft, &incoming);
+    if !has_modules {
+        // A legacy draft without `modules` must take the preset of *its*
+        // archetype, not the casual preset baked into the factory defaults.
+        if let Some(map) = draft.as_object_mut() {
+            map.remove("modules");
+        }
+    }
+    normalize_onboarding_draft(&mut draft);
+    Ok(draft)
+}
+
+fn serialize_onboarding_draft<S>(
+    draft: &serde_json::Value,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut draft = draft.clone();
+    if let Some(map) = draft.as_object_mut() {
+        scrub_onboarding_draft(map);
+    }
+    draft.serialize(serializer)
+}
+
+/// First-run V3 onboarding state (`settings/onboarding`).
+///
+/// The three wire fields keep the TS `localStorage` key names so a thin client
+/// can move its draft/flats unchanged. The draft is an opaque JSON object: its
+/// ~90 wizard-owned fields belong to the setup UI, and only provider *ids*
+/// (provider/model/voice) are persisted — credential fields are scrubbed on
+/// both read and write. [`Self::completed`] and [`Self::skipped`] mirror
+/// `onboarding/v3-completed` / `onboarding/v3-skipped`; older V1/V2 flags are
+/// deliberately not read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OnboardingSettings {
+    /// In-flight wizard draft keyed `onboarding/v3-draft`.
+    #[serde(
+        rename = "onboarding/v3-draft",
+        default = "default_onboarding_v3_draft",
+        deserialize_with = "deserialize_onboarding_draft",
+        serialize_with = "serialize_onboarding_draft"
+    )]
+    pub draft: serde_json::Value,
+    /// Explicit V3 completion flag keyed `onboarding/v3-completed`.
+    #[serde(rename = "onboarding/v3-completed", default)]
+    pub completed: bool,
+    /// Explicit V3 dismissal flag keyed `onboarding/v3-skipped`.
+    #[serde(rename = "onboarding/v3-skipped", default)]
+    pub skipped: bool,
+}
+
+impl Default for OnboardingSettings {
+    fn default() -> Self {
+        Self {
+            draft: default_onboarding_v3_draft(),
+            completed: false,
+            skipped: false,
+        }
+    }
+}
+
+impl SettingsSection for OnboardingSettings {
+    const KEY: &'static str = "settings/onboarding";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2972,5 +3312,139 @@ mod tests {
             .is_none());
         let saved = serde_json::to_value(&vision).unwrap();
         assert!(saved.get("lastHeartbeat").is_none());
+    }
+
+    #[test]
+    fn onboarding_defaults_match_ts_draft_and_key_names() {
+        assert_eq!(OnboardingSettings::KEY, "settings/onboarding");
+        let settings = OnboardingSettings::default();
+        let wire = serde_json::to_value(&settings).unwrap();
+        assert_eq!(wire["onboarding/v3-draft"]["experienceArchetype"], "casual");
+        assert_eq!(wire["onboarding/v3-draft"]["architecture"], "local");
+        assert_eq!(wire["onboarding/v3-draft"]["userName"], "Richy");
+        assert_eq!(
+            wire["onboarding/v3-draft"]["modules"],
+            onboarding_module_preset("casual")
+        );
+        assert_eq!(wire["onboarding/v3-draft"]["sttProvider"], "whisper-local");
+        assert_eq!(wire["onboarding/v3-draft"]["ttsProvider"], "kokoro-local");
+        assert_eq!(wire["onboarding/v3-completed"], false);
+        assert_eq!(wire["onboarding/v3-skipped"], false);
+
+        let empty: OnboardingSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(empty, settings);
+    }
+
+    /// airi-vcxy.2: the TS store's legacy shims must survive the port.
+    #[test]
+    fn onboarding_legacy_draft_applies_ts_migration_shims() {
+        let settings: OnboardingSettings = serde_json::from_value(serde_json::json!({
+            "onboarding/v3-draft": {
+                "experienceArchetype": "performer",
+                "modules": { "sensory": true, "hearing": false },
+                "userName": "User",
+                "userDescription": "An observer/manager of this stage.",
+                "llmApiKey": "LEAK",
+                "personaCardId": "",
+                "sttProvider": "",
+                "ttsProvider": ""
+            },
+            "onboarding/v3-completed": true
+        }))
+        .unwrap();
+
+        let draft = &settings.draft;
+        assert_eq!(draft["experienceArchetype"], "swiss-army");
+        assert_eq!(draft["modules"]["hearing"], false);
+        assert_eq!(draft["modules"]["screen"], true);
+        assert_eq!(draft["modules"]["proactivity"], true);
+        assert_eq!(draft["modules"]["vision"], true);
+        assert_eq!(draft["modules"]["tools"], true);
+        assert_eq!(draft["userName"], "Richy");
+        assert_eq!(
+            draft["userDescription"],
+            default_onboarding_user_description()
+        );
+        assert_eq!(draft["personaCardId"], "relu");
+        assert_eq!(draft["personaSource"], "creator");
+        assert_eq!(draft["sttProvider"], "whisper-local");
+        assert_eq!(draft["sttTriggerKey"], "Caps");
+        assert_eq!(draft["ttsProvider"], "kokoro-local");
+        assert_eq!(draft["ttsVoiceId"], "af_bella");
+        assert!(draft.get("llmApiKey").is_none());
+        assert!(settings.completed);
+        assert!(!settings.skipped);
+
+        // Missing modules entirely falls back to the archetype preset.
+        let missing: OnboardingSettings = serde_json::from_value(serde_json::json!({
+            "onboarding/v3-draft": { "experienceArchetype": "quiet" }
+        }))
+        .unwrap();
+        assert_eq!(missing.draft["modules"], onboarding_module_preset("quiet"));
+    }
+
+    #[test]
+    fn onboarding_credentials_never_enter_or_leave_the_draft() {
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+
+        let mut draft = default_onboarding_v3_draft();
+        let fields = draft.as_object_mut().unwrap();
+        fields.insert("llmApiKey".to_string(), serde_json::json!("sk-leak"));
+        fields.insert("artistryApiKey".to_string(), serde_json::json!("art-leak"));
+        fields.insert(
+            "llmBaseUrl".to_string(),
+            serde_json::json!("https://user:pass@example.invalid"),
+        );
+        store
+            .save(
+                OnboardingSettings::KEY,
+                &serde_json::json!({ "onboarding/v3-draft": draft }),
+            )
+            .unwrap();
+
+        let loaded = store.load_section::<OnboardingSettings>().unwrap();
+        let wire = serde_json::to_string(&loaded).unwrap();
+        for leak in [
+            "sk-leak",
+            "art-leak",
+            "user:pass",
+            "llmApiKey",
+            "artistryApiKey",
+        ] {
+            assert!(!wire.contains(leak), "credential leaked: {leak}");
+        }
+        assert_eq!(loaded.draft["sttTriggerKey"], "Caps");
+    }
+
+    #[test]
+    fn onboarding_draft_preserves_custom_endpoints_and_unknown_archetypes() {
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+        let draft = serde_json::json!({
+            "experienceArchetype": "future-archetype",
+            "llmBaseUrl": "https://user:pass@example.invalid/v1",
+            "artistryComfyServerUrl": "http://user@comfy.invalid:8188",
+            "modules": { "screen": null, "proactivity": false, "vision": true },
+        });
+        store
+            .save(
+                OnboardingSettings::KEY,
+                &serde_json::json!({ "onboarding/v3-draft": draft }),
+            )
+            .unwrap();
+
+        let loaded = store.load_section::<OnboardingSettings>().unwrap();
+        let out = &loaded.draft;
+        assert_eq!(out["experienceArchetype"], "future-archetype");
+        assert_eq!(out["llmBaseUrl"], "https://example.invalid/v1");
+        assert_eq!(out["artistryComfyServerUrl"], "http://comfy.invalid:8188");
+        // Explicit values win over legacy shims, including explicit null.
+        assert!(out["modules"]["screen"].is_null());
+        assert_eq!(out["modules"]["proactivity"], false);
+        assert_eq!(out["modules"]["vision"], true);
+        let wire = serde_json::to_string(&loaded).unwrap();
+        assert!(!wire.contains("user:pass"), "userinfo leaked: {wire}");
+        assert!(!wire.contains("user@comfy"), "userinfo leaked: {wire}");
     }
 }

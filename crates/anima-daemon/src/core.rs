@@ -226,6 +226,10 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
             }
             merged.insert(name.clone(), serde_json::Value::Object(server));
         }
+    } else if S::KEY == anima_core::settings::OnboardingSettings::KEY {
+        // The wizard draft is a nested blob. A PATCH of one field must keep
+        // sibling draft fields and module toggles, like the TS store's merge.
+        deep_merge(&mut merged, patch);
     } else {
         for (key, value) in patch {
             if value.is_null() {
@@ -237,6 +241,29 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
     }
     serde_json::from_value(serde_json::Value::Object(merged))
         .map_err(|_| "invalid settings shape".to_string())
+}
+
+/// Recursive object merge for nested settings sections. `null` removes a key;
+/// objects merge key-by-key so untouched siblings survive a partial PATCH.
+/// For onboarding draft fields the deserializer re-overlays factory defaults,
+/// so a `null` there resets to the default rather than deleting the key.
+fn deep_merge(
+    base: &mut serde_json::Map<String, serde_json::Value>,
+    patch: &serde_json::Map<String, serde_json::Value>,
+) {
+    for (key, value) in patch {
+        if value.is_null() {
+            base.remove(key);
+            continue;
+        }
+        if let (Some(existing), Some(incoming)) = (base.get_mut(key), value.as_object()) {
+            if let Some(existing) = existing.as_object_mut() {
+                deep_merge(existing, incoming);
+                continue;
+            }
+        }
+        base.insert(key.clone(), value.clone());
+    }
 }
 
 settings_sections!(
@@ -262,6 +289,7 @@ settings_sections!(
     ("vision", anima_core::settings::VisionSettings),
     ("faculties", anima_core::settings::FacultiesSettings),
     ("mcp", anima_core::settings::McpSettings),
+    ("onboarding", anima_core::settings::OnboardingSettings),
 );
 
 /// Resolve a settings-section name to its typed load/save operations.
@@ -1435,6 +1463,7 @@ mod tests {
             "vision",
             "faculties",
             "mcp",
+            "onboarding",
         ];
         assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
         for ((key, _, _), expected) in SETTINGS_SECTIONS.iter().zip(expected_keys) {
@@ -2446,5 +2475,81 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(svc.providers_list().unwrap().providers.len(), 1);
+    }
+
+    /// airi-vcxy.2: `settings.set("onboarding", ...)` is a PATCH — a draft
+    /// edit must not reset sibling draft fields, module toggles or flags.
+    #[test]
+    fn onboarding_partial_patch_preserves_sibling_fields() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+
+        let defaults = svc.settings_get("onboarding").unwrap();
+        let initial: serde_json::Value = serde_json::from_str(&defaults.settings).unwrap();
+        assert_eq!(
+            initial["onboarding/v3-draft"]["experienceArchetype"],
+            "casual"
+        );
+        assert_eq!(initial["onboarding/v3-draft"]["userName"], "Richy");
+        assert_eq!(initial["onboarding/v3-completed"], false);
+
+        svc.settings_set(
+            "onboarding",
+            serde_json::json!({
+                "onboarding/v3-draft": {
+                    "experienceArchetype": "copilot",
+                    "modules": { "hearing": true, "speech": false },
+                    "llmApiKey": "sk-leak"
+                },
+                "onboarding/v3-completed": true
+            }),
+        )
+        .unwrap();
+
+        let read = |svc: &CoreService| -> serde_json::Value {
+            let reply = svc.settings_get("onboarding").unwrap();
+            serde_json::from_str(&reply.settings).unwrap()
+        };
+        let stored = read(&svc);
+        let draft = &stored["onboarding/v3-draft"];
+        assert_eq!(draft["experienceArchetype"], "copilot");
+        assert_eq!(draft["userName"], "Richy", "sibling draft field survived");
+        assert_eq!(draft["sttProvider"], "whisper-local");
+        assert_eq!(draft["modules"]["hearing"], true);
+        assert_eq!(draft["modules"]["speech"], false);
+        assert_eq!(
+            draft["modules"]["proactivity"], false,
+            "sibling module toggle survived"
+        );
+        assert_eq!(stored["onboarding/v3-completed"], true);
+        assert!(draft.get("llmApiKey").is_none());
+
+        // A second, single-field PATCH keeps every sibling and both flags.
+        svc.settings_set(
+            "onboarding",
+            serde_json::json!({
+                "onboarding/v3-draft": { "userName": "Ada" },
+                "onboarding/v3-skipped": true
+            }),
+        )
+        .unwrap();
+        let stored = read(&svc);
+        let draft = &stored["onboarding/v3-draft"];
+        assert_eq!(draft["userName"], "Ada");
+        assert_eq!(draft["experienceArchetype"], "copilot");
+        assert_eq!(draft["sttProvider"], "whisper-local");
+        assert_eq!(draft["modules"]["speech"], false);
+        assert_eq!(stored["onboarding/v3-completed"], true);
+        assert_eq!(stored["onboarding/v3-skipped"], true);
+
+        // The raw stored blob must not carry a credential either.
+        let db = svc.db().unwrap();
+        let store =
+            anima_core::settings::SettingsStore::new(db, tokio::sync::broadcast::channel(1).0);
+        let raw: serde_json::Value = store
+            .load_opt(anima_core::settings::OnboardingSettings::KEY)
+            .unwrap()
+            .unwrap();
+        assert!(raw["onboarding/v3-draft"].get("llmApiKey").is_none());
     }
 }

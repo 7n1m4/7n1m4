@@ -399,6 +399,7 @@ mod tests {
         bus.publish(GatewayEvent::new(
             EventTopic::EmotionTag,
             EventPayload::EmotionTag(EmotionTagData {
+                session_id: None,
                 actor_id: "a".to_string(),
                 tag: "calm".to_string(),
                 kind: crate::wire::CueKind::Emotion,

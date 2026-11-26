@@ -1,0 +1,13 @@
+{
+  "data": {
+    "actor_id": "character-7",
+    "intensity": 0.699999988079071,
+    "kind": "emotion",
+    "seq": 45,
+    "session_id": "sess-abc",
+    "tag": "curious",
+    "ts_ms": 1700000000500
+  },
+  "topic": "emotion.tag",
+  "type": "event"
+}

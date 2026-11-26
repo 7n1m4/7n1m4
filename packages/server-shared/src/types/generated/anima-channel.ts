@@ -261,6 +261,11 @@ export type DomainStatsData = {
 
 /**  Payload of an `emotion.tag` event: a discrete emotion for an actor. */
 export type EmotionTagData = {
+	/**
+	 *  Chat session id that produced the cue. Absent for cues published
+	 *  outside a chat session; old daemons omit it entirely.
+	 */
+	session_id?: string | null,
 	/**  Character/actor id the tag belongs to. */
 	actor_id: string,
 	/**

@@ -69,6 +69,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "event.emotion_tag.emotion",
             EventPayload::EmotionTag(EmotionTagData {
+                session_id: None,
                 actor_id: "character-7".into(),
                 tag: "happy".into(),
                 kind: anima_channel::wire::CueKind::Emotion,
@@ -81,6 +82,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "event.emotion_tag.motion_no_duration",
             EventPayload::EmotionTag(EmotionTagData {
+                session_id: None,
                 actor_id: "character-7".into(),
                 tag: "wave".into(),
                 kind: anima_channel::wire::CueKind::Motion,
@@ -93,6 +95,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "event.emotion_tag.vfx",
             EventPayload::EmotionTag(EmotionTagData {
+                session_id: None,
                 actor_id: "character-7".into(),
                 tag: "sparkle".into(),
                 kind: anima_channel::wire::CueKind::Vfx,
@@ -100,6 +103,21 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 duration_ms: Some(1500),
                 seq: 44,
                 ts_ms: 1_700_000_000_400,
+            }),
+        ),
+        (
+            // Locks the *present* session_id shape; the three fixtures above
+            // only pin omission for backward compatibility.
+            "event.emotion_tag.with_session",
+            EventPayload::EmotionTag(EmotionTagData {
+                session_id: Some("sess-abc".into()),
+                actor_id: "character-7".into(),
+                tag: "curious".into(),
+                kind: anima_channel::wire::CueKind::Emotion,
+                intensity: 0.7,
+                duration_ms: None,
+                seq: 45,
+                ts_ms: 1_700_000_000_500,
             }),
         ),
         (
