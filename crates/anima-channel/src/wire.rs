@@ -292,6 +292,32 @@ pub struct DiscordStatusReply {
     pub has_token: bool,
 }
 
+/// `data` payload of a `capabilities.get` reply.
+///
+/// Model-capability discovery: readiness bits and bounded vocabulary counts
+/// only. The daemon reads uploaded model bytes and reports what it can drive;
+/// no file paths, prompts, raw config, tokens or other secret material ever
+/// cross the gateway wire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilitiesReply {
+    /// Whether expression vocabulary discovery is available.
+    pub has_expressions: bool,
+    /// Whether motion vocabulary discovery is available.
+    pub has_motions: bool,
+    /// Discovered expression tags, after the size cap.
+    #[specta(type = specta_typescript::Number)]
+    pub expression_count: u32,
+    /// Discovered motion tags, after the size cap.
+    #[specta(type = specta_typescript::Number)]
+    pub motion_count: u32,
+    /// Maximum vocabulary entries the daemon will report per kind.
+    #[specta(type = specta_typescript::Number)]
+    pub vocab_limit: u32,
+    /// Whether either vocabulary was truncated to `vocab_limit`.
+    pub truncated: bool,
+}
+
 /// `data` payload of a `vault.status` reply.
 ///
 /// Vault statistics (counts and byte sizes only, no secret material).
@@ -1403,6 +1429,7 @@ pub fn type_collection() -> specta::Types {
         .register::<SettingsGetReply>()
         .register::<SettingsSetReply>()
         .register::<DiscordStatusReply>()
+        .register::<CapabilitiesReply>()
         .register::<VaultStatusReply>()
         .register::<VaultArchiveCollectRequest>()
         .register::<VaultArchiveReply>()

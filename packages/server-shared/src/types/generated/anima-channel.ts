@@ -29,6 +29,29 @@ export type AuthenticatedData = {
 	authenticated: boolean,
 };
 
+/**
+ *  `data` payload of a `capabilities.get` reply.
+ *
+ *  Model-capability discovery: readiness bits and bounded vocabulary counts
+ *  only. The daemon reads uploaded model bytes and reports what it can drive;
+ *  no file paths, prompts, raw config, tokens or other secret material ever
+ *  cross the gateway wire.
+ */
+export type CapabilitiesReply = {
+	/**  Whether expression vocabulary discovery is available. */
+	hasExpressions: boolean,
+	/**  Whether motion vocabulary discovery is available. */
+	hasMotions: boolean,
+	/**  Discovered expression tags, after the size cap. */
+	expressionCount: number,
+	/**  Discovered motion tags, after the size cap. */
+	motionCount: number,
+	/**  Maximum vocabulary entries the daemon will report per kind. */
+	vocabLimit: number,
+	/**  Whether either vocabulary was truncated to `vocab_limit`. */
+	truncated: boolean,
+};
+
 /**  Reply of `cards.create`. */
 export type CardCreateReply = {
 	/**  Created card id. */

@@ -15,14 +15,15 @@
 #[cfg(test)]
 mod golden_fixtures {
     use anima_channel::wire::{
-        CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
-        CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
-        CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest,
-        CoreStatusReply, DiscordStatusReply, EmotionTagData, EventPayload, EventSubscriptionReply,
-        GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData,
-        ProvidersListReply, ProvidersModelsReply, RpcErrorObject, RuntimePingReply,
-        RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest, SessionImportReply,
-        SettingsGetReply, SettingsSetReply, VaultStatusReply,
+        CapabilitiesReply, CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest,
+        CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply,
+        CardMetadataReply, CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest,
+        ChatSendRequest, CoreStatusReply, DiscordStatusReply, EmotionTagData, EventPayload,
+        EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
+        GatewayServerFrame, HeartbeatData, ProvidersListReply, ProvidersModelsReply,
+        RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply,
+        SessionDeleteRequest, SessionImportReply, SettingsGetReply, SettingsSetReply,
+        VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -171,6 +172,22 @@ mod golden_fixtures {
             "discord.status must have no token key"
         );
         assert!(value["hasToken"].is_boolean());
+    }
+
+    #[test]
+    fn capabilities_reply_fixture_is_secret_free() {
+        let value = load_json("capabilities.reply");
+        round_trip::<CapabilitiesReply>("capabilities.reply", &value);
+        // Readiness is expressed as `has_*` bits only; no credential, path,
+        // prompt or raw config may cross the gateway wire.
+        assert!(value["hasExpressions"].is_boolean());
+        assert!(value["hasMotions"].is_boolean());
+        for key in ["authToken", "token", "apiKey", "path", "prompt", "config"] {
+            assert!(
+                value.get(key).is_none(),
+                "capabilities.reply must not carry `{key}`"
+            );
+        }
     }
 
     #[test]

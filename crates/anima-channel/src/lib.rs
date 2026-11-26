@@ -117,10 +117,10 @@ pub use event_bus::{EventBus, EventLane, DEFAULT_EVENT_POLL_INTERVAL, DEFAULT_LA
 pub use server::{ChannelServer, ServerHandle, HANDLER_DEADLINE};
 pub use session::{CloseInfo, Session, SessionOutcome, SessionState, CLOSE_POLICY_VIOLATION};
 pub use wire::{
-    AuthenticatedData, CardInfo, CardMetadataReply, CardMetadataSetRequest, ChatMessage,
-    CoreStatusReply, CueKind, EmotionTagData, EventPayload, EventSubscriptionReply, EventTopic,
-    GatewayAuthReply, GatewayClientFrame, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
-    HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData, ModuleAuthData,
+    AuthenticatedData, CapabilitiesReply, CardInfo, CardMetadataReply, CardMetadataSetRequest,
+    ChatMessage, CoreStatusReply, CueKind, EmotionTagData, EventPayload, EventSubscriptionReply,
+    EventTopic, GatewayAuthReply, GatewayClientFrame, GatewayConfigReply, GatewayEvent,
+    GatewayServerFrame, HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData, ModuleAuthData,
     PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionExportReply,
     SessionImportReply, SessionInfo, SettingsChangedData, StatusChangedData, StmmSummary,
     TokenDeltaData, CANONICAL_EMOTION_KEYS,

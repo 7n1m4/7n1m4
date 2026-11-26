@@ -16,8 +16,8 @@
 use std::path::{Path, PathBuf};
 
 use anima_channel::wire::{
-    CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
-    CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
+    CapabilitiesReply, CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest,
+    CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
     CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, CharacterStatsData,
     ChatSendRequest, CoreStatusReply, DiscordStatusReply, DomainStatsData, EmotionTagData,
     EventPayload, EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayConfigReply,
@@ -435,6 +435,17 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "sessions.delete.reply",
             serde_json::to_value(SessionDeleteReply { deleted: true })?,
+        ),
+        (
+            "capabilities.reply",
+            serde_json::to_value(CapabilitiesReply {
+                has_expressions: true,
+                has_motions: true,
+                expression_count: 12,
+                motion_count: 30,
+                vocab_limit: 64,
+                truncated: false,
+            })?,
         ),
         (
             "discord_status.reply",
