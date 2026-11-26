@@ -49,6 +49,7 @@ class AboutScreen extends StatelessWidget {
           title: Text('License'),
           subtitle: Text('$projectLicenseSummary · texts bundled with this build'),
         ),
+        AboutBuildInfoCard(),
         AboutLinksSection(),
         _NoticesTile(),
       ],
@@ -80,8 +81,79 @@ const List<({String label, String url, IconData icon})> aboutLinks =
 
 typedef LaunchUrl = Future<bool> Function(Uri url);
 
-/// Links-only slice: no build-info/`--dart-define` plumbing this wave.
-///
+/// Build metadata stamped with
+/// `--dart-define=BRANCH=... --dart-define=COMMIT=... --dart-define=BUILT_ON=...`.
+/// Blank defines fall back to [_bundledBuildInfo], so an unstamped build shows
+/// honest bundled values instead of guessing repo state or reaching the network.
+typedef _BuildInfo = ({String branch, String commit, String builtOn});
+typedef BuildDefineLookup = String Function(String name);
+
+const _BuildInfo _bundledBuildInfo = (
+  branch: 'unspecified',
+  commit: 'unspecified',
+  builtOn: 'bundled build (no --dart-define values)',
+);
+
+const Map<String, String> _compiledDefines = <String, String>{
+  'BRANCH': String.fromEnvironment('BRANCH'),
+  'COMMIT': String.fromEnvironment('COMMIT'),
+  'BUILT_ON': String.fromEnvironment('BUILT_ON'),
+};
+
+/// Resolves each stamp independently: a blank define falls back on its own,
+/// while a supplied value is trimmed and shown verbatim.
+_BuildInfo _resolveBuildInfo(BuildDefineLookup define) {
+  String stamp(String key, String fallback) {
+    final String value = define(key).trim();
+    return value.isEmpty ? fallback : value;
+  }
+
+  return (
+    branch: stamp('BRANCH', _bundledBuildInfo.branch),
+    commit: stamp('COMMIT', _bundledBuildInfo.commit),
+    builtOn: stamp('BUILT_ON', _bundledBuildInfo.builtOn),
+  );
+}
+
+String _compiledLookup(String name) => _compiledDefines[name] ?? '';
+
+/// Build provenance card. [lookup] is injectable so tests can supply stamped
+/// values without recompiling with `--dart-define`; production uses the
+/// compiled-in [_compiledDefines].
+// Scope: the TS reference (about.vue:74-88) shows version and branch@commit on
+// one line; this slice deliberately uses labeled branch/commit/built-on lines
+// and omits VERSION (flag wiring is a separate bead, airi-psqe).
+class AboutBuildInfoCard extends StatelessWidget {
+  const AboutBuildInfoCard({super.key, this.lookup});
+
+  @visibleForTesting
+  final BuildDefineLookup? lookup;
+
+  @override
+  Widget build(BuildContext context) {
+    final _BuildInfo info = _resolveBuildInfo(lookup ?? _compiledLookup);
+    return Card(
+      color: AppTheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Build info',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text('Branch: ${info.branch}'),
+            Text('Commit: ${info.commit}'),
+            Text('Built on: ${info.builtOn}'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// [launch] is injectable so the exact URLs can be asserted without opening a
 /// browser; production uses [_launchExternal].
 class AboutLinksSection extends StatelessWidget {

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Hermetic coverage for the About screen's official links. The launcher is
-// injected, so no browser or platform channel is touched: the assertions prove
-// both that AboutScreen renders the section and that each tap hands the exact
-// canonical URL to url_launcher.
+// Hermetic coverage for the About screen's official links and build-info card.
+// The launcher and build-define lookup are injected, so no browser, platform
+// channel, or compiled-in define is touched: the assertions prove that
+// AboutScreen renders the sections, each tap hands the exact canonical URL to
+// url_launcher, and the card shows the supplied stamps or bundled fallback.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +42,7 @@ void main() {
     );
 
     expect(find.text('Links'), findsOneWidget);
+    expect(find.text('Build info'), findsOneWidget);
     for (final link in expectedLinks) {
       expect(find.text(link.label), findsOneWidget);
       expect(find.text(link.url), findsOneWidget);
@@ -74,4 +76,72 @@ void main() {
     }
     expect(launched, isEmpty);
   });
+
+  testWidgets('build info renders the injected --dart-define values', (
+    WidgetTester tester,
+  ) async {
+    // Supplied through the injectable lookup, not read from the production
+    // constants: a card that ignores the defines cannot render these stamps.
+    const Map<String, String> stamped = <String, String>{
+      'BRANCH': 'feature/build-stamp',
+      'COMMIT': '0c0ffee1',
+      'BUILT_ON': '2026-11-26T03:04:05Z',
+    };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AboutBuildInfoCard(
+            lookup: (String name) => stamped[name] ?? '',
+          ),
+        ),
+      ),
+    );
+
+    // Expected strings are pinned as literals, independently of `stamped`.
+    expect(find.text('Branch: feature/build-stamp'), findsOneWidget);
+    expect(find.text('Commit: 0c0ffee1'), findsOneWidget);
+    expect(find.text('Built on: 2026-11-26T03:04:05Z'), findsOneWidget);
+  });
+
+  testWidgets('blank defines fall back to bundled values', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AboutBuildInfoCard(lookup: _blankDefine)),
+      ),
+    );
+
+    // Pinned literally, not derived from production's bundled fallback.
+    expect(find.text('Branch: unspecified'), findsOneWidget);
+    expect(find.text('Commit: unspecified'), findsOneWidget);
+    expect(
+      find.text('Built on: bundled build (no --dart-define values)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('each blank define falls back on its own', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AboutBuildInfoCard(
+            lookup: (String name) => name == 'COMMIT' ? '  deadbeef  ' : '  ',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Branch: unspecified'), findsOneWidget);
+    expect(find.text('Commit: deadbeef'), findsOneWidget);
+    expect(
+      find.text('Built on: bundled build (no --dart-define values)'),
+      findsOneWidget,
+    );
+  });
 }
+
+String _blankDefine(String name) => '';
