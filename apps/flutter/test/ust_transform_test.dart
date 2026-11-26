@@ -155,6 +155,199 @@ void main() {
         'a~b',
       );
     });
+
+    test('custom rules run once each, in order', () {
+      const consumeFirst = UstOptions(
+        customReplacements: <UstReplacementRule>[
+          UstReplacementRule(pattern: 'cat', replacement: 'dog'),
+          UstReplacementRule(pattern: 'cat', replacement: 'bird'),
+        ],
+      );
+      // The first rule consumes `cat`; the second never sees it.
+      expect(applyUstTransform('cat and cat', consumeFirst), 'dog and dog');
+
+      const chained = UstOptions(
+        customReplacements: <UstReplacementRule>[
+          UstReplacementRule(pattern: 'cat', replacement: 'dog'),
+          UstReplacementRule(pattern: 'dog', replacement: 'bird'),
+        ],
+      );
+      expect(applyUstTransform('cat dog', chained), 'bird bird');
+    });
+
+    test('text rules escape literals and honor caseSensitive/wholeWord', () {
+      UstOptions options(List<UstReplacementRule> rules) =>
+          UstOptions(customReplacements: rules);
+
+      expect(
+        applyUstTransform(
+          'a.b axb',
+          options(const <UstReplacementRule>[
+            UstReplacementRule(pattern: 'a.b', replacement: 'X'),
+          ]),
+        ),
+        'X axb',
+      );
+      expect(
+        applyUstTransform(
+          'cat Cat catalog',
+          options(const <UstReplacementRule>[
+            UstReplacementRule(
+              pattern: 'cat',
+              replacement: 'dog',
+              caseSensitive: true,
+            ),
+          ]),
+        ),
+        'dog Cat dogalog',
+      );
+      expect(
+        applyUstTransform(
+          'cat Cat catalog',
+          options(const <UstReplacementRule>[
+            UstReplacementRule(pattern: 'cat', replacement: 'dog'),
+          ]),
+        ),
+        'dog dog dogalog',
+      );
+      expect(
+        applyUstTransform(
+          'cat catalog the cat.',
+          options(const <UstReplacementRule>[
+            UstReplacementRule(
+              pattern: 'cat',
+              replacement: 'dog',
+              wholeWord: true,
+            ),
+          ]),
+        ),
+        'dog catalog the dog.',
+      );
+    });
+
+    test('regex rules honor /flags/ and replace once without g', () {
+      UstOptions options(String pattern) => UstOptions(
+            customReplacements: <UstReplacementRule>[
+              UstReplacementRule(
+                type: UstReplacementRuleType.regex,
+                pattern: pattern,
+                replacement: 'earth',
+              ),
+            ],
+          );
+
+      expect(applyUstTransform('World world World', options(r'/world/gi')),
+          'earth earth earth');
+      expect(applyUstTransform('World world World', options(r'/world/g')),
+          'World earth World');
+      expect(
+          applyUstTransform('world world', options(r'/world/')), 'earth world');
+      expect(applyUstTransform('world world', options(r'/world/g')),
+          'earth earth');
+      expect(applyUstTransform('a\nb', options(r'/b$/m')), 'a\nearth');
+    });
+
+    test('a malformed rule cannot abort the rules that follow it', () {
+      const options = UstOptions(
+        customReplacements: <UstReplacementRule>[
+          UstReplacementRule(
+            type: UstReplacementRuleType.regex,
+            pattern: '(',
+            replacement: 'ignored',
+          ),
+          UstReplacementRule(pattern: '', replacement: 'ignored'),
+          UstReplacementRule(pattern: 'cat', replacement: 'dog'),
+        ],
+      );
+      expect(applyUstTransform('cat', options), 'dog');
+    });
+
+    test(r'replacement rules expand JS $1/$$/$& references', () {
+      UstOptions options(String pattern, String replacement) => UstOptions(
+            customReplacements: <UstReplacementRule>[
+              UstReplacementRule(
+                type: UstReplacementRuleType.regex,
+                pattern: pattern,
+                replacement: replacement,
+              ),
+            ],
+          );
+
+      expect(
+        applyUstTransform('cat dog', options(r'/(\w+) (\w+)/g', r'$2-$1')),
+        'dog-cat',
+      );
+      expect(
+        applyUstTransform('cat dog', options(r'/cat/g', r'[$&]')),
+        '[cat] dog',
+      );
+      expect(
+        applyUstTransform('cat', options(r'/(cat)/g', r'$$$1')),
+        r'$cat',
+      );
+      expect(applyUstTransform('cat', options(r'/cat/g', r'$9')), '');
+      expect(
+        applyUstTransform('cat', options(r'/cat/g', r"<$`|$&|$'>")),
+        '<|cat|>',
+      );
+    });
+
+    test('over-long pattern or input is skipped without aborting other rules',
+        () {
+      const valid = UstReplacementRule(pattern: 'cat', replacement: 'dog');
+      final overLongPattern = UstReplacementRule(
+        type: UstReplacementRuleType.regex,
+        pattern: '/cat${'a' * 200}?/g',
+        replacement: 'X',
+      );
+      expect(
+        applyUstTransform(
+          'cat',
+          UstOptions(
+              customReplacements: <UstReplacementRule>[overLongPattern, valid]),
+        ),
+        'dog',
+      );
+
+      const longOptions = UstOptions(
+        customReplacements: <UstReplacementRule>[
+          UstReplacementRule(
+            type: UstReplacementRuleType.regex,
+            pattern: '/cat/g',
+            replacement: 'X',
+          ),
+          valid,
+        ],
+      );
+      expect(
+        applyUstTransform('cat ${'x' * 5000}', longOptions),
+        'dog ${'x' * 5000}',
+      );
+
+      final chained = UstOptions(
+        customReplacements: <UstReplacementRule>[
+          for (var i = 0; i < 40; i++)
+            UstReplacementRule(pattern: 'n$i', replacement: 'n${i + 1}'),
+        ],
+      );
+      expect(applyUstTransform('n0', chained), 'n32');
+    });
+
+    test('custom rules run after MATH/TOKEN sentinels are restored', () {
+      const options = UstOptions(
+        asterisks: UstBracketAction.mute,
+        stripEmojis: false,
+        tildeReplacement: null,
+        customReplacements: <UstReplacementRule>[
+          UstReplacementRule(
+            type: UstReplacementRuleType.regex,
+            pattern: r'/2 \* 3/',
+            replacement: 'six',
+          ),
+        ],
+      );
+      expect(applyUstTransform('*smiles* 2 * 3 = 6', options), 'six = 6');
+    });
   });
 
   group('UstOptions.fromSpeechSettings', () {
@@ -280,6 +473,57 @@ void main() {
         ],
       });
       expect(bypass.enabled, isFalse);
+    });
+
+    test('customReplacements decode in order and skip malformed entries', () {
+      final options = UstOptions.fromSpeechSettings(<String, dynamic>{
+        'activeProvider': 'piper',
+        'voice': 'pet-voice',
+        'voiceProfiles': <dynamic>[
+          <String, dynamic>{
+            'baseVoice': 'pet-voice',
+            'baseProvider': 'piper',
+            'ust': <String, dynamic>{
+              'enabled': true,
+              'customReplacements': <dynamic>[
+                <String, dynamic>{
+                  'id': '1',
+                  'type': 'text',
+                  'pattern': 'cat',
+                  'replacement': 'dog',
+                  'caseSensitive': false,
+                  'wholeWord': true,
+                },
+                <String, dynamic>{
+                  'id': '2',
+                  'type': 'regex',
+                  'pattern': r'/world/gi',
+                  'replacement': 'earth',
+                },
+                <String, dynamic>{
+                  'type': 'text',
+                  'pattern': '',
+                  'replacement': 'skipped',
+                },
+                'not a rule',
+                <String, dynamic>{
+                  'type': 'text',
+                  'replacement': 'no pattern',
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      expect(options.customReplacements, hasLength(2));
+      expect(
+        options.customReplacements.first.type,
+        UstReplacementRuleType.text,
+      );
+      expect(options.customReplacements.first.wholeWord, isTrue);
+      expect(options.customReplacements.last.type, UstReplacementRuleType.regex);
+      expect(applyUstTransform('cat World', options), 'dog earth');
     });
   });
 

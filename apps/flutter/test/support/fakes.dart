@@ -5,8 +5,11 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/speech/speech.dart'
+    show MemoryPcmSource, PcmSource, TtsEngine;
 
 class ScriptedTransport implements DaemonTransport {
   ScriptedTransport({this.connectError});
@@ -206,4 +209,24 @@ GatewayEventFrame emotionTag({
       'ts_ms': tsMs,
     },
   );
+}
+
+/// No-op engine for tests that exercise only the token.delta -> UST path.
+/// No process is spawned and no synthetic audio reaches the renderer.
+class IdleEngine implements TtsEngine {
+  @override
+  String get id => 'test-idle';
+
+  @override
+  int get sampleRate => 0;
+
+  @override
+  Future<Float32List> synthesize(String text) async => Float32List(0);
+
+  @override
+  Future<PcmSource> synthesizeToSource(String text) async =>
+      MemoryPcmSource(sampleRate: 1, channels: 1, samples: <double>[0]);
+
+  @override
+  void dispose() {}
 }

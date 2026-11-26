@@ -19,6 +19,28 @@ enum UstLinkMode { extractText, mute, raw }
 /// Legacy profile migration mode, kept for older saved voice profiles.
 enum UstLegacyMode { mute, flatten, custom }
 
+/// How an ordered custom replacement rule interprets its pattern.
+enum UstReplacementRuleType { text, regex }
+
+/// One ordered substitution from `VoiceProfile.ust.customReplacements`.
+/// Port of `CustomReplacementRule` in
+/// `packages/stage-ui/src/stores/providers/types.ts:173-180`.
+class UstReplacementRule {
+  const UstReplacementRule({
+    this.type = UstReplacementRuleType.text,
+    required this.pattern,
+    required this.replacement,
+    this.caseSensitive = false,
+    this.wholeWord = false,
+  });
+
+  final UstReplacementRuleType type;
+  final String pattern;
+  final String replacement;
+  final bool caseSensitive;
+  final bool wholeWord;
+}
+
 /// Defaults mirror the no-settings starter voice profile: UST on, bracket
 /// muting, code blocks muted, raw HTML stripped, links reduced to their label,
 /// emoji removed, `~` removed. `null` bracket fields mean "not configured" and
@@ -45,6 +67,7 @@ class UstOptions {
     this.tildeReplacement = '',
     this.legacyMode,
     this.legacyCustomStripChars = '',
+    this.customReplacements = const <UstReplacementRule>[],
   });
 
   /// Select the active voice profile from a decoded `settings/speech` map and
@@ -137,8 +160,7 @@ class UstOptions {
       legacyMode: _legacyMode(ust['mode'], defaults.legacyMode),
       legacyCustomStripChars:
           _string(ust['customStripChars'], defaults.legacyCustomStripChars),
-      // customReplacements is deferred: it needs an ordered rule list with
-      // regex/text flags, which UstOptions does not model yet.
+      customReplacements: _replacementRules(ust['customReplacements']),
     );
   }
 
@@ -162,6 +184,9 @@ class UstOptions {
   final String? tildeReplacement;
   final UstLegacyMode? legacyMode;
   final String legacyCustomStripChars;
+  /// Ordered substitutions applied once each to spoken text, after protected
+  /// MATH/TOKEN sentinels have been restored and before whitespace is folded.
+  final List<UstReplacementRule> customReplacements;
 }
 
 const Map<String, UstBracketAction> _bracketActions =
@@ -199,6 +224,28 @@ UstLegacyMode? _legacyMode(Object? value, UstLegacyMode? fallback) =>
     value is String ? _legacyModes[value] ?? fallback : fallback;
 UstLinkMode? _linkMode(Object? value, UstLinkMode? fallback) =>
     value is String ? _linkModes[value] ?? fallback : fallback;
+
+/// Decode the persisted ordered rule list. Malformed entries are dropped; an
+/// empty pattern is skipped just like `if (!rule.pattern) continue` in the TS.
+List<UstReplacementRule> _replacementRules(Object? value) {
+  if (value is! List) return const <UstReplacementRule>[];
+  final rules = <UstReplacementRule>[];
+  for (final entry in value) {
+    if (entry is! Map<String, dynamic>) continue;
+    final pattern = entry['pattern'];
+    if (pattern is! String || pattern.isEmpty) continue;
+    rules.add(UstReplacementRule(
+      type: entry['type'] == 'regex'
+          ? UstReplacementRuleType.regex
+          : UstReplacementRuleType.text,
+      pattern: pattern,
+      replacement: _string(entry['replacement'], ''),
+      caseSensitive: _bool(entry['caseSensitive'], false),
+      wholeWord: _bool(entry['wholeWord'], false),
+    ));
+  }
+  return rules;
+}
 
 final RegExp _imageEmbed = RegExp(r'!\[.*?\]\(.*?\)');
 final RegExp _codeBlock = RegExp(r'```[\s\S]*?```');
@@ -335,6 +382,12 @@ String applyUstTransform(String text, [UstOptions? options]) {
     );
   }
 
+  // Custom rules run after sentinel restoration (so a rule can never corrupt
+  // a MATH/TOKEN placeholder) and before whitespace normalization, matching
+  // the TS step order in speech.ts:396-432.
+  transformed = _applyCustomReplacements(
+      transformed, options.customReplacements);
+
   return _normalizeWhitespace(transformed);
 }
 
@@ -360,6 +413,121 @@ String _restoreAll(String text, List<String> math, List<String> tokens) {
     final index = int.parse(match.group(2)!);
     return index < store.length ? store[index] : match.group(0)!;
   });
+}
+
+/// User-authored rules are untrusted input: bound their count, pattern size
+/// and the text they may scan so a pathological regex cannot stall the isolate.
+const int _maxCustomRules = 32;
+const int _maxCustomPatternLength = 128;
+const int _maxCustomInputLength = 4096;
+
+/// Expand the JS-style references (`$&`, `` $` ``, `$'`, `$$`, `$1`..`$99`) that
+/// TS `String.replace` accepts in a string replacement. Missing groups expand
+/// to the empty string; a lone or unknown `$` stays literal.
+String _expandReplacement({
+  required String replacement,
+  required String input,
+  required Match match,
+}) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < replacement.length; i++) {
+    if (!replacement.startsWith(r'$', i) ||
+        i + 1 >= replacement.length) {
+      buffer.write(replacement[i]);
+      continue;
+    }
+    final next = replacement[i + 1];
+    switch (next) {
+      case r'$':
+        buffer.write(r'$');
+        i++;
+      case '&':
+        buffer.write(match.group(0) ?? '');
+        i++;
+      case '`':
+        buffer.write(input.substring(0, match.start));
+        i++;
+      case "'":
+        buffer.write(input.substring(match.end));
+        i++;
+      default:
+        final firstDigit = int.tryParse(next);
+        if (firstDigit == null || firstDigit == 0) {
+          buffer.write(replacement[i]);
+          break;
+        }
+        var group = firstDigit;
+        var consumed = 2;
+        if (i + 2 < replacement.length) {
+          final secondDigit = int.tryParse(replacement[i + 2]);
+          if (secondDigit != null && firstDigit * 10 + secondDigit <= match.groupCount) {
+            group = firstDigit * 10 + secondDigit;
+            consumed = 3;
+          }
+        }
+        final value = group <= match.groupCount ? match.group(group) : null;
+        if (value != null) buffer.write(value);
+        i += consumed - 1;
+    }
+  }
+  return buffer.toString();
+}
+
+/// Apply each rule exactly once, in order. Mirrors the TS per-rule try/catch:
+/// a malformed pattern cannot abort the rules that follow it.
+String _applyCustomReplacements(String text, List<UstReplacementRule> rules) {
+  // Only regex rules can backtrack catastrophically; text rules are escaped
+  // literals and remain safe on a long utterance.
+  final inputTooLong = text.length > _maxCustomInputLength;
+  var transformed = text;
+  for (final rule in rules.take(_maxCustomRules)) {
+    if (rule.pattern.isEmpty ||
+        rule.pattern.length > _maxCustomPatternLength ||
+        (inputTooLong && rule.type == UstReplacementRuleType.regex)) {
+      continue;
+    }
+    final bool replaceAllMatches;
+    final RegExp regex;
+    if (rule.type == UstReplacementRuleType.regex) {
+      var pattern = rule.pattern;
+      var flags = '';
+      final lastSlash = pattern.lastIndexOf('/');
+      if (pattern.startsWith('/') && lastSlash > 0) {
+        flags = pattern.substring(lastSlash + 1);
+        pattern = pattern.substring(1, lastSlash);
+      }
+      replaceAllMatches = flags.contains('g');
+      // NOTICE: catch only pattern compilation; genuine errors in the
+      // replacement must not be silently swallowed like the TS console.error.
+      try {
+        regex = RegExp(
+          pattern,
+          caseSensitive: !flags.contains('i'),
+          multiLine: flags.contains('m'),
+          dotAll: flags.contains('s'),
+          unicode: flags.contains('u'),
+        );
+      } on FormatException {
+        continue;
+      }
+    } else {
+      // Text rules are escaped and flagged `g`/`gi` like the TS port;
+      // `wholeWord` wraps the literal in JS-style word boundaries.
+      replaceAllMatches = true;
+      final escaped = RegExp.escape(rule.pattern);
+      final source = rule.wholeWord ? '\\b$escaped\\b' : escaped;
+      regex = RegExp(source, caseSensitive: rule.caseSensitive);
+    }
+    String replace(Match match) => _expandReplacement(
+          replacement: rule.replacement,
+          input: transformed,
+          match: match,
+        );
+    transformed = replaceAllMatches
+        ? transformed.replaceAllMapped(regex, replace)
+        : transformed.replaceFirstMapped(regex, replace);
+  }
+  return transformed;
 }
 
 String _processBracket(String input, String start, String end,

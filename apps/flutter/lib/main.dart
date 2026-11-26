@@ -22,12 +22,19 @@ void main() {
   final controller = _localLipSync();
   if (controller != null) {
     var ustOptions = const UstOptions();
-    // Subscribe first: until the daemon answers, starter defaults apply to
-    // every terminal turn. The holder is read per turn, so a late reply is
-    // picked up without resubscribing.
+    // One coordinator for both writers: a late startup reply must not clobber
+    // options installed by a newer settings.changed reload. Until the daemon
+    // answers, starter defaults apply to every terminal turn; the holder is
+    // re-read on every turn.
+    final reloadState = UstOptionsReloadState();
     _speakCompletedTurns(client, controller, () => ustOptions);
+    reloadUstOptionsOnSettingsChanged(
+      client,
+      (options) => ustOptions = options,
+      reloadState,
+    );
     unawaited(
-      loadUstOptionsOnce(client, (options) => ustOptions = options),
+      loadUstOptionsOnce(client, (options) => ustOptions = options, reloadState),
     );
   }
   runApp(
@@ -59,27 +66,121 @@ void _speakCompletedTurns(DaemonClient client, LipSyncController controller,
         UstOptions Function() optionsForTurn) =>
     speakCompletedTurns(client, controller, optionsForTurn: optionsForTurn);
 
+/// Shared coordination between the startup load and `settings.changed`
+/// reloads. Both paths must be given the *same* instance (as `main` does) so a
+/// reply from an older read cannot replace options installed by a newer one.
+class UstOptionsReloadState {
+  /// Bumped only when a reload is actually installed. The startup loader
+  /// captures this value before its first await and skips its apply if it
+  /// changed in the meantime.
+  int generation = 0;
+
+  /// At most one reload RPC is in flight; a burst of events collapses into the
+  /// single read already underway instead of starting N concurrent RPCs.
+  bool reloadInFlight = false;
+}
+
+/// Wait until the daemon reports connected, but never longer than [timeout].
+/// Uses an explicit subscription because `firstWhere(...).timeout(...)` leaves
+/// `firstWhere`'s listener attached when the timeout fires. Both exit paths
+/// cancel the subscription and the timer synchronously.
+Future<void> _waitForConnection(DaemonClient client, Duration timeout) {
+  final connected = Completer<void>();
+  Timer? timer;
+  StreamSubscription<DaemonStatus>? subscription;
+  void cleanup() {
+    subscription?.cancel();
+    timer?.cancel();
+  }
+
+  subscription = client.statusStream.listen((status) {
+    if (status.state == DaemonConnectionState.connected &&
+        !connected.isCompleted) {
+      connected.complete();
+      cleanup();
+    }
+  });
+  timer = Timer(timeout, () {
+    if (!connected.isCompleted) {
+      connected.completeError(
+        TimeoutException('daemon did not connect', timeout),
+      );
+      cleanup();
+    }
+  });
+  // The snapshot may have flipped between the caller's check and listen().
+  if (client.snapshot.isConnected && !connected.isCompleted) {
+    connected.complete();
+    cleanup();
+  }
+  return connected.future;
+}
+
 /// Read `settings/speech` once, as soon as the client can answer. A client that
 /// has not connected yet (the user connects from the Connections screen) is
 /// waited on rather than probed once and forgotten, but only for a bounded
 /// time. The caller's subscription must already be registered: [apply] writes
 /// the loaded options into the holder that is re-read on every turn. Settings
 /// are daemon-owned, so this never writes a local fallback back.
+///
+/// Pass the same [state] used by [reloadUstOptionsOnSettingsChanged] so a late
+/// reply from this startup read cannot overwrite a newer reload.
 Future<void> loadUstOptionsOnce(
   DaemonClient client,
-  void Function(UstOptions) apply,
-) async {
+  void Function(UstOptions) apply, [
+  UstOptionsReloadState? state,
+]) async {
+  final reloadState = state ?? UstOptionsReloadState();
+  final generation = reloadState.generation;
   try {
     if (!client.snapshot.isConnected) {
-      await client.statusStream
-          .firstWhere(
-            (status) => status.state == DaemonConnectionState.connected,
-          )
-          .timeout(const Duration(seconds: 10));
+      await _waitForConnection(client, const Duration(seconds: 10));
     }
-    apply(UstOptions.fromSpeechSettings(await client.settingsGet('speech')));
+    final settings = await client.settingsGet('speech');
+    // A settings.changed reload landed while this reply was in flight; it owns
+    // the holder now, so discard the older startup value.
+    if (generation != reloadState.generation) return;
+    apply(UstOptions.fromSpeechSettings(settings));
   } catch (_) {
     // An unreachable daemon or section keeps the pre-connect starter defaults.
+  }
+}
+
+/// Re-read `settings/speech` when the daemon publishes a `settings.changed`
+/// event for the `speech` section, replacing the holder [apply] writes in
+/// place. Settings are daemon-owned: this never writes a local snapshot back
+/// with `settings.set`. Returns the unsubscribe handle from [DaemonClient.onEvent].
+/// Share [state] with [loadUstOptionsOnce] to keep their replies ordered.
+void Function() reloadUstOptionsOnSettingsChanged(
+  DaemonClient client,
+  void Function(UstOptions) apply, [
+  UstOptionsReloadState? state,
+]) {
+  final reloadState = state ?? UstOptionsReloadState();
+  return client.onEvent((event) {
+    if (event.topic != EventTopic.settingsChanged) return;
+    if (event.data['section'] != 'speech') return;
+    // The event arrives on a live connection, so read immediately: the bounded
+    // first-connect wait belongs to [loadUstOptionsOnce] alone.
+    unawaited(_reloadUstOptions(client, apply, reloadState));
+  });
+}
+
+Future<void> _reloadUstOptions(
+  DaemonClient client,
+  void Function(UstOptions) apply,
+  UstOptionsReloadState state,
+) async {
+  if (state.reloadInFlight) return;
+  state.reloadInFlight = true;
+  try {
+    final settings = await client.settingsGet('speech');
+    state.generation++;
+    apply(UstOptions.fromSpeechSettings(settings));
+  } catch (_) {
+    // An unreadable section leaves the last good options in place.
+  } finally {
+    state.reloadInFlight = false;
   }
 }
 
