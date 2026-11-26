@@ -185,3 +185,9 @@ scratch/
 
 # Local session artifacts
 /session-*.md
+
+# Local eval-harness scratch state and generated reports
+.omp/ratchet/
+eval_report.json
+__pycache__/
+*.pyc
