@@ -98,7 +98,7 @@ Utterance ids are monotonically increasing per character; an interrupt publishes
 ### Protocol invariants
 
 - Every **mutating** verb must be registered through the `gated()` wrapper (`gateway.rs:768`): `allowActions: true`, plus `allowRemoteActions: true` beyond loopback. Mutating verbs are denied by default and the denial is tested.
-- Read-only verbs may be ungated only when their reply is a scrubbed projection. `settings.get("mcp")` is the mandatory precedent for masked secrets; adding a new section with credential fields requires the same treatment.
+- Read-only verbs may be ungated only when their reply is a scrubbed projection. `settings.get("mcp")` masks `env`/`headers`/`token` (`gateway.rs:966,975-981`, `core.rs:55-84,831-842`); `settings.get("discord")` exposes `has_token` instead of `token` (`gateway.rs:966,986-992`, `core.rs:331-335,733-758`, `settings.rs:1943-1983`, commit `1bbe6942`). Both are the mandatory precedents: a new credential-bearing section needs the same treatment, and a mask-echo PATCH must preserve the stored secret (`core.rs:150-243`).
 - `wire.rs` is Rust-canonical. Typed additions must regenerate `packages/server-shared/src/types/generated/anima-channel.ts` with `pnpm check:wire-types` in the same commit. Raw `serde_json::Value` verbs (like `sessions.fork`) are allowed only when no client codegen is needed; document the choice at the handler.
 - Auth tokens, API keys and secret configuration never appear in logs, event payloads, backups or unmasked reads.
 

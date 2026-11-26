@@ -46,3 +46,15 @@
 ### Round 6 (scan → verify)
 
 - Two read-only scans covered settings/provider editors and chat/sessions/cards/provider flows. No new qualifying gaps: missing non-general settings editors are already recorded as partial parity (`feature-parity-checklist.md` settings rows); the general editor's extra daemon booleans are an intentionally narrow editor improvement, not a broken path; and the provider save form's free-text model field still writes the same daemon value as the discovered-model picker. Chat/cards/sessions already exercise the same daemon verbs as the TS references.
+
+### Round 7 (scan → improve → verify)
+
+- Wave dispatched at 18:50 UTC (round-7 checkpoints in `airi-jdic`): six read-only researchers, five disjoint implementers, six lane reviewers, five fix workers and five fix re-reviews; all Must/Should fixes applied.
+- Landed: `758e1308` (Lane A — shell session id into stage captions, `airi-j1o5`; settings search, `airi-x9h6`; per-profile UST settings read, `airi-ye1p`), `db694b8d` (Lane B — bounded `chat.send` attachment ingest and pure pacing core, `airi-x46r.5` / `airi-hnoe`), `52efa2d6` (docs refresh).
+- Verification: full Flutter suite **661 pass / 1 skip**; `cargo test --workspace --locked -- --test-threads=1` green; fmt, wire-type and golden-fixture drift checks clean. Follow-ups filed: `airi-jri8`, `airi-u5yb`, `airi-a9ga`, `airi-f2xw`, `airi-lg1c`, `airi-i18j`, `airi-hffd`, `airi-lwft`, `airi-eefo`, `airi-6ou4`.
+
+### Round 8 (scan → improve → verify)
+
+- Wave dispatched at 19:31 UTC (ownership matrix in `airi-dl69`): 24 read-only researchers and 10 disjoint implementers across eight active lanes; rust-protocol and ts-client stayed dormant (`wire.rs` single writer, TS reference-only). Retro (`airi-dl69`) records 82 subagents, no ownership collisions, and safety reviewers catching the Discord raw-read leak, caption unsubscribe race and speech regex DoS.
+- Landed: `8bebf33e` (About links, `airi-dt2b`), `c0fcf0fe` (ordered UST rules + live speech settings reload, `airi-f2xw` / `airi-a9ga`), `73a2ca32` (settings keywords, encoded deep links, structured hearing editors, `airi-i18j` / `airi-hffd` / `airi-jyr6`), `046b5cb1` (unsubscribe-before-await, `airi-eefo`), `daf0c712` (scroll pinning, generation/session guards, composer drafts, `airi-zojh` / `airi-h2kj` / `airi-krhu`), `6fabad14` (pure `apply_outfit` transition, `airi-386n`), `1bbe6942` (token-safe Discord settings, `airi-bav5`), `5bb6e1ad` (docs refresh).
+- Verification: full Flutter suite **705 pass / 1 skip**; targeted suites 549 Discord, 35+ UST, 21 card, 13 hearing tests; negative controls confirm the unsubscribe race, generation guard, startup race and token preservation tests are non-vacuous. Live Discord verbs remain open (`airi-ro6o`); outfit verb/cue/mesh remains `airi-e4r2`.

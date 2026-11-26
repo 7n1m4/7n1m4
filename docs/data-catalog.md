@@ -76,12 +76,12 @@ client may fabricate these values when a frame is missing.
 
 Keyset list cursors are also daemon-owned wire values, not persisted state:
 `cards.list`/`sessions.list` return `{ updatedAt, rowId }` and `chat.history`
-returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1877,2100,1500`,
-`list_cursor` at `gateway.rs:3265`). `ListPage.nextCursor` in
+returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1608-1609` for `chat.history`,
+`:1975` for `cards.list`, `:2204` for `sessions.list`; `list_cursor` at `:3292`). `ListPage.nextCursor` in
 `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,732-745` forwards them
 verbatim; only older daemons without a cursor fall back to a numeric offset
 (`airi-dib9`). `stmm.upsert` writes short-term summary rows via the gated
-`gateway.rs:1624-1661`; Flutter's typed wrapper is at `daemon_client.dart:1003-1065`
+`gateway.rs:1652-1665`; Flutter's typed wrapper is at `daemon_client.dart:1003-1065`
 (`airi-bmt5`), while the TS `local:memory/short-term/*` lane (§1.7) remains a
 migration reference, not a daemon mirror.
 
@@ -357,6 +357,18 @@ interface ChatHistoryItem {
   createdAt: number
 }
 ```
+
+Daemon-persisted user turns may carry `metadata.attachments`: an array of
+`AttachmentDescriptor` (`mimeType`, base64 `data`, optional `fileName` / `url`)
+written by `append_user_turn_with_attachments`
+(`crates/anima-core/src/lib.rs:194-205`, `crates/anima-core/src/chat.rs:388,434-437`,
+`crates/anima-daemon/src/gateway.rs:1325`). Bounds are at most 4 descriptors,
+128 KiB decoded each, 384 KiB total, with an image-MIME allowlist
+(`gateway.rs:87-140`); `chat.history` strips only `attachments[].data` before
+replying so the frame stays under 1 MiB (`gateway.rs:145-158`). Attachments are
+stored on the **user turn only** — the assistant reply has no metadata field
+(`chat.rs:2518-2561`, `airi-x46r.5`, closed, commit `db694b8d`). The TS
+`ChatHistoryItem` above is the pre-attachment migration reference.
 
 ### 1.6 Long-Term Memory (Text Journal)
 
@@ -1001,6 +1013,19 @@ interface StoredCustomVrmAnimation {
 | :--- | :--- | :--- | :--- |
 | `settings/faculties/defaults` | `GlobalFacultyDefaultsState` | `FACTORY_SAFE_DEFAULTS` | `stores/faculty-defaults.ts` |
 
+The daemon also owns a typed `settings/faculties` section
+(`FacultiesSettings`, `crates/anima-core/src/settings.rs:1764`, key at `:1790`,
+registered in `crates/anima-daemon/src/core.rs:309`, read/written by
+`settings.get`/`settings.set` at `gateway.rs:966,1027`). It mirrors the four
+live faculties — `consciousness`, `speech`, `hearing`, `vision` — each a
+`FacultyConfig` (`settings.rs:1656`) with `primaryProvider`, `primaryModel`,
+`primaryVoiceId`, `primaryAdvanced`, `fallbackProvider`, `fallbackModel`,
+`fallbackVoiceId`, `fallbackAdvanced`, `autoFailover`, `failoverTriggers`,
+`notificationStyle` and `recoveryIntervalMinutes`. The `advanced` blobs are
+opaque provider options and never carry credentials on the wire; the deprecated
+`artistry` faculty is ignored by serde. The flat `settings/faculties/defaults`
+row above is the TS localStorage reference key, not the daemon section.
+
 ### 4.2c Chat provider selection (daemon-owned)
 
 | Key | Type | Default | File |
@@ -1081,9 +1106,26 @@ interface VoiceProfile {
     stripEmojis: boolean
     stripSymbols: boolean
     tildeReplacement: string
+    customReplacements: CustomReplacementRule[]
   }
 }
+
+interface CustomReplacementRule {
+  id: string
+  type: 'text' | 'regex'
+  pattern: string
+  replacement: string
+  caseSensitive: boolean
+  wholeWord: boolean
+}
 ```
+
+`ust.customReplacements` is an ordered rule list
+(`packages/stage-ui/src/stores/providers/types.ts:173-180,229`); Flutter decodes
+the same shape with bounded rules (32 rules, 128-char pattern, 4096-char input)
+in `apps/flutter/lib/speech/ust_transform.dart:25-45,163` (`airi-f2xw`). It stays
+inside the opaque `settings/speech.voiceProfiles` JSON — no daemon field was
+added.
 
 ### 4.5 Hearing (STT)
 
@@ -1154,6 +1196,19 @@ metadata are plain refs, not durable settings.
 | `settings/discord/voiceCall` | `'classic' \| 'gemini' \| 'off'` | `'off'` | `stores/modules/discord.ts` |
 | `settings/discord/visionEnabled` | `boolean` | `true` | `stores/modules/discord.ts` |
 | `settings/discord/dmsEnabled` | `boolean` | `false` | `stores/modules/discord.ts` |
+
+The daemon also owns a typed `settings/discord` section (`DiscordSettings`,
+`crates/anima-core/src/settings.rs:1876`, key at `:1930`, registered in
+`crates/anima-daemon/src/core.rs:311`; reads at `gateway.rs:966` (Discord projection at `:986-992`) and
+`core.rs:331-335,733-758`). It mirrors the typed fields above except
+`cloudRelayInstances`, which stays client-local; camelCase names are used on the
+daemon wire. `token` is **write-only**: no read reply contains it. The read
+projection is `DiscordSettingsView` (`settings.rs:1943-1983`), which replaces the
+secret with a wire-only boolean `hasToken` (serde `has_token`). A `settings.set`
+PATCH that omits `token`, nulls it, or echoes the mask keeps the stored secret;
+only an explicit new token rotates it (`core.rs:231-243`, test at `:1607`).
+Commit `1bbe6942`, bead `airi-bav5` (closed); live lifecycle verbs remain open
+(`airi-ro6o`). See `docs/decision-token-safe-settings-projection.md`.
 
 ### 4.8 Artistry (Image Generation)
 
@@ -1248,6 +1303,9 @@ missing platform channel degrades to an in-memory store.
 | `settings/control-strip/buttons-version` | `string` | `'v5'` | `packages/stage-ui/src/stores/settings/control-strip.ts`; Rust canonical button catalog in `crates/anima-core/src/settings.rs` (`airi-zjkw`) |
 | `settings/control-strip/docked-edge` | `'left' \| 'right' \| 'top' \| 'bottom'` | `'right'` | `stores/settings/control-strip.ts` |
 | `settings/control-strip/position` | `{ x: number, y: number }` | `{ x: 20, y: 150 }` | `scenarios/layout/ControlStrip.vue` |
+| `settings/control-strip/avatarFavoritesByChar` | `Record<string, string[]>` | `{}` | daemon-owned `ControlStripSettings.avatar_favorites_by_char` (`crates/anima-core/src/settings.rs:593,642`) — per-card avatar model ids, `global` key when no card is active |
+| `settings/control-strip/voiceFavorites` | `string[]` | `[]` | daemon-owned `settings.rs:645` — `provider:voiceId` keys, oldest first, FIFO cap 3 |
+| `settings/control-strip/characterFavoritesGlobal` | `string[]` | `[]` | daemon-owned `settings.rs:648` — globally favorited card ids, FIFO cap 3 |
 | `settings/controls-island/icon-size` | `'auto' \| 'large' \| 'small'` | `'auto'` | `stores/settings/controls-island.ts` |
 | `controls-island/fade-on-hover-enabled` | `boolean` | `false` | `stores/settings/controls-island.ts` |
 
@@ -1363,8 +1421,8 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `onboarding/v2-skipped` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-completed` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` (TS reference); daemon-backed via `settings.get/set('onboarding')`, storage key `settings/onboarding`, `OnboardingSettings::draft` (`crates/anima-core/src/settings.rs:2304`) — opaque JSON so wizard-owned fields round-trip; known credential fields are scrubbed in both directions (`airi-vcxy.2`) |
-| `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::completed` (`crates/anima-core/src/settings.rs:2143`) |
-| `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::skipped` (`crates/anima-core/src/settings.rs:2146`) |
+| `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::completed` (`crates/anima-core/src/settings.rs:2307`) |
+| `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::skipped` (`crates/anima-core/src/settings.rs:2310`) |
 | `airi:onboarding:magic-wand-seen` | `boolean` | `false` | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
 
 Disposition note: the V3 draft and completion/skip flags are now daemon-backed through the typed `settings/onboarding` section (`settings.get/set('onboarding')`, recursive PATCH so sibling fields survive); the TS store still writes its `localStorage` keys and is the behaviour reference until migrated. `stores/onboarding.ts:17-20` states legacy `onboarding/completed` / `onboarding/skipped` (rows above) are intentionally never read. The Flutter first-run flow remains an outstanding parity gap (`airi-vcxy.4`).
@@ -1431,6 +1489,19 @@ Disposition note: the V3 draft and completion/skip flags are now daemon-backed t
 | `airi_cc_{sha256hash}` | `string` (JSON, cached color data) | `libs/character-media-resolver.ts` |
 | `airi:debug` | `'1'` (string flag) | `stores/providers/helpers.ts` |
 | `local:peers/device-keypair` | `{ publicKeyHex, privateKeyJwk, createdAt }` (JSON string); **Disposition (device keypair):** ARCHIVE (TS-reference-only, no daemon port), see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md) | `packages/stage-ui/src/composables/use-peer-embassy.ts` |
+
+The daemon also owns a typed `settings/mcp` section keyed by server name
+(`McpSettings = HashMap<String, McpServerSettings>` at
+`crates/anima-core/src/settings.rs:1839`, registered in
+`crates/anima-daemon/src/core.rs:310`; verbs `mcp.config.get`/`.set` at
+`crates/anima-daemon/src/gateway.rs:2528-2548`). Each server carries `transport`
+(`stdio` default or `http`), `command`, `cwd`, `url`, `args`, `env`, `headers`,
+`token` and `enabled`. `env`, `headers` and credential-shaped fields including
+`token` are masked by `mcp.config.get` (`core.rs:29-84,831-842`), and a
+mask-echo or omitted-secret PATCH preserves the stored value (`core.rs:150-231`).
+The `settings/mcp/server-*` and `mcp/connected` rows above are the TS
+localStorage behaviour reference, not the daemon section.
+
 ---
 
 ## 5. IndexedDB — Search Index (Separate DB)
@@ -1766,8 +1837,8 @@ When implementing MOSS-TTS-Nano voice cloning, the voice profile store should fo
 ### Daemon RPC / event wire sources (not persisted keys)
 | File | Role |
 | :--- | :--- |
-| `crates/anima-channel/src/wire.rs:1039-1073` | Presence/health payloads (`PresenceChangedData`, `StatusChangedData`); `CueKind` at `:942-949` |
-| `crates/anima-daemon/src/gateway.rs:1500,1877,2100` | Keyset cursors for chat history, cards, sessions; `stmm.upsert` handler at `:1624-1661` |
+| `crates/anima-channel/src/wire.rs:1085,1104` | Presence/health payloads (`PresenceChangedData`, `StatusChangedData`); `CueKind` at `:982-989` |
+| `crates/anima-daemon/src/gateway.rs:1608-1609,1975,2204` | Keyset cursors for `chat.history`, `cards.list`, `sessions.list` (`list_cursor` at `:3292`); `stmm.upsert` handler at `:1652-1665` |
 | `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,267-288,732-745` | `ListPage.nextCursor` verbatim cursor forwarding, typed presence/status hooks, `stmmUpsert` at `:1003-1065` |
 | `apps/flutter/lib/features/stage/presence_event_state.dart:65-173` | Seq-deduped presence/health snapshot and typed hook binding |
 | `apps/flutter/lib/features/stage/presence_status_chip.dart:17-120` | Stage consumer of daemon-published presence/health |
