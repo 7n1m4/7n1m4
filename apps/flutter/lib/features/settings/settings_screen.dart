@@ -2,7 +2,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -24,10 +23,17 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.client,
     required this.onOpenConnections,
+    this.onSearchReady,
+    this.onSearchDisposed,
   });
 
   final DaemonClient client;
   final VoidCallback onOpenConnections;
+
+  /// App-level chord hooks. The shell owns the global listener; this screen
+  /// only lends it its field while mounted, so a hidden tab is unreachable.
+  final void Function(FocusNode focus, void Function() close)? onSearchReady;
+  final void Function(FocusNode focus)? onSearchDisposed;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -101,6 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    widget.onSearchReady?.call(_searchFocus, _closeSearch);
     _searchFocus.addListener(_onSearchFocusChanged);
     _wasConnected = widget.client.snapshot.isConnected;
     _statusSub = widget.client.statusStream.listen((status) {
@@ -130,6 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    widget.onSearchDisposed?.call(_searchFocus);
     _unsubscribeEvents?.call();
     _statusSub?.cancel();
     _searchFocus.removeListener(_onSearchFocusChanged);
@@ -152,36 +160,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         cards: _cards,
       ).search(_searchQuery);
 
-  static bool _isApplePlatform() =>
-      defaultTargetPlatform == TargetPlatform.macOS ||
-      defaultTargetPlatform == TargetPlatform.iOS;
-
-  /// Screen-wide key handling: Ctrl/Cmd+K focuses search, and while the field
-  /// is focused Enter selects the first visible result and Escape clears it.
+  /// Local key handling while the search field is focused: Enter selects the
+  /// first visible result. Ctrl/Cmd+K and Escape are app-global (owned by the
+  /// navigation shell), so they never act on a hidden tab and Escape restores
+  /// the focus the chord replaced.
   ///
   /// Only [KeyDownEvent] starts a fresh press; [KeyRepeatEvent] (a held key)
-  /// is ignored so a long press cannot submit or re-trigger the shortcut.
+  /// is ignored so a long press cannot submit a result twice.
   KeyEventResult _handleSettingsKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    if (event.logicalKey == LogicalKeyboardKey.keyK &&
-        (_isApplePlatform()
-            ? HardwareKeyboard.instance.isMetaPressed
-            : HardwareKeyboard.instance.isControlPressed)) {
-      _searchFocus.requestFocus();
-      // Consume the chord so the 'k' is never inserted into the field.
-      return KeyEventResult.handled;
-    }
 
     if (_searchFocus.hasFocus) {
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.numpadEnter) {
         final results = _currentResults();
         if (results.isNotEmpty) _openSearchResult(results.first);
-        return KeyEventResult.handled;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.escape) {
-        _closeSearch();
         return KeyEventResult.handled;
       }
     }
@@ -523,9 +516,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ];
 
     return Focus(
-      // Keep a focus node in this screen's subtree even before the user taps
-      // the field, so the shortcut works from a freshly opened settings hub.
-      autofocus: true,
+      // No autofocus: this page is mounted offstage in the shell's
+      // IndexedStack, and stealing focus there would make key handling act on
+      // an invisible field. The app-level chord focuses the field on demand.
       onKeyEvent: _handleSettingsKey,
       child: ListView(
         padding: const EdgeInsets.all(16),

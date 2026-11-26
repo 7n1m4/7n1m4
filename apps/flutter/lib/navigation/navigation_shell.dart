@@ -3,7 +3,11 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyDownEvent, KeyEvent, LogicalKeyboardKey;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:anima_control/speech/lip_sync_rms_data.dart';
@@ -111,6 +115,126 @@ Future<Directory> defaultSceneStorageDirectory() =>
 
 Future<void> _loadSceneLibrary(StageSceneStore store) => store.load();
 
+/// Index of the settings hub in the shell's [IndexedStack].
+const int settingsDestinationIndex = 2;
+
+/// App-global Ctrl/Cmd+K owner for settings search.
+///
+/// [NavigationShell] installs this listener on mount and removes it on dispose,
+/// so it lives for the app's lifetime without any startup wiring. The settings
+/// screen binds its field while mounted, and the shell reports which
+/// destination is active — a hidden IndexedStack page is never reachable.
+class SettingsSearchShortcut {
+  SettingsSearchShortcut._();
+
+  static final SettingsSearchShortcut instance = SettingsSearchShortcut._();
+
+  static bool _installed = false;
+
+  /// Idempotent: the shell installs on mount; repeated calls are no-ops.
+  void install() {
+    if (_installed) return;
+    HardwareKeyboard.instance.addHandler(_onKeyEvent);
+    _installed = true;
+  }
+
+  /// Detach the listener and forget transient focus state.
+  void uninstall() {
+    if (_installed) {
+      HardwareKeyboard.instance.removeHandler(_onKeyEvent);
+      _installed = false;
+    }
+    activeDestinationIndex = 0;
+    searchFocus = null;
+    clearSearch = null;
+    _previousFocus = null;
+  }
+
+  int activeDestinationIndex = 0;
+  FocusNode? searchFocus;
+  void Function()? clearSearch;
+  FocusNode? _previousFocus;
+
+  /// Called by the mounted settings screen; it owns the field and its query.
+  void bindSearch({
+    required FocusNode focus,
+    required void Function() close,
+  }) {
+    searchFocus = focus;
+    clearSearch = close;
+  }
+
+  void unbindSearch(FocusNode focus) {
+    if (identical(searchFocus, focus)) {
+      searchFocus = null;
+      clearSearch = null;
+    }
+    if (identical(_previousFocus, focus)) _previousFocus = null;
+  }
+
+  static bool _isApplePlatform() =>
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// A focus node belongs to an editor when an [EditableText] is its ancestor
+  /// (EditableText wraps its own [Focus] with the node).
+  static bool _isEditor(FocusNode node) =>
+      node.context?.findAncestorWidgetOfExactType<EditableText>() != null;
+
+  bool _onKeyEvent(KeyEvent event) {
+    // A held key is a repeat, not a fresh chord press.
+    if (event is! KeyDownEvent) return false;
+    final field = searchFocus;
+    if (field == null ||
+        activeDestinationIndex != settingsDestinationIndex) {
+      return false;
+    }
+    // A sub-route pushed from settings (providers, cards, ...) obscures the
+    // hub. Its field is still mounted, but focusing it would steal focus from
+    // the visible page, so the chord only applies on the current route.
+    final fieldContext = field.context;
+    if (fieldContext == null ||
+        ModalRoute.of(fieldContext)?.isCurrent != true) {
+      return false;
+    }
+
+    final primary = FocusManager.instance.primaryFocus;
+    final modifierPressed = _isApplePlatform()
+        ? HardwareKeyboard.instance.isMetaPressed
+        : HardwareKeyboard.instance.isControlPressed;
+
+    if (event.logicalKey == LogicalKeyboardKey.keyK && modifierPressed) {
+      // A chord belongs to the search field only when no other editor has
+      // focus: Ctrl/Cmd+K stays available to the text field being typed in.
+      if (primary != null && _isEditor(primary) && !identical(primary, field)) {
+        return false;
+      }
+      // Re-pressing the chord while search is focused must not overwrite the
+      // focus we intend to restore on Escape.
+      if (primary != null && !identical(primary, field)) {
+        _previousFocus = primary;
+      }
+      field.requestFocus();
+      return true;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.escape && field.hasFocus) {
+      clearSearch?.call();
+      final previous = _previousFocus;
+      _previousFocus = null;
+      if (previous != null) {
+        // The close callback setState()s and unfocuses the field; restore once
+        // that frame has applied, otherwise its unfocus wins the focus update.
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (previous.context?.mounted == true) previous.requestFocus();
+        });
+      }
+      return true;
+    }
+    return false;
+  }
+}
+
 /// Thin navigation shell: six destinations, no business logic.
 /// An adaptive NavigationRail for wide/desktop windows is deferred.
 class NavigationShell extends StatefulWidget {
@@ -162,6 +286,7 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   void initState() {
     super.initState();
+    SettingsSearchShortcut.instance.install();
     _unsubscribeSettingsEvents = widget.client.onEvent(_onSettingsChanged);
     unawaited(_prepareScenes());
     unawaited(_loadCards());
@@ -171,6 +296,7 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   void dispose() {
     _unsubscribeSettingsEvents?.call();
+    SettingsSearchShortcut.instance.uninstall();
     _stageRender.dispose();
     super.dispose();
   }
@@ -379,9 +505,15 @@ class _NavigationShellState extends State<NavigationShell> {
     }
   }
 
+  void _setIndex(int index) {
+    setState(() => _index = index);
+    // The app-global chord acts only on the visible destination.
+    SettingsSearchShortcut.instance.activeDestinationIndex = index;
+  }
+
   void _selectStageDestination(int index) {
+    _setIndex(index);
     setState(() {
-      _index = index;
       _stageVisible = index == 5;
       _stageRender.setPaused(!_stageVisible);
     });
@@ -399,7 +531,10 @@ class _NavigationShellState extends State<NavigationShell> {
       ChatScreen(key: _chatKey, client: widget.client),
       SettingsScreen(
         client: widget.client,
-        onOpenConnections: () => setState(() => _index = 3),
+        onOpenConnections: () => _setIndex(3),
+        onSearchReady: (focus, close) =>
+            SettingsSearchShortcut.instance.bindSearch(focus: focus, close: close),
+        onSearchDisposed: SettingsSearchShortcut.instance.unbindSearch,
       ),
       ConnectionsScreen(client: widget.client),
       const AboutScreen(),

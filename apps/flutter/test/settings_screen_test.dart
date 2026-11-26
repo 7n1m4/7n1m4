@@ -9,13 +9,31 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/settings/settings_screen.dart';
+import 'package:anima_control/navigation/navigation_shell.dart';
 
 import 'support/fakes.dart';
 
 void main() {
-  Widget screen(FakeChatClient client) => MaterialApp(
-        home: Scaffold(body: SettingsScreen(client: client, onOpenConnections: () {})),
-      );
+  setUp(() => SettingsSearchShortcut.instance.install());
+  tearDown(() => SettingsSearchShortcut.instance.uninstall());
+
+  /// Standalone settings screen: wire the same app-level chord the shell uses,
+  /// with this screen as the active destination.
+  Widget screen(FakeChatClient client) {
+    final shortcut = SettingsSearchShortcut.instance;
+    shortcut.activeDestinationIndex = settingsDestinationIndex;
+    return MaterialApp(
+      home: Scaffold(
+        body: SettingsScreen(
+          client: client,
+          onOpenConnections: () {},
+          onSearchReady: (focus, close) =>
+              shortcut.bindSearch(focus: focus, close: close),
+          onSearchDisposed: shortcut.unbindSearch,
+        ),
+      ),
+    );
+  }
 
   FilledButton saveButton(WidgetTester tester, String label) =>
       tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
@@ -619,13 +637,17 @@ void main() {
   group('settings search keyboard shortcuts', () {
     bool searchFocused(WidgetTester tester) =>
         tester
-            .widget<TextField>(find.byKey(const Key('settings-search-field')))
+            .widget<TextField>(
+              find.byKey(const Key('settings-search-field'), skipOffstage: false),
+            )
             .focusNode!
             .hasFocus;
 
     String searchText(WidgetTester tester) =>
         tester
-            .widget<TextField>(find.byKey(const Key('settings-search-field')))
+            .widget<TextField>(
+              find.byKey(const Key('settings-search-field'), skipOffstage: false),
+            )
             .controller!
             .text;
 
@@ -661,7 +683,7 @@ void main() {
       expect(find.text('Search Results'), findsOneWidget);
     });
 
-    testWidgets('Ctrl+K moves focus from another field without typing into it',
+    testWidgets('Ctrl+K is left to another editor that has focus',
         (tester) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
@@ -675,8 +697,8 @@ void main() {
       await tester.tap(language);
       await tester.enterText(language, 'en');
       await tester.pumpAndSettle();
-      // Focusing search scrolls it back into view, so hold the controller
-      // instead of re-finding a widget that may be offstage afterwards.
+      // Hold the controller: asserting focus below does not re-materialize a
+      // field that later scrolls out of view.
       final languageController = tester.widget<TextField>(language).controller!;
       expect(
         tester
@@ -692,14 +714,25 @@ void main() {
       final handled =
           await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
 
-      expect(handled, isTrue,
-          reason: 'the chord is consumed while a different field has focus');
+      expect(handled, isFalse,
+          reason: 'the chord belongs to the editor that has focus');
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(of: language, matching: find.byType(EditableText)),
+            )
+            .focusNode
+            .hasFocus,
+        isTrue,
+        reason: 'the editor keeps focus instead of being replaced by search',
+      );
       expect(
         languageController.text,
         'en',
-        reason: 'the consumed chord never inserts k into the focused field',
+        reason: 'the editor keeps its text and its own Ctrl+K binding',
       );
-      expect(searchFocused(tester), isTrue);
+      expect(searchFocused(tester), isFalse,
+          reason: 'the global chord never steals focus from an editor');
       expect(searchText(tester), isEmpty);
     });
 

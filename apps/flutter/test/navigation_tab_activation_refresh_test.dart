@@ -8,9 +8,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/features/settings/settings_screen.dart';
 import 'package:anima_control/features/stage/stage_overlay_state.dart';
 import 'package:anima_control/features/stage/stage_screen.dart';
 import 'package:anima_control/l10n/app_localizations.dart';
@@ -216,5 +218,118 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'the search chord is app-global but never focuses a hidden settings tab',
+    (tester) async {
+      final client = _RefreshClient();
+      addTearDown(client.dispose);
+      final sentinel = FocusNode(debugLabel: 'previous-focus');
+      addTearDown(sentinel.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Focus(
+            focusNode: sentinel,
+            child: NavigationShell(
+              client: client,
+              sceneStorageDirectory: Directory.current,
+              sceneLibraryLoader: (store) async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+
+      TextField searchField() => tester.widget<TextField>(
+            find.byKey(const Key('settings-search-field'), skipOffstage: false),
+          );
+
+      Future<bool> chord() async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+        final handled = await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+        await tester.pumpAndSettle();
+        return handled;
+      }
+
+      // The settings page is mounted offstage in the IndexedStack while Home
+      // is active. Prove this is a real hidden-tab case, not a test that never
+      // had a settings widget in the focus chain to begin with.
+      expect(
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<SettingsScreen>(),
+        isNull,
+        reason: 'no offstage settings widget owns primary focus at startup',
+      );
+
+      sentinel.requestFocus();
+      await tester.pump();
+      expect(searchField().focusNode!.hasFocus, isFalse);
+      final hiddenHandled = await chord();
+      expect(hiddenHandled, isFalse,
+          reason: 'the chord is ignored while settings is not the active tab');
+      expect(searchField().focusNode!.hasFocus, isFalse,
+          reason: 'a hidden search field never gains focus');
+      expect(sentinel.hasFocus, isTrue,
+          reason: 'the chord never steals focus from the active surface');
+
+      // On the settings tab the same chord focuses the visible field.
+      await _tapDestination(tester, 'Settings');
+      sentinel.requestFocus();
+      await tester.pump();
+      final shownHandled = await chord();
+      expect(shownHandled, isTrue);
+      expect(searchField().focusNode!.hasFocus, isTrue);
+
+      // Escape clears the query and hands focus back to what it had before.
+      await tester.enterText(find.byKey(const Key('settings-search-field')), 'connection');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(searchField().controller!.text, isEmpty);
+      expect(searchField().focusNode!.hasFocus, isFalse);
+      expect(sentinel.hasFocus, isTrue,
+          reason: 'Escape restores the focus the chord replaced');
+    },
+  );
+
+  testWidgets('a pushed settings sub-route hides the search field from the chord', (
+    tester,
+  ) async {
+    final client = _RefreshClient();
+    addTearDown(client.dispose);
+    await _pumpShell(tester, client);
+    await _tapDestination(tester, 'Settings');
+
+    final searchFocus = tester
+        .widget<TextField>(
+          find.byKey(const Key('settings-search-field'), skipOffstage: false),
+        )
+        .focusNode!;
+
+    unawaited(
+      Navigator.of(tester.element(find.byType(NavigationShell))).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Pushed sub-route')),
+            ),
+          ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed sub-route'), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    final handled = await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pumpAndSettle();
+
+    expect(handled, isFalse,
+        reason: 'the chord is ignored while a sub-route is current');
+    expect(searchFocus.hasFocus, isFalse,
+        reason: 'an obscured settings field never gains focus');
   });
 }
