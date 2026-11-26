@@ -18,13 +18,22 @@ class ConnectionBadge extends StatelessWidget {
       builder: (context, snapshot) {
         final status = snapshot.data ?? client.snapshot;
         final color = _colorFor(status.state);
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.circle, size: 10, color: color),
-            const SizedBox(width: 6),
-            Text(_labelFor(status.state), style: Theme.of(context).textTheme.labelMedium),
-          ],
+        final label = _labelFor(status.state);
+        // Flutter 3.50 removed `Semantics.announce`; a labelled live region is
+        // the surviving way to speak each connection state change.
+        return Semantics(
+          liveRegion: true,
+          label: 'Connection $label',
+          child: ExcludeSemantics(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.circle, size: 10, color: color),
+                const SizedBox(width: 6),
+                Text(label, style: Theme.of(context).textTheme.labelMedium),
+              ],
+            ),
+          ),
         );
       },
     );

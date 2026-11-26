@@ -229,9 +229,17 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
           ),
           if (_connectError != null) ...<Widget>[
             const SizedBox(height: 12),
-            Text(
-              _connectError!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            // Flutter 3.50 removed `Semantics.announce`; the labelled live
+            // region speaks the error as soon as the banner appears.
+            Semantics(
+              liveRegion: true,
+              label: _connectError!,
+              child: ExcludeSemantics(
+                child: Text(
+                  _connectError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
             ),
           ],
           const SizedBox(height: 16),

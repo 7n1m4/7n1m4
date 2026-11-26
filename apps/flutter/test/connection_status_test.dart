@@ -8,12 +8,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/daemon_client/direct_websocket_transport.dart';
 import 'package:anima_control/features/connections/connections_screen.dart';
+import 'package:anima_control/ui/status_bits.dart';
 
 import 'support/fakes.dart';
 
@@ -115,5 +117,44 @@ void main() {
       find.text('Could not reach the daemon. Check the host and port, then retry.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('ConnectionBadge exposes an announced, live connection label',
+      (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ConnectionBadge(client: client)),
+    ));
+
+    void expectAnnounced(String label) {
+      final nodes = find.semantics.byLabel(label).evaluate();
+      expect(nodes, hasLength(1), reason: 'expected one announced node for "$label"');
+      expect(nodes.single.hasFlag(SemanticsFlag.isLiveRegion), isTrue);
+    }
+
+    try {
+      expectAnnounced('Connection Disconnected');
+      expect(find.text('Disconnected'), findsOneWidget);
+
+      client.emitStatus(DaemonConnectionState.connected);
+      await tester.pumpAndSettle();
+
+      expectAnnounced('Connection Connected');
+      expect(find.text('Connected'), findsOneWidget);
+      expect(
+        find.semantics.byLabel('Connection Disconnected').evaluate(),
+        isEmpty,
+      );
+
+      client.emitStatus(DaemonConnectionState.failed);
+      await tester.pumpAndSettle();
+      expectAnnounced('Connection Failed');
+      expect(find.semantics.byLabel('Connection Connected').evaluate(), isEmpty);
+    } finally {
+      semanticsHandle.dispose();
+    }
   });
 }

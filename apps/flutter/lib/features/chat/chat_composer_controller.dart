@@ -52,6 +52,26 @@ class ChatComposerController extends ChangeNotifier {
   /// Context settings with `settings.get` semantics.
   Map<String, dynamic> get contextSettings => _contextSettings;
 
+  /// Valid values for the daemon-owned `settings/chat/send-mode` verb.
+  static const String defaultSendMode = 'enter';
+  static const Set<String> validSendModes = <String>{
+    'enter',
+    'ctrl-enter',
+    'double-enter',
+  };
+
+  /// Send trigger selected on the daemon (`settings.get('chat')`).
+  ///
+  /// Read-only mirror: the client never writes this setting back. Missing or
+  /// unknown values fall back to 'enter' so an older daemon cannot lock the
+  /// composer. Mirrors `useSettingsChat.sendMode`.
+  String get sendMode {
+    final value = _contextSettings['sendMode'];
+    return value is String && validSendModes.contains(value)
+        ? value
+        : defaultSendMode;
+  }
+
   /// Attachments queued for the next send. Empty until the picker lands.
   final List<ChatComposerAttachment> attachments = <ChatComposerAttachment>[];
 

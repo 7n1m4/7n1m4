@@ -2,12 +2,13 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
 import 'daemon_client/daemon_client.dart';
 import 'navigation/navigation_shell.dart';
-import 'speech/piper_tts_engine.dart';
+import 'speech/speech.dart';
 import 'ui/lip_sync_controller.dart';
 import 'ui/lipsync_renderer.dart';
 
@@ -52,7 +53,18 @@ void _speakCompletedTurns(DaemonClient client, LipSyncController controller) =>
 /// spoken: cancelled and failed replies must never become audio. An absent
 /// reason is treated as complete so an older daemon without the field keeps
 /// working; intermediate deltas are buffered until `final: true`.
-void speakCompletedTurns(DaemonClient client, LipSyncController controller) {
+void speakCompletedTurns(
+  DaemonClient client,
+  LipSyncController controller, {
+  SpeechIntentQueue? queue,
+}) {
+  // One client-local queue per bridge: it serializes synthesis and aborts the
+  // in-flight source on replace/interrupt. No daemon state is duplicated here.
+  final speechQueue = queue ?? SpeechIntentQueue(
+    sink: controller.speak,
+    onError: (error, intent) =>
+        debugPrint('speech failed for ${intent.intentId}: $error'),
+  );
   final buffer = StringBuffer();
   client.onEvent((event) {
     if (event.topic != EventTopic.tokenDelta) return;
@@ -64,8 +76,9 @@ void speakCompletedTurns(DaemonClient client, LipSyncController controller) {
     buffer.clear();
     if (reason != null && reason != 'complete') return;
     if (text.isNotEmpty) {
-      // Errors are surfaced through engine exceptions, not fake audio.
-      controller.speak(text).catchError((Object error) {});
+      // Normal priority, queue behavior: failures are reported through
+      // onError, never as fabricated audio.
+      speechQueue.openIntent(text: text, priority: SpeechPriority.normal);
     }
   });
 }

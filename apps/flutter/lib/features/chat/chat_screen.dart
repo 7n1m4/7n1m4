@@ -21,7 +21,15 @@ import '../sessions/sessions_screen.dart';
 /// this widget owns the transcript, the delta reconciliation by `message_id`
 /// and GenUI rehydration.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.client, this.initialSessionId});
+  const ChatScreen({
+    super.key,
+    required this.client,
+    this.initialSessionId,
+    DateTime Function()? now,
+  }) : now = now ?? DateTime.now;
+
+  /// Injected so the double-Enter window can be tested without wall-clock sleeps.
+  final DateTime Function() now;
 
   final DaemonClient client;
 
@@ -77,6 +85,9 @@ class _ChatScreenState extends State<ChatScreen> {
   // Event topics are per socket; serialize subscribe/unsubscribe so disposing
   // mid-RPC cannot leave a stale topic enabled on the daemon.
   Future<void> _eventRpc = Future<void>.value();
+  // Wall-clock of the first plain Enter in double-enter mode. Reset on send so
+  // a later single Enter cannot inherit the previous turn's timestamp.
+  int _lastComposerEnterMs = 0;
 
   @override
   void initState() {
@@ -317,11 +328,64 @@ class _ChatScreenState extends State<ChatScreen> {
   /// The composer's two-state button: Stop while a turn is open, Send
   /// otherwise (`WhisperComposerBar.onSubmit`).
   void _onSubmit() {
+    // Any send (button, keyboard or a failed retry) clears a pending
+    // double-Enter window so a later single Enter cannot commit a turn.
+    _lastComposerEnterMs = 0;
     if (_composer.showStop) {
       unawaited(_stop());
       return;
     }
     unawaited(_composer.handleSend());
+  }
+
+  /// Composer key routing, mirroring `basic-text-area.vue:onKeyDown`.
+  ///
+  /// The enclosing [Focus] sees keys before `DefaultTextEditingShortcuts`, so
+  /// [KeyEventResult.handled] suppresses the text field's default newline /
+  /// cursor action while `ignored` lets it insert a newline.
+  bool _handleComposerKey(KeyEvent event) {
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowUp) return _composer.recallPrevious();
+    if (key == LogicalKeyboardKey.arrowDown) return _composer.recallNext();
+    if (key != LogicalKeyboardKey.enter && key != LogicalKeyboardKey.numpadEnter) {
+      return false;
+    }
+    // A held Enter must not re-enter onSubmit: the first send makes the
+    // button a Stop button, so a repeat would cancel the turn just started.
+    if (event is KeyRepeatEvent) return false;
+
+    // Any valid composing range means the IME owns Enter (the confirm
+    // keystroke), matching `KeyboardEvent.isComposing` in the TS composer.
+    final composing = _composer.input.value.composing;
+    if (composing.isValid) return false;
+    // This Flutter SDK's KeyEvent has no modifier getters, so the modifier
+    // state comes from the keyboard (the TS reference reads it per event).
+    // Shift+Enter is always a newline, in every send mode.
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isShiftPressed) return false;
+
+    final hasPrimaryModifier = keyboard.isControlPressed || keyboard.isMetaPressed;
+    final isPlainEnter = !hasPrimaryModifier;
+    final mode = _composer.sendMode;
+    final now = widget.now().millisecondsSinceEpoch;
+
+    if (mode == ChatComposerController.defaultSendMode && isPlainEnter) {
+      _onSubmit();
+      return true;
+    }
+    if (mode == 'ctrl-enter' && hasPrimaryModifier) {
+      _onSubmit();
+      return true;
+    }
+    if (mode == 'double-enter' && isPlainEnter) {
+      if (now - _lastComposerEnterMs <= 350) {
+        _lastComposerEnterMs = 0;
+        _onSubmit();
+        return true;
+      }
+      _lastComposerEnterMs = now;
+    }
+    return false;
   }
 
   /// Replay prior turns when a session is opened. Missing history (empty
@@ -489,6 +553,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _resetTranscript() {
+    _lastComposerEnterMs = 0;
     _messages.clear();
     _deltaBuffer.clear();
     _activeMessageId = null;
@@ -895,20 +960,15 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
                           return KeyEventResult.ignored;
                         }
-                        final recalled = switch (event.logicalKey) {
-                          LogicalKeyboardKey.arrowUp => _composer.recallPrevious(),
-                          LogicalKeyboardKey.arrowDown => _composer.recallNext(),
-                          _ => false,
-                        };
-                        return recalled
+                        return _handleComposerKey(event)
                             ? KeyEventResult.handled
                             : KeyEventResult.ignored;
                       },
                       child: TextField(
                         controller: _composer.input,
                         enabled: !sending,
+                        maxLines: null,
                         decoration: const InputDecoration(hintText: 'Message'),
-                        onSubmitted: (_) => _onSubmit(),
                       ),
                     ),
                   ),

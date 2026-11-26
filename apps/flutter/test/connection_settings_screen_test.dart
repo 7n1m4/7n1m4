@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/connection/connection_settings.dart';
@@ -160,6 +161,7 @@ void main() {
 
   testWidgets('a failed discovery shows a safe error and re-enables buttons',
       (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
     await tester.pumpWidget(screen(
       onConnect: (_) async {},
       discover: () async => throw StateError('busctl missing'),
@@ -167,23 +169,29 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, 'Detect from daemon'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Connection failed. Check the daemon and retry.'),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Detect from daemon'),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    expect(
-      tester
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Connect'))
-          .onPressed,
-      isNotNull,
-    );
+    const errorText = 'Connection failed. Check the daemon and retry.';
+    try {
+      expect(find.text(errorText), findsOneWidget);
+      final announced = find.semantics.byLabel(errorText).evaluate();
+      expect(announced, hasLength(1),
+          reason: 'the error banner must be announced once');
+      expect(announced.single.hasFlag(SemanticsFlag.isLiveRegion), isTrue);
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Detect from daemon'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Connect'))
+            .onPressed,
+        isNotNull,
+      );
+    } finally {
+      semanticsHandle.dispose();
+    }
   });
 }

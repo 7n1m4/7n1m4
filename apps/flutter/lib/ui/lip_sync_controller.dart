@@ -32,31 +32,32 @@ class LipSyncController {
   /// Throws [TtsEngineUnavailable] (or any engine failure) before emitting a
   /// frame when no real PCM is available: a missing model is loud, never
   /// silent fabrication.
-  Future<void> speak(String text) async {
+  Future<void> speak(String text, {AbortHandle? abort}) async {
     final source = await engine.synthesizeToSource(text);
-    await _drain(source);
+    await _drain(source, abort: abort);
   }
 
   /// Consume an already-produced PCM source (used by engines that own their
   /// own synthesis pipeline). Only real samples reach the tap.
-  Future<void> feed(PcmSource source) => _drain(source);
+  Future<void> feed(PcmSource source, {AbortHandle? abort}) =>
+      _drain(source, abort: abort);
 
-  Future<void> _drain(PcmSource source) async {
+  Future<void> _drain(PcmSource source, {AbortHandle? abort}) async {
     _abort?.abort();
-    final abort = AbortHandle();
-    _abort = abort;
+    final handle = abort ?? AbortHandle();
+    _abort = handle;
     final generator = LipSyncGenerator(
       actorId: actorId,
       source: source,
-      abort: abort,
+      abort: handle,
     );
     try {
       await for (final frame in generator.frames()) {
-        if (_frames.isClosed || !identical(_abort, abort)) break;
+        if (_frames.isClosed || !identical(_abort, handle)) break;
         _frames.add(frame);
       }
     } finally {
-      if (identical(_abort, abort)) _abort = null;
+      if (identical(_abort, handle)) _abort = null;
     }
   }
 
