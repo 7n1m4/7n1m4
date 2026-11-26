@@ -10,8 +10,8 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
+import { isSecretStorageKey, loadSecretKeyPolicy } from '../composables/daemon-secret-policy'
 import { flushPendingImportWrites, storage, storageState } from '../database/storage'
-import { isSecretStorageKey } from '../libs/secret-storage-keys'
 import { extractAllowedSessionIds, mergeByIdLww, mergeChatSessions, mergeVoiceProfiles, shouldSkipMergeableKey } from './sync-engine-merge'
 import { tryAcquireSyncLease } from './sync-lease'
 import { getSyncTombstoneIds } from './sync-tombstones'
@@ -2402,6 +2402,9 @@ export const useSyncEngineStore = defineStore('sync-engine', () => {
     }
 
     inFlightReconcile = (async () => {
+      // The exclusion policy must be in force before any key is uploaded or
+      // imported; stage-web keeps the minimal fail-closed fallback.
+      await loadSecretKeyPolicy()
       const client = getActiveClient()
       const pathValidation = await client.validate()
       if (!pathValidation.success) {
@@ -2892,6 +2895,7 @@ export const useSyncEngineStore = defineStore('sync-engine', () => {
       return false
     }
     try {
+      await loadSecretKeyPolicy()
       const client = getActiveClient()
       const pathValidation = await client.validate()
       if (!pathValidation.success) {

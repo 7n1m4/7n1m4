@@ -606,6 +606,38 @@ mod tests {
     }
 
     #[test]
+    fn semantic_memories_formatter_emits_one_header_for_all_items() {
+        // chat.rs maps search hits straight into items; a second header from
+        // the old build_prompt_block wrapper must not reappear inside content.
+        let items = vec![
+            SemanticMemoryItem {
+                kind: Some("journal".into()),
+                content: "The user's cat is named Miso".into(),
+                ..SemanticMemoryItem::default()
+            },
+            SemanticMemoryItem {
+                kind: Some("summary".into()),
+                content: "Talked about the cat again".into(),
+                ..SemanticMemoryItem::default()
+            },
+        ];
+        let out = format_semantic_memories_block(&items);
+        assert_eq!(out.matches("[GROUNDED LONG-TERM MEMORIES]").count(), 1);
+        assert!(
+            !out.contains("Relevant memories (retrieved automatically"),
+            "{out}"
+        );
+        assert!(
+            out.contains("[JOURNAL] Memory\nThe user's cat is named Miso"),
+            "{out}"
+        );
+        assert!(
+            out.contains("[SUMMARY] Memory\nTalked about the cat again"),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn assemble_preserves_block_order() {
         let blocks = vec![
             GroundingBlock::Vlm {

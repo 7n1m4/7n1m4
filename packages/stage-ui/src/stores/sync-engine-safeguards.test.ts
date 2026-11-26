@@ -4,8 +4,8 @@ import { createTestingPinia } from '@pinia/testing'
 import { setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { FALLBACK_SECRET_KEY_POLICY, isCompleteSecretKeyPolicy, isSecretKeyUnderPolicy, isSecretStorageKey } from '../composables/daemon-secret-policy'
 import { storage, storageState } from '../database/storage'
-import { SECRET_STORAGE_KEYS } from '../libs/secret-storage-keys'
 import { isMergeableSyncKey, mergeAiriCards, S3StorageClient, useSyncEngineStore } from './sync-engine'
 import { extractAllowedSessionIds, shouldSkipMergeableKey } from './sync-engine-merge'
 import { markSyncTombstone, readSyncTombstones, SYNC_TOMBSTONE_CAP, SYNC_TOMBSTONES_KEY } from './sync-tombstones'
@@ -407,16 +407,71 @@ describe('sync-engine-safeguards', () => {
       localStorage.clear()
     })
 
-    it('shouldExcludeLocalStorageKey returns true for every SECRET_STORAGE_KEYS entry', () => {
+    it('excludes every secret shape published by the policy', () => {
       const syncStore = useSyncEngineStore(pinia)
-      for (const secret of SECRET_STORAGE_KEYS) {
-        if (secret.endsWith('/')) {
-          expect(syncStore.shouldExcludeLocalStorageKey(`${secret}some-entry`)).toBe(true)
-        }
-        else {
-          expect(syncStore.shouldExcludeLocalStorageKey(secret)).toBe(true)
-        }
+      // Examples are synthetic shapes from the policy itself, never stored keys.
+      for (const example of FALLBACK_SECRET_KEY_POLICY.examples ?? []) {
+        expect(isSecretStorageKey(example.key)).toBe(example.is_secret)
+        expect(syncStore.shouldExcludeLocalStorageKey(example.key)).toBe(example.is_secret)
       }
+      // Every published branch/substring excludes a renamed synthetic key.
+      for (const prefix of FALLBACK_SECRET_KEY_POLICY.storage_prefixes ?? [])
+        expect(syncStore.shouldExcludeLocalStorageKey(`${prefix}renamed-entry`)).toBe(true)
+      for (const substring of FALLBACK_SECRET_KEY_POLICY.storage_substrings ?? [])
+        expect(syncStore.shouldExcludeLocalStorageKey(`settings/renamed-${substring}-entry`)).toBe(true)
+    })
+
+    it('classifies renamed secret keys from a daemon-published policy', () => {
+      // The matcher must follow the supplied policy patterns, not a baked-in list.
+      const daemonPolicy = {
+        substrings: ['brandnewsecret'],
+        suffixes: ['token'],
+        storage_substrings: ['renamedflow'],
+        storage_prefixes: ['local:identity/'],
+      }
+      expect(isSecretKeyUnderPolicy('settings/brandNewSecret', daemonPolicy)).toBe(true)
+      expect(isSecretKeyUnderPolicy('local:identity/material', daemonPolicy)).toBe(true)
+      expect(isSecretKeyUnderPolicy('settings/renamedflow-key', daemonPolicy)).toBe(true)
+      expect(isSecretKeyUnderPolicy('settings/region', daemonPolicy)).toBe(false)
+
+      // The shipped fallback covers each credential family under a new name.
+      for (const key of [
+        'settings/credentials/new-provider',
+        'settings/mcp/config',
+        'local:peers/device-keypair',
+        'local:providers',
+        'cf_newflow_verifier',
+        'settings/sync/s3-new-key-id',
+        'settings/cloudflare/cfNewAccountId',
+      ]) {
+        expect(isSecretStorageKey(key)).toBe(true)
+      }
+      // Ordinary provider/peer keys must stay syncable: a broad "provider"
+      // or whole-branch rule would silently drop user settings on restore.
+      for (const key of [
+        'settings/region',
+        'settings/sync/s3-endpoint',
+        'settings/cloudflare/cfSubdomain',
+        'settings/providers/added',
+        'settings/consciousness/active-provider',
+        'local:provider-catalog',
+        'local:peers/roster',
+        'settings/mcp/server-args',
+      ]) {
+        expect(isSecretStorageKey(key)).toBe(false)
+      }
+
+      // A structurally valid but empty daemon reply must not replace the
+      // fail-closed fallback.
+      expect(isCompleteSecretKeyPolicy(FALLBACK_SECRET_KEY_POLICY)).toBe(true)
+      expect(isCompleteSecretKeyPolicy(null)).toBe(false)
+      expect(isCompleteSecretKeyPolicy({ substrings: [], suffixes: ['token'] })).toBe(false)
+      expect(isCompleteSecretKeyPolicy({
+        substrings: ['apikey'],
+        suffixes: ['token'],
+        storage_substrings: [],
+        storage_prefixes: ['local:peers/'],
+      })).toBe(false)
     })
 
     it('treats user-scoped memory keys as mergeable', () => {

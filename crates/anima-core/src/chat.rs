@@ -133,10 +133,13 @@ const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const HISTORY_PROMPT_TOKEN_THRESHOLD: usize = 12_000;
 
 /// Top-k bound for semantic-memory evidence injected into a turn. Mirrors the
-/// TS `searchEngine.evidenceLimit` default (`chat.ts:820`); the retrieval
-/// formatter itself drops non-positive scores, so no extra min-score knob is
-/// needed here.
+/// TS `searchEngine.evidenceLimit` default (`chat.ts:820`). The relevance
+/// floor is resolved per card by [`retrieval_min_score`] and applied to the
+/// search hits before they become grounding items (`chat.ts:825-828`).
 const RETRIEVAL_TOP_K: usize = 6;
+
+/// Fallback relevance floor when neither card path sets one (`chat.ts:827`).
+const DEFAULT_RETRIEVAL_MIN_SCORE: f64 = 0.25;
 
 /// Server-side instruction for the A2UI subset Flutter GenUI can render.
 ///
@@ -535,16 +538,27 @@ impl ChatService {
         if self.grounding_memory_enabled() {
             if let Some(embedder) = self.retrieval_embedder() {
                 let retrieval = MemoryRetrieval::new(self.db.clone(), embedder);
-                match retrieval.build_prompt_block(query, RETRIEVAL_TOP_K).await {
-                    Ok(block) if !block.is_empty() => {
-                        blocks.push(GroundingBlock::SemanticMemories {
-                            memories: vec![SemanticMemoryItem {
-                                content: block,
+                let min_score = retrieval_min_score(self.active_airi_extension().as_ref());
+                match retrieval.search(query, None, RETRIEVAL_TOP_K).await {
+                    Ok(hits) => {
+                        // Map hits straight into grounding items: wrapping
+                        // `build_prompt_block` text would nest its header
+                        // inside the SemanticMemories header.
+                        let memories: Vec<SemanticMemoryItem> = hits
+                            .into_iter()
+                            // Keep the original positive-score floor even if a
+                            // card asks for 0: zero-score hits are not evidence.
+                            .filter(|hit| hit.score > 0.0 && (hit.score as f64) >= min_score)
+                            .map(|hit| SemanticMemoryItem {
+                                kind: Some(hit.kind),
+                                content: hit.content,
                                 ..SemanticMemoryItem::default()
-                            }],
-                        });
+                            })
+                            .collect();
+                        if !memories.is_empty() {
+                            blocks.push(GroundingBlock::SemanticMemories { memories });
+                        }
                     }
-                    Ok(_) => {}
                     Err(err) => tracing::debug!("semantic memory grounding skipped: {err:#}"),
                 }
             }
@@ -990,6 +1004,20 @@ impl ChatService {
     }
 }
 
+/// Resolve the semantic-memory relevance floor with the TypeScript precedence
+/// (`chat.ts:825-827`): `relevanceThreshold ?? universeRag.minScore ?? 0.25`.
+/// A missing card or extension falls back to [`DEFAULT_RETRIEVAL_MIN_SCORE`].
+fn retrieval_min_score(airi: Option<&AiriExtension>) -> f64 {
+    airi.and_then(|airi| airi.cognition.as_ref())
+        .and_then(|cognition| cognition.search_engine.as_ref())
+        .and_then(|engine| engine.relevance_threshold)
+        .or_else(|| {
+            airi.and_then(|airi| airi.universe_rag.as_ref())
+                .and_then(|rag| rag.min_score)
+        })
+        .unwrap_or(DEFAULT_RETRIEVAL_MIN_SCORE)
+}
+
 /// How long auto-titling may take past the first reply completing.
 /// The provider call is bounded with `tokio::time::timeout`; on expiry the
 /// existing title is kept.
@@ -1398,6 +1426,26 @@ mod tests {
     impl Embedder for BrokenEmbedder {
         async fn embed(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
             Err(EmbeddingError::Empty)
+        }
+    }
+
+    /// "Miso" texts land on one axis, everything else on the orthogonal one,
+    /// so a Miso query scores one hit high and the other at 0.0.
+    struct SplitEmbedder;
+
+    #[async_trait]
+    impl Embedder for SplitEmbedder {
+        async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Ok(texts
+                .iter()
+                .map(|text| {
+                    if text.contains("Miso") {
+                        vec![1.0, 0.0]
+                    } else {
+                        vec![0.0, 1.0]
+                    }
+                })
+                .collect())
         }
     }
 
@@ -2064,6 +2112,160 @@ mod tests {
         assert!(plain.contains("[RECENT TOPICS]"));
         assert!(!plain.contains("[GROUNDED LONG-TERM MEMORIES]"), "{plain}");
         assert!(!plain.contains("The user's cat is named Miso"), "{plain}");
+    }
+
+    #[test]
+    fn retrieval_min_score_uses_ts_precedence_and_default() {
+        use crate::cards::{AiriCognition, AiriCognitionSearchEngine, AiriUniverseRag};
+
+        let engine = |threshold| AiriCognition {
+            search_engine: Some(AiriCognitionSearchEngine {
+                relevance_threshold: Some(threshold),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let rag = |min_score| AiriUniverseRag {
+            min_score: Some(min_score),
+            ..Default::default()
+        };
+
+        // relevanceThreshold wins when both card paths set a floor.
+        assert_eq!(
+            retrieval_min_score(Some(&AiriExtension {
+                cognition: Some(engine(0.7)),
+                universe_rag: Some(rag(0.4)),
+                ..Default::default()
+            })),
+            0.7
+        );
+        // 0.0 wins over the fallback: TS uses ??, not truthiness.
+        assert_eq!(
+            retrieval_min_score(Some(&AiriExtension {
+                cognition: Some(engine(0.0)),
+                universe_rag: Some(rag(0.4)),
+                ..Default::default()
+            })),
+            0.0
+        );
+        // universeRag.minScore is the fallback when relevanceThreshold is absent.
+        assert_eq!(
+            retrieval_min_score(Some(&AiriExtension {
+                universe_rag: Some(rag(0.4)),
+                ..Default::default()
+            })),
+            0.4
+        );
+        assert_eq!(
+            retrieval_min_score(Some(&AiriExtension {
+                cognition: Some(engine(0.6)),
+                ..Default::default()
+            })),
+            0.6
+        );
+        // 0.25 survives when neither path sets a floor, or there is no card.
+        assert_eq!(retrieval_min_score(Some(&AiriExtension::default())), 0.25);
+        assert_eq!(retrieval_min_score(None), 0.25);
+    }
+
+    #[tokio::test]
+    async fn min_score_filters_low_scoring_memories_from_system_prompt() {
+        let (_dir, db) = test_db();
+        // A 0.5 floor keeps the ~0.79 Miso hit but drops the 0.0 one.
+        set_active_airi(
+            &db,
+            AiriExtension {
+                grounding_memory_enabled: Some(true),
+                cognition: Some(crate::cards::AiriCognition {
+                    search_engine: Some(crate::cards::AiriCognitionSearchEngine {
+                        relevance_threshold: Some(0.5),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let embedder: Arc<dyn Embedder> = Arc::new(SplitEmbedder);
+        MemoryIndexer::new(db.clone(), embedder.clone())
+            .index_journal_entry("j1", "The cat is named Miso")
+            .await
+            .unwrap();
+        MemoryIndexer::new(db.clone(), embedder.clone())
+            .index_journal_entry("j2", "utterly unrelated zephyr")
+            .await
+            .unwrap();
+        let mut service = ChatService::new(db);
+        service.set_retrieval_embedder(embedder);
+
+        let kept = service
+            .build_system_prompt("", "tell me about Miso", false)
+            .await
+            .unwrap()
+            .expect("a hit above the floor must still be injected");
+        assert!(kept.contains("The cat is named Miso"), "{kept}");
+        assert!(!kept.contains("utterly unrelated zephyr"), "{kept}");
+    }
+
+    #[tokio::test]
+    async fn zero_score_memories_are_not_evidence_even_at_a_zero_threshold() {
+        let (_dir, db) = test_db();
+        // TS parity: a card asking for 0.0 wins the precedence chain, but a
+        // zero-score hit is not evidence and must still be filtered.
+        set_active_airi(
+            &db,
+            AiriExtension {
+                grounding_memory_enabled: Some(true),
+                cognition: Some(crate::cards::AiriCognition {
+                    search_engine: Some(crate::cards::AiriCognitionSearchEngine {
+                        relevance_threshold: Some(0.0),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let embedder: Arc<dyn Embedder> = Arc::new(SplitEmbedder);
+        MemoryIndexer::new(db.clone(), embedder.clone())
+            .index_journal_entry("j1", "The cat is named Miso")
+            .await
+            .unwrap();
+        let mut service = ChatService::new(db);
+        service.set_retrieval_embedder(embedder);
+
+        let prompt = service
+            .build_system_prompt("", "quartz notebook", false)
+            .await
+            .unwrap();
+        assert!(
+            prompt.is_none(),
+            "zero-score hits must never become grounding: {prompt:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn semantic_grounding_emits_a_single_header() {
+        let (_dir, db) = test_db();
+        enable_grounding_memory(&db);
+        seed_semantic_memory(&db).await;
+        let mut service = ChatService::new(db);
+        service.set_retrieval_embedder(Arc::new(ConstantEmbedder));
+
+        let system = service
+            .build_system_prompt("", "tell me about the cat", false)
+            .await
+            .unwrap()
+            .expect("semantic memory must produce a system prompt");
+        assert_eq!(
+            system.matches("[GROUNDED LONG-TERM MEMORIES]").count(),
+            1,
+            "the retrieval header must not be nested in the grounding header: {system}"
+        );
+        assert!(
+            !system.contains("Relevant memories (retrieved automatically"),
+            "build_prompt_block's header must not reach the prompt: {system}"
+        );
     }
 
     #[tokio::test]

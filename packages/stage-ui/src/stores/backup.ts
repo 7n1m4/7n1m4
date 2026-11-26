@@ -1,8 +1,8 @@
 import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables'
 import { defineStore } from 'pinia'
 
+import { isSecretStorageKey, loadSecretKeyPolicy } from '../composables/daemon-secret-policy'
 import { useDataMaintenance } from '../composables/use-data-maintenance'
-import { isSecretStorageKey } from '../libs/secret-storage-keys'
 
 export const useBackupStore = defineStore('backup', () => {
   const isBackupEnabled = useLocalStorageManualReset<boolean>('settings/backup/enabled', true)
@@ -15,6 +15,9 @@ export const useBackupStore = defineStore('backup', () => {
     console.info('[Backup] Triggering backup...')
 
     try {
+      // Fail-closed policy must be in force before any key is copied into an
+      // unencrypted bundle. Stage-web keeps the minimal fallback.
+      await loadSecretKeyPolicy()
       const timestamp = new Date().toISOString().replace(/:/g, '-')
       const files: Record<string, string> = {}
 
@@ -81,6 +84,7 @@ export const useBackupStore = defineStore('backup', () => {
   async function restoreBackup(backupDir: string, options: { characters: boolean, sessions: boolean, memory: boolean, localStorage: boolean }) {
     console.info(`[Backup] Restoring backup from ${backupDir} with options:`, options)
     try {
+      await loadSecretKeyPolicy()
       const res = await (window as any).electron.ipcRenderer.invoke('read-backup-files', { backupDir })
       if (!res.success) {
         throw new Error(res.error || 'Failed to read backup files')

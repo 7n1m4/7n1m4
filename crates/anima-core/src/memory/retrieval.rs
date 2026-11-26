@@ -18,11 +18,12 @@
 //!
 //! # Chat context assembly
 //!
-//! `chat.rs` is intentionally untouched. This module exposes
-//! [`MemoryRetrieval::build_prompt_block`], whose output the chat pipeline
-//! (or a future prompt-assembly layer) consumes verbatim, e.g. injected as a
-//! system-prompt prefix. Returns an empty string when nothing relevant is
-//! found, so callers can `push_str` unconditionally.
+//! `chat.rs` maps [`MemoryRetrieval::search`] hits straight into grounding
+//! items, so the assembled prompt carries a single grounding header. This
+//! module also exposes [`MemoryRetrieval::build_prompt_block`], a convenience
+//! formatter for callers that want a self-contained text block; it filters at
+//! `min_score` and returns an empty string when nothing qualifies, so callers
+//! can `push_str` unconditionally.
 //!
 //! # 5W hooks
 //!
@@ -213,17 +214,22 @@ impl MemoryRetrieval {
         self.search(&analysis.expanded_query(), kind, top_k).await
     }
 
-    /// Build a prompt block for chat context assembly.
+    /// Build a self-contained prompt block for callers outside `chat.rs`.
     ///
-    /// The chat pipeline (or a future prompt-assembly layer) injects the
-    /// returned string verbatim; `chat.rs` is not modified. Returns an empty
-    /// string when nothing scored above 0.0, so callers can append it
+    /// `chat.rs` maps [`Self::search`] hits into grounding items instead, so
+    /// the formatter adds only one header. Returns an empty string when no
+    /// memory scores at or above `min_score`, so callers can append it
     /// unconditionally.
-    pub async fn build_prompt_block(&self, query: &str, top_k: usize) -> Result<String> {
+    pub async fn build_prompt_block(
+        &self,
+        query: &str,
+        top_k: usize,
+        min_score: f32,
+    ) -> Result<String> {
         let memories = self.search(query, None, top_k).await?;
         let lines: Vec<String> = memories
             .into_iter()
-            .filter(|m| m.score > 0.0)
+            .filter(|m| m.score >= min_score)
             .map(|m| format!("- [{}] {}", m.kind, m.content))
             .collect();
         if lines.is_empty() {
@@ -853,15 +859,58 @@ mod tests {
             .await
             .unwrap();
         let retrieval = MemoryRetrieval::new(db, embedder);
-        let block = retrieval.build_prompt_block("cat Miso", 3).await.unwrap();
+        let block = retrieval
+            .build_prompt_block("cat Miso", 3, 0.25)
+            .await
+            .unwrap();
         assert!(
             block.contains("[journal] The user's cat is named Miso"),
             "block: {block}"
         );
-        let empty = retrieval.build_prompt_block("zz qqq", 3).await.unwrap();
+        let empty = retrieval
+            .build_prompt_block("zz qqq", 3, 0.25)
+            .await
+            .unwrap();
         assert!(
             empty.is_empty() || empty.starts_with("Relevant memories"),
             "unexpected block: {empty}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_prompt_block_filters_hits_below_min_score() {
+        let (_dir, db) = seeded_db();
+        // Query-time embedding outage degrades to lexical-only, keeping this
+        // test deterministic: j1 scores 2/6 ≈ 0.33, j2 scores 0.0.
+        let indexer: Arc<dyn Embedder> = Arc::new(MockEmbedder);
+        let indexer = MemoryIndexer::new(db.clone(), indexer);
+        indexer
+            .index_journal_entry("j1", "The user's cat is named Miso")
+            .await
+            .unwrap();
+        indexer
+            .index_journal_entry("j2", "utterly unrelated content xylophone zephyr")
+            .await
+            .unwrap();
+        let retrieval = MemoryRetrieval::new(db, Arc::new(FailingEmbedder));
+
+        let at_default = retrieval
+            .build_prompt_block("cat Miso", 3, 0.25)
+            .await
+            .unwrap();
+        assert!(
+            at_default.contains("The user's cat is named Miso"),
+            "{at_default}"
+        );
+        assert!(!at_default.contains("xylophone"), "{at_default}");
+
+        let strict = retrieval
+            .build_prompt_block("cat Miso", 3, 0.5)
+            .await
+            .unwrap();
+        assert!(
+            strict.is_empty(),
+            "0.33 must fall below a 0.5 floor: {strict}"
         );
     }
 

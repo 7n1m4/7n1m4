@@ -56,6 +56,52 @@ fn normalize_config_key(key: &str) -> String {
         .collect()
 }
 
+/// Normalized substrings for storage keys that carry credentials but do not
+/// use the config-key spellings above (id-shaped keys, OAuth flows, TLS
+/// material, ...). Shapes only — never a stored key name, value or config blob.
+pub const SECRET_STORAGE_KEY_SUBSTRINGS: &[&str] = &[
+    "accountid",
+    "freehub",
+    "keyid",
+    "keypair",
+    "mcpconfig",
+    "oauth",
+    "tlsconfig",
+    "verifier",
+];
+
+/// Case-insensitive prefixes whose whole branch is credential-bearing.
+/// Same exposure contract as [`SECRET_STORAGE_KEY_SUBSTRINGS`].
+pub const SECRET_STORAGE_KEY_PREFIXES: &[&str] = &[
+    // Only the credential-bearing leaves of these branches are secret: a
+    // whole-branch rule would drop ordinary roster/server-args on backup.
+    "local:peers/device-keypair",
+    "local:providers",
+    "settings/credentials/",
+    "settings/free-hub/",
+    "settings/mcp/config",
+];
+
+/// Match the storage-key half of the backup/sync exclusion policy. Normalizes
+/// like config keys so `key-id` and `keyId` hit the same published pattern.
+pub fn is_secret_storage_key(key: &str) -> bool {
+    let normalized = normalize_config_key(key);
+    let lowercase = key.to_ascii_lowercase();
+    SECRET_STORAGE_KEY_SUBSTRINGS
+        .iter()
+        .any(|s| normalized.contains(s))
+        || SECRET_STORAGE_KEY_PREFIXES
+            .iter()
+            .any(|p| lowercase.starts_with(p))
+}
+
+/// Full exclusion policy for unencrypted backup/sync: config-shaped secrets
+/// plus storage-key shapes. Shared with the read-only policy verb so TS never
+/// hand-maintains the tree again.
+pub fn is_secret_key(key: &str) -> bool {
+    is_secret_config_key(key) || is_secret_storage_key(key)
+}
+
 /// Recursively strip secret-shaped keys from a provider config value.
 pub fn strip_secret_config_keys(value: &serde_json::Value) -> serde_json::Value {
     match value {
@@ -516,5 +562,58 @@ mod tests {
         assert_eq!(merged["api_key"], "NEW-KEY");
         assert!(merged.get("authHeader").is_none());
         assert_eq!(merged["baseUrl"], "https://new.test/v1");
+    }
+
+    #[test]
+    fn storage_key_policy_covers_renamed_secret_shapes() {
+        // Each row is a synthetic shape, not a stored key: renaming a credential
+        // inside any family must still be excluded from backup/sync.
+        for (key, expected) in [
+            ("settings/credentials/new-provider", true),
+            ("settings/free-hub/renamed/key", true),
+            ("settings/mcp/config", true),
+            ("local:peers/device-keypair", true),
+            ("local:providers", true),
+            ("cf_newflow_verifier", true),
+            ("settings/sync/s3-new-key-id", true),
+            ("settings/cloudflare/cfNewAccountId", true),
+            ("settings/cloudflare/cfOAuthTokensRenamed", true),
+            ("settings/server-channel/websocket-tls-config", true),
+            // Ordinary neighbours must stay syncable.
+            ("settings/sync/s3-endpoint", false),
+            ("settings/cloudflare/cfSubdomain", false),
+            ("settings/discord/enabled", false),
+            ("settings/region", false),
+            // A whole-branch rule would silently drop these from backup.
+            ("local:provider-catalog", false),
+            ("settings/providers/added", false),
+            ("settings/consciousness/active-provider", false),
+            ("local:peers/roster", false),
+            ("settings/mcp/server-args", false),
+        ] {
+            assert_eq!(is_secret_key(key), expected, "classification of {key}");
+        }
+    }
+
+    #[test]
+    fn storage_policy_patterns_are_shapes_not_stored_keys() {
+        for pattern in SECRET_STORAGE_KEY_SUBSTRINGS
+            .iter()
+            .chain(SECRET_STORAGE_KEY_PREFIXES.iter())
+        {
+            // Patterns are shapes: no values, no uppercase, no wildcards.
+            assert!(
+                !pattern.contains('=') && !pattern.contains('*'),
+                "pattern must be a shape: {pattern}"
+            );
+            assert!(
+                pattern.chars().all(|c| !c.is_ascii_uppercase()),
+                "pattern must be lowercase: {pattern}"
+            );
+        }
+        assert!(is_secret_storage_key("local:peers/device-keypair"));
+        assert!(is_secret_storage_key("settings/mcp/config"));
+        assert!(!is_secret_storage_key("local:peers/roster"));
+        assert!(!is_secret_storage_key("settings/mcp/server-args"));
     }
 }

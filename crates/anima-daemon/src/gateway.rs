@@ -942,35 +942,53 @@ impl Gateway {
         {
             // Read-only and ungated: the policy is public constant data, so
             // backup/sync paths can drop their hand-maintained key lists
-            // without an `allowActions` opt-in. Never reports stored keys or
-            // values — only the matching patterns and synthetic example checks.
+            // without an `allowActions` opt-in. Covers config-key shapes and
+            // storage-key shapes. Never reports stored keys or values — only
+            // matching patterns and synthetic example checks.
             m.insert(
                 "vault.secret_key_policy".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
                     use anima_core::providers::{
-                        is_secret_config_key, SECRET_CONFIG_KEY_SUBSTRINGS,
-                        SECRET_CONFIG_KEY_SUFFIXES,
+                        is_secret_key, SECRET_CONFIG_KEY_SUBSTRINGS,
+                        SECRET_CONFIG_KEY_SUFFIXES, SECRET_STORAGE_KEY_PREFIXES,
+                        SECRET_STORAGE_KEY_SUBSTRINGS,
                     };
+                    // Synthetic shapes only: the reply never enumerates stored
+                    // keys, values or config blobs.
                     let examples = [
                         "apiKey",
                         "api_key",
                         "X-New-Token",
                         "customBearer",
+                        "settings/<provider>/oauth-token",
+                        "settings/<provider>/<id>-key-id",
+                        "settings/<provider>/account-id",
+                        "local:peers/device-keypair",
+                        "local:providers",
+                        "settings/mcp/config",
+                        "settings/credentials/<provider>",
+                        "cf_<flow>_verifier",
+                        "settings/free-hub/<provider>/key",
+                        "settings/<provider>/tls-config",
                         "endpoint",
                         "model",
+                        "settings/providers/added",
+                        "local:peers/roster",
                     ]
                     .iter()
                     .map(|key| {
                         serde_json::json!({
                             "key": key,
-                            "is_secret": is_secret_config_key(key),
+                            "is_secret": is_secret_key(key),
                         })
                     })
                     .collect::<Vec<_>>();
                     Ok(serde_json::json!({
                         "substrings": SECRET_CONFIG_KEY_SUBSTRINGS,
                         "suffixes": SECRET_CONFIG_KEY_SUFFIXES,
-                        "rule": "Normalize by keeping ASCII alphanumerics and lowercasing; a key is secret when its normalized form contains a substring or ends with a suffix. Example keys are synthetic shapes, never stored keys.",
+                        "storage_substrings": SECRET_STORAGE_KEY_SUBSTRINGS,
+                        "storage_prefixes": SECRET_STORAGE_KEY_PREFIXES,
+                        "rule": "Normalize by keeping ASCII alphanumerics and lowercasing; a key is secret when its normalized form contains a config or storage substring or ends with a config suffix, or its lowercase form starts with a storage prefix. Patterns and example keys are synthetic shapes, never stored keys.",
                         "examples": examples,
                     }))
                 }),
@@ -4916,7 +4934,10 @@ mod tests {
             .expect("vault.secret_key_policy registered");
         let reply = h("vault.secret_key_policy", &serde_json::json!({})).expect("policy Ok");
 
-        use anima_core::providers::{SECRET_CONFIG_KEY_SUBSTRINGS, SECRET_CONFIG_KEY_SUFFIXES};
+        use anima_core::providers::{
+            SECRET_CONFIG_KEY_SUBSTRINGS, SECRET_CONFIG_KEY_SUFFIXES, SECRET_STORAGE_KEY_PREFIXES,
+            SECRET_STORAGE_KEY_SUBSTRINGS,
+        };
         assert_eq!(
             reply["substrings"],
             serde_json::json!(SECRET_CONFIG_KEY_SUBSTRINGS)
@@ -4925,18 +4946,36 @@ mod tests {
             reply["suffixes"],
             serde_json::json!(SECRET_CONFIG_KEY_SUFFIXES)
         );
+        assert_eq!(
+            reply["storage_substrings"],
+            serde_json::json!(SECRET_STORAGE_KEY_SUBSTRINGS)
+        );
+        assert_eq!(
+            reply["storage_prefixes"],
+            serde_json::json!(SECRET_STORAGE_KEY_PREFIXES)
+        );
 
         // Only the policy itself: no stored key names, values or config blobs.
         let obj = reply.as_object().unwrap();
         let mut fields: Vec<_> = obj.keys().cloned().collect();
         fields.sort();
-        assert_eq!(fields, ["examples", "rule", "substrings", "suffixes"]);
+        assert_eq!(
+            fields,
+            [
+                "examples",
+                "rule",
+                "storage_prefixes",
+                "storage_substrings",
+                "substrings",
+                "suffixes"
+            ]
+        );
         assert!(obj["rule"].as_str().unwrap().contains("Normalize"));
     }
 
     #[test]
     fn vault_secret_key_policy_classifies_unknown_secret_shapes() {
-        use anima_core::providers::is_secret_config_key;
+        use anima_core::providers::{is_secret_config_key, is_secret_key};
 
         // Renamed/unknown spellings are caught by the shared policy, including
         // wire (camelCase) and stored (snake_case) forms of the same key.
@@ -4971,12 +5010,30 @@ mod tests {
             &serde_json::json!({}),
         )
         .expect("policy Ok");
+        // Storage-key shapes: credential-bearing leaves are excluded, ordinary
+        // neighbours in the same branch stay syncable.
+        for (key, expected) in [
+            ("local:peers/device-keypair", true),
+            ("local:peers/renamed-identity", false),
+            ("local:providers", true),
+            ("settings/mcp/config", true),
+            ("settings/mcp/server-args", false),
+            ("settings/providers/added", false),
+            ("cf_newflow_verifier", true),
+            ("settings/sync/s3-new-key-id", true),
+            ("settings/cloudflare/cfNewAccountId", true),
+            ("settings/region", false),
+            ("settings/cloudflare/cfSubdomain", false),
+        ] {
+            assert_eq!(is_secret_key(key), expected, "storage shape of {key}");
+        }
+
         // The documented example checks agree with the Rust classifier.
         for example in reply["examples"].as_array().unwrap() {
             let key = example["key"].as_str().unwrap();
             assert_eq!(
                 example["is_secret"].as_bool().unwrap(),
-                is_secret_config_key(key),
+                is_secret_key(key),
                 "example check for {key}"
             );
         }
@@ -4985,6 +5042,11 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e["key"] == "X-New-Token" && e["is_secret"] == true));
+        assert!(reply["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["key"] == "settings/mcp/config" && e["is_secret"] == true));
     }
 
     #[test]

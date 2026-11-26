@@ -3,7 +3,7 @@ import memoryDriver from 'unstorage/drivers/memory'
 
 import { createStorage } from 'unstorage'
 
-import { isSecretStorageKey } from '../libs/secret-storage-keys'
+import { isSecretStorageKey } from '../composables/daemon-secret-policy'
 
 export const storage = createStorage({
   driver: memoryDriver(),
