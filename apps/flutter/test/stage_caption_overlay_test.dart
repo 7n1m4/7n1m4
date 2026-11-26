@@ -619,4 +619,56 @@ void main() {
       },
     );
   });
+
+  group('StageRenderStateBinding session filtering', () {
+    test('a bound session drops foreign token.delta frames', () {
+      final client = FakeChatClient();
+      final state = StageRenderState();
+      final binding = StageRenderStateBinding(
+        client: client,
+        state: state,
+        boundSessionId: 's1',
+      );
+      addTearDown(binding.dispose);
+      addTearDown(state.dispose);
+      addTearDown(client.dispose);
+
+      final before = state.caption;
+      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'foreign'));
+      expect(state.caption, same(before), reason: 's2 must not clobber captions');
+
+      client.emitEvent(tokenDelta(sessionId: 's1', delta: 'mine'));
+      expect(state.caption.segments.single.text, 'mine');
+    });
+
+    test('an unbound binding learns from the stream without locking forever', () {
+      final client = FakeChatClient();
+      final state = StageRenderState();
+      final binding = StageRenderStateBinding(client: client, state: state);
+      addTearDown(binding.dispose);
+      addTearDown(state.dispose);
+      addTearDown(client.dispose);
+
+      // Self-learn from the first delta so production works without shell
+      // plumbing (mirrors chat_screen.dart:191-192).
+      client.emitEvent(tokenDelta(sessionId: 's1', delta: 'hello '));
+      expect(state.caption.segments.single.text, 'hello ');
+
+      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'intruder'));
+      expect(
+        state.caption.segments.single.text,
+        'hello ',
+        reason: 'a learned session must still filter foreign streams',
+      );
+
+      // A terminal frame ends the learned turn; the next turn may self-learn
+      // a different session instead of being stuck on the first one seen.
+      client.emitEvent(
+        tokenDelta(sessionId: 's1', messageId: 'm1', delta: '', isFinal: true),
+      );
+      expect(state.caption.segments, isEmpty);
+      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'now mine'));
+      expect(state.caption.segments.single.text, 'now mine');
+    });
+  });
 }

@@ -49,10 +49,13 @@ void _speakCompletedTurns(DaemonClient client, LipSyncController controller) =>
     speakCompletedTurns(client, controller);
 
 /// Testable seam for the token.delta -> local TTS bridge. A terminal frame
-/// carries `reason: complete|cancelled|error`. Only a successful turn is
-/// spoken: cancelled and failed replies must never become audio. An absent
+/// carries `reason: complete|cancelled|error`; cancelled and error are
+/// terminal even without `final: true`. Only a successful turn is spoken:
+/// cancelled and failed replies stop this client's queue instead. An absent
 /// reason is treated as complete so an older daemon without the field keeps
-/// working; intermediate deltas are buffered until `final: true`.
+/// working; intermediate deltas are buffered until the terminal frame.
+/// Foreign `session_id` deltas are ignored so one turn cannot cancel another
+/// session's speech.
 void speakCompletedTurns(
   DaemonClient client,
   LipSyncController controller, {
@@ -66,15 +69,37 @@ void speakCompletedTurns(
         debugPrint('speech failed for ${intent.intentId}: $error'),
   );
   final buffer = StringBuffer();
+  String? boundSessionId;
   client.onEvent((event) {
     if (event.topic != EventTopic.tokenDelta) return;
-    final delta = event.data['delta'];
+    final data = event.data;
+    final reason = data['reason'];
+    final isFinal = data['final'] == true;
+    // The publisher marks cancelled/error terminal without final: true
+    // (crates/anima-daemon/src/events.rs), so reason alone must end a turn.
+    final terminal = isFinal || reason == 'cancelled' || reason == 'error';
+    // The event lane carries every session. Keep the session bound across a
+    // terminal so a foreign cancel cannot stop speech from a prior turn; a
+    // new turn's first delta may rebind to a different session.
+    final sid = data['session_id'];
+    if (sid is String && sid.isNotEmpty) {
+      if (boundSessionId == null || (buffer.isEmpty && !terminal)) {
+        boundSessionId = sid;
+      } else if (sid != boundSessionId) {
+        return;
+      }
+    }
+    final delta = data['delta'];
     if (delta is String && delta.isNotEmpty) buffer.write(delta);
-    if (event.data['final'] != true) return;
-    final reason = event.data['reason'];
+    if (!terminal) return;
     final text = buffer.toString().trim();
     buffer.clear();
-    if (reason != null && reason != 'complete') return;
+    if (reason != null && reason != 'complete') {
+      // A cancelled/failed turn leaves a previous intent synthesizing. Stop
+      // only this client's queue; the daemon keeps its own speech state.
+      speechQueue.stopAll();
+      return;
+    }
     if (text.isNotEmpty) {
       // Normal priority, queue behavior: failures are reported through
       // onError, never as fabricated audio.

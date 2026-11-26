@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../../daemon_client/daemon_client.dart';
@@ -641,7 +642,18 @@ class ChatScreenState extends State<ChatScreen> {
 
   Future<_ChatMessage> _messageFromHistory(Map<String, dynamic> turn) async {
     final text = (turn['content'] as String?) ?? '';
-    if (turn['role'] == 'user') return _ChatMessage.user(text);
+    final rawCreatedAt = turn['createdAt'];
+    // DateTime throws on out-of-range epochs; malformed history must not
+    // break the build. Daemon stamps positive ms, so bound to that range.
+    const maxEpochMs = 8640000000000000;
+    final createdAt = rawCreatedAt is int &&
+            rawCreatedAt > 0 &&
+            rawCreatedAt <= maxEpochMs
+        ? rawCreatedAt
+        : null;
+    if (turn['role'] == 'user') {
+      return _ChatMessage.user(text, createdAt: createdAt);
+    }
     // Persisted assistant turns are already final: parse their full text so
     // replayed sessions show the same dynamic widgets as a live turn.
     final parsed = await _parseGenUi(text);
@@ -649,6 +661,7 @@ class ChatScreenState extends State<ChatScreen> {
       parsed.text,
       surfaceIds: parsed.surfaceIds,
       genUiFailed: parsed.failed,
+      createdAt: createdAt,
     );
   }
 
@@ -902,6 +915,21 @@ class ChatScreenState extends State<ChatScreen> {
                             // images from it (IP leak / tracking / probing).
                             imageBuilder: (_, __, alt) => Text(alt ?? ''),
                           ),
+                          // Only history turns carry a createdAt; streamed and
+                          // just-sent bubbles stay timestamp-free.
+                          if (m.createdAt != null)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                // The app declares only Locale('en'); intl has
+                                // no bare 'en' date data, so use the format the
+                                // Vue reference uses for en-US.
+                                DateFormat.jm('en_US')
+                                    .format(DateTime.fromMillisecondsSinceEpoch(m.createdAt!)),
+                                key: Key('chat-timestamp-$messageIndex'),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
                           Align(
                             alignment: Alignment.centerRight,
                             child: IconButton(
@@ -1067,24 +1095,29 @@ class _ChatMessage {
     required this.text,
     this.surfaceIds = const <String>[],
     this.genUiFailed = false,
+    this.createdAt,
   });
 
-  factory _ChatMessage.user(String t) => _ChatMessage(isUser: true, text: t);
+  factory _ChatMessage.user(String t, {int? createdAt}) =>
+      _ChatMessage(isUser: true, text: t, createdAt: createdAt);
   factory _ChatMessage.assistant(
     String t, {
     List<String> surfaceIds = const <String>[],
     bool genUiFailed = false,
+    int? createdAt,
   }) => _ChatMessage(
     isUser: false,
     text: t,
     surfaceIds: surfaceIds,
     genUiFailed: genUiFailed,
+    createdAt: createdAt,
   );
 
   final bool isUser;
   final String text;
   final List<String> surfaceIds;
   final bool genUiFailed;
+  final int? createdAt;
 
   _ChatMessage copyWith({
     String? text,
@@ -1095,5 +1128,6 @@ class _ChatMessage {
     text: text ?? this.text,
     surfaceIds: surfaceIds ?? this.surfaceIds,
     genUiFailed: genUiFailed ?? this.genUiFailed,
+    createdAt: createdAt,
   );
 }

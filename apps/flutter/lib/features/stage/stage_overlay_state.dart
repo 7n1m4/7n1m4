@@ -520,8 +520,13 @@ class StageRenderStateBinding {
   StageRenderStateBinding({
     required DaemonClient client,
     required StageRenderState state,
+    String? boundSessionId,
   }) : _client = client,
-       _state = state {
+       _state = state,
+       _boundSessionId =
+           boundSessionId != null && boundSessionId.isNotEmpty
+               ? boundSessionId
+               : null {
     _unsubscribe = client.onEvent(_onEvent);
     _wasConnected = client.snapshot.isConnected;
     // The lane is opt-in: no subscription means no captions or cues. The
@@ -530,13 +535,23 @@ class StageRenderStateBinding {
     _statusSubscription = client.statusStream.listen((status) {
       final connected = status.state == DaemonConnectionState.connected;
       if (connected && !_wasConnected) _subscribe();
-      if (!connected && _wasConnected) _state.clearTransient();
+      if (!connected && _wasConnected) {
+        _learnedSessionId = null;
+        _state.clearTransient();
+      }
       _wasConnected = connected;
     });
   }
 
   final DaemonClient _client;
   final StageRenderState _state;
+
+  /// Optional explicit session to caption. When absent, the session is learned
+  /// from the stream (mirrors chat_screen.dart:191-192) so production works
+  /// without shell plumbing. Kept separate from the learned value so an
+  /// explicit binding always wins once one is supplied.
+  final String? _boundSessionId;
+  String? _learnedSessionId;
 
   StreamSubscription<DaemonStatus>? _statusSubscription;
   void Function()? _unsubscribe;
@@ -574,7 +589,26 @@ class StageRenderStateBinding {
         final cue = parseExpressionCue(event.data, actorId: _state.actorId);
         if (cue != null) _state.applyCue(cue);
       case EventTopic.tokenDelta:
-        _state.captions.applyTokenDelta(event.data);
+        final data = event.data;
+        final rawSid = data['session_id'];
+        final sid = rawSid is String ? rawSid : '';
+        // Mirror chat_screen.dart:183-192: an explicit binding wins, a frame
+        // without a session id is still accepted (older daemons/fakes), and
+        // only disagreeing sessions are dropped. Caption filtering stays
+        // client-local; no daemon state or RPC is involved.
+        final session = _boundSessionId ?? _learnedSessionId;
+        if (session != null && sid.isNotEmpty && sid != session) return;
+        if (session == null && sid.isNotEmpty) _learnedSessionId = sid;
+        _state.captions.applyTokenDelta(data);
+        // Without shell plumbing the first delta teaches us the session. A
+        // terminal frame releases that learned binding so a foreign stream
+        // cannot hold the caption lane forever; the next turn re-learns.
+        final reason = data['reason'];
+        final terminal =
+            data['final'] == true ||
+            reason == 'cancelled' ||
+            reason == 'error';
+        if (terminal) _learnedSessionId = null;
       default:
         break;
     }
