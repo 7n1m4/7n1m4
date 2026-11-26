@@ -27,7 +27,7 @@ void main() {
     final catalogSwitch = catalogEnd == -1
         ? source.substring(catalogStart)
         : source.substring(catalogStart, catalogEnd);
-    final handled = RegExp(r"case '(area-[a-z-]+|sys-[a-z-]+)':")
+    final handled = RegExp(r"case '(area-[a-z-]+|sys-[a-z-]+|mem-[a-z-]+)':")
         .allMatches(catalogSwitch)
         .map((match) => match.group(1))
         .toSet();

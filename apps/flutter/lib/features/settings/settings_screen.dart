@@ -15,6 +15,7 @@ import '../modules/modules_screen.dart';
 import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
 import '../stage/stage_control_strip_state.dart';
+import 'memory_signals_screen.dart';
 import 'settings_catalog.dart';
 import 'settings_search.dart';
 
@@ -363,6 +364,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _push(ProvidersScreen(client: widget.client));
       case 'area-memory':
         _push(MemoryScreen(client: widget.client));
+      case 'mem-dream-signals':
+        _push(MemorySignalsScreen(client: widget.client));
       case 'area-card':
         _push(CardsScreen(client: widget.client));
       case 'area-modules':
@@ -910,6 +913,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Icons.person_outline;
       case 'area-memory':
         return Icons.psychology_outlined;
+      case 'mem-dream-signals':
+        return Icons.nightlight_outlined;
       case 'area-modules':
         return Icons.layers_outlined;
       case 'area-sessions':
