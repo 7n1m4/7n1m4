@@ -79,6 +79,19 @@ void main() {
       expect(spellNumber('01a', 'ko'), '영일');
     });
 
+    // Unparseable integer text: JS Number() yields NaN, so the TS spellers
+    // emit the same artifacts as Infinity/NaN (numbers.ts:61-101,130).
+    // Expectations pinned from the live TS oracle.
+    test('unparseable integer text matches the TS NaN artifacts', () {
+      const ja = 'undefinedじゅうおくundefinedじゅうまんundefinedじゅう';
+      const ko = 'undefined천undefined백undefined십undefined억undefined천undefined백undefined십undefined만undefined천undefined백undefined십undefined';
+      for (final source in ['abc', '12a']) {
+        expect(spellNumber(source, 'en'), '', reason: source);
+        expect(spellNumber(source, 'ja'), ja, reason: source);
+        expect(spellNumber(source, 'ko'), ko, reason: source);
+      }
+    });
+
     test('non-finite values stay total in all three languages', () {
       for (final source in <String>['Infinity', '-Infinity', 'NaN', '1e309']) {
         expect(spellNumber(source, 'en'), '', reason: source);

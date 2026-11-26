@@ -53,12 +53,13 @@ String spellNumber(String source, String language) {
   if (integer.length > _maxGroupedDigits || RegExp(r'^0\d').hasMatch(integer)) {
     whole = byDigit(integer);
   } else {
-    final number = num.tryParse(integer.isEmpty ? '0' : integer);
-    whole = number != null && (number.isNaN || number.isInfinite)
-        // JS Number() also accepts these; its spellers emit these artifacts.
-        // Pinned from the live TS oracle so the port stays total and faithful.
+    final literal = integer.trim().isEmpty ? '0' : integer;
+    final number = num.tryParse(literal);
+    // Dart returns null where JS Number() returns NaN for real garbage such
+    // as 'abc' or '12a'; both must reach the TS spellers' NaN artifacts.
+    whole = number == null || number.isNaN || number.isInfinite
         ? _nonFiniteInteger(language)
-        : _integerFor(language, integer.isEmpty ? '0' : integer);
+        : _integerFor(language, literal);
   }
   if (fraction == null) return whole;
   switch (language) {
