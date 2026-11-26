@@ -1471,6 +1471,11 @@ pub fn type_collection() -> specta::Types {
         .register::<crate::config::ChannelConfig>()
         .register::<crate::control::GatewayControlStatus>()
         .register::<crate::control::GatewayControlApply>()
+        .register::<crate::provider::ProviderValidationState>()
+        .register::<crate::provider::ProviderValidationHash>()
+        .register::<crate::asset::AssetCatalogManifest>()
+        .register::<crate::asset::AssetCatalogEntry>()
+        .register::<crate::asset::AssetDownloadMetadata>()
 }
 
 #[cfg(test)]

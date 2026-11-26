@@ -14,6 +14,8 @@
 
 #[cfg(test)]
 mod golden_fixtures {
+    use anima_channel::asset::{AssetCatalogManifest, AssetDownloadMetadata};
+    use anima_channel::provider::ProviderValidationState;
     use anima_channel::wire::{
         CapabilitiesReply, CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest,
         CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply,
@@ -346,6 +348,60 @@ mod golden_fixtures {
     fn session_import_reply_fixture() {
         let value = load_json("sessions.import.reply");
         round_trip::<SessionImportReply>("sessions.import.reply", &value);
+    }
+
+    // ----------------------------------------------------------------
+    // Secret-free negative control shared by the additive provider/asset DTOs.
+    // Forbidden keys: authToken, token, apiKey, secret, config, path, prompt.
+    // ----------------------------------------------------------------
+
+    fn assert_secret_free(name: &str, value: &serde_json::Value) {
+        for key in [
+            "authToken",
+            "token",
+            "apiKey",
+            "secret",
+            "config",
+            "path",
+            "prompt",
+        ] {
+            assert!(value.get(key).is_none(), "{name} must not carry `{key}`");
+        }
+    }
+
+    #[test]
+    fn provider_validation_state_fixture_is_secret_free() {
+        let value = load_json("provider.validation.state");
+        round_trip::<ProviderValidationState>("provider.validation.state", &value);
+        assert_secret_free("provider.validation.state", &value);
+        assert!(value["validated"].is_boolean());
+        assert!(value["validationBypassed"].is_boolean());
+    }
+
+    #[test]
+    fn asset_catalog_manifest_fixture_is_secret_free() {
+        let value = load_json("asset.catalog.manifest");
+        round_trip::<AssetCatalogManifest>("asset.catalog.manifest", &value);
+        assert_secret_free("asset.catalog.manifest", &value);
+        // A manifest carries entry metadata and caps only — never binary bytes.
+        for entry in value["entries"].as_array().expect("entries array") {
+            assert!(
+                entry.get("data").is_none(),
+                "manifest entries carry no bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn asset_download_metadata_fixture_is_secret_free() {
+        let value = load_json("asset.download.metadata");
+        round_trip::<AssetDownloadMetadata>("asset.download.metadata", &value);
+        assert_secret_free("asset.download.metadata", &value);
+        assert_eq!(
+            value["maxDataBytes"].as_u64(),
+            Some(1024 * 1024 - 8192),
+            "wire data budget must reserve the RPC envelope inside the 1 MiB frame cap"
+        );
     }
 
     // ----------------------------------------------------------------

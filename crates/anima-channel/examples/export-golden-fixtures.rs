@@ -15,6 +15,10 @@
 
 use std::path::{Path, PathBuf};
 
+use anima_channel::asset::{
+    AssetCatalogEntry, AssetCatalogManifest, AssetDownloadMetadata, ASSET_METADATA_MAX_DATA_BYTES,
+};
+use anima_channel::provider::{ProviderValidationHash, ProviderValidationState};
 use anima_channel::wire::{
     CapabilitiesReply, CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest,
     CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
@@ -459,6 +463,49 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
             serde_json::to_value(SessionImportReply {
                 status: SessionImportStatus::Applied,
                 revision: 1_700_000_000_123,
+            })?,
+        ),
+        (
+            "provider.validation.state",
+            serde_json::to_value(ProviderValidationState {
+                instance_id: "openai-main".into(),
+                validated: true,
+                validation_bypassed: false,
+                hash: ProviderValidationHash {
+                    algorithm: "sha256".into(),
+                    // sha256 of "test" — a digest of public input, never a credential.
+                    value: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                        .into(),
+                },
+            })?,
+        ),
+        (
+            "asset.catalog.manifest",
+            serde_json::to_value(AssetCatalogManifest {
+                catalog_id: "models".into(),
+                revision: "2026-11-27T00:00:00Z".into(),
+                entries: vec![AssetCatalogEntry {
+                    asset_id: "kokoro-v1".into(),
+                    kind: "model".into(),
+                    size_bytes: 320 * 1024 * 1024,
+                    // sha256 of the empty string — an integrity fixture digest.
+                    content_hash:
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                    mime_type: Some("application/octet-stream".into()),
+                }],
+                max_asset_bytes: 512 * 1024 * 1024,
+                truncated: false,
+            })?,
+        ),
+        (
+            "asset.download.metadata",
+            serde_json::to_value(AssetDownloadMetadata {
+                catalog_id: "models".into(),
+                asset_id: "kokoro-v1".into(),
+                size_bytes: 320 * 1024 * 1024,
+                content_hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    .into(),
+                max_data_bytes: ASSET_METADATA_MAX_DATA_BYTES,
             })?,
         ),
     ];
