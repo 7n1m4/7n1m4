@@ -80,7 +80,8 @@ class _CardClient extends FakeChatClient {
           ok: true,
           data: <String, dynamic>{
             'id': id,
-            'name': document is Map<String, dynamic> && document['name'] is String
+            'name':
+                document is Map<String, dynamic> && document['name'] is String
                 ? document['name']
                 : '',
             'updated': true,
@@ -140,7 +141,6 @@ Future<void> _leaveStage(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-
 /// A card document carrying the Vue per-card backdrop field.
 Map<String, dynamic> _cardWithBackground(String id, String backgroundId) =>
     <String, dynamic>{
@@ -157,19 +157,16 @@ Map<String, dynamic> _cardWithBackground(String id, String backgroundId) =>
 Map<String, dynamic> _cardWithActiveStateBackground(
   String id,
   String backgroundId,
-) =>
-    <String, dynamic>{
-      ..._card(id),
-      'data': <String, dynamic>{
-        'extensions': <String, dynamic>{
-          'airi': <String, dynamic>{
-            'active_state': <String, dynamic>{
-              'activeBackgroundId': backgroundId,
-            },
-          },
-        },
+) => <String, dynamic>{
+  ..._card(id),
+  'data': <String, dynamic>{
+    'extensions': <String, dynamic>{
+      'airi': <String, dynamic>{
+        'active_state': <String, dynamic>{'activeBackgroundId': backgroundId},
       },
-    };
+    },
+  },
+};
 
 /// A card with independent values in both extension mirrors, so the write
 /// test proves it writes both locations without dropping neighbouring state.
@@ -193,9 +190,7 @@ Map<String, dynamic> _cardWithMirroredExtensionState(String id) =>
             'modules': <String, dynamic>{
               'consciousness': <String, dynamic>{'provider': 'kept'},
             },
-            'active_state': <String, dynamic>{
-              'displayModelId': 'nested-model',
-            },
+            'active_state': <String, dynamic>{'displayModelId': 'nested-model'},
           },
         },
       },
@@ -434,7 +429,10 @@ void main() {
     await _openStage(tester);
 
     expect(
-      tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle?.docking,
+      tester
+          .widget<StageScreen>(find.byType(StageScreen))
+          .captionStyle
+          ?.docking,
       StageCaptionDocking.top,
     );
   });
@@ -450,7 +448,11 @@ void main() {
         );
       }
       if (action == 'cards.get') {
-        return RpcReply(action: action, ok: true, data: <String, dynamic>{'card': null});
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{'card': null},
+        );
       }
       return RpcReply(action: action, ok: true, data: <String, dynamic>{});
     };
@@ -458,7 +460,9 @@ void main() {
     await _pumpShell(tester, client, sceneStorageDirectory: temp);
     await _openStage(tester);
 
-    final style = tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle;
+    final style = tester
+        .widget<StageScreen>(find.byType(StageScreen))
+        .captionStyle;
     expect(style?.docking, StageCaptionDocking.none);
     expect(style?.isVisible, isFalse);
   });
@@ -488,18 +492,23 @@ void main() {
     await _pumpShell(tester, client, sceneStorageDirectory: temp);
     await _leaveStage(tester);
     await _openStage(tester);
-    stale.complete(RpcReply(
-      action: 'settings.get',
-      ok: true,
-      data: <String, dynamic>{
-        'settings': <String, dynamic>{'docking': 'bottom', 'enabled': true},
-      },
-    ));
+    stale.complete(
+      RpcReply(
+        action: 'settings.get',
+        ok: true,
+        data: <String, dynamic>{
+          'settings': <String, dynamic>{'docking': 'bottom', 'enabled': true},
+        },
+      ),
+    );
     await tester.pump();
     await tester.pump();
 
     expect(
-      tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle?.docking,
+      tester
+          .widget<StageScreen>(find.byType(StageScreen))
+          .captionStyle
+          ?.docking,
       StageCaptionDocking.top,
     );
   });
@@ -734,20 +743,14 @@ void main() {
     await _pumpShell(tester, client, sceneStorageDirectory: temp);
     await _openStage(tester);
 
-    expect(
-      tester.widget<StageScreen>(find.byType(StageScreen)).cardId,
-      isNull,
-    );
+    expect(tester.widget<StageScreen>(find.byType(StageScreen)).cardId, isNull);
   });
-
 
   testWidgets('a card document restores its per-card backdrop', (tester) async {
     final store = StageSceneStore(storageDirectory: temp);
     await tester.runAsync(() => store.add(tint: '#654321'));
-    final entry = store.entries.single;
-    await tester.runAsync(
-      () => store.activate(entry.id, cardId: 'card-1'),
-    );
+    final entry = store.entries.last;
+    await tester.runAsync(() => store.activate(entry.id, cardId: 'card-1'));
     // The card document, not the client-local activeByCard, is the seed.
     await tester.runAsync(() => store.deactivate(cardId: 'card-1'));
     final client = _CardClient(<Map<String, dynamic>>[
@@ -807,7 +810,10 @@ void main() {
 
   test('card writes read the canonical active_state field', () {
     expect(
-      readCardActiveField(_cardWithActiveStateBackground('card-1', 'bg-state'), 'activeBackgroundId'),
+      readCardActiveField(
+        _cardWithActiveStateBackground('card-1', 'bg-state'),
+        'activeBackgroundId',
+      ),
       'bg-state',
     );
   });
@@ -819,8 +825,9 @@ void main() {
       'activeBackgroundId',
       'bg-from-flutter',
     );
-    final rootAiri = (written['extensions'] as Map<String, dynamic>)['airi']
-        as Map<String, dynamic>;
+    final rootAiri =
+        (written['extensions'] as Map<String, dynamic>)['airi']
+            as Map<String, dynamic>;
     final nestedAiri =
         ((written['data'] as Map<String, dynamic>)['extensions']
                 as Map<String, dynamic>)['airi']
@@ -855,13 +862,13 @@ void main() {
     tester,
   ) async {
     final client = _CardClient(<Map<String, dynamic>>[
-      _cardWithBackground('card-1', 'builtin:cozy-tea-corner'),
+      _cardWithBackground('card-1', 'builtin:does-not-exist'),
     ]);
     addTearDown(client.dispose);
     final store = StageSceneStore(storageDirectory: temp);
     await tester.runAsync(() => store.add(tint: '#123456'));
     await tester.runAsync(
-      () => store.activate(store.entries.single.id, cardId: 'card-1'),
+      () => store.activate(store.entries.last.id, cardId: 'card-1'),
     );
 
     final loaded = Completer<void>();

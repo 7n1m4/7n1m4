@@ -63,6 +63,28 @@ activeModel: string }` — the provider/model selection used by daemon
 `settings.get('chat-provider')` and must not send the selection fields inside
 `chat.send`. There is no `local:*` mirror of this section.
 
+`presence.changed` / `status.changed` are daemon-published, transient wire
+payloads (not persisted keys and no `local:*` mirror): `PresenceChangedData`
+`{ subject, state, seq, ts_ms }` and secret-free `StatusChangedData`
+`{ core_available, store_available, store_health, seq, ts_ms }` in
+`crates/anima-channel/src/wire.rs:1041,1060`. Flutter decodes them in
+`apps/flutter/lib/daemon_client/protocol.dart:110,144`, registers typed hooks at
+`daemon_client.dart:274,283`, and renders them through
+`apps/flutter/lib/features/stage/presence_event_state.dart` + `presence_status_chip.dart`
+(`airi-pntk`, `airi-rs74`). `core.status` remains the read-only health probe; no
+client may fabricate these values when a frame is missing.
+
+Keyset list cursors are also daemon-owned wire values, not persisted state:
+`cards.list`/`sessions.list` return `{ updatedAt, rowId }` and `chat.history`
+returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1424,1791,2009`,
+`list_cursor` at `gateway.rs:2907-2926`). `ListPage.nextCursor` in
+`apps/flutter/lib/daemon_client/daemon_client.dart:36-49,732-745` forwards them
+verbatim; only older daemons without a cursor fall back to a numeric offset
+(`airi-dib9`). `stmm.upsert` writes short-term summary rows via the gated
+`gateway.rs:1467-1503`; Flutter's typed wrapper is at `daemon_client.dart:1003-1065`
+(`airi-bmt5`), while the TS `local:memory/short-term/*` lane (§1.7) remains a
+migration reference, not a daemon mirror.
+
 ### Mobile release notice packaging (airi-kji9)
 
 Notices must travel inside the AAB/IPA. Authoritative source is repo-root `THIRD_PARTY_NOTICES.md` + `LICENSES/`. Byte-identical copies live at `apps/flutter/assets/notices/THIRD_PARTY_NOTICES.md` and `apps/flutter/assets/notices/LICENSES/*.txt`, declared as Flutter assets in `apps/flutter/pubspec.yaml`. In-app path: About tab → "Third-party notices" (Settings → About AIRI is the same `AboutScreen`), read via `rootBundle` from `apps/flutter/lib/features/about/third_party_notices.dart`. Regeneration = re-copy from repo root (`cp THIRD_PARTY_NOTICES.md apps/flutter/assets/notices/ && cp LICENSES/*.txt apps/flutter/assets/notices/LICENSES/`), verified with `cmp`. Live2D/Cubism notices deliberately absent. No daemon-owned state is involved — notices are static assets shipped in the bundle, not persisted by the daemon.
@@ -768,6 +790,18 @@ interface BackgroundEntry {
 ```
 
 There is also a second background store in `packages/stage-layouts/src/stores/background.ts` with key pattern `background-{id}` (`STORAGE_PREFIX = 'background-'`) for user-uploaded backgrounds.
+
+#### Flutter client-local scene library parity
+
+`apps/flutter/lib/features/stage/stage_scene_manager.dart` persists user-added
+scenes in the application-support file `scenes.json` (`entries`, `activeId`,
+`activeByCard`); it never writes daemon or IndexedDB state. `load()` seeds the
+same two `builtin:*` ids Vue defines in
+`packages/stage-ui/src/stores/background.ts:33-44` when absent, materializing
+visual JPEG exports of the Vue AVIF assets from
+`apps/flutter/assets/backgrounds/*.jpg` (the bundled Flutter engine has no AVIF
+codec) into the `builtins/` subdirectory. Removal and per-card activation are
+local file operations; no daemon verb is involved.
 
 ### 3.1.2 Custom Voice Profiles (MOSS TTS Nano Local)
 
@@ -1705,6 +1739,15 @@ When implementing MOSS-TTS-Nano voice cloning, the voice profile store should fo
 | File | Role |
 | :--- | :--- |
 | `packages/stage-ui/src/stores/sync-engine.ts` | Sync orchestrator, merge logic, `StorageClient` interface |
+
+### Daemon RPC / event wire sources (not persisted keys)
+| File | Role |
+| :--- | :--- |
+| `crates/anima-channel/src/wire.rs:1039-1073` | Presence/health payloads (`PresenceChangedData`, `StatusChangedData`); `CueKind` at `:942-949` |
+| `crates/anima-daemon/src/gateway.rs:1424,1791,2009` | Keyset cursors for chat history, cards, sessions; `stmm.upsert` handler at `:1467-1503` |
+| `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,267-288,732-745` | `ListPage.nextCursor` verbatim cursor forwarding, typed presence/status hooks, `stmmUpsert` at `:1003-1065` |
+| `apps/flutter/lib/features/stage/presence_event_state.dart:65-173` | Seq-deduped presence/health snapshot and typed hook binding |
+| `apps/flutter/lib/features/stage/presence_status_chip.dart:17-120` | Stage consumer of daemon-published presence/health |
 
 ### Stores (non-exhaustive, key stores only)
 | File | Namespace |

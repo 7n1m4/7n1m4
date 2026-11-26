@@ -1428,12 +1428,16 @@ void main() {
 
   test('a transport failure before auth retries on a fresh socket', () async {
     final transports = <ScriptedTransport>[];
+    final retried = Completer<void>();
     final client = DaemonClient(
       transportFactory: () {
         final transport = ScriptedTransport(
           connectError: transports.isEmpty ? const TransportClosed() : null,
         );
         transports.add(transport);
+        if (transports.length == 2 && !retried.isCompleted) {
+          retried.complete();
+        }
         return transport;
       },
       reconnectPolicy: const ReconnectPolicy(
@@ -1445,7 +1449,9 @@ void main() {
     addTearDown(client.dispose);
 
     await client.connect(const ConnectionSettings(authToken: 'tok'));
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+    await retried.future.timeout(const Duration(seconds: 2));
+    // The factory fires before _open attaches listeners and sends auth.
+    await _pump();
 
     expect(transports, hasLength(2), reason: 'pre-auth transport errors retry');
     final fresh = transports.last;

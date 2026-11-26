@@ -11,6 +11,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import 'stage_background.dart';
 
 /// A stable code + user-safe message for a scene-library failure.
@@ -32,7 +34,8 @@ class StageSceneEntry {
     required this.label,
   });
 
-  /// Opaque, locally generated id (`bg-…`, matching the Vue store prefix).
+  /// Opaque, locally generated id (`bg-…`, matching the Vue store prefix),
+  /// or a stable Vue builtin id (`builtin:…`).
   final String id;
   final StageBackground background;
   final String label;
@@ -41,13 +44,13 @@ class StageSceneEntry {
   String? get imagePath => background.imagePath;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'label': label,
-        'kind': background.kind.name,
-        'tint': background.tint,
-        'imagePath': background.imagePath,
-        'fingerprint': background.fingerprint,
-      };
+    'id': id,
+    'label': label,
+    'kind': background.kind.name,
+    'tint': background.tint,
+    'imagePath': background.imagePath,
+    'fingerprint': background.fingerprint,
+  };
 
   static StageSceneEntry fromJson(Map<String, dynamic> json) {
     final id = json['id'];
@@ -79,11 +82,44 @@ class StageSceneEntry {
   }
 }
 
+/// A backdrop bundled with the app and seeded into a fresh scene library.
+/// The JPEG files are visual exports of the Vue AVIF assets; this Flutter
+/// engine has no AVIF codec, so JPEG keeps the bundled background paintable.
+class StageBuiltinScene {
+  const StageBuiltinScene({
+    required this.id,
+    required this.assetPath,
+    required this.fileName,
+    required this.label,
+  });
+
+  final String id;
+  final String assetPath;
+  final String fileName;
+  final String label;
+}
+
+const List<StageBuiltinScene> stageBuiltinScenes = <StageBuiltinScene>[
+  StageBuiltinScene(
+    id: 'builtin:cozy-tea-corner',
+    assetPath: 'assets/backgrounds/cozy-tea-corner-in-pastel-hues.jpg',
+    fileName: 'cozy-tea-corner-in-pastel-hues.jpg',
+    label: 'Cozy tea corner in pastel hues',
+  ),
+  StageBuiltinScene(
+    id: 'builtin:cute-streaming-room',
+    assetPath: 'assets/backgrounds/cute-streaming-room-with-pastel-decor.jpg',
+    fileName: 'cute-streaming-room-with-pastel-decor.jpg',
+    label: 'Cute streaming room with pastel decor',
+  ),
+];
+
 /// Add/remove/activate backdrops and resolve the active one for the stage.
 ///
 /// Construction does not touch the filesystem: call [load] once from the
-/// owning screen. Writes are atomic (write temp, then rename), so a crash
-/// never leaves a half-written library.
+/// owning screen. [load] seeds the two bundled Vue backdrops when absent,
+/// without overwriting any user entry that shares their id. Writes are atomic
+/// (write temp, then rename), so a crash never leaves a half-written library.
 class StageSceneStore {
   StageSceneStore({required this.storageDirectory});
 
@@ -100,7 +136,8 @@ class StageSceneStore {
   File get _libraryFile =>
       File('${storageDirectory.path}${Platform.pathSeparator}scenes.json');
 
-  List<StageSceneEntry> get entries => List<StageSceneEntry>.unmodifiable(_entries);
+  List<StageSceneEntry> get entries =>
+      List<StageSceneEntry>.unmodifiable(_entries);
   String? get activeId => _activeId;
   StageBackground get activeBackground => activeBackgroundFor(null);
 
@@ -151,9 +188,7 @@ class StageSceneStore {
     final entry = backgroundId == null || backgroundId == 'none'
         ? null
         : entryFor(backgroundId);
-    if (backgroundId != null &&
-        backgroundId != 'none' &&
-        entry == null) {
+    if (backgroundId != null && backgroundId != 'none' && entry == null) {
       throw const StageSceneException(
         'unknown-scene',
         'That scene is no longer in the library.',
@@ -169,47 +204,88 @@ class StageSceneStore {
 
   Future<void> load() async {
     _entries.clear();
-    if (!await _libraryFile.exists()) {
+    if (await _libraryFile.exists()) {
+      try {
+        final decoded = jsonDecode(await _libraryFile.readAsString());
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('not a scene library');
+        }
+        final rawEntries = decoded['entries'];
+        if (rawEntries is List) {
+          for (final raw in rawEntries) {
+            if (raw is Map<String, dynamic>) {
+              _entries.add(StageSceneEntry.fromJson(raw));
+            }
+          }
+        }
+        final active = decoded['activeId'];
+        _activeId =
+            active is String && _entries.any((entry) => entry.id == active)
+            ? active
+            : null;
+        _activeByCard.clear();
+        final byCard = decoded['activeByCard'];
+        if (byCard is Map) {
+          for (final entry in byCard.entries) {
+            final cardId = entry.key;
+            final sceneId = entry.value;
+            if (cardId is String &&
+                sceneId is String &&
+                _entries.any((scene) => scene.id == sceneId)) {
+              _activeByCard[cardId] = sceneId;
+            }
+          }
+        }
+      } on Object catch (error) {
+        throw StageSceneException(
+          'load-failed',
+          'The scene library could not be read (${error.runtimeType}).',
+        );
+      }
+    } else {
       _activeId = null;
-      return;
-    }
-    try {
-      final decoded = jsonDecode(await _libraryFile.readAsString());
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('not a scene library');
-      }
-      final rawEntries = decoded['entries'];
-      if (rawEntries is List) {
-        for (final raw in rawEntries) {
-          if (raw is Map<String, dynamic>) {
-            _entries.add(StageSceneEntry.fromJson(raw));
-          }
-        }
-      }
-      final active = decoded['activeId'];
-      _activeId = active is String &&
-              _entries.any((entry) => entry.id == active)
-          ? active
-          : null;
       _activeByCard.clear();
-      final byCard = decoded['activeByCard'];
-      if (byCard is Map) {
-        for (final entry in byCard.entries) {
-          final cardId = entry.key;
-          final sceneId = entry.value;
-          if (cardId is String &&
-              sceneId is String &&
-              _entries.any((scene) => scene.id == sceneId)) {
-            _activeByCard[cardId] = sceneId;
-          }
-        }
-      }
-    } on Object catch (error) {
-      throw StageSceneException(
-        'load-failed',
-        'The scene library could not be read (${error.runtimeType}).',
-      );
     }
+    await _seedBuiltins();
+  }
+
+  /// Materialize each bundled backdrop into the client-local library and add
+  /// it when the id is absent. An existing entry — including a user-provided
+  /// one — is never overwritten. The copy is content-named so repeated loads
+  /// reuse the same local file.
+  Future<void> _seedBuiltins() async {
+    for (final builtin in stageBuiltinScenes) {
+      if (entryFor(builtin.id) != null) continue;
+      try {
+        final bytes = (await rootBundle.load(builtin.assetPath)).buffer
+            .asUint8List();
+        final file = File(
+          '${storageDirectory.path}${Platform.pathSeparator}builtins'
+          '${Platform.pathSeparator}${builtin.fileName}',
+        );
+        if (!await file.exists() || await file.length() != bytes.length) {
+          await file.create(recursive: true);
+          await file.writeAsBytes(bytes, flush: true);
+        }
+        final background = await const StageBackgroundResolver().resolve(
+          imagePath: file.path,
+        );
+        _entries.add(
+          StageSceneEntry(
+            id: builtin.id,
+            background: background,
+            label: builtin.label,
+          ),
+        );
+      } on Object catch (error) {
+        throw StageSceneException(
+          'builtin-seed-failed',
+          'The bundled scene ${builtin.id} could not be loaded '
+              '(${error.runtimeType}).',
+        );
+      }
+    }
+    await _persist();
   }
 
   /// Resolve and add one backdrop. A missing image or a bad tint fails loudly
@@ -227,8 +303,10 @@ class StageSceneStore {
     }
     final id = 'bg-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
     final label = switch (background.kind) {
-      StageBackgroundKind.tint => 'Tint #${(background.tint! & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
-      StageBackgroundKind.image => background.imagePath?.split(Platform.pathSeparator).last ?? 'Image',
+      StageBackgroundKind.tint =>
+        'Tint #${(background.tint! & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
+      StageBackgroundKind.image =>
+        background.imagePath?.split(Platform.pathSeparator).last ?? 'Image',
       StageBackgroundKind.none => 'None',
     };
     final entry = StageSceneEntry(id: id, background: background, label: label);
