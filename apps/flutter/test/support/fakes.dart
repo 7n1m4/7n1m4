@@ -171,3 +171,39 @@ GatewayEventFrame tokenDelta({
     data: data,
   );
 }
+
+/// Fixed status double: the screen consumes it as view state only, no daemon.
+class ErrorStatusClient extends DaemonClient {
+  ErrorStatusClient(this.status)
+      : super(transportFactory: () => throw StateError('no transport'));
+
+  final DaemonStatus status;
+
+  @override
+  Stream<DaemonStatus> get statusStream => Stream<DaemonStatus>.value(status);
+
+  @override
+  DaemonStatus get snapshot => status;
+}
+
+GatewayEventFrame emotionTag({
+  required String tag,
+  String kind = 'emotion',
+  num intensity = 0.8,
+  String actorId = 'character-7',
+  int seq = 42,
+  int tsMs = 1700000000200,
+}) {
+  return GatewayEventFrame(
+    topic: EventTopic.emotionTag,
+    rawTopic: 'emotion.tag',
+    data: <String, dynamic>{
+      'tag': tag,
+      'kind': kind,
+      'intensity': intensity,
+      'actor_id': actorId,
+      'seq': seq,
+      'ts_ms': tsMs,
+    },
+  );
+}

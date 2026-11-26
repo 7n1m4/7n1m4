@@ -8,28 +8,6 @@ import 'package:anima_control/features/chat/chat_screen.dart';
 
 import 'support/fakes.dart';
 
-GatewayEventFrame emotionTag({
-  required String tag,
-  required String kind,
-  num intensity = 0.8,
-  String actorId = 'character-7',
-  int seq = 42,
-  int tsMs = 1700000000200,
-}) {
-  return GatewayEventFrame(
-    topic: EventTopic.emotionTag,
-    rawTopic: 'emotion.tag',
-    data: <String, dynamic>{
-      'tag': tag,
-      'intensity': intensity,
-      'kind': kind,
-      'actor_id': actorId,
-      'seq': seq,
-      'ts_ms': tsMs,
-    },
-  );
-}
-
 void main() {
   testWidgets('emotion.tag cue is visible; unrelated and malformed events do not spoof it',
       (tester) async {

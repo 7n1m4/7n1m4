@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'connection_error.dart';
 import 'connection_settings.dart';
+import 'linux_gateway_discovery.dart';
 
 /// Gateway connection form. Mirrors the behaviour of the Vue reference
 /// `ConnectionSettings.vue`: a derived `ws://` placeholder, a password-masked
@@ -13,10 +14,18 @@ class ConnectionSettingsScreen extends StatefulWidget {
     super.key,
     required this.onConnect,
     required this.onDisconnect,
-  });
+    Future<ConnectionSettings?> Function()? discover,
+  }) : discover = discover ?? _discoverFromDaemon;
 
   final Future<void> Function(ConnectionSettings settings) onConnect;
   final Future<void> Function() onDisconnect;
+
+  /// Read-only D-Bus lookup seam. Defaults to the Linux gateway helper; tests
+  /// inject a fake so no daemon or busctl is required.
+  final Future<ConnectionSettings?> Function() discover;
+
+  static Future<ConnectionSettings?> _discoverFromDaemon() =>
+      discoverGatewayOnLinux();
 
   @override
   State<ConnectionSettingsScreen> createState() => _ConnectionSettingsScreenState();
@@ -95,6 +104,34 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _connectError = userSafeConnectionError(e, context: 'disconnect:'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _detect() async {
+    setState(() {
+      _busy = true;
+      _connectError = null;
+    });
+    try {
+      final found = await widget.discover();
+      if (!mounted || found == null) return;
+      setState(() {
+        // Only the endpoint fields are adopted. `_token` is never touched:
+        // discovery never adopts the daemon's token or clobbers typed input.
+        _host.text = found.host;
+        _port.text = '${found.port}';
+        _scheme = found.scheme == 'wss' ? 'wss' : 'ws';
+        _caCertPath.text = found.caCertPath ?? '';
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () =>
+              _connectError = userSafeConnectionError(e, context: 'discover:'),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -200,6 +237,11 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
           const SizedBox(height: 16),
           Row(
             children: <Widget>[
+              OutlinedButton(
+                onPressed: _busy ? null : _detect,
+                child: const Text('Detect from daemon'),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: FilledButton(
                   onPressed: _busy ? null : _submit,

@@ -97,26 +97,6 @@ Future<DaemonClient> _connectedClient(SendFailureTransport transport) async {
   return client;
 }
 
-GatewayEventFrame emotionTag({
-  required String tag,
-  required String actorId,
-  required int seq,
-  String kind = 'emotion',
-  num intensity = 0.8,
-}) =>
-    GatewayEventFrame(
-      topic: EventTopic.emotionTag,
-      rawTopic: 'emotion.tag',
-      data: <String, dynamic>{
-        'tag': tag,
-        'kind': kind,
-        'intensity': intensity,
-        'actor_id': actorId,
-        'seq': seq,
-        'ts_ms': 1700000000200,
-      },
-    );
-
 /// A screen with a committed user bubble and an open `m-1` turn.
 Future<FakeChatClient> _sentChat(WidgetTester tester) async {
   final client = FakeChatClient();

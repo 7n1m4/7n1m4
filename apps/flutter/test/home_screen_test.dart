@@ -9,11 +9,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/home/home_screen.dart';
 
+import 'support/fakes.dart';
+
 void main() {
   testWidgets('home screen shows a safe message, never the raw error',
       (tester) async {
     const secret = 'rpc failed: /etc/shadow token=abc123 at wss://user:pw@host/x';
-    final client = _ErrorStatusClient(const DaemonStatus(
+    final client = ErrorStatusClient(const DaemonStatus(
       state: DaemonConnectionState.failed,
       error: DaemonClientException(
         kind: DaemonFailureKind.rpc,
@@ -34,18 +36,4 @@ void main() {
       findsOneWidget,
     );
   });
-}
-
-/// Fixed status double: the screen consumes it as view state only, no daemon.
-class _ErrorStatusClient extends DaemonClient {
-  _ErrorStatusClient(this.status)
-      : super(transportFactory: () => throw StateError('no transport'));
-
-  final DaemonStatus status;
-
-  @override
-  Stream<DaemonStatus> get statusStream => Stream<DaemonStatus>.value(status);
-
-  @override
-  DaemonStatus get snapshot => status;
 }
