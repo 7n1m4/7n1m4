@@ -9,6 +9,7 @@ export 'lip_sync_generator.dart';
 export 'lip_sync_rms_data.dart';
 export 'pcm_source.dart';
 export 'speech_intent_queue.dart';
+export 'ssml.dart';
 export 'ust_transform.dart';
 export 'wav_pcm_source.dart';
 export 'sherpa_tts_engine.dart';
