@@ -16,9 +16,10 @@ mod tests {
     use anima_channel::dispatch::{RendererHandlers, RpcContext, RpcError, RpcRegistry};
     use anima_channel::wire::{
         CardCreateRequest, CardGetReply, CardImportReply, CardInfo, CardListReply,
-        CardMetadataReply, CatalogDescriptor, ChatSendReply, ChatSendRequest, ProviderInfo,
-        ProvidersListReply, SessionDeleteReply, SessionDeleteRequest, SessionMediaScrubReply,
-        VaultArchiveApplyReply, VaultArchiveInspectReply, VaultArchiveReply,
+        CardMetadataReply, CatalogDescriptor, ChatSendReply, ChatSendRequest, GatewayServerFrame,
+        ProviderInfo, ProvidersListReply, SessionDeleteReply, SessionDeleteRequest,
+        SessionMediaScrubReply, VaultArchiveApplyReply, VaultArchiveInspectReply,
+        VaultArchiveReply,
     };
     use tempfile::tempdir;
 
@@ -1251,6 +1252,168 @@ mod tests {
         .expect_err("oversized archive must be rejected before decoding");
         assert_eq!(err.code(), "rpc_handler_error");
         assert!(err.message().contains("byte limit"), "{err:?}");
+    }
+
+    /// JSONL snapshot accepted by `sessions.import`, with one message whose
+    /// content is `content`. Building the fixture through the wire keeps the
+    /// export test on the real store without invoking an LLM turn.
+    fn export_fixture_jsonl(session_id: &str, content: &str) -> String {
+        let header = serde_json::json!({
+            "type": "session",
+            "session": {
+                "id": session_id,
+                "title": "export fixture",
+                "created_at": 1,
+                "updated_at": 100,
+                "metadata": {}
+            }
+        });
+        let message = serde_json::json!({
+            "type": "message",
+            "message": {
+                "id": format!("{session_id}-1"),
+                "session_id": session_id,
+                "role": "user",
+                "content": content,
+                "created_at": 2,
+                "metadata": {}
+            }
+        });
+        format!(
+            "{}\n{}\n",
+            serde_json::to_string(&header).unwrap(),
+            serde_json::to_string(&message).unwrap()
+        )
+    }
+
+    fn import_export_fixture(fixture: &Fixture, session_id: &str, content: &str) {
+        let reply = call(
+            fixture,
+            "sessions.import",
+            serde_json::json!({ "jsonl": export_fixture_jsonl(session_id, content) }),
+        );
+        assert_eq!(reply["status"], "applied", "import must apply: {reply}");
+    }
+
+    /// Exactly `target_bytes` of UTF-8 content. The tail mixes multi-byte code
+    /// points with JSON-escapable characters: a guard counting chars instead
+    /// of serialized bytes undercounts this payload by ~9 KiB.
+    fn export_content(target_bytes: usize) -> String {
+        let mut tail = String::new();
+        for _ in 0..9000 {
+            tail.push('é'); // 2 bytes, 1 char
+        }
+        for _ in 0..200 {
+            tail.push('"'); // escaped to 2 bytes on the wire
+            tail.push('\\'); // escaped to 2 bytes on the wire
+        }
+        tail.push('\n');
+        let fill = target_bytes
+            .checked_sub(tail.len())
+            .expect("target must exceed the multilingual tail");
+        let mut content = "A".repeat(fill);
+        content.push_str(&tail);
+        assert_eq!(content.len(), target_bytes);
+        content
+    }
+
+    /// Serialized `data` size of a real export for a fixture session. Reads the
+    /// store directly so the guard cannot hide the size used to place a
+    /// boundary fixture.
+    fn export_data_len(fixture: &Fixture, session_id: &str) -> usize {
+        let jsonl = fixture
+            .core
+            .session_export_jsonl(session_id)
+            .unwrap_or_else(|e| panic!("fixture export failed: {e}"));
+        serde_json::to_string(&serde_json::json!({ "jsonl": jsonl }))
+            .unwrap()
+            .len()
+    }
+
+    #[test]
+    fn sessions_export_reply_is_bounded_by_the_ws_frame_limit() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+
+        // A normal export must still round-trip and fit in one frame, so the
+        // guard cannot reject valid snapshots.
+        import_export_fixture(&fixture, "export-normal", "short session content");
+        let normal = call(
+            &fixture,
+            "sessions.export",
+            serde_json::json!({ "session_id": "export-normal" }),
+        );
+        // Measure the real frame, not just the reply value: the transport wraps
+        // `data` in an Rpc envelope with `type`/`action`/`ok` and an echoed id.
+        let frame = serde_json::to_string(&GatewayServerFrame::Rpc {
+            action: "sessions.export".to_string(),
+            ok: true,
+            data: Some(normal.clone()),
+            error: None,
+            id: Some(serde_json::json!("frame-probe")),
+        })
+        .unwrap();
+        assert!(
+            (frame.len() as u64) <= anima_channel::ws::MAX_WS_PAYLOAD_BYTES,
+            "normal export must fit one frame including the RPC envelope"
+        );
+        assert!(
+            normal["jsonl"]
+                .as_str()
+                .is_some_and(|jsonl| jsonl.contains("short session content")),
+            "normal export must carry the session content: {normal:?}"
+        );
+
+        // A snapshot above the 1 MiB frame cap but under the 8 MiB store bound
+        // must be rejected before a frame that cannot be written is produced.
+        let oversized = "A".repeat(anima_channel::ws::MAX_WS_PAYLOAD_BYTES as usize + 64 * 1024);
+        import_export_fixture(&fixture, "export-oversized", &oversized);
+        let err = dispatch(
+            &fixture,
+            "sessions.export",
+            &serde_json::json!({ "session_id": "export-oversized" }),
+        )
+        .expect_err("oversized export must be rejected before a frame is written");
+        assert_eq!(err.code(), "rpc_handler_error");
+        assert!(
+            err.message().contains("transport limit"),
+            "error must name the bound: {err:?}"
+        );
+    }
+
+    #[test]
+    fn sessions_export_rejects_data_inside_the_envelope_headroom_band() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+
+        const ENVELOPE_BYTES: usize = 8192; // mirrors SESSION_EXPORT_ENVELOPE_BYTES
+        let cap = anima_channel::ws::MAX_WS_PAYLOAD_BYTES as usize;
+        // Place the serialized `data` inside [cap - envelope, cap]: under the
+        // bare frame cap but over the real data budget. A guard missing the
+        // envelope subtraction would accept this and overflow the frame.
+        let content = export_content(cap - 4096);
+        import_export_fixture(&fixture, "export-boundary", &content);
+        let data_len = export_data_len(&fixture, "export-boundary");
+        assert!(
+            data_len >= cap - ENVELOPE_BYTES && data_len <= cap,
+            "data must sit in the envelope band, got {data_len}"
+        );
+        assert!(
+            content.chars().count() < cap - ENVELOPE_BYTES,
+            "boundary fixture must defeat a char-counting guard"
+        );
+
+        let err = dispatch(
+            &fixture,
+            "sessions.export",
+            &serde_json::json!({ "session_id": "export-boundary" }),
+        )
+        .expect_err("data inside the envelope band must be rejected");
+        assert_eq!(err.code(), "rpc_handler_error");
+        assert!(
+            err.message().contains("transport limit"),
+            "error must name the bound: {err:?}"
+        );
     }
 
     #[test]

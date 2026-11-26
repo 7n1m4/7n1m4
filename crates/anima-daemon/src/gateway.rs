@@ -161,6 +161,33 @@ fn history_metadata_without_attachment_data(metadata: &serde_json::Value) -> ser
     metadata
 }
 
+/// Room reserved inside one WebSocket frame for the `GatewayServerFrame::Rpc`
+/// envelope (`type`, `action`, `ok`, and an optional echoed client `id`).
+/// Mirrors the vault archive guard: the `data` field plus its wrapper must fit
+/// the transport's single-frame cap.
+const SESSION_EXPORT_ENVELOPE_BYTES: u64 = 8192;
+/// Max serialized size of the `data` field of a `sessions.export` reply. The
+/// handler's value is wrapped in an RPC envelope before being written as a
+/// frame, so the frame cap minus the envelope is the real data budget; the
+/// store's 8 MiB export bound is much larger.
+const SESSION_EXPORT_MAX_DATA_BYTES: u64 =
+    anima_channel::ws::MAX_WS_PAYLOAD_BYTES - SESSION_EXPORT_ENVELOPE_BYTES;
+
+/// Reject an export reply whose serialized `data` cannot fit in one WS frame
+/// together with its RPC envelope. Callers must never hand an over-limit frame
+/// to the transport, so return a typed, user-safe error instead.
+fn session_export_reply(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    let serialized = serde_json::to_string(&value).map_err(|e| e.to_string())?;
+    if serialized.len() as u64 > SESSION_EXPORT_MAX_DATA_BYTES {
+        return Err(format!(
+            "session export exceeds the {} byte transport limit ({} byte data budget)",
+            anima_channel::ws::MAX_WS_PAYLOAD_BYTES,
+            SESSION_EXPORT_MAX_DATA_BYTES
+        ));
+    }
+    Ok(value)
+}
+
 /// Prefix recognized by `anima-channel`'s RPC dispatch as `rpc_actions_disabled`.
 pub(crate) const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
 
@@ -2202,7 +2229,7 @@ impl Gateway {
                                 anima_core::sessions::EXPORT_MAX_BYTES
                             )
                         })?;
-                    Ok(serde_json::json!({ "jsonl": jsonl }))
+                    session_export_reply(serde_json::json!({ "jsonl": jsonl }))
                 }),
             );
         }
