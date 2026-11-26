@@ -170,6 +170,197 @@ pub fn merge_config_rotating_secrets(
     serde_json::Value::Object(merged)
 }
 
+/// LocalStorage key holding provider credentials as a v2 instance snapshot,
+/// or (before migration) as a legacy `providerId → options` map.
+pub const PROVIDER_INSTANCES_STORAGE_KEY: &str = "settings/credentials/providers";
+
+/// Infix of the single primary instance every provider has (`providerId:*`).
+/// Legacy single-slot callers keep addressing state through this row.
+pub const PRIMARY_INSTANCE_INFIX: &str = "*";
+
+/// Canonical camelCase names of the only four legacy aliases the TS store
+/// migrates (`instance-store.ts:63-68`). Listing canonical names only — not
+/// alias→canonical pairs — avoids a second alias table; snake spellings are
+/// derived by [`snake_case_to_camel`] and gated against this list.
+const LEGACY_CREDENTIAL_CANONICAL_KEYS: &[&str] =
+    &["apiKey", "baseUrl", "awsAccessKeyId", "awsSecretAccessKey"];
+
+/// Derive the camelCase spelling of a snake_case key (`api_key` → `apiKey`).
+///
+/// A pure spelling rule only: callers must gate the result against
+/// [`LEGACY_CREDENTIAL_CANONICAL_KEYS`] so unknown host-specific keys such as
+/// `cf_account_id` never gain a camelCase twin.
+fn snake_case_to_camel(key: &str) -> Option<String> {
+    if !key.contains('_') {
+        return None;
+    }
+    let mut out = String::with_capacity(key.len());
+    let mut capitalize = false;
+    for part in key.split('_') {
+        if part.is_empty() {
+            continue;
+        }
+        let mut chars = part.chars();
+        if capitalize {
+            if let Some(first) = chars.next() {
+                out.extend(first.to_uppercase());
+            }
+            out.extend(chars.flat_map(char::to_lowercase));
+        } else {
+            out.extend(part.chars().flat_map(char::to_lowercase));
+        }
+        capitalize = true;
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// Fill the four known camelCase canonical keys from their snake_case aliases
+/// when the exact canonical key is absent. A canonical key present with any
+/// value (even `null`) wins; near-spellings (`apikey`, `api-key`) are not
+/// canonical and do not block the fill. When several aliases target one
+/// canonical, the usable (non-whitespace) value wins, ties broken by key name.
+/// Unknown host-specific snake keys are left untouched.
+///
+/// **Secret-bearing:** the returned map holds raw credentials. Pass it through
+/// [`strip_secret_config_keys`] before any trust boundary, logging or RPC, and
+/// never log its values.
+pub fn normalize_legacy_credential_keys(
+    options: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut normalized = options.clone();
+    for &canonical in LEGACY_CREDENTIAL_CANONICAL_KEYS {
+        // TS checks `normalized[canonical] === undefined`: only the exact key
+        // counts, not a normalized near-spelling.
+        if options.contains_key(canonical) {
+            continue;
+        }
+        let Some((_, value)) = options
+            .iter()
+            .filter(|(key, value)| {
+                value.is_string() && snake_case_to_camel(key).as_deref() == Some(canonical)
+            })
+            .max_by_key(|(key, value)| {
+                (
+                    value.as_str().is_some_and(|s| !s.trim().is_empty()),
+                    (*key).clone(),
+                )
+            })
+        else {
+            continue;
+        };
+        normalized.insert(canonical.to_string(), value.clone());
+    }
+    normalized
+}
+
+/// True when a value carries no usable credential material. Whitespace-only
+/// strings, empty arrays, empty nested records, `null` and `false` are empty
+/// so a blank-but-truthy shell cannot poll forever without authenticating.
+fn is_empty_credential_value(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => s.trim().is_empty(),
+        serde_json::Value::Array(items) => items.is_empty(),
+        serde_json::Value::Object(map) => map.values().all(|nested| match nested {
+            serde_json::Value::String(s) => s.trim().is_empty(),
+            serde_json::Value::Null | serde_json::Value::Bool(false) => true,
+            _ => false,
+        }),
+        serde_json::Value::Null | serde_json::Value::Bool(false) => true,
+        _ => false,
+    }
+}
+
+/// TS `isEmptyCredentialStub`: a legacy record with nothing usable to migrate.
+/// An empty record satisfies this via `all` on zero values. The input is
+/// secret-bearing: inspect only, never log it.
+pub fn is_empty_credential_stub(options: &serde_json::Map<String, serde_json::Value>) -> bool {
+    options.values().all(is_empty_credential_value)
+}
+
+/// TS `cleanInfix`: normalize an instance id that may already be a full
+/// `<providerId>:<instanceId>` key. Missing, empty or primary infixes resolve
+/// to [`PRIMARY_INSTANCE_INFIX`]; repeated provider prefixes are peeled once
+/// each so a dirty key cannot nest the provider id. The result addresses a
+/// secret-bearing row — never log provider credentials alongside it.
+pub fn clean_instance_infix(provider_id: &str, instance_id: Option<&str>) -> String {
+    let Some(mut clean) = instance_id.filter(|id| !id.is_empty()) else {
+        return PRIMARY_INSTANCE_INFIX.to_string();
+    };
+    if clean == PRIMARY_INSTANCE_INFIX {
+        return PRIMARY_INSTANCE_INFIX.to_string();
+    }
+    let prefix = format!("{provider_id}:");
+    while let Some(rest) = clean.strip_prefix(&prefix) {
+        clean = rest;
+    }
+    if clean.is_empty() {
+        PRIMARY_INSTANCE_INFIX.to_string()
+    } else {
+        clean.to_string()
+    }
+}
+
+/// Build the instance-key (`<providerId>:<instanceId>`) used by the v2
+/// snapshot, with primary-infix normalization applied to `instance_id`.
+/// The key locates a secret-bearing row; never log its credentials.
+pub fn provider_instance_storage_key(provider_id: &str, instance_id: Option<&str>) -> String {
+    format!(
+        "{provider_id}:{}",
+        clean_instance_infix(provider_id, instance_id)
+    )
+}
+
+/// Pure legacy migration: map a `providerId → options` credential blob to
+/// `<providerId>:*` instance keys with the four known snake_case aliases
+/// normalized and empty stubs dropped.
+///
+/// Already-v2 snapshots (including an array-shaped `instancesByInstanceKey`,
+/// which TS also treats as an object) and foreign input (null, array, string,
+/// number) return `None` so a caller can pass them through untouched — never
+/// replace stored credentials with an empty result. Only keys and option maps
+/// are produced — no instance rows, storage writes or credential rotation.
+///
+/// **Secret-bearing:** the returned map holds raw credentials. Pass it through
+/// [`strip_secret_config_keys`] before any trust boundary, logging or RPC, and
+/// never log its values. Callers wrap it into their own row shape.
+pub fn migrate_legacy_provider_credential_keys(
+    raw: &serde_json::Value,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let Some(snapshot) = raw.as_object() else {
+        return None;
+    };
+    let version_is_v2 = snapshot.get("version").and_then(|v| v.as_u64()) == Some(2);
+    let instance_map_is_object_shaped = matches!(
+        snapshot.get("instancesByInstanceKey"),
+        Some(value) if value.is_object() || value.is_array()
+    );
+    if version_is_v2 && instance_map_is_object_shaped {
+        return None;
+    }
+
+    let mut instances = serde_json::Map::new();
+    for (provider_id, record) in snapshot {
+        let Some(options) = record.as_object() else {
+            continue;
+        };
+        let normalized = normalize_legacy_credential_keys(options);
+        if is_empty_credential_stub(&normalized) {
+            continue;
+        }
+        let key = provider_instance_storage_key(provider_id, Some(PRIMARY_INSTANCE_INFIX));
+        // Two legacy ids can collapse onto the same `<providerId>:*` key;
+        // merge their options instead of silently dropping the first one.
+        if let Some(existing) = instances.get_mut(&key).and_then(|v| v.as_object_mut()) {
+            for (name, value) in normalized {
+                existing.insert(name, value);
+            }
+        } else {
+            instances.insert(key, serde_json::Value::Object(normalized));
+        }
+    }
+    Some(instances)
+}
+
 /// The provider a send would go through.
 #[derive(Debug, Clone)]
 pub struct ProviderResolution {
@@ -615,5 +806,210 @@ mod tests {
         assert!(is_secret_storage_key("settings/mcp/config"));
         assert!(!is_secret_storage_key("local:peers/roster"));
         assert!(!is_secret_storage_key("settings/mcp/server-args"));
+    }
+
+    #[test]
+    fn legacy_snake_case_aliases_normalize_to_camel_case() {
+        let legacy = serde_json::json!({
+            "openrouter-ai": {
+                "api_key": "sk-or-alias",
+                "base_url": "https://openrouter.example/api",
+                "aws_access_key_id": "AKIA-ALIAS",
+                "aws_secret_access_key": "aws-secret-alias",
+            },
+        });
+        let migrated = migrate_legacy_provider_credential_keys(&legacy).unwrap();
+        let options = &migrated["openrouter-ai:*"];
+        assert!(options["apiKey"].as_str() == Some("sk-or-alias"));
+        assert!(options["baseUrl"].as_str() == Some("https://openrouter.example/api"));
+        assert!(options["awsAccessKeyId"].as_str() == Some("AKIA-ALIAS"));
+        assert!(options["awsSecretAccessKey"].as_str() == Some("aws-secret-alias"));
+        // Aliases are filled, not renamed: the snake_case originals survive.
+        assert!(options["api_key"].as_str() == Some("sk-or-alias"));
+    }
+
+    #[test]
+    fn existing_camel_case_canonical_wins_over_snake_alias() {
+        let legacy = serde_json::json!({
+            "provider": { "apiKey": "sk-canonical", "api_key": "sk-alias" },
+        });
+        let migrated = migrate_legacy_provider_credential_keys(&legacy).unwrap();
+        assert!(migrated["provider:*"]["apiKey"].as_str() == Some("sk-canonical"));
+    }
+
+    #[test]
+    fn already_v2_snapshot_is_not_remigrated() {
+        let snapshot = serde_json::json!({
+            "version": 2,
+            "instancesByInstanceKey": { "provider:*": { "options": {} } },
+        });
+        assert!(migrate_legacy_provider_credential_keys(&snapshot).is_none());
+    }
+
+    #[test]
+    fn primary_infix_normalizes_instance_keys() {
+        assert_eq!(clean_instance_infix("openai", None), "*");
+        assert_eq!(clean_instance_infix("openai", Some("")), "*");
+        assert_eq!(clean_instance_infix("openai", Some("*")), "*");
+        assert_eq!(clean_instance_infix("openai", Some("openai:work")), "work");
+        assert_eq!(
+            clean_instance_infix("openai", Some("openai:openai:deep")),
+            "deep"
+        );
+        assert_eq!(provider_instance_storage_key("openai", None), "openai:*");
+        assert_eq!(
+            provider_instance_storage_key("openai", Some("openai:work")),
+            "openai:work"
+        );
+
+        let legacy = serde_json::json!({ "openai": { "apiKey": "sk-primary" } });
+        let migrated = migrate_legacy_provider_credential_keys(&legacy).unwrap();
+        assert_eq!(migrated.len(), 1);
+        assert!(migrated.contains_key("openai:*"));
+    }
+
+    #[test]
+    fn empty_credential_stubs_are_discarded() {
+        for empty in [
+            serde_json::json!({}),
+            serde_json::json!({ "apiKey": "   " }),
+            serde_json::json!({ "apiKey": null }),
+            serde_json::json!({ "apiKey": [] }),
+            serde_json::json!({ "credentials": { "token": "", "region": null } }),
+        ] {
+            let options = empty.as_object().unwrap().clone();
+            assert!(is_empty_credential_stub(&options), "expected an empty stub");
+        }
+        let real = serde_json::json!({ "apiKey": "sk-real" })
+            .as_object()
+            .unwrap()
+            .clone();
+        assert!(!is_empty_credential_stub(&real));
+
+        let legacy = serde_json::json!({
+            "nothing": {},
+            "blank": { "apiKey": "  " },
+            "real": { "apiKey": "sk-real" },
+        });
+        let migrated = migrate_legacy_provider_credential_keys(&legacy).unwrap();
+        assert_eq!(migrated.len(), 1);
+        assert!(migrated.contains_key("real:*"));
+    }
+
+    #[test]
+    fn normalized_keys_merge_preserves_stored_secrets() {
+        let stored = serde_json::json!({
+            "api_key": "STORED-SECRET",
+            "base_url": "https://old.test/v1",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let legacy = serde_json::json!({
+            "api_key": "STORED-SECRET",
+            "base_url": "https://old.test/v1",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let normalized = normalize_legacy_credential_keys(&legacy);
+        assert!(normalized["apiKey"].as_str() == Some("STORED-SECRET"));
+
+        // An incoming patch cannot rotate a managed secret by echoing its
+        // camelCase spelling; the shared merge helper keeps the stored value.
+        let incoming = serde_json::json!({
+            "apiKey": "CLIENT-SECRET",
+            "baseUrl": "https://new.test/v1",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let merged = merge_config_preserving_secrets(&stored, &incoming);
+        let safe = strip_secret_config_keys(&merged);
+        assert!(merged["api_key"].as_str() == Some("STORED-SECRET"));
+        assert_eq!(merged["baseUrl"], "https://new.test/v1");
+        assert!(!safe.to_string().contains("CLIENT-SECRET"));
+        assert!(!safe.to_string().contains("STORED-SECRET"));
+    }
+
+    #[test]
+    fn only_the_four_known_aliases_gain_camel_keys() {
+        // Parity with instance-store.ts:63-68: unknown host-specific snake keys
+        // are left untouched, never given a camelCase twin.
+        let options = serde_json::json!({
+            "api_key": "sk-known",
+            "cf_account_id": "acct-unknown",
+            "custom_setting": "custom",
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let normalized = normalize_legacy_credential_keys(&options);
+        assert!(normalized["apiKey"].as_str() == Some("sk-known"));
+        assert!(normalized.get("cfAccountId").is_none());
+        assert!(normalized.get("customSetting").is_none());
+        assert!(normalized["cf_account_id"].as_str() == Some("acct-unknown"));
+
+        let legacy = serde_json::json!({
+            "provider": { "api_key": "sk-known", "cf_account_id": "acct-unknown" },
+        });
+        let migrated = migrate_legacy_provider_credential_keys(&legacy).unwrap();
+        let row = &migrated["provider:*"];
+        assert!(row["apiKey"].as_str() == Some("sk-known"));
+        assert!(row.get("cfAccountId").is_none());
+    }
+
+    #[test]
+    fn exact_null_canonical_blocks_alias_fill() {
+        // TS checks `normalized[canonical] === undefined`; null is present.
+        let options = serde_json::json!({ "apiKey": null, "api_key": "sk-alias" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let normalized = normalize_legacy_credential_keys(&options);
+        assert!(normalized["apiKey"].is_null());
+        assert!(normalized["api_key"].as_str() == Some("sk-alias"));
+    }
+
+    #[test]
+    fn near_spelling_canonical_does_not_block_alias_fill() {
+        for raw in [
+            serde_json::json!({ "apikey": "sk-near", "api_key": "sk-alias" }),
+            serde_json::json!({ "api-key": "sk-near", "api_key": "sk-alias" }),
+            serde_json::json!({ "ApiKey": "sk-near", "api_key": "sk-alias" }),
+        ] {
+            let options = raw.as_object().unwrap().clone();
+            let normalized = normalize_legacy_credential_keys(&options);
+            assert!(normalized["apiKey"].as_str() == Some("sk-alias"));
+        }
+    }
+
+    #[test]
+    fn usable_alias_wins_over_empty_alias_for_same_canonical() {
+        let options = serde_json::json!({ "API_KEY": "", "api_key": "sk-real" })
+            .as_object()
+            .unwrap()
+            .clone();
+        let normalized = normalize_legacy_credential_keys(&options);
+        assert!(normalized["apiKey"].as_str() == Some("sk-real"));
+    }
+
+    #[test]
+    fn foreign_input_and_array_instance_map_pass_through() {
+        // Some(empty map) here would let a caller wipe stored credentials.
+        for raw in [
+            serde_json::Value::Null,
+            serde_json::json!([]),
+            serde_json::json!("foreign"),
+            serde_json::json!(42),
+            serde_json::json!(true),
+            // TS treats an array `instancesByInstanceKey` as an object.
+            serde_json::json!({ "version": 2, "instancesByInstanceKey": [] }),
+        ] {
+            assert!(
+                migrate_legacy_provider_credential_keys(&raw).is_none(),
+                "foreign input must pass through"
+            );
+        }
     }
 }
