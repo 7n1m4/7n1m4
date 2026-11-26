@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict'
+// eslint-disable-next-line test/no-import-node-test -- this guard runs under `node --test`
+import test from 'node:test'
+
 import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix, relative, sep } from 'node:path'
-import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const DEFAULT_LIB_ROOT = fileURLToPath(new URL('../../apps/flutter/lib', import.meta.url))
@@ -88,7 +90,8 @@ const IO_WRITE_NETWORK = /\b(?:writeAsString\w*|writeAsBytes\w*|openWrite|create
 
 function blank(chars, start, end) {
   for (let i = start; i < end; i += 1) {
-    if (chars[i] !== '\n') chars[i] = ' '
+    if (chars[i] !== '\n')
+      chars[i] = ' '
   }
 }
 
@@ -116,7 +119,7 @@ function lexDart(source) {
     }
     if (c === '/' && d === '*') {
       let j = i + 2
-      while (j < n && !(source[j] === '*' && source[j + 1] === '/')) j += 1
+      while (j < n && (source[j] !== '*' || source[j + 1] !== '/')) j += 1
       const end = Math.min(n, j + 2)
       for (let k = i; k < end; k += 1) comments[k] = source[k]
       blank(noComments, i, end)
@@ -124,7 +127,7 @@ function lexDart(source) {
       i = end
       continue
     }
-    if (c === "'" || c === '"') {
+    if (c === '\'' || c === '"') {
       const triple = source[i + 1] === c && source[i + 2] === c
       const delim = triple ? 3 : 1
       let j = i + delim
@@ -133,7 +136,8 @@ function lexDart(source) {
           j += 2
           continue
         }
-        if (!triple && source[j] === '\n') break
+        if (!triple && source[j] === '\n')
+          break
         if (triple && source[j] === c && source[j + 1] === c && source[j + 2] === c) {
           j += 3
           break
@@ -164,7 +168,8 @@ function extractImports(noComments, code) {
   const uris = []
   for (const match of noComments.matchAll(/\b(?:import|export)\s+(['"])([^'"]*)\1/g)) {
     // The keyword must be real code, not text inside a string literal.
-    if (code[match.index] === match[0][0]) uris.push(match[2])
+    if (code[match.index] === match[0][0])
+      uris.push(match[2])
   }
   return uris
 }
@@ -175,11 +180,15 @@ function isRuleFScope(rel) {
 }
 
 function isAllowedPureImport(uri, file) {
-  if (uri === 'dart:core' || uri === 'dart:math') return true
-  if (uri.startsWith('package:flutter/')) return true
-  if (uri.includes(':')) return false
+  if (uri === 'dart:core' || uri === 'dart:math')
+    return true
+  if (uri.startsWith('package:flutter/'))
+    return true
+  if (uri.includes(':'))
+    return false
   // posix.join drops a leading slash, so reject absolute URIs before joining.
-  if (uri.startsWith('/')) return false
+  if (uri.startsWith('/'))
+    return false
   // Relative imports are read-only wire models, but must stay inside the lib
   // root: a `..` escape could pull in a competing writer.
   const resolved = posix.normalize(posix.join(posix.dirname(file), uri))
@@ -195,36 +204,43 @@ function ruleFFindings(file, code, imports) {
     }
   }
   for (const token of ['ChangeNotifier', 'StateNotifier']) {
-    if (new RegExp(`\\b${token}\\b`).test(code)) add(`notifier in pure formatter: ${token}`)
+    if (new RegExp(`\\b${token}\\b`).test(code))
+      add(`notifier in pure formatter: ${token}`)
   }
   for (const token of ['async', 'await', 'Future', 'Stream', 'StreamController']) {
-    if (new RegExp(`\\b${token}\\b`).test(code)) add(`async in pure formatter: ${token}`)
+    if (new RegExp(`\\b${token}\\b`).test(code))
+      add(`async in pure formatter: ${token}`)
   }
 
   let depth = 0
   for (const line of code.split('\n')) {
     const trimmed = line.trimStart()
     if (depth === 0) {
-      const finalLiteral = /^final\b[^=]*=\s*(?:<[^>]*>)?\s*[\[{]/.test(trimmed)
-      const finalTyped = /^final\b[^=]*\b(?:List|Map|Set)\b(?:<[^>]*>)?/.test(trimmed) && !/=\s*const\b/.test(trimmed)
-      if (/^var\b/.test(trimmed)) add('mutable top-level state: var')
-      else if (/^late\b/.test(trimmed)) add('mutable top-level state: late')
-      else if (finalLiteral || finalTyped) add('mutable top-level state: final collection')
+      const finalLiteral = /^final\b[^=]*=\s*(?:<[^>]*>)?\s*[[{]/.test(trimmed)
+      const finalTyped = /^final\b[^=]+\b(?:List|Map|Set)\b(?:<[^>]*>)?/.test(trimmed) && !/=\s*const\b/.test(trimmed)
+      if (/^var\b/.test(trimmed))
+        add('mutable top-level state: var')
+      else if (/^late\b/.test(trimmed))
+        add('mutable top-level state: late')
+      else if (finalLiteral || finalTyped)
+        add('mutable top-level state: final collection')
     }
     if (/^static\b/.test(trimmed)) {
       const staticLate = /^static\s+late\b/.test(trimmed)
       const staticMutable = !/\b(?:final|const)\b/.test(trimmed) && /\s=\s/.test(trimmed) && !/=>/.test(trimmed)
       const staticFinalCollection = (
-        /^static\s+final\b[^=]*\b(?:List|Map|Set)\b(?:<[^>]*>)?/.test(trimmed)
-        || /^static\s+final\b[^=]*=\s*(?:<[^>]*>)?\s*[\[{]/.test(trimmed)
+        /^static\s+final\b[^=]+\b(?:List|Map|Set)\b(?:<[^>]*>)?/.test(trimmed)
+        || /^static\s+final\b[^=]*=\s*(?:<[^>]*>)?\s*[[{]/.test(trimmed)
       ) && !/=\s*const\b/.test(trimmed)
       if (staticLate || staticMutable || staticFinalCollection) {
         add(staticLate ? 'mutable static field: late' : staticFinalCollection ? 'mutable static field: final collection' : 'mutable static field')
       }
     }
     for (const ch of line) {
-      if (ch === '{') depth += 1
-      else if (ch === '}') depth = Math.max(0, depth - 1)
+      if (ch === '{')
+        depth += 1
+      else if (ch === '}')
+        depth = Math.max(0, depth - 1)
     }
   }
   return findings
@@ -243,9 +259,11 @@ function scanFile(rel, source, marker, findings) {
   const seen = new Set()
   for (const match of code.matchAll(IO_WRITE_NETWORK)) {
     const token = match[0]
-    if (seen.has(token)) continue
+    if (seen.has(token))
+      continue
     seen.add(token)
-    if (allow?.apis.includes(token)) continue
+    if (allow?.apis.includes(token))
+      continue
     findings.push({ file: rel, rule: 'P', detail: `dart:io write/network API: ${token}` })
   }
 
@@ -277,7 +295,8 @@ export function scanFlutterLib(root = DEFAULT_LIB_ROOT, options = {}) {
         walk(abs)
         continue
       }
-      if (!entry.isFile() || !entry.name.endsWith('.dart')) continue
+      if (!entry.isFile() || !entry.name.endsWith('.dart'))
+        continue
       scanFile(rel, readFileSync(abs, 'utf8'), marker, findings)
     }
   }
@@ -304,17 +323,17 @@ function findingsFor(root, options) {
   return scanFlutterLib(root, options)
 }
 
-test('forbidden import fails', t => {
+test('forbidden import fails', (t) => {
   const root = makeLibRoot(t)
-  writeDart(root, 'features/chat/evil.dart', "import 'package:hive/hive.dart';\n")
+  writeDart(root, 'features/chat/evil.dart', 'import \'package:hive/hive.dart\';\n')
 
   const findings = findingsFor(root)
   assert.ok(findings.some(f => f.rule === 'P' && /package:hive\//.test(f.detail)), JSON.stringify(findings))
 })
 
-test('forbidden export re-export fails', t => {
+test('forbidden export re-export fails', (t) => {
   const root = makeLibRoot(t)
-  writeDart(root, 'features/chat/reexport.dart', "export 'package:hive/hive.dart';\n")
+  writeDart(root, 'features/chat/reexport.dart', 'export \'package:hive/hive.dart\';\n')
 
   const findings = findingsFor(root)
   assert.ok(
@@ -323,11 +342,11 @@ test('forbidden export re-export fails', t => {
   )
 })
 
-test('mutable top-level state fails', t => {
+test('mutable top-level state fails', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/bad_formatter.dart', [
     '// pure-formatter',
-    "import 'dart:core';",
+    'import \'dart:core\';',
     '',
     'var counter = 0;',
     'const int fixed = 1;',
@@ -355,12 +374,12 @@ test('mutable top-level state fails', t => {
   assert.equal(findings.filter(f => f.rule === 'F').length, 4, JSON.stringify(findings))
 })
 
-test('non-const final collections initialized from calls fail', t => {
+test('non-const final collections initialized from calls fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/computed_formatter.dart', [
     '// pure-formatter',
     'final List<int> computed = compute();',
-    "final Map<String, int> locked = Map.unmodifiable({'a': 1});",
+    'final Map<String, int> locked = Map.unmodifiable({\'a\': 1});',
     'final Set<String> names = buildNames();',
     'final List rawList = buildList();',
     'final Map rawMap = Map();',
@@ -374,7 +393,7 @@ test('non-const final collections initialized from calls fail', t => {
   assert.match(details, /mutable top-level state: final collection/)
 })
 
-test('static late and static final collection fields fail', t => {
+test('static late and static final collection fields fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/formatters/static_state.dart', [
     '// pure-formatter',
@@ -395,42 +414,42 @@ test('static late and static final collection fields fail', t => {
   assert.match(details, /mutable static field: final collection/)
 })
 
-test('allowlisted paths pass', t => {
+test('allowlisted paths pass', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'daemon_client/direct_websocket_transport.dart', [
-    "import 'dart:io';",
-    "import 'package:web_socket_channel/io.dart';",
-    "import 'package:web_socket_channel/web_socket_channel.dart';",
+    'import \'dart:io\';',
+    'import \'package:web_socket_channel/io.dart\';',
+    'import \'package:web_socket_channel/web_socket_channel.dart\';',
     'final c = HttpClient();',
     '',
   ].join('\n'))
   writeDart(root, 'features/chat/composer_draft_store.dart', [
-    "import 'dart:io';",
-    "File('drafts.json').writeAsStringSync('[]');",
+    'import \'dart:io\';',
+    'File(\'drafts.json\').writeAsStringSync(\'[]\');',
     '',
   ].join('\n'))
   writeDart(root, 'features/stage/model_asset_resolver.dart', [
-    "import 'dart:io';",
-    "File('model').writeAsBytes(<int>[1]);",
+    'import \'dart:io\';',
+    'File(\'model\').writeAsBytes(<int>[1]);',
     '',
   ].join('\n'))
   writeDart(root, 'features/stage/stage_scene_manager.dart', [
-    "import 'dart:io';",
-    "File('scene').writeAsString('x');",
-    "File('scene2').writeAsBytes(<int>[1]);",
+    'import \'dart:io\';',
+    'File(\'scene\').writeAsString(\'x\');',
+    'File(\'scene2\').writeAsBytes(<int>[1]);',
     '',
   ].join('\n'))
   writeDart(root, 'speech/piper_tts_engine.dart', [
-    "import 'dart:io';",
-    "final d = Directory.systemTemp.createTemp('anima-piper-');",
+    'import \'dart:io\';',
+    'final d = Directory.systemTemp.createTemp(\'anima-piper-\');',
     '',
   ].join('\n'))
 
   // Control: the exact same content at a non-allowlisted path must still fail,
   // proving the allowlist is a set of exact paths and not a glob/prefix.
   writeDart(root, 'features/chat/not_allowlisted.dart', [
-    "import 'dart:io';",
-    "import 'package:web_socket_channel/web_socket_channel.dart';",
+    'import \'dart:io\';',
+    'import \'package:web_socket_channel/web_socket_channel.dart\';',
     'final c = HttpClient();',
     '',
   ].join('\n'))
@@ -444,13 +463,13 @@ test('allowlisted paths pass', t => {
   assert.ok(findings.every(f => f.rule === 'P'))
 })
 
-test('allowlist only exempts its documented imports and APIs', t => {
+test('allowlist only exempts its documented imports and APIs', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/chat/composer_draft_store.dart', [
-    "import 'dart:io';",
-    "import 'package:hive/hive.dart';",
-    "File('drafts.json').writeAsStringSync('[]');",
-    "Socket.connect('evil', 1);",
+    'import \'dart:io\';',
+    'import \'package:hive/hive.dart\';',
+    'File(\'drafts.json\').writeAsStringSync(\'[]\');',
+    'Socket.connect(\'evil\', 1);',
     '',
   ].join('\n'))
 
@@ -461,13 +480,13 @@ test('allowlist only exempts its documented imports and APIs', t => {
   assert.doesNotMatch(details, /writeAsStringSync/, details)
 })
 
-test('piper allowlist permits only Process.start', t => {
+test('piper allowlist permits only Process.start', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/piper_tts_engine.dart', [
-    "import 'dart:io';",
-    "Process.start('piper', <String>[]);",
-    "Process.run('sh', <String>[]);",
-    "Socket.connect('evil', 1);",
+    'import \'dart:io\';',
+    'Process.start(\'piper\', <String>[]);',
+    'Process.run(\'sh\', <String>[]);',
+    'Socket.connect(\'evil\', 1);',
     '',
   ].join('\n'))
 
@@ -477,12 +496,12 @@ test('piper allowlist permits only Process.start', t => {
   assert.equal(exact.has('dart:io write/network API: Socket'), true, [...exact].join(' | '))
 })
 
-test('linux gateway allowlist rejects Process.start and Socket', t => {
+test('linux gateway allowlist rejects Process.start and Socket', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'connection/linux_gateway_discovery.dart', [
-    "import 'dart:io';",
-    "Process.start('sh', <String>[]);",
-    "Socket.connect('evil', 1);",
+    'import \'dart:io\';',
+    'Process.start(\'sh\', <String>[]);',
+    'Socket.connect(\'evil\', 1);',
     '',
   ].join('\n'))
 
@@ -491,15 +510,15 @@ test('linux gateway allowlist rejects Process.start and Socket', t => {
   assert.equal(exact.has('dart:io write/network API: Socket'), true, [...exact].join(' | '))
 })
 
-test('constant top-level tables pass', t => {
+test('constant top-level tables pass', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/good_formatter.dart', [
     '// pure-formatter',
-    "import 'dart:math';",
-    "import 'pcm_source.dart';",
+    'import \'dart:math\';',
+    'import \'pcm_source.dart\';',
     '',
     'const List<int> table = <int>[1, 2, 3];',
-    "const Map<String, int> lookup = <String, int>{'a': 1};",
+    'const Map<String, int> lookup = <String, int>{\'a\': 1};',
     'double format(double v) => v.abs();',
     '',
   ].join('\n'))
@@ -507,10 +526,10 @@ test('constant top-level tables pass', t => {
   assert.deepEqual(findingsFor(root), [])
 })
 
-test('read-only Platform dart:io imports pass', t => {
+test('read-only Platform dart:io imports pass', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'connection/platform_check.dart', [
-    "import 'dart:io';",
+    'import \'dart:io\';',
     '',
     'bool get isLinux => Platform.isLinux;',
     '',
@@ -519,14 +538,14 @@ test('read-only Platform dart:io imports pass', t => {
   assert.deepEqual(findingsFor(root), [])
 })
 
-test('file-write APIs fail', t => {
+test('file-write APIs fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/data/writer.dart', [
-    "import 'dart:io';",
-    "File('a').writeAsString('x');",
-    "File('b').writeAsBytes(<int>[1]);",
-    "File('c').openWrite();",
-    "File('d').createSink();",
+    'import \'dart:io\';',
+    'File(\'a\').writeAsString(\'x\');',
+    'File(\'b\').writeAsBytes(<int>[1]);',
+    'File(\'c\').openWrite();',
+    'File(\'d\').createSink();',
     'final client = HttpClient();',
     'final s = Socket.connect("host", 80);',
     'final ss = ServerSocket.bind("host", 80);',
@@ -537,19 +556,25 @@ test('file-write APIs fail', t => {
   const findings = findingsFor(root)
   const details = findings.map(f => f.detail).join(' | ')
   for (const token of [
-    'writeAsString', 'writeAsBytes', 'openWrite', 'createSink',
-    'HttpClient', 'Socket', 'ServerSocket', 'HttpServer',
+    'writeAsString',
+    'writeAsBytes',
+    'openWrite',
+    'createSink',
+    'HttpClient',
+    'Socket',
+    'ServerSocket',
+    'HttpServer',
   ]) {
     assert.ok(details.includes(token), `missing ${token} in ${details}`)
   }
   assert.ok(findings.every(f => f.rule === 'P'))
 })
 
-test('compound socket and http client API names fail', t => {
+test('compound socket and http client API names fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/data/network.dart', [
-    "import 'dart:io';",
-    "final s = SecureSocket.connect('host', 443);",
+    'import \'dart:io\';',
+    'final s = SecureSocket.connect(\'host\', 443);',
     'final r = HttpClientRequest();',
     '',
   ].join('\n'))
@@ -559,16 +584,16 @@ test('compound socket and http client API names fail', t => {
   assert.match(details, /write\/network API: HttpClientRequest\b/, details)
 })
 
-test('open-write, random-access and process APIs fail', t => {
+test('open-write, random-access and process APIs fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/data/raw_writes.dart', [
-    "import 'dart:io';",
-    "File('x').open(mode: FileMode.write);",
-    "final a = RandomAccessFile('/tmp/raw');",
-    "final b = a.writeFromSync(<int>[1]);",
-    "final c = RawSocket.connect('host', 1);",
-    "final d = Process.run('sh', <String>[]);",
-    "final e = Process('sh');",
+    'import \'dart:io\';',
+    'File(\'x\').open(mode: FileMode.write);',
+    'final a = RandomAccessFile(\'/tmp/raw\');',
+    'final b = a.writeFromSync(<int>[1]);',
+    'final c = RawSocket.connect(\'host\', 1);',
+    'final d = Process.run(\'sh\', <String>[]);',
+    'final e = Process(\'sh\');',
     '',
   ].join('\n'))
 
@@ -578,21 +603,21 @@ test('open-write, random-access and process APIs fail', t => {
   }
 })
 
-test('read-only FileMode.open passes', t => {
+test('read-only FileMode.open passes', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/data/read_only_open.dart', [
-    "import 'dart:io';",
-    "final f = File('x').open(mode: FileMode.read);",
+    'import \'dart:io\';',
+    'final f = File(\'x\').open(mode: FileMode.read);',
     '',
   ].join('\n'))
 
   assert.deepEqual(findingsFor(root), [])
 })
 
-test('web_socket_channel import fails outside allowlist', t => {
+test('web_socket_channel import fails outside allowlist', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/chat/socket.dart', [
-    "import 'package:web_socket_channel/web_socket_channel.dart';",
+    'import \'package:web_socket_channel/web_socket_channel.dart\';',
     '',
   ].join('\n'))
 
@@ -600,13 +625,13 @@ test('web_socket_channel import fails outside allowlist', t => {
   assert.ok(findings.some(f => f.rule === 'P' && /web_socket_channel/.test(f.detail)), JSON.stringify(findings))
 })
 
-test('http and database writer imports fail', t => {
+test('http and database writer imports fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/data/network_writer.dart', [
-    "import 'package:http/http.dart';",
-    "import 'package:dio/dio.dart';",
-    "import 'package:drift/drift.dart';",
-    "import 'package:sembast/sembast.dart';",
+    'import \'package:http/http.dart\';',
+    'import \'package:dio/dio.dart\';',
+    'import \'package:drift/drift.dart\';',
+    'import \'package:sembast/sembast.dart\';',
     '',
   ].join('\n'))
 
@@ -616,17 +641,17 @@ test('http and database writer imports fail', t => {
   }
 })
 
-test('comment and string decoys do not fail', t => {
+test('comment and string decoys do not fail', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/chat/decoys.dart', [
-    "// import 'package:hive/hive.dart';",
+    '// import \'package:hive/hive.dart\';',
     '/*',
-    "import 'package:sqflite/sqflite.dart';",
+    'import \'package:sqflite/sqflite.dart\';',
     '*/',
     'const String singleLine = "import \'package:web_socket_channel/io.dart\';";',
-    "const String multiLine = '''",
-    "import 'package:isar/isar.dart';",
-    "'''",
+    'const String multiLine = \'\'\'',
+    'import \'package:isar/isar.dart\';',
+    '\'\'\'',
     '// final c = HttpClient(); File(\'x\').writeAsString(\'y\');',
     'const String ioDecoy = "HttpClient writeAsString openWrite Socket";',
     '',
@@ -635,11 +660,11 @@ test('comment and string decoys do not fail', t => {
   assert.deepEqual(findingsFor(root), [])
 })
 
-test('pure formatter import restriction fails on dart:async', t => {
+test('pure formatter import restriction fails on dart:async', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/async_formatter.dart', [
     '// pure-formatter',
-    "import 'dart:async';",
+    'import \'dart:async\';',
     '',
   ].join('\n'))
 
@@ -647,16 +672,16 @@ test('pure formatter import restriction fails on dart:async', t => {
   assert.ok(findings.some(f => f.rule === 'F' && /dart:async/.test(f.detail)), JSON.stringify(findings))
 })
 
-test('pure formatter relative import cannot escape lib root', t => {
+test('pure formatter relative import cannot escape lib root', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/escape.dart', [
     '// pure-formatter',
-    "import '../../outside.dart';",
+    'import \'../../outside.dart\';',
     '',
   ].join('\n'))
   writeDart(root, 'speech/stays_inside.dart', [
     '// pure-formatter',
-    "import '../data/wire_model.dart';",
+    'import \'../data/wire_model.dart\';',
     '',
   ].join('\n'))
 
@@ -666,11 +691,11 @@ test('pure formatter relative import cannot escape lib root', t => {
   assert.equal(findings.some(f => f.file === 'speech/stays_inside.dart'), false, details)
 })
 
-test('pure formatter absolute import URI fails', t => {
+test('pure formatter absolute import URI fails', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'speech/absolute.dart', [
     '// pure-formatter',
-    "import '/etc/passwd.dart';",
+    'import \'/etc/passwd.dart\';',
     '',
   ].join('\n'))
 
@@ -681,7 +706,7 @@ test('pure formatter absolute import URI fails', t => {
   )
 })
 
-test('pure formatter rejects notifier and async', t => {
+test('pure formatter rejects notifier and async', (t) => {
   const root = makeLibRoot(t)
   writeDart(root, 'features/formatters/notifier.dart', [
     '// pure-formatter',
@@ -701,17 +726,17 @@ test('pure formatter rejects notifier and async', t => {
   assert.ok(findings.every(f => f.rule === 'F'))
 })
 
-test('sorted deterministic findings', t => {
+test('sorted deterministic findings', (t) => {
   const root = makeLibRoot(t)
-  writeDart(root, 'z_last.dart', "import 'package:hive/hive.dart';\n")
+  writeDart(root, 'z_last.dart', 'import \'package:hive/hive.dart\';\n')
   writeDart(root, 'a_first.dart', [
-    "import 'package:isar/isar.dart';",
-    "import 'package:hive_flutter/hive_flutter.dart';",
+    'import \'package:isar/isar.dart\';',
+    'import \'package:hive_flutter/hive_flutter.dart\';',
     '',
   ].join('\n'))
   writeDart(root, 'm_mid.dart', [
-    "import 'dart:io';",
-    "File('x').writeAsString('y');",
+    'import \'dart:io\';',
+    'File(\'x\').writeAsString(\'y\');',
     '',
   ].join('\n'))
 
@@ -725,15 +750,15 @@ test('sorted deterministic findings', t => {
   assert.ok(first.length >= 4, JSON.stringify(first))
 })
 
-test('hidden paths and symlinks fail closed', t => {
+test('hidden paths and symlinks fail closed', (t) => {
   const root = makeLibRoot(t)
   const outside = mkdtempSync(join(tmpdir(), 'flutter-boundary-outside-'))
   t.after(() => rmSync(outside, { recursive: true, force: true }))
 
-  writeDart(root, '.hidden/evil.dart', "import 'package:hive/hive.dart';\n")
-  writeDart(root, '.hidden.dart', "import 'package:hive/hive.dart';\n")
-  writeDart(root, 'notes.txt', "import 'package:hive/hive.dart';\n")
-  const outsideFile = writeDart(outside, 'outside_writer.dart', "import 'package:hive/hive.dart';\n")
+  writeDart(root, '.hidden/evil.dart', 'import \'package:hive/hive.dart\';\n')
+  writeDart(root, '.hidden.dart', 'import \'package:hive/hive.dart\';\n')
+  writeDart(root, 'notes.txt', 'import \'package:hive/hive.dart\';\n')
+  const outsideFile = writeDart(outside, 'outside_writer.dart', 'import \'package:hive/hive.dart\';\n')
   symlinkSync(outsideFile, join(root, 'linked_outside.dart'))
   assert.equal(lstatSync(join(root, 'linked_outside.dart')).isSymbolicLink(), true)
 
