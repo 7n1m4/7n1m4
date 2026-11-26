@@ -953,6 +953,17 @@ impl Gateway {
                                 .map_err(|e| e.to_string())?,
                         }));
                     }
+                    // Discord's bot token is a credential the redactor cannot
+                    // match (`MT...`), and this read is ungated. Route it through
+                    // the token-free projection instead of the generic loader.
+                    if section == "discord" {
+                        let projected = core.discord_settings_get()?;
+                        return Ok(serde_json::json!({
+                            "section": section,
+                            "settings": serde_json::to_string(&projected)
+                                .map_err(|e| e.to_string())?,
+                        }));
+                    }
                     let mut reply = core.settings_get(section)?;
                     if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&reply.settings)
                     {

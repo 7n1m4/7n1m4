@@ -226,6 +226,25 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
             }
             merged.insert(name.clone(), serde_json::Value::Object(server));
         }
+    } else if S::KEY == anima_core::settings::DiscordSettings::KEY {
+        // The Discord bot token is write-only: settings.get never returns it.
+        // A PATCH that omits or echoes a mask must not wipe the stored secret;
+        // only an explicit new token rotates it.
+        let mut fields = patch.clone();
+        if fields
+            .get("token")
+            .and_then(|v| v.as_str())
+            .map_or(true, |token| token == MCP_SECRET_MASK)
+        {
+            fields.remove("token");
+        }
+        for (key, value) in fields {
+            if value.is_null() {
+                merged.remove(&key);
+            } else {
+                merged.insert(key, value);
+            }
+        }
     } else if S::KEY == anima_core::settings::OnboardingSettings::KEY {
         // The wizard draft is a nested blob. A PATCH of one field must keep
         // sibling draft fields and module toggles, like the TS store's merge.
@@ -289,6 +308,7 @@ settings_sections!(
     ("vision", anima_core::settings::VisionSettings),
     ("faculties", anima_core::settings::FacultiesSettings),
     ("mcp", anima_core::settings::McpSettings),
+    ("discord", anima_core::settings::DiscordSettings),
     ("onboarding", anima_core::settings::OnboardingSettings),
 );
 
@@ -302,6 +322,17 @@ fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
         .iter()
         .find(|(key, _, _)| *key == section)
         .map(|(_, load, save)| (*load, *save))
+}
+
+/// Project the stored Discord section into its token-free wire view.
+///
+/// Shared by `settings_get` and `discord_settings_get` so the data-layer read
+/// and the gateway's dedicated read cannot drift apart.
+fn discord_view(store: &anima_core::settings::SettingsStore) -> Result<serde_json::Value, String> {
+    let settings: anima_core::settings::DiscordSettings = store
+        .load_section()
+        .map_err(|_| "load failed".to_string())?;
+    serde_json::to_value(settings.public_view()).map_err(|_| "serialize failed".to_string())
 }
 
 /// Merge a primary PATCH and its mirror selection, then commit both in one
@@ -709,11 +740,18 @@ impl CoreService {
             return Err("store unavailable".to_string());
         };
         let store = core.settings();
-        let (load, _) = settings_section(section)
-            .ok_or_else(|| format!("unknown settings section: {section}"))?;
-        let value = load(&store)?;
-        let value_str =
-            serde_json::to_string(&value).map_err(|_| "serialize failed".to_string())?;
+        // Discord's bot token is a write-only credential. Project it here in
+        // the data layer so *every* caller of `settings_get`, not only the
+        // gateway handler, receives the token-free view.
+        let value_str = if section == "discord" {
+            serde_json::to_string(&discord_view(&store)?)
+                .map_err(|_| "serialize failed".to_string())?
+        } else {
+            let (load, _) = settings_section(section)
+                .ok_or_else(|| format!("unknown settings section: {section}"))?;
+            let value = load(&store)?;
+            serde_json::to_string(&value).map_err(|_| "serialize failed".to_string())?
+        };
         Ok(anima_channel::wire::SettingsGetReply {
             section: section.to_string(),
             settings: value_str,
@@ -772,6 +810,21 @@ impl CoreService {
             save(&store, settings)?;
         }
         Ok(anima_channel::wire::SettingsSetReply { ok: true })
+    }
+
+    /// Secret-free projection of the stored Discord config for `settings.get`.
+    ///
+    /// The bot token is deliberately absent from the returned shape rather than
+    /// redacted from a serialized blob: Discord `MT...` tokens are not covered
+    /// by the audit redactor's patterns, so only projection keeps them off the
+    /// wire. Writes still go through the gated `settings.set` path.
+    pub fn discord_settings_get(&self) -> Result<serde_json::Value, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
+        discord_view(&core.settings())
     }
 
     /// Secret-free view of the daemon-owned MCP config for `mcp.config.get`.
@@ -1527,6 +1580,7 @@ mod tests {
             "vision",
             "faculties",
             "mcp",
+            "discord",
             "onboarding",
         ];
         assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
@@ -1547,6 +1601,66 @@ mod tests {
                 "stale key {stale} must not resolve"
             );
         }
+    }
+
+    #[test]
+    fn discord_mask_echo_and_token_omitted_patches_keep_stored_token() {
+        const TOKEN: &str = "MT12345678901234567890AbCdEfGhIjKlMnOpQrStUvWxYz";
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+
+        // Read the persisted blob directly, bypassing every wire projection.
+        let stored_blob = || -> serde_json::Value {
+            let guard = svc.inner.lock().unwrap();
+            let core = guard.core.as_ref().expect("core must be available");
+            core.settings()
+                .load_opt::<serde_json::Value>(anima_core::settings::DiscordSettings::KEY)
+                .unwrap()
+                .expect("discord blob must be stored")
+        };
+
+        svc.settings_set(
+            "discord",
+            serde_json::json!({ "enabled": true, "token": TOKEN }),
+        )
+        .unwrap();
+        assert_eq!(
+            stored_blob()["token"],
+            TOKEN,
+            "baseline must store the token"
+        );
+
+        // A client echoing the mask back must not rotate or wipe the secret.
+        svc.settings_set(
+            "discord",
+            serde_json::json!({ "enabled": false, "token": MCP_SECRET_MASK }),
+        )
+        .unwrap();
+        assert_eq!(stored_blob()["token"], TOKEN, "mask echo changed the token");
+        assert_eq!(stored_blob()["enabled"], false);
+
+        // Omitting the token entirely is the common thin-client PATCH shape.
+        svc.settings_set(
+            "discord",
+            serde_json::json!({ "enabled": true, "ownerUsername": "alice" }),
+        )
+        .unwrap();
+        assert_eq!(stored_blob()["token"], TOKEN, "omitted token was wiped");
+        assert_eq!(stored_blob()["ownerUsername"], "alice");
+
+        // The data-layer read itself must carry no token, for any caller.
+        let reply = svc.settings_get("discord").unwrap();
+        assert_eq!(reply.section, "discord");
+        assert!(!reply.settings.contains(TOKEN));
+        let view: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert!(view.get("token").is_none());
+        assert_eq!(view["hasToken"], true);
+
+        // The assertion can fail: an explicit new token really does rotate.
+        const ROTATED: &str = "MT99999999999999999999RotAtEdToKeN";
+        svc.settings_set("discord", serde_json::json!({ "token": ROTATED }))
+            .unwrap();
+        assert_eq!(stored_blob()["token"], ROTATED);
     }
 
     #[test]

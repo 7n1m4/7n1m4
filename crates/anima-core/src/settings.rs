@@ -1843,6 +1843,148 @@ impl SettingsSection for McpSettings {
 }
 
 // ============================================================================
+// Discord
+// ============================================================================
+
+fn default_discord_execution_mode() -> String {
+    "local".to_string()
+}
+
+fn default_discord_chat_mode() -> String {
+    "followup".to_string()
+}
+
+fn default_discord_voice_mode() -> String {
+    "puppet".to_string()
+}
+
+fn default_discord_voice_call() -> String {
+    "off".to_string()
+}
+
+/// Discord bot settings (`settings/discord`).
+///
+/// Mirrors the persisted keys of `stores/modules/discord.ts`: `enabled`,
+/// `token`, `executionMode`, `ownerUsername`, `ownerUserId`,
+/// `lastRegisteredVersion`, `chatMode`, `voiceMode`, `voiceCall`,
+/// `visionEnabled`, and `dmsEnabled`. Runtime connection status, event logs and
+/// collect batches stay client-local. The bot token is a credential: it is
+/// accepted on a gated `settings.set` but never returned by `settings.get`
+/// (see [`DiscordSettingsView`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordSettings {
+    /// Whether the bot should be started by a client that owns the gateway.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Bot token. Write-only: never projected onto any wire reply.
+    #[serde(default)]
+    pub token: String,
+    /// `local` (gateway runs in the client) or `remote` (cloud relay).
+    #[serde(default = "default_discord_execution_mode")]
+    pub execution_mode: String,
+    /// Owner display name, used for allow-list checks.
+    #[serde(default)]
+    pub owner_username: String,
+    /// Owner Discord user id, used for allow-list checks.
+    #[serde(default)]
+    pub owner_user_id: String,
+    /// Command-registration version last acknowledged by the client.
+    #[serde(default)]
+    pub last_registered_version: u64,
+    /// How inbound messages enter chat: `followup`, `steer`, or `collect`.
+    #[serde(default = "default_discord_chat_mode")]
+    pub chat_mode: String,
+    /// How voice turns are handled: `puppet`, `voicenote`, or `none`.
+    #[serde(default = "default_discord_voice_mode")]
+    pub voice_mode: String,
+    /// Voice transport: `classic`, `gemini`, or `off`.
+    #[serde(default = "default_discord_voice_call")]
+    pub voice_call: String,
+    /// Forward image attachments to the vision pipeline.
+    #[serde(default = "default_true")]
+    pub vision_enabled: bool,
+    /// Accept direct messages from non-owner users.
+    #[serde(default)]
+    pub dms_enabled: bool,
+}
+
+impl Default for DiscordSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token: String::new(),
+            execution_mode: default_discord_execution_mode(),
+            owner_username: String::new(),
+            owner_user_id: String::new(),
+            last_registered_version: 0,
+            chat_mode: default_discord_chat_mode(),
+            voice_mode: default_discord_voice_mode(),
+            voice_call: default_discord_voice_call(),
+            vision_enabled: true,
+            dms_enabled: false,
+        }
+    }
+}
+
+impl SettingsSection for DiscordSettings {
+    const KEY: &'static str = "settings/discord";
+}
+
+/// Secret-free view of [`DiscordSettings`] returned by `settings.get('discord')`.
+///
+/// This is built field-by-field rather than by serializing the stored section
+/// and redacting strings: Discord `MT...` tokens are not matched by the audit
+/// redactor's patterns, so the only safe policy is to omit the token from the
+/// output shape entirely. [`Self::has_token`] lets a thin client show whether
+/// a credential is configured without ever receiving its value.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordSettingsView {
+    /// Whether the bot should be started by a client that owns the gateway.
+    pub enabled: bool,
+    /// `local` (gateway runs in the client) or `remote` (cloud relay).
+    pub execution_mode: String,
+    /// Owner display name.
+    pub owner_username: String,
+    /// Owner Discord user id.
+    pub owner_user_id: String,
+    /// Command-registration version last acknowledged by the client.
+    pub last_registered_version: u64,
+    /// How inbound messages enter chat.
+    pub chat_mode: String,
+    /// How voice turns are handled.
+    pub voice_mode: String,
+    /// Voice transport.
+    pub voice_call: String,
+    /// Forward image attachments to the vision pipeline.
+    pub vision_enabled: bool,
+    /// Accept direct messages from non-owner users.
+    pub dms_enabled: bool,
+    /// Whether a non-empty bot token is stored, without revealing it.
+    pub has_token: bool,
+}
+
+impl DiscordSettings {
+    /// Project into the secret-free wire view. The raw token is never copied.
+    pub fn public_view(&self) -> DiscordSettingsView {
+        DiscordSettingsView {
+            enabled: self.enabled,
+            execution_mode: self.execution_mode.clone(),
+            owner_username: self.owner_username.clone(),
+            owner_user_id: self.owner_user_id.clone(),
+            last_registered_version: self.last_registered_version,
+            chat_mode: self.chat_mode.clone(),
+            voice_mode: self.voice_mode.clone(),
+            voice_call: self.voice_call.clone(),
+            vision_enabled: self.vision_enabled,
+            dms_enabled: self.dms_enabled,
+            has_token: !self.token.trim().is_empty(),
+        }
+    }
+}
+
+// ============================================================================
 // Onboarding V3
 // ============================================================================
 
@@ -2207,6 +2349,43 @@ mod tests {
         let with_cwd: McpServerSettings =
             serde_json::from_value(serde_json::json!({ "cwd": "/srv/mcp" })).unwrap();
         assert_eq!(with_cwd.cwd, "/srv/mcp");
+    }
+
+    #[test]
+    fn discord_section_defaults_and_token_free_projection() {
+        assert_eq!(DiscordSettings::KEY, "settings/discord");
+        let defaults = DiscordSettings::default();
+        assert!(!defaults.enabled);
+        assert_eq!(defaults.execution_mode, "local");
+        assert_eq!(defaults.chat_mode, "followup");
+        assert_eq!(defaults.voice_mode, "puppet");
+        assert_eq!(defaults.voice_call, "off");
+        assert!(defaults.vision_enabled);
+        assert!(!defaults.dms_enabled);
+
+        // A partial blob from a thin client fills the rest from defaults.
+        let partial: DiscordSettings = serde_json::from_value(serde_json::json!({
+            "token": "MT-DISCORD-SECRET",
+            "enabled": true,
+            "chatMode": "steer"
+        }))
+        .unwrap();
+        assert_eq!(partial.chat_mode, "steer");
+        assert!(partial.vision_enabled);
+
+        let view = serde_json::to_value(partial.public_view()).unwrap();
+        assert!(
+            view.get("token").is_none(),
+            "projection must not contain token"
+        );
+        assert!(!view.to_string().contains("MT-DISCORD-SECRET"));
+        assert_eq!(view["hasToken"], true);
+        assert_eq!(view["enabled"], true);
+        assert_eq!(view["chatMode"], "steer");
+        assert_eq!(view["executionMode"], "local");
+
+        let empty_view = serde_json::to_value(DiscordSettings::default().public_view()).unwrap();
+        assert_eq!(empty_view["hasToken"], false);
     }
 
     fn open_db(dir: &tempfile::TempDir) -> Database {

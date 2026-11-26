@@ -1115,6 +1115,106 @@ mod tests {
     }
 
     #[test]
+    fn discord_settings_get_is_token_free_and_writes_are_gated() {
+        const TOKEN: &str = "MT12345678901234567890AbCdEfGhIjKlMnOpQrStUvWxYz";
+
+        let fixture = isolated_gateway();
+
+        // settings.set is gated; settings.get is not, even with no token set.
+        let err = dispatch(
+            &fixture,
+            "settings.set",
+            &serde_json::json!({
+                "section": "discord",
+                "settings": { "token": TOKEN }
+            }),
+        )
+        .expect_err("settings.set('discord') must be denied without allowActions");
+        assert_eq!(err.code(), "rpc_actions_disabled", "{err:?}");
+
+        let before = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "discord" }),
+        );
+        let before_settings: serde_json::Value =
+            serde_json::from_str(before["settings"].as_str().unwrap()).unwrap();
+        assert_eq!(before["section"], "discord");
+        assert!(before_settings.get("token").is_none());
+        assert_eq!(before_settings["hasToken"], false);
+
+        enable_actions(&fixture);
+        call(
+            &fixture,
+            "settings.set",
+            serde_json::json!({
+                "section": "discord",
+                "settings": {
+                    "enabled": true,
+                    "token": TOKEN,
+                    "ownerUsername": "alice",
+                    "chatMode": "steer",
+                    "visionEnabled": false
+                }
+            }),
+        );
+
+        // The ungated read must never expose the stored credential. The mask is
+        // by projection (the `token` key is absent), not by redacting a blob.
+        let get = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "discord" }),
+        );
+        assert_eq!(get["section"], "discord");
+        assert!(
+            !get.to_string().contains(TOKEN),
+            "settings.get leaked the Discord bot token"
+        );
+        // Nit: the whole reply, not just the decoded settings, must carry no
+        // `token` key at any level.
+        assert!(
+            get.get("token").is_none(),
+            "reply has a top-level token key"
+        );
+        assert!(
+            !get.to_string().contains("token"),
+            "whole settings.get reply contains a token key: {get}"
+        );
+        let settings: serde_json::Value =
+            serde_json::from_str(get["settings"].as_str().unwrap()).unwrap();
+        assert!(
+            settings.get("token").is_none(),
+            "projection must omit the token field"
+        );
+        assert_eq!(settings["enabled"], true);
+        assert_eq!(settings["ownerUsername"], "alice");
+        assert_eq!(settings["chatMode"], "steer");
+        assert_eq!(settings["visionEnabled"], false);
+        assert_eq!(settings["executionMode"], "local");
+        assert_eq!(settings["hasToken"], true);
+
+        // A client that reads, edits and writes back does not wipe the token.
+        call(
+            &fixture,
+            "settings.set",
+            serde_json::json!({
+                "section": "discord",
+                "settings": { "enabled": false, "token": "********" }
+            }),
+        );
+        let after = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "discord" }),
+        );
+        let after_settings: serde_json::Value =
+            serde_json::from_str(after["settings"].as_str().unwrap()).unwrap();
+        assert_eq!(after_settings["enabled"], false);
+        assert_eq!(after_settings["hasToken"], true);
+    }
+
+    #[test]
     fn vault_archive_reply_is_rejected_before_it_can_overflow_a_frame() {
         let fixture = isolated_gateway();
         enable_actions(&fixture);
