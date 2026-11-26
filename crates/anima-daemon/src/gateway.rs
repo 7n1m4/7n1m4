@@ -1982,6 +1982,17 @@ impl Gateway {
         {
             let core = core.clone();
             m.insert(
+                "cards.outfits.set".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| core.card_outfits_set(value),
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
                 "providers.models".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
                     let req: anima_channel::wire::ProvidersModelsRequest =
@@ -5602,6 +5613,7 @@ mod tests {
             "cards.update",
             "cards.delete",
             "cards.import",
+            "cards.outfits.set",
         ] {
             let h = handlers
                 .get(*verb)

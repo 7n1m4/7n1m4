@@ -273,6 +273,113 @@ mod tests {
     }
 
     #[test]
+    fn cards_outfits_set_replaces_outfits_and_preserves_siblings() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+        let created = call(
+            &fixture,
+            "cards.create",
+            serde_json::to_value(CardCreateRequest {
+                name: "Outfit Card".to_string(),
+                document: serde_json::json!({
+                    "spec": "chara_card_v2",
+                    "data": {
+                        "name": "Outfit Card",
+                        "description": "kept verbatim",
+                        "extensions": {
+                            "airi": {
+                                "model": "vrm",
+                                "visualAssets": { "portrait": { "id": "p1" } },
+                                "outfits": [{ "id": "old", "name": "Old" }]
+                            },
+                            "other": { "kept": true }
+                        }
+                    }
+                }),
+            })
+            .unwrap(),
+        );
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let outfits = serde_json::json!([
+            { "id": "casual", "name": "Casual", "type": "base", "defaultEnabled": true },
+            {
+                "id": "party",
+                "name": "Party",
+                "type": "overlay",
+                "expressions": { "happy": 0.8, "surprised": 0.25 },
+                "meshes": ["hair_*"]
+            }
+        ]);
+        let reply = call(
+            &fixture,
+            "cards.outfits.set",
+            serde_json::json!({ "id": &id, "outfits": &outfits }),
+        );
+        assert_eq!(
+            reply,
+            serde_json::json!({ "id": &id, "outfits": &outfits }),
+            "reply must echo only id + outfits"
+        );
+
+        let got = call(&fixture, "cards.get", serde_json::json!({ "id": &id }));
+        let card = got["card"]
+            .as_object()
+            .expect("full-fidelity card document");
+        assert_eq!(card["data"]["extensions"]["airi"]["outfits"], outfits);
+        assert_eq!(card["data"]["extensions"]["airi"]["model"], "vrm");
+        assert_eq!(
+            card["data"]["extensions"]["airi"]["visualAssets"]["portrait"]["id"],
+            "p1"
+        );
+        assert_eq!(card["data"]["extensions"]["other"]["kept"], true);
+        assert_eq!(card["data"]["description"], "kept verbatim");
+        assert_eq!(card["data"]["name"], "Outfit Card");
+    }
+
+    #[test]
+    fn cards_outfits_set_creates_airi_on_legacy_card_and_rejects_bad_payloads() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+        let created = call(
+            &fixture,
+            "cards.create",
+            serde_json::to_value(CardCreateRequest {
+                name: "Legacy Card".to_string(),
+                document: serde_json::json!({
+                    "name": "Legacy Card",
+                    "extensions": { "other": { "kept": true } }
+                }),
+            })
+            .unwrap(),
+        );
+        let id = created["id"].as_str().unwrap().to_string();
+        let outfits = serde_json::json!([
+            { "id": "solo", "name": "Solo", "type": "base" }
+        ]);
+        let reply = call(
+            &fixture,
+            "cards.outfits.set",
+            serde_json::json!({ "id": &id, "outfits": &outfits }),
+        );
+        assert_eq!(reply["outfits"], outfits);
+
+        let got = call(&fixture, "cards.get", serde_json::json!({ "id": &id }));
+        let card = got["card"].as_object().expect("full-fidelity card");
+        assert_eq!(card["extensions"]["airi"]["outfits"], outfits);
+        assert_eq!(card["extensions"]["other"]["kept"], true);
+
+        for bad in [
+            serde_json::json!({ "id": &id, "outfits": {} }),
+            serde_json::json!({ "id": &id, "outfits": [1, {}] }),
+            serde_json::json!({ "outfits": [] }),
+        ] {
+            dispatch(&fixture, "cards.outfits.set", &bad)
+                .expect_err("non-object outfits and missing id must be rejected");
+        }
+    }
+
+    #[test]
     fn cards_get_missing_returns_not_found_not_stub() {
         let fixture = isolated_gateway();
         let reply = call(
@@ -878,6 +985,10 @@ mod tests {
             (
                 "cards.metadata.set",
                 serde_json::json!({ "id": "c1", "liked": true, "bookmarked": false }),
+            ),
+            (
+                "cards.outfits.set",
+                serde_json::json!({ "id": "c1", "outfits": [] }),
             ),
             ("sessions.delete", serde_json::json!({ "session_id": "s1" })),
             ("sessions.import", serde_json::json!({ "jsonl": "" })),

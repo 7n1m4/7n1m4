@@ -1,6 +1,8 @@
 import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables'
 import { defineStore } from 'pinia'
 
+import { bridgeDaemonSettingsField } from '../../../../../../composables/daemon-settings'
+
 export type OnboardingArchitecture = 'local' | 'cloud'
 
 export type ExperienceArchetypeId = 'quiet' | 'casual' | 'muse' | 'copilot' | 'roommate' | 'swiss-army' | 'performer'
@@ -823,6 +825,19 @@ export const useOnboardingV3Draft = defineStore('onboarding-v3-draft', () => {
   function reset() {
     state.reset()
   }
+
+  // NOTICE: the daemon scrubs API keys on read, so an absent credential in the
+  // hydrated draft must not silently drop a locally entered key. Merge over the
+  // current draft and keep those fields. The daemon's recursive PATCH keeps
+  // sibling draft fields on partial edits.
+  bridgeDaemonSettingsField('onboarding', 'onboarding/v3-draft', () => state.value, (value) => {
+    state.value = {
+      ...state.value,
+      ...value,
+      llmApiKey: value.llmApiKey ?? state.value.llmApiKey,
+      artistryApiKey: value.artistryApiKey ?? state.value.artistryApiKey,
+    }
+  })
 
   return {
     state,

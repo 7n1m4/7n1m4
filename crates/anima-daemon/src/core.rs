@@ -1150,6 +1150,70 @@ impl CoreService {
         })
     }
 
+    /// Replace only `extensions.airi.outfits` on one card document.
+    ///
+    /// The outfits array is spliced into the stored JSON as-is, so sibling
+    /// `extensions.airi` keys and all other card fields survive verbatim.
+    pub fn card_outfits_set(&self, req: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let id = req
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "missing id".to_string())?;
+        let id = normalized_card_id(id)?;
+        let outfits = req
+            .get("outfits")
+            .ok_or_else(|| "missing outfits".to_string())?;
+        if !outfits.is_array()
+            || outfits
+                .as_array()
+                .is_some_and(|items| items.iter().any(|item| !item.is_object()))
+        {
+            return Err("outfits must be an array of objects".to_string());
+        }
+
+        let repo = self.card_repo()?;
+        let existing = repo
+            .get(id)
+            .map_err(|_| "store query failed".to_string())?
+            .ok_or_else(|| "card not found".to_string())?;
+        let mut document: serde_json::Value = serde_json::from_str(&existing.document)
+            .map_err(|_| "stored card document is not valid JSON".to_string())?;
+
+        // CC v3 keeps `data.extensions`; flat legacy cards keep it at the top
+        // level. Create the `airi` object when absent, as TS updateCardOutfits
+        // does, while preserving every sibling key.
+        let extensions = if document
+            .get("data")
+            .and_then(|d| d.get("extensions"))
+            .is_some()
+        {
+            document
+                .get_mut("data")
+                .and_then(|d| d.get_mut("extensions"))
+        } else {
+            document.get_mut("extensions")
+        }
+        .ok_or_else(|| "card has no extensions object".to_string())?;
+        let airi = extensions
+            .as_object_mut()
+            .ok_or_else(|| "extensions is not an object".to_string())?
+            .entry("airi")
+            .or_insert_with(|| serde_json::json!({}));
+        airi.as_object_mut()
+            .ok_or_else(|| "airi extension is not an object".to_string())?
+            .insert("outfits".to_string(), outfits.clone());
+
+        let document =
+            serde_json::to_string(&document).map_err(|_| "serialize failed".to_string())?;
+        if !repo
+            .update(id, &document, &existing.name)
+            .map_err(|_| "store write failed".to_string())?
+        {
+            return Err("card not found".to_string());
+        }
+        Ok(serde_json::json!({ "id": id, "outfits": outfits }))
+    }
+
     /// Export a session and its messages as JSONL through the daemon-owned store.
     pub fn session_export_jsonl(&self, session_id: &str) -> Result<String, String> {
         let db = {

@@ -48,6 +48,7 @@ pub mod compaction;
 pub mod crashlog;
 pub mod grounding;
 pub mod memory;
+pub mod onboarding_rules;
 pub mod providers;
 pub mod recent_topics;
 pub mod sessions;

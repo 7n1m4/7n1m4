@@ -2,6 +2,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
+import { bridgeDaemonSettingsField } from '../composables/daemon-settings'
 import { useProvidersStore } from './providers'
 
 const essentialProviderIds = ['openai', 'anthropic', 'google-generative-ai', 'openrouter-ai', 'ollama', 'deepseek', 'openai-compatible', 'kilo'] as const
@@ -21,6 +22,17 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   // Track if first-time setup has been completed or skipped
   const hasCompletedSetup = useLocalStorage('onboarding/v3-completed', false)
   const hasSkippedSetup = useLocalStorage('onboarding/v3-skipped', false)
+
+  // NOTICE: the daemon owns `settings/onboarding`; these localStorage keys are
+  // only its cache. Each flag bridges its own field so toggling one sends a
+  // single-field PATCH — the daemon's recursive merge keeps the wizard draft
+  // and the other flag. Without a daemon (stage-web) both bridges stay inert.
+  bridgeDaemonSettingsField('onboarding', 'onboarding/v3-completed', () => hasCompletedSetup.value, (value) => {
+    hasCompletedSetup.value = value
+  })
+  bridgeDaemonSettingsField('onboarding', 'onboarding/v3-skipped', () => hasSkippedSetup.value, (value) => {
+    hasSkippedSetup.value = value
+  })
 
   // Track if we should show the setup dialog
   const showingSetup = ref(false)

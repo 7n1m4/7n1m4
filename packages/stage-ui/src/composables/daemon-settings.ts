@@ -26,6 +26,7 @@ export type DaemonSettingsSection
     | 'audio-device'
     | 'user-profile'
     | 'local-llm'
+    | 'onboarding'
 
 /** `data` payload of a `settings.get` reply. */
 interface SettingsGetReply {
@@ -145,4 +146,32 @@ export function bridgeDaemonSettings<T>(
       stopWatch()
     },
   }
+}
+
+/**
+ * Bridge one nested field of a section whose daemon payload groups related
+ * values under localStorage-style keys. `settings/onboarding`, for example,
+ * carries `onboarding/v3-draft`, `onboarding/v3-completed` and
+ * `onboarding/v3-skipped` in one object.
+ *
+ * Hydration takes only this field; write-back sends a PATCH holding only this
+ * field, so the daemon's recursive merge keeps its siblings (the wizard draft
+ * and the other flag) intact.
+ */
+export function bridgeDaemonSettingsField<T>(
+  section: DaemonSettingsSection,
+  field: string,
+  read: () => T,
+  write: (value: T) => void,
+  options: DaemonSettingsBridgeOptions = {},
+): { stop: () => void } {
+  return bridgeDaemonSettings<Record<string, unknown>>(
+    section,
+    () => ({ [field]: read() }),
+    (value) => {
+      if (value[field] !== undefined)
+        write(value[field] as T)
+    },
+    options,
+  )
 }
