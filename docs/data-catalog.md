@@ -1351,12 +1351,12 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `onboarding/v2-state` | `{ stepId, path }` | `'welcome'` / `'new'` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-skipped` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-completed` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
-| `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` — **disposition: TS-only draft**, `useLocalStorageManualReset`, no daemon port |
-| `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` — **disposition: TS-only first-run flag**, no daemon port |
-| `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` — **disposition: TS-only first-run flag**, no daemon port |
+| `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` (TS reference); daemon-backed via `settings.get/set('onboarding')`, storage key `settings/onboarding`, `OnboardingSettings::draft` (`crates/anima-core/src/settings.rs:2133`) — opaque JSON so wizard-owned fields round-trip; known credential fields are scrubbed in both directions (`airi-vcxy.2`) |
+| `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::completed` (`crates/anima-core/src/settings.rs:2143`) |
+| `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::skipped` (`crates/anima-core/src/settings.rs:2146`) |
 | `airi:onboarding:magic-wand-seen` | `boolean` | `false` | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
 
-Disposition note: the V3 draft and completion/skip flags are TS-written `localStorage` with no daemon mirror and no Flutter consumer; `stores/onboarding.ts:17-20` states legacy `onboarding/completed` / `onboarding/skipped` (rows above) are intentionally never read. Onboarding V3 is an outstanding parity gap (`gap — track in tracker`).
+Disposition note: the V3 draft and completion/skip flags are now daemon-backed through the typed `settings/onboarding` section (`settings.get/set('onboarding')`, recursive PATCH so sibling fields survive); the TS store still writes its `localStorage` keys and is the behaviour reference until migrated. `stores/onboarding.ts:17-20` states legacy `onboarding/completed` / `onboarding/skipped` (rows above) are intentionally never read. The Flutter first-run flow remains an outstanding parity gap (`airi-vcxy.4`).
 
 ### 4.20 Dating Sim / Producer
 
