@@ -157,6 +157,7 @@ jobs:
       - run: pnpm run test:catalog:audit
       - run: pnpm run test:write-shrink-guard
       - run: pnpm run test:ci-repo-selection
+      - run: pnpm run test:nano-staged-scope
       # Docs path:line anchors only — wire-type and golden-fixture drift are
       # checked by the wire-types job and crates/anima-channel examples.
       - run: pnpm run test:doc-citations
