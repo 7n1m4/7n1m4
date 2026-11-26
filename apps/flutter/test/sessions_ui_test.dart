@@ -4,6 +4,7 @@
 // sessions.list result, and the new-chat action opens a fresh ChatScreen
 // without writing session state from the client.
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -13,14 +14,25 @@ import 'package:anima_control/features/sessions/sessions_screen.dart';
 
 import 'support/fakes.dart';
 
+class _DeferredReply implements Exception {
+  const _DeferredReply(this.future);
+  final Future<RpcReply> future;
+}
+
 class _SessionsUiClient extends FakeChatClient {
   final List<String> actions = <String>[];
   final List<Map<String, dynamic>?> listPayloads = <Map<String, dynamic>?>[];
   int listCalls = 0;
 
-  @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
-    actions.add(action);
+    final handler = onCall;
+    if (handler != null) {
+      try {
+        return handler(action, payload);
+      } on _DeferredReply catch (deferred) {
+        return await deferred.future;
+      }
+    }
     if (action == 'sessions.list') {
       listPayloads.add(payload);
       listCalls++;
@@ -116,5 +128,73 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ListTile, 'Gamma session'), findsOneWidget);
     expect(more, findsNothing);
+  });
+
+  testWidgets('older sessions append after newer rows', (tester) async {
+    final client = await _pump(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    tester.widget<TextButton>(find.byKey(const Key('sessions-load-more'))).onPressed!();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    final titles = tester.widgetList<ListTile>(find.byType(ListTile))
+        .map((tile) => (tile.title as Text).data)
+        .toList();
+    expect(titles.indexOf('Alpha session'), lessThan(titles.indexOf('Gamma session')));
+    expect(client.listCalls, 2);
+  });
+
+  testWidgets('a refresh during load-more discards the stale page', (tester) async {
+    final client = await _pump(tester);
+    final oldPage = Completer<RpcReply>();
+    client.onCall = (action, payload) {
+      if (action == 'sessions.list' && payload?['cursor'] != null) {
+        throw _DeferredReply(oldPage.future);
+      }
+      client.actions.add(action);
+      client.listPayloads.add(payload);
+      client.listCalls++;
+      if (action == 'core.status' || action == 'vault.status') {
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+      }
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'sessions': <Map<String, dynamic>>[
+            <String, dynamic>{'id': 'alpha', 'title': 'Alpha session'},
+          ],
+          'truncated': true,
+        },
+      );
+    };
+    addTearDown(() {
+      if (!oldPage.isCompleted) {
+        oldPage.complete(const RpcReply(action: 'sessions.list', ok: true, data: <String, dynamic>{}));
+      }
+    });
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    tester.widget<TextButton>(find.byKey(const Key('sessions-load-more'))).onPressed!();
+    await tester.pump();
+    unawaited(
+      tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh!(),
+    );
+    await tester.pump();
+    oldPage.complete(RpcReply(
+      action: 'sessions.list',
+      ok: true,
+      data: <String, dynamic>{
+        'sessions': <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'gamma', 'title': 'Gamma session'},
+        ],
+        'truncated': false,
+      },
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.widgetWithText(ListTile, 'Gamma session'), findsNothing);
   });
 }

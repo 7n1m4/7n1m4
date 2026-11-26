@@ -22,6 +22,27 @@ function toDaemonProviderKind(definitionId: string): string {
   return 'open-ai-compatible'
 }
 
+// Local-only definitions backed by a differently named daemon registry entry.
+const daemonDefinitionIds: Record<string, string> = {
+  'minimax-global': 'minimax',
+}
+
+// IDs present in the daemon registry (crates/anima-llm/src/registry.rs) but
+// not registered locally; stored daemon rows can reference them.
+const daemonOnlyDefinitionIds: Record<string, true> = {
+  'llama-cpp-local': true,
+}
+
+// Unknown IDs are omitted from providers.save so the daemon validates the row
+// by kind instead of rejecting an unknown definition.
+function toDaemonDefinitionId(definitionId: string): string | undefined {
+  if (!definitionId)
+    return undefined
+  if (daemonDefinitionIds[definitionId])
+    return daemonDefinitionIds[definitionId]
+  return getDefinedProvider(definitionId) || daemonOnlyDefinitionIds[definitionId] ? definitionId : undefined
+}
+
 export const useProviderCatalogStore = defineStore('provider-catalog', () => {
   const defs = computed(() => listProviders())
   const configs = ref<Record<string, ProviderCatalogProvider>>({})
@@ -41,6 +62,7 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
             // A daemon row created by another client may not have a local
             // definition: `info.id` is a row id, not a registry definition id.
             definitionId: existing?.definitionId ?? '',
+            daemonKind: info.kind,
             name: existing?.name ?? info.id,
             config: existing?.config ?? {},
             validated: existing?.validated ?? false,
@@ -85,10 +107,11 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
 
     if (hasDaemonCardMetadata()) {
       try {
+        const daemonDefinitionId = toDaemonDefinitionId(definitionId)
         await saveDaemonProvider({
           id,
           kind: toDaemonProviderKind(definitionId),
-          definitionId,
+          ...(daemonDefinitionId ? { definitionId: daemonDefinitionId } : {}),
           enabled: true,
           model: String(initialConfig.model ?? ''),
           baseUrl: String(initialConfig.baseUrl ?? ''),
@@ -133,11 +156,12 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
 
     if (hasDaemonCardMetadata()) {
       try {
+        const daemonDefinitionId = toDaemonDefinitionId(provider.definitionId)
         const payload: Record<string, any> = {
           id: providerId,
-          kind: toDaemonProviderKind(provider.definitionId),
-          ...(provider.definitionId ? { definitionId: provider.definitionId } : {}),
-          enabled: provider.enabled ?? true,
+          kind: provider.daemonKind ?? toDaemonProviderKind(provider.definitionId),
+          ...(daemonDefinitionId ? { definitionId: daemonDefinitionId } : {}),
+          ...(provider.enabled === undefined ? {} : { enabled: provider.enabled }),
           model: String(newConfig.model ?? ''),
           baseUrl: String(newConfig.baseUrl ?? ''),
         }

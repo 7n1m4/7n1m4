@@ -11,7 +11,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'model_failure.dart';
-import 'stage_background.dart';
 import 'stage_scene_manager.dart';
 
 /// Returns a chosen image path, or null when the user cancels. Injected so
@@ -151,10 +150,9 @@ class _StageScenesScreenState extends State<StageScenesScreen> {
                         onPressed: _busy ||
                                 (widget.cardId == null
                                     ? widget.store.activeId == null
-                                    : widget.store.activeBackgroundFor(
-                                              widget.cardId,
-                                            ) ==
-                                        StageBackground.none)
+                                    : widget.store
+                                            .activeForCard(widget.cardId!) ==
+                                        null)
                             ? null
                             : () => unawaited(
                                   _mutate(
@@ -187,7 +185,8 @@ class _StageScenesScreenState extends State<StageScenesScreen> {
                               final entry = widget.store.entries[index];
                               final active = (widget.cardId == null
                                       ? widget.store.activeId
-                                      : widget.store.activeFor(widget.cardId)) ==
+                                      : widget.store
+                                          .activeForCard(widget.cardId!)) ==
                                   entry.id;
                               return ListTile(
                                 key: ValueKey<String>(entry.id),

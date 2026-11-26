@@ -16,9 +16,9 @@ mod tests {
     use anima_channel::dispatch::{RendererHandlers, RpcContext, RpcError, RpcRegistry};
     use anima_channel::wire::{
         CardCreateRequest, CardGetReply, CardImportReply, CardInfo, CardListReply,
-        CardMetadataReply, CatalogDescriptor, ChatSendReply, ChatSendRequest, ProviderInfo, ProvidersListReply,
-        SessionDeleteReply, SessionDeleteRequest, SessionMediaScrubReply, VaultArchiveApplyReply,
-        VaultArchiveInspectReply, VaultArchiveReply,
+        CardMetadataReply, CatalogDescriptor, ChatSendReply, ChatSendRequest, ProviderInfo,
+        ProvidersListReply, SessionDeleteReply, SessionDeleteRequest, SessionMediaScrubReply,
+        VaultArchiveApplyReply, VaultArchiveInspectReply, VaultArchiveReply,
     };
     use tempfile::tempdir;
 
@@ -466,7 +466,10 @@ mod tests {
                 Ok(vec![])
             }
             async fn stream(&self, req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
-                self.routed.lock().unwrap().push((self.id().to_string(), req.model));
+                self.routed
+                    .lock()
+                    .unwrap()
+                    .push((self.id().to_string(), req.model));
                 Ok(Box::pin(stream::iter(vec![
                     Ok(ChatChunk::text("routed")),
                     Ok(ChatChunk::finish("stop")),
@@ -876,10 +879,7 @@ mod tests {
                 "cards.metadata.set",
                 serde_json::json!({ "id": "c1", "liked": true, "bookmarked": false }),
             ),
-            (
-                "sessions.delete",
-                serde_json::json!({ "session_id": "s1" }),
-            ),
+            ("sessions.delete", serde_json::json!({ "session_id": "s1" })),
             ("sessions.import", serde_json::json!({ "jsonl": "" })),
         ] {
             let err = dispatch(&fixture, method, &payload)
@@ -960,10 +960,7 @@ mod tests {
         send(
             &fixture,
             "scrub-image-session",
-            &format!(
-                "here is an image: data:image/png;base64,{}",
-                "A".repeat(96)
-            ),
+            &format!("here is an image: data:image/png;base64,{}", "A".repeat(96)),
         );
         wait_for_history(&fixture, "scrub-image-session", 2);
         let report: SessionMediaScrubReply = serde_json::from_value(call(
@@ -976,12 +973,8 @@ mod tests {
         assert!(report.bytes_extracted > 0);
         assert_eq!(report.sessions_scanned, 1);
 
-        let err = dispatch(
-            &fixture,
-            "sessions.media.scrub",
-            &serde_json::json!({}),
-        )
-        .expect_err("missing create_backup must be rejected");
+        let err = dispatch(&fixture, "sessions.media.scrub", &serde_json::json!({}))
+            .expect_err("missing create_backup must be rejected");
         assert_eq!(err.code(), "rpc_handler_error");
     }
 
@@ -1045,8 +1038,7 @@ mod tests {
             "display-model.resolve",
             serde_json::json!({ "id": "model-1" }),
         );
-        let catalog: CatalogDescriptor =
-            serde_json::from_value(resolved).unwrap();
+        let catalog: CatalogDescriptor = serde_json::from_value(resolved).unwrap();
         assert_eq!(catalog.id, "model-1");
 
         let err = dispatch(
@@ -1062,22 +1054,50 @@ mod tests {
         let fixture = isolated_gateway();
         enable_actions(&fixture);
         let append = |content: &str| -> String {
-            let reply = call(&fixture, "journal.append", serde_json::json!({ "content": content }));
+            let reply = call(
+                &fixture,
+                "journal.append",
+                serde_json::json!({ "content": content }),
+            );
             reply["id"].as_str().unwrap().to_string()
         };
         let removed = append("user asked to forget this");
         let _kept = append("this entry stays");
         let search = |query: &str| -> serde_json::Value {
-            call(&fixture, "journal.search", serde_json::json!({ "query": query }))
+            call(
+                &fixture,
+                "journal.search",
+                serde_json::json!({ "query": query }),
+            )
         };
-        assert_eq!(search("forget this")["entries"].as_array().unwrap().len(), 1);
-
-        let deleted = call(&fixture, "journal.delete", serde_json::json!({ "id": &removed }));
-        assert_eq!(deleted["deleted"], true);
-        assert!(search("forget this")["entries"].as_array().unwrap().is_empty());
-        assert_eq!(search("this entry stays")["entries"].as_array().unwrap().len(), 1);
         assert_eq!(
-            call(&fixture, "journal.delete", serde_json::json!({ "id": &removed }))["deleted"],
+            search("forget this")["entries"].as_array().unwrap().len(),
+            1
+        );
+
+        let deleted = call(
+            &fixture,
+            "journal.delete",
+            serde_json::json!({ "id": &removed }),
+        );
+        assert_eq!(deleted["deleted"], true);
+        assert!(search("forget this")["entries"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            search("this entry stays")["entries"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            call(
+                &fixture,
+                "journal.delete",
+                serde_json::json!({ "id": &removed })
+            )["deleted"],
             false,
             "delete is idempotent"
         );
@@ -1101,7 +1121,11 @@ mod tests {
             );
         }
         let listed = call(&fixture, "stmm.list", serde_json::json!({}));
-        assert_eq!(listed["summaries"].as_array().unwrap().len(), 50, "legacy default stays");
+        assert_eq!(
+            listed["summaries"].as_array().unwrap().len(),
+            50,
+            "legacy default stays"
+        );
         let full = call(
             &fixture,
             "stmm.list",
@@ -1232,12 +1256,26 @@ mod tests {
     fn partial_settings_writes_keep_object_fields_as_objects() {
         let fixture = isolated_gateway();
         enable_actions(&fixture);
-        let first = call(&fixture, "settings.get", serde_json::json!({ "section": "hearing" }));
+        let first = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "hearing" }),
+        );
         let first_settings: serde_json::Value =
             serde_json::from_str(first["settings"].as_str().unwrap()).unwrap();
-        assert_eq!(first_settings["speechProviderSettings"], serde_json::json!({}));
-        assert_eq!(first_settings["transcriptionProviderSettings"], serde_json::json!({}));
-        let first = call(&fixture, "settings.get", serde_json::json!({ "section": "vision" }));
+        assert_eq!(
+            first_settings["speechProviderSettings"],
+            serde_json::json!({})
+        );
+        assert_eq!(
+            first_settings["transcriptionProviderSettings"],
+            serde_json::json!({})
+        );
+        let first = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "vision" }),
+        );
         let first_settings: serde_json::Value =
             serde_json::from_str(first["settings"].as_str().unwrap()).unwrap();
         assert_eq!(first_settings["activeAdvanced"], serde_json::json!({}));
@@ -1247,11 +1285,21 @@ mod tests {
             "settings.set",
             serde_json::json!({ "section": "hearing", "settings": { "vadThreshold": 0.8 } }),
         );
-        let after = call(&fixture, "settings.get", serde_json::json!({ "section": "hearing" }));
+        let after = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "hearing" }),
+        );
         let after_settings: serde_json::Value =
             serde_json::from_str(after["settings"].as_str().unwrap()).unwrap();
-        assert_eq!(after_settings["speechProviderSettings"], serde_json::json!({}));
-        assert_eq!(after_settings["transcriptionProviderSettings"], serde_json::json!({}));
+        assert_eq!(
+            after_settings["speechProviderSettings"],
+            serde_json::json!({})
+        );
+        assert_eq!(
+            after_settings["transcriptionProviderSettings"],
+            serde_json::json!({})
+        );
         assert_eq!(after_settings["vadThreshold"], 0.8);
 
         call(
@@ -1259,7 +1307,11 @@ mod tests {
             "settings.set",
             serde_json::json!({ "section": "vision", "settings": { "contextWindow": 3 } }),
         );
-        let after = call(&fixture, "settings.get", serde_json::json!({ "section": "vision" }));
+        let after = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "vision" }),
+        );
         let after_settings: serde_json::Value =
             serde_json::from_str(after["settings"].as_str().unwrap()).unwrap();
         assert_eq!(after_settings["activeAdvanced"], serde_json::json!({}));
@@ -1284,18 +1336,9 @@ mod tests {
         // holds the process-global config path deadlocks fixture setup.
         enable_actions(&gated);
         for (section, settings) in [
-            (
-                "speech",
-                serde_json::json!({ "rate": "fast" }),
-            ),
-            (
-                "hearing",
-                serde_json::json!({ "autoSendDelay": "soon" }),
-            ),
-            (
-                "vision",
-                serde_json::json!({ "contextWindow": "many" }),
-            ),
+            ("speech", serde_json::json!({ "rate": "fast" })),
+            ("hearing", serde_json::json!({ "autoSendDelay": "soon" })),
+            ("vision", serde_json::json!({ "contextWindow": "many" })),
         ] {
             let err = dispatch(
                 &gated,
@@ -1334,9 +1377,12 @@ mod tests {
             let token_released = !THREAD_HAS_FIXTURE.with(Cell::get);
             let _ = tx.send((message, token_released));
         });
-        let (message, token_released) = rx.recv_timeout(Duration::from_secs(10))
+        let (message, token_released) = rx
+            .recv_timeout(Duration::from_secs(10))
             .expect("second isolated_gateway() must fail fast instead of deadlocking");
-        worker.join().expect("fixture worker must not panic outside catch_unwind");
+        worker
+            .join()
+            .expect("fixture worker must not panic outside catch_unwind");
         assert_eq!(message, SECOND_FIXTURE_PANIC);
         assert!(token_released, "first fixture must drop cleanly");
         assert!(
@@ -1344,5 +1390,4 @@ mod tests {
             "a rejected second fixture must not poison ENV_LOCK"
         );
     }
-
 }

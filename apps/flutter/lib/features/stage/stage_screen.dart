@@ -90,7 +90,8 @@ class StageScreen extends StatefulWidget {
 class _StageScreenState extends State<StageScreen> {
   late final ModelBackendRegistry _backends;
   late final ModelAssetResolver _resolver;
-  late final StageRenderState _render;
+  late StageRenderState _render;
+  StageRenderState? _boundRender;
   late StageControlStripState _strip;
   StageRenderStateBinding? _binding;
   StreamSubscription<LipSyncRmsData>? _frameSubscription;
@@ -116,6 +117,7 @@ class _StageScreenState extends State<StageScreen> {
         );
     _strip = widget.stripState ?? StageControlStripState();
     _render.addListener(_onRenderChanged);
+    _boundRender = _render;
     _binding = StageRenderStateBinding(client: widget.client, state: _render);
     final frames = widget.frames;
     if (frames != null) _frameSubscription = frames.listen(_render.applyFrame);
@@ -134,7 +136,22 @@ class _StageScreenState extends State<StageScreen> {
       _render.setPaused(widget.paused!);
     }
     if (!identical(oldWidget.render, widget.render) && widget.render != null) {
+      _render.removeListener(_onRenderChanged);
+      if (oldWidget.render == null) _render.dispose();
       _render = widget.render!;
+      _render.addListener(_onRenderChanged);
+      _boundRender = _render;
+      _binding?.dispose();
+      _binding = StageRenderStateBinding(client: widget.client, state: _render);
+      _frameSubscription?.cancel();
+      _frameSubscription = widget.frames?.listen(_render.applyFrame);
+      if (widget.paused != null) _render.setPaused(widget.paused!);
+      if (widget.background != null) {
+        _render.setBackground(widget.background!);
+      }
+      if (widget.captionStyle != null) {
+        _render.setCaptionStyle(widget.captionStyle!);
+      }
     }
     if (oldWidget.background != widget.background) {
       _render.setBackground(widget.background ?? StageBackground.none);
@@ -153,8 +170,8 @@ class _StageScreenState extends State<StageScreen> {
 
   @override
   void dispose() {
-    _render.removeListener(_onRenderChanged);
-    if (widget.render == null) _render.dispose();
+    _boundRender?.removeListener(_onRenderChanged);
+    if (_boundRender != widget.render) _boundRender?.dispose();
     _frameSubscription?.cancel();
     _binding?.dispose();
     super.dispose();

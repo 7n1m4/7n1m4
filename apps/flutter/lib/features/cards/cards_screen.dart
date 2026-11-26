@@ -35,6 +35,7 @@ class _CardsScreenState extends State<CardsScreen> {
   int? _cardCursor;
   bool _cardsTruncated = false;
   bool _loadingMore = false;
+  int _loadGeneration = 0;
   Map<String, dynamic>? _detail;
   ({String id, bool liked, bool bookmarked})? _metadata;
   bool _metadataBusy = false;
@@ -61,42 +62,51 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     _setBusy(true);
     setState(() => _error = null);
     try {
       final page = await widget.client.cardsListPage();
-      if (mounted) setState(() {
-        _cards = page.items.toList();
-        _cardsTruncated = page.truncated;
-        _cardCursor = page.nextCursor;
-      });
+      if (mounted && generation == _loadGeneration) {
+        setState(() {
+          _cards = page.items.toList();
+          _cardsTruncated = page.truncated;
+          _cardCursor = page.nextCursor;
+          _loadingMore = false;
+        });
+      }
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = e.message);
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _busy = false);
+      }
     }
   }
 
   Future<void> _loadMore() async {
     final cursor = _cardCursor;
+    final generation = _loadGeneration;
     if (cursor == null || _loadingMore) return;
     setState(() => _loadingMore = true);
     try {
       final page = await widget.client.cardsListPage(cursor: cursor);
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _cardsTruncated = page.truncated;
         _cardCursor = page.nextCursor;
-        final existing = _cards.toList();
-        _cards
-          ..clear()
-          ..addAll(page.items)
-          ..addAll(existing);
+        _cards.addAll(page.items);
       });
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = e.message);
+      }
     } finally {
-      if (mounted) setState(() => _loadingMore = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 

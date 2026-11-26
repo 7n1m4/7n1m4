@@ -106,6 +106,9 @@ class StageSceneStore {
   String? activeFor(String? cardId) =>
       (cardId == null ? _activeId : _activeByCard[cardId]) ?? _activeId;
 
+  /// Per-card selection only; never falls back to the library-wide scene.
+  String? activeForCard(String cardId) => _activeByCard[cardId];
+
   /// The backdrop for [cardId]: its own scene when set, otherwise the library
   /// default. One card's choice never overwrites another's.
   StageBackground activeBackgroundFor(String? cardId) {

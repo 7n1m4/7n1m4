@@ -22,6 +22,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   int? _sessionCursor;
   bool _sessionsTruncated = false;
   bool _loadingMore = false;
+  int _loadGeneration = 0;
   bool _busy = false;
   String? _error;
   String? _status;
@@ -40,6 +41,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     setState(() {
       _busy = true;
       _error = null;
@@ -47,11 +49,14 @@ class _SessionsScreenState extends State<SessionsScreen> {
     try {
       final coreReply = await widget.client.call('core.status');
       if (!coreReply.ok) {
-        setState(() => _error = coreReply.error?.message ?? 'core.status failed');
+        if (mounted && generation == _loadGeneration) {
+          setState(() => _error = coreReply.error?.message ?? 'core.status failed');
+        }
         return;
       }
       final vaultReply = await widget.client.call('vault.status');
       final page = await widget.client.sessionsListPage();
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _core = (coreReply.data is Map<String, dynamic>) ? coreReply.data as Map<String, dynamic> : null;
         _vault = (vaultReply.ok && vaultReply.data is Map<String, dynamic>)
@@ -60,34 +65,40 @@ class _SessionsScreenState extends State<SessionsScreen> {
         _sessions = page.items.toList();
         _sessionsTruncated = page.truncated;
         _sessionCursor = page.nextCursor;
+        _loadingMore = false;
       });
     } on DaemonClientException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = e.message);
+      }
     } finally {
-      setState(() => _busy = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _busy = false);
+      }
     }
   }
 
   Future<void> _loadMore() async {
     final cursor = _sessionCursor;
+    final generation = _loadGeneration;
     if (cursor == null || _loadingMore) return;
     setState(() => _loadingMore = true);
     try {
       final page = await widget.client.sessionsListPage(cursor: cursor);
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _sessionsTruncated = page.truncated;
         _sessionCursor = page.nextCursor;
-        final existing = _sessions.toList();
-        _sessions
-          ..clear()
-          ..addAll(page.items)
-          ..addAll(existing);
+        _sessions.addAll(page.items);
       });
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = e.message);
+      }
     } finally {
-      if (mounted) setState(() => _loadingMore = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 

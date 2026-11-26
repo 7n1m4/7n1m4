@@ -90,7 +90,6 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
         .map_err(|_| "invalid settings shape".to_string())
 }
 
-
 settings_sections!(
     ("general", anima_core::settings::GeneralSettings),
     ("chat", anima_core::settings::ChatSettings),
@@ -400,6 +399,13 @@ impl CoreService {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "missing id".to_string())?;
+        // Normalize the wire value once: the definition guard and the save
+        // path must agree on what a kind is, padded or not.
+        let kind_text = payload
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
         if let Some(definition_id) = payload
             .get("definitionId")
             .and_then(|v| v.as_str())
@@ -410,16 +416,15 @@ impl CoreService {
             let def = registry
                 .get(definition_id)
                 .ok_or_else(|| format!("unknown provider definition: {definition_id}"))?;
-            let kind_text = payload.get("kind").and_then(|v| v.as_str());
-            if let Some(kind_text) = kind_text {
+            if let Some(text) = kind_text {
                 let requested: anima_store::ProviderKind =
-                    serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
-                        .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
+                    serde_json::from_value(serde_json::Value::String(text.to_string()))
+                        .map_err(|_| format!("unknown provider kind: {text}"))?;
                 if serde_json::to_string(&requested).ok().as_deref()
                     != Some(&serde_json::to_string(&def.kind).unwrap_or_default())
                 {
                     return Err(format!(
-                        "provider kind {kind_text} does not match definition {definition_id}"
+                        "provider kind {text} does not match definition {definition_id}"
                     ));
                 }
             }
@@ -429,11 +434,6 @@ impl CoreService {
             .map_err(|_| "provider query failed".to_string())?;
         // A PATCH that omits `kind` (e.g. `{id, enabled:false}`) reuses the stored
         // kind; an explicit unknown kind still errors.
-        let kind_text = payload
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
         let kind: anima_store::ProviderKind = match kind_text {
             Some(text) => serde_json::from_value(serde_json::Value::String(text.to_string()))
                 .map_err(|_| format!("unknown provider kind: {text}"))?,
@@ -512,7 +512,9 @@ impl CoreService {
 
     /// Subscribe to the core's internal event bus (used to bridge settings
     /// changes to gateway clients).
-    pub fn subscribe_core_events(&self) -> Option<tokio::sync::broadcast::Receiver<anima_core::CoreEvent>> {
+    pub fn subscribe_core_events(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<anima_core::CoreEvent>> {
         let guard = self.inner.lock().ok()?;
         guard.core.as_ref().map(|core| core.subscribe())
     }
@@ -608,8 +610,9 @@ impl CoreService {
             return Err("store unavailable".to_string());
         };
         let store = core.settings();
-        let settings: anima_core::settings::StageModelSettings =
-            store.load_section::<anima_core::settings::StageModelSettings>().map_err(|_| "load failed".to_string())?;
+        let settings: anima_core::settings::StageModelSettings = store
+            .load_section::<anima_core::settings::StageModelSettings>()
+            .map_err(|_| "load failed".to_string())?;
         settings
             .catalog
             .into_iter()
@@ -1243,12 +1246,21 @@ mod tests {
         ];
         assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
         for ((key, _, _), expected) in SETTINGS_SECTIONS.iter().zip(expected_keys) {
-            assert_eq!(*key, expected, "registry key must not drift or be reordered");
-            assert!(settings_section(key).is_some(), "registered key {key} must resolve");
+            assert_eq!(
+                *key, expected,
+                "registry key must not drift or be reordered"
+            );
+            assert!(
+                settings_section(key).is_some(),
+                "registered key {key} must resolve"
+            );
         }
         assert!(settings_section("chat-provider").is_some());
         for stale in ["active-provider", "active-chat", "activeProvider"] {
-            assert!(settings_section(stale).is_none(), "stale key {stale} must not resolve");
+            assert!(
+                settings_section(stale).is_none(),
+                "stale key {stale} must not resolve"
+            );
         }
     }
 
@@ -1302,7 +1314,9 @@ mod tests {
         assert_eq!(turns.len(), 2);
         assert_eq!(turns[0].content, "first");
         assert_eq!(turns[1].content, "second");
-        assert!(turns.iter().all(|m| m.role == "user" && m.session_id == "atomic"));
+        assert!(turns
+            .iter()
+            .all(|m| m.role == "user" && m.session_id == "atomic"));
 
         // Reopen recomputes counts from disk: exactly one session, two turns.
         let snap = CoreService::open(Some(dir.path().to_path_buf())).snapshot();
@@ -1498,6 +1512,43 @@ mod tests {
         assert!(text.contains("public-model"));
         assert!(text.contains("public-owner"));
         assert!(!text.contains("DISCOVERY-SECRET"));
+    }
+
+    #[test]
+    fn providers_save_padded_kind_matches_definition_and_persists() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let repo = anima_store::ProviderRepo::new(svc.db().unwrap());
+        repo.upsert(&StoredProvider {
+            id: "padded".to_string(),
+            kind: anima_store::ProviderKind::OpenAiCompatible,
+            config: serde_json::json!({ "model": "old-model" }),
+            enabled: true,
+            updated_at: 1,
+        })
+        .unwrap();
+
+        svc.providers_save(&serde_json::json!({
+            "id": "padded",
+            "definitionId": "openai",
+            "kind": "  open-ai-compatible \n",
+            "model": "new-model",
+        }))
+        .expect("padded kind must pass the definition guard");
+
+        let stored = repo.get("padded").unwrap().unwrap();
+        assert_eq!(stored.kind, anima_store::ProviderKind::OpenAiCompatible);
+        assert_eq!(stored.config["model"], "new-model");
+
+        // Without a definitionId the same padded kind already worked; it
+        // must stay valid and keep its error semantics for unknown kinds.
+        let err = svc
+            .providers_save(&serde_json::json!({
+                "id": "padded",
+                "kind": "  unknown \n",
+            }))
+            .expect_err("unknown kind still errors");
+        assert!(err.contains("unknown provider kind"), "{err}");
     }
 
     #[test]
@@ -1865,14 +1916,19 @@ mod tests {
     fn settings_set_merges_partial_section_without_clobbering_other_keys() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
-        svc.settings_set("captions", serde_json::json!({
-            "enabled": true,
-            "fontSize": 140.0,
-            "opacity": 55.0,
-            "docking": "bottom",
-        })).unwrap();
+        svc.settings_set(
+            "captions",
+            serde_json::json!({
+                "enabled": true,
+                "fontSize": 140.0,
+                "opacity": 55.0,
+                "docking": "bottom",
+            }),
+        )
+        .unwrap();
         // A second client edits one field of the section it loaded earlier.
-        svc.settings_set("captions", serde_json::json!({ "opacity": 20.0 })).unwrap();
+        svc.settings_set("captions", serde_json::json!({ "opacity": 20.0 }))
+            .unwrap();
         let reply = svc.settings_get("captions").unwrap();
         let value: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
         assert_eq!(value["enabled"], true);
@@ -1885,22 +1941,34 @@ mod tests {
     fn settings_set_keeps_unknown_wire_keys_out_of_the_stored_section() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
-        svc.settings_set("general", serde_json::json!({
-            "language": "ja",
-            "futureField": "must-not-be-persisted",
-        })).unwrap();
+        svc.settings_set(
+            "general",
+            serde_json::json!({
+                "language": "ja",
+                "futureField": "must-not-be-persisted",
+            }),
+        )
+        .unwrap();
         let reply = svc.settings_get("general").unwrap();
-        assert!(!reply.settings.contains("futureField"), "{}", reply.settings);
+        assert!(
+            !reply.settings.contains("futureField"),
+            "{}",
+            reply.settings
+        );
     }
 
     #[test]
     fn consciousness_selection_is_authoritative_for_chat_provider() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
-        svc.settings_set("consciousness", serde_json::json!({
-            "activeProvider": "chosen",
-            "activeModel": "chosen-model",
-        })).unwrap();
+        svc.settings_set(
+            "consciousness",
+            serde_json::json!({
+                "activeProvider": "chosen",
+                "activeModel": "chosen-model",
+            }),
+        )
+        .unwrap();
         let read = |section: &str| -> serde_json::Value {
             let reply = svc.settings_get(section).unwrap();
             serde_json::from_str(&reply.settings).unwrap()
@@ -1908,14 +1976,22 @@ mod tests {
         assert_eq!(read("chat-provider")["activeProvider"], "chosen");
         assert_eq!(read("chat-provider")["activeModel"], "chosen-model");
         // Explicit chat-provider writes are mirrored to consciousness too.
-        svc.settings_set("chat-provider", serde_json::json!({
-            "activeProvider": "other",
-            "activeModel": "other-model",
-        })).unwrap();
+        svc.settings_set(
+            "chat-provider",
+            serde_json::json!({
+                "activeProvider": "other",
+                "activeModel": "other-model",
+            }),
+        )
+        .unwrap();
         assert_eq!(read("consciousness")["activeProvider"], "other");
         assert_eq!(read("consciousness")["activeModel"], "other-model");
         // A partial edit still preserves the authoritative model from the twin.
-        svc.settings_set("consciousness", serde_json::json!({ "activeProvider": "third" })).unwrap();
+        svc.settings_set(
+            "consciousness",
+            serde_json::json!({ "activeProvider": "third" }),
+        )
+        .unwrap();
         assert_eq!(read("chat-provider")["activeProvider"], "third");
         assert_eq!(read("chat-provider")["activeModel"], "other-model");
     }
@@ -1928,10 +2004,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().to_path_buf();
         let svc = CoreService::open(Some(path.clone()));
-        svc.settings_set("chat-provider", serde_json::json!({
-            "activeProvider": "before",
-            "activeModel": "before-model",
-        })).unwrap();
+        svc.settings_set(
+            "chat-provider",
+            serde_json::json!({
+                "activeProvider": "before",
+                "activeModel": "before-model",
+            }),
+        )
+        .unwrap();
         // Give the twin row a future timestamp. Both typed merges succeed, but
         // the twin's upsert is rejected inside the transaction by the same
         // staleness guard `SettingsRepo::set` uses. A sequential writer would
@@ -1967,26 +2047,35 @@ mod tests {
         };
         let primary: serde_json::Value =
             serde_json::from_str(&raw("settings/chat-provider")).unwrap();
-        assert_eq!(primary["activeProvider"], "before", "primary must roll back");
-        assert_eq!(primary["activeModel"], "before-model", "primary must roll back");
+        assert_eq!(
+            primary["activeProvider"], "before",
+            "primary must roll back"
+        );
+        assert_eq!(
+            primary["activeModel"], "before-model",
+            "primary must roll back"
+        );
     }
 
     #[test]
     fn providers_save_rejects_unknown_provider_definition() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
-        let err = svc.providers_save(&serde_json::json!({
-            "id": "p1",
-            "kind": "open-ai-compatible",
-            "definitionId": "not-a-real-definition",
-        })).unwrap_err();
+        let err = svc
+            .providers_save(&serde_json::json!({
+                "id": "p1",
+                "kind": "open-ai-compatible",
+                "definitionId": "not-a-real-definition",
+            }))
+            .unwrap_err();
         assert!(err.contains("not-a-real-definition"), "{err}");
         assert!(svc.providers_list().unwrap().providers.is_empty());
         svc.providers_save(&serde_json::json!({
             "id": "p1",
             "kind": "open-ai-compatible",
             "definitionId": "openai",
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(svc.providers_list().unwrap().providers.len(), 1);
     }
 }

@@ -4,6 +4,7 @@
 // update and delete all go through the production DaemonClient wrappers, so
 // these tests fail if a payload shape or a UI transition drifts.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,11 @@ import 'support/fakes.dart';
 
 /// One recorded RPC: the verb and the exact payload the client sent.
 typedef _Call = ({String action, Map<String, dynamic>? payload});
+
+class _DeferredReply implements Exception {
+  const _DeferredReply(this.future);
+  final Future<RpcReply> future;
+}
 
 class _RecordingCardsClient extends FakeChatClient {
   final List<_Call> calls = <_Call>[];
@@ -31,7 +37,13 @@ class _RecordingCardsClient extends FakeChatClient {
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     final handler = onCall;
-    if (handler != null) return handler(action, payload);
+    if (handler != null) {
+      try {
+        return handler(action, payload);
+      } on _DeferredReply catch (deferred) {
+        return await deferred.future;
+      }
+    }
 
     calls.add((action: action, payload: payload));
     final data = _replyData(action, payload);
@@ -571,5 +583,80 @@ void main() {
     await tester.pump();
     expect(find.widgetWithText(ListTile, 'Card Two'), findsOneWidget);
     expect(more, findsNothing);
+  });
+  testWidgets('older cards append after newer rows', (tester) async {
+    final client = _RecordingCardsClient()..truncatedList = true;
+    addTearDown(client.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final loaded = tester.widgetList<ListTile>(find.byType(ListTile))
+        .map((tile) => (tile.title as Text).data)
+        .toList();
+    expect(loaded.indexOf('Card One'), lessThan(loaded.indexOf('Card Two')));
+  });
+  testWidgets('a refresh during load-more discards the stale page', (
+    tester,
+  ) async {
+    final client = _RecordingCardsClient()..truncatedList = true;
+    addTearDown(client.dispose);
+    final oldPage = Completer<RpcReply>();
+    client.onCall = (action, payload) {
+      if (action == 'cards.list' && payload?['cursor'] != null) {
+        throw _DeferredReply(oldPage.future);
+      }
+      client.calls.add((action: action, payload: payload));
+      final data = client._replyData(action, payload);
+      return RpcReply(
+        action: action,
+        ok: data != null,
+        data: data ?? <String, dynamic>{},
+      );
+    };
+    addTearDown(() {
+      if (!oldPage.isCompleted) oldPage.complete(const RpcReply(action: 'cards.list', ok: true, data: <String, dynamic>{}));
+    });
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    await tester.pump();
+
+    tester.widget<IconButton>(find.descendant(
+      of: find.byType(AppBar),
+      matching: find.byType(IconButton),
+    )).onPressed!();
+    await tester.pump();
+    await tester.pump();
+    oldPage.complete(RpcReply(
+      action: 'cards.list',
+      ok: true,
+      data: <String, dynamic>{
+        'cards': <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'card-2', 'name': 'Card Two'},
+        ],
+        'truncated': false,
+      },
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.widgetWithText(ListTile, 'Card Two'), findsNothing);
+    expect(find.widgetWithText(ListTile, 'Card One'), findsOneWidget);
   });
 }

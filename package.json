@@ -52,6 +52,8 @@
     "test:mcp-registry": "tsx scripts/tests/test-mcp-registry-health.ts",
     "test:keyless-providers": "tsx scripts/test-keyless-providers.ts",
     "test:catalog:audit": "node scripts/audit-test-catalog.mjs",
+    "test:write-shrink-guard": "node --test scripts/tests/test-write-shrink-guard.mjs",
+    "test:ci-repo-selection": "node --test scripts/tests/test-ci-repo-selection.mjs",
     "free-ai:sync-platforms": "tsx scripts/sync-free-ai-platforms.ts",
     "i18n:audit": "node scripts/audit-i18n.mjs",
     "lint": "eslint .",

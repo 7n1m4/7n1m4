@@ -53,7 +53,11 @@ class _RecordingMemoryClient extends FakeChatClient {
         ok: true,
         data: <String, dynamic>{
           'summaries': <Map<String, dynamic>>[
-            <String, dynamic>{'day': '2026-11-25', 'content': 'A summary'},
+            <String, dynamic>{
+              'id': 'summary-1',
+              'day': '2026-11-25',
+              'content': 'A summary',
+            },
           ],
         },
       );
@@ -220,7 +224,7 @@ void main() {
       'stmm.delete',
       'journal.delete',
     ]);
-    expect(client.deletes.first.payload, <String, dynamic>{'id': '2026-11-25'});
+    expect(client.deletes.first.payload, <String, dynamic>{'id': 'summary-1'});
     expect(client.deletes.last.payload, <String, dynamic>{'id': 'e1'});
   });
 }

@@ -122,9 +122,8 @@ pub use wire::{
     GatewayAuthReply, GatewayClientFrame, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
     HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData, ModuleAuthData,
     PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionExportReply,
-    SettingsChangedData,
-    SessionImportReply, SessionInfo, StatusChangedData, StmmSummary, TokenDeltaData,
-    CANONICAL_EMOTION_KEYS,
+    SessionImportReply, SessionInfo, SettingsChangedData, StatusChangedData, StmmSummary,
+    TokenDeltaData, CANONICAL_EMOTION_KEYS,
 };
 pub use ws::{accept_key, encode_frame, Frame, FrameDecoder, OP_CLOSE, OP_PING, OP_PONG, OP_TEXT};
 

@@ -77,6 +77,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<void> _deleteSummary(Map<String, dynamic> summary) async {
+    final id = summary['id']?.toString() ?? '';
     final day = summary['day']?.toString() ?? '';
     final confirmed = await showDialog<bool>(
       context: context,
@@ -97,10 +98,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      final deleted = await widget.client.stmmDelete(day);
+      final deleted = await widget.client.stmmDelete(id);
       if (!mounted) return;
       setState(() {
-        _status = deleted ? 'Deleted summary for $day' : 'Summary for $day was already gone';
+        _status = deleted
+            ? 'Deleted summary for ${day.isEmpty ? id : day}'
+            : 'Summary for ${day.isEmpty ? id : day} was already gone';
       });
       await _load();
     } on DaemonClientException catch (e) {

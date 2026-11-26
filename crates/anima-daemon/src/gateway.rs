@@ -867,7 +867,8 @@ impl Gateway {
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| "missing section".to_string())?;
                     let mut reply = core.settings_get(section)?;
-                    if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&reply.settings) {
+                    if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&reply.settings)
+                    {
                         let normalized = normalize_settings_shape(section, settings);
                         if let Ok(encoded) = serde_json::to_string(&normalized) {
                             reply.settings = encoded;
@@ -1193,7 +1194,8 @@ impl Gateway {
                                                 let index = *slot;
                                                 *slot += 1;
                                                 pub_clone.token_delta(
-                                                    session, message, delta, index, false, None, None,
+                                                    session, message, delta, index, false, None,
+                                                    None,
                                                 );
                                             }
                                             anima_core::chat::ChatEvent::MessageDone {
@@ -1348,18 +1350,42 @@ impl Gateway {
                         return Err("missing session_id".to_string());
                     }
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
-                    // The client sends the createdAt of the oldest message in
-                    // the previous (newer) page. Walk forward from there and
-                    // keep the tail of the session up to that point, so older
-                    // pages never repeat the turns already shown.
-                    let before = value.get("cursor").and_then(|v| v.as_i64());
+                    // The cursor is the composite `(createdAt, rowId)` of the
+                    // oldest turn already shown, so ties can be partitioned.
+                    // A legacy numeric cursor only carries a timestamp and
+                    // stays exclusive at that timestamp: every row sharing it
+                    // is dropped, exactly as before.
+                    let before = match value.get("cursor") {
+                        Some(v) if v.is_number() => v
+                            .as_i64()
+                            .or_else(|| v.as_u64().and_then(|n| i64::try_from(n).ok()))
+                            .map(|created_at| (created_at, 0)),
+                        Some(v) => {
+                            let created_at = v
+                                .get("createdAt")
+                                .or_else(|| v.get("created_at"))
+                                .and_then(|v| v.as_i64());
+                            let rowid = v
+                                .get("rowId")
+                                .or_else(|| v.get("rowid"))
+                                .and_then(|v| v.as_i64());
+                            match (created_at, rowid) {
+                                (Some(created_at), Some(rowid)) => Some((created_at, rowid)),
+                                // Object without a rowId degrades to the legacy
+                                // whole-timestamp cursor.
+                                (Some(created_at), None) => Some((created_at, 0)),
+                                _ => None,
+                            }
+                        }
+                        None => None,
+                    };
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::MessageRepo::new(db);
-                    let mut rows: Vec<anima_store::StoredMessage> = Vec::new();
+                    // `list_page` only walks forward, so paging backwards means
+                    // walking bounded pages from the start and keeping the
+                    // newest rows strictly before the composite cursor.
+                    let mut rows: Vec<(anima_store::StoredMessage, i64)> = Vec::new();
                     let mut page_cursor: Option<(i64, i64)> = None;
-                    // Bound the walk: a crafted cursor with many rows sharing
-                    // its createdAt must not keep the handler iterating. Each
-                    // step fetches at most `limit + 1` rows.
                     const MAX_HISTORY_PAGE_ITERATIONS: usize = 10;
                     let mut iterations = 0;
                     let mut hit_cap = false;
@@ -1369,19 +1395,22 @@ impl Gateway {
                             .list_page(session_id, limit + 1, page_cursor)
                             .map_err(|e| e.to_string())?;
                         let short = page.len() < limit + 1;
-                        page_cursor = page.last().map(|(m, rowid)| (m.created_at, *rowid));
-                        let reached_cursor = page_cursor.is_some_and(|(t, _)| {
-                            before.is_some_and(|cutoff| t >= cutoff)
-                        });
-                        for (m, _) in page {
-                            if before.is_some_and(|cutoff| m.created_at >= cutoff) {
-                                continue;
+                        let mut reached_cursor = false;
+                        for (m, rowid) in page {
+                            if before.is_some_and(|cutoff| (m.created_at, rowid) >= cutoff) {
+                                reached_cursor = true;
+                                break;
                             }
-                            rows.push(m);
+                            rows.push((m, rowid));
                         }
-                        if short || reached_cursor {
+                        if reached_cursor || short {
                             break;
                         }
+                        let Some(next) = rows.last().map(|(m, rowid)| (m.created_at, *rowid))
+                        else {
+                            break;
+                        };
+                        page_cursor = Some(next);
                         if iterations == MAX_HISTORY_PAGE_ITERATIONS {
                             hit_cap = true;
                         }
@@ -1392,15 +1421,19 @@ impl Gateway {
                     rows.reverse();
                     rows.truncate(limit);
                     rows.reverse();
+                    let next_cursor = rows.first().map(|(m, rowid)| {
+                        serde_json::json!({ "createdAt": m.created_at, "rowId": rowid })
+                    });
                     let messages: Vec<serde_json::Value> = rows
                         .into_iter()
-                        .map(|m| {
+                        .map(|(m, rowid)| {
                             serde_json::json!({
                                 "id": m.id,
                                 "sessionId": m.session_id,
                                 "role": m.role,
                                 "content": m.content,
                                 "createdAt": m.created_at,
+                                "rowId": rowid,
                                 "metadata": m.metadata,
                             })
                         })
@@ -1410,6 +1443,7 @@ impl Gateway {
                         "messages": messages,
                         "limit": limit,
                         "truncated": truncated,
+                        "cursor": next_cursor,
                     }))
                 }),
             );
@@ -1456,9 +1490,8 @@ impl Gateway {
                             .iter()
                             .enumerate()
                             .map(|(index, block)| {
-                                stmm_upsert_block(block).map_err(|err| {
-                                    format!("invalid block {index}: {err}")
-                                })
+                                stmm_upsert_block(block)
+                                    .map_err(|err| format!("invalid block {index}: {err}"))
                             })
                             .collect::<Result<Vec<_>, _>>()?;
                         let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
@@ -1621,7 +1654,11 @@ impl Gateway {
                     config_path,
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
-                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
                         if id.is_empty() {
                             return Err("missing id".to_string());
                         }
@@ -1648,7 +1685,11 @@ impl Gateway {
                     config_path,
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
-                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                        let id = value
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
                         if id.is_empty() {
                             return Err("missing id".to_string());
                         }
@@ -1679,21 +1720,78 @@ impl Gateway {
                 "cards.list".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
-                    let offset = value
-                        .get("cursor")
-                        .and_then(|v| v.as_u64())
-                        .and_then(|v| usize::try_from(v).ok())
-                        .unwrap_or(0);
-                    let skip = offset.checked_add(limit + 1).unwrap_or(usize::MAX);
-                    let listed = core.card_list(skip)?;
-                    let truncated = listed.len() > offset.saturating_add(limit);
-                    let cards: Vec<_> = listed
-                        .into_iter()
-                        .skip(offset)
-                        .take(limit)
-                        .collect();
-                    let reply = anima_channel::wire::CardListReply { cards, truncated };
-                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                    let cursor = list_cursor(value);
+                    // Read one extra row from SQL: the page is `limit` rows and
+                    // the remainder proves more rows exist. Keyset paging keeps
+                    // its position when a card is created or updated mid-walk;
+                    // a legacy numeric cursor still means an offset.
+                    let mut rows: Vec<(anima_channel::wire::CardInfo, i64, i64)> = db
+                        .with_connection(|conn| {
+                            // The SQL always binds three parameters: offset
+                            // cursors use sentinel values that make the extra
+                            // predicates no-ops.
+                            let where_sql = match cursor {
+                                ListCursor::Keyset(..) => {
+                                    "and (updated_at < ?2 or (updated_at = ?2 and rowid < ?3))"
+                                }
+                                ListCursor::Offset(_) => "and (?2 = ?2 and ?3 = ?3)",
+                            };
+                            let sql = format!(
+                                "select id, name, updated_at, rowid from cards \
+                                 where 1 = 1 {where_sql} \
+                                 order by updated_at desc, rowid desc limit ?1"
+                            );
+                            let fetch_limit = match cursor {
+                                ListCursor::Offset(offset) => {
+                                    offset.saturating_add(limit).saturating_add(1)
+                                }
+                                ListCursor::Keyset(..) => limit + 1,
+                            };
+                            let limit_i64 = limit_i64(fetch_limit);
+                            let (updated_at, rowid) = match cursor {
+                                ListCursor::Keyset(updated_at, rowid) => (updated_at, rowid),
+                                ListCursor::Offset(_) => (0, 0),
+                            };
+                            let mut stmt = conn.prepare(&sql)?;
+                            let rows = stmt.query_map(
+                                anima_store::params![limit_i64, updated_at, rowid],
+                                |row| {
+                                    Ok((
+                                        anima_channel::wire::CardInfo {
+                                            id: row.get(0)?,
+                                            name: row.get(1)?,
+                                        },
+                                        row.get(2)?,
+                                        row.get(3)?,
+                                    ))
+                                },
+                            )?;
+                            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+                        })
+                        .map_err(|e| e.to_string())?;
+                    let (mut rows, truncated) = match cursor {
+                        ListCursor::Offset(offset) => {
+                            let truncated =
+                                rows.len() > offset + limit || rows.is_empty() && offset > 0;
+                            let rows = rows.into_iter().skip(offset).take(limit).collect();
+                            (rows, truncated)
+                        }
+                        ListCursor::Keyset(..) => {
+                            let truncated = rows.len() > limit;
+                            rows.truncate(limit);
+                            (rows, truncated)
+                        }
+                    };
+                    let mut reply = serde_json::to_value(anima_channel::wire::CardListReply {
+                        cards: rows.iter().map(|(card, _, _)| card.clone()).collect(),
+                        truncated,
+                    })
+                    .map_err(|e| e.to_string())?;
+                    if let Some(next) = list_next_cursor(&rows) {
+                        reply["cursor"] = next;
+                    }
+                    Ok(reply)
                 }),
             );
         }
@@ -1837,31 +1935,81 @@ impl Gateway {
                     // `SessionRepo::list()` is unbounded; page it here so one
                     // RPC cannot materialize the whole sessions table.
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
-                    let repo = anima_store::SessionRepo::new(db);
-                    // The store applies `limit + 1` in SQL, so the extra row
-                    // is the only way to know whether more exist.
-                    let offset = value
-                        .get("cursor")
-                        .and_then(|v| v.as_u64())
-                        .and_then(|v| usize::try_from(v).ok())
-                        .unwrap_or(0);
-                    let skip = offset.checked_add(limit + 1).unwrap_or(usize::MAX);
-                    // Read one window past the offset+limit window: the first
-                    // `offset` rows are discarded, the next `limit` are the
-                    // page, and any remainder proves more rows exist.
-                    let listed = repo
-                        .list_recent(skip)
+                    let cursor = list_cursor(value);
+                    // Keyset paging holds its `(updated_at, rowid)` position
+                    // even if a session is created or updated between pages.
+                    // Legacy numeric cursors keep working as offsets.
+                    let mut rows: Vec<(anima_store::StoredSession, i64, i64)> = db
+                        .with_connection(|conn| {
+                            // The SQL always binds three parameters: offset
+                            // cursors use sentinel values that make the extra
+                            // predicates no-ops.
+                            let where_sql = match cursor {
+                                ListCursor::Keyset(..) => {
+                                    "and (updated_at < ?2 or (updated_at = ?2 and rowid < ?3))"
+                                }
+                                ListCursor::Offset(_) => "and (?2 = ?2 and ?3 = ?3)",
+                            };
+                            let sql = format!(
+                                "select id, title, created_at, updated_at, metadata, rowid \
+                                 from sessions where 1 = 1 {where_sql} \
+                                 order by updated_at desc, rowid desc limit ?1"
+                            );
+                            let fetch_limit = match cursor {
+                                ListCursor::Offset(offset) => {
+                                    offset.saturating_add(limit).saturating_add(1)
+                                }
+                                ListCursor::Keyset(..) => limit + 1,
+                            };
+                            let limit_i64 = limit_i64(fetch_limit);
+                            let (updated_at, rowid) = match cursor {
+                                ListCursor::Keyset(updated_at, rowid) => (updated_at, rowid),
+                                ListCursor::Offset(_) => (0, 0),
+                            };
+                            let mut stmt = conn.prepare(&sql)?;
+                            let rows = stmt.query_map(
+                                anima_store::params![limit_i64, updated_at, rowid],
+                                |row| {
+                                    Ok((
+                                        anima_store::StoredSession {
+                                            id: row.get(0)?,
+                                            title: row.get(1)?,
+                                            created_at: row.get(2)?,
+                                            updated_at: row.get(3)?,
+                                            metadata: serde_json::from_str::<serde_json::Value>(
+                                                &row.get::<_, String>(4)?,
+                                            )
+                                            .unwrap_or_else(|_| serde_json::json!({})),
+                                        },
+                                        row.get::<_, i64>(3)?,
+                                        row.get(5)?,
+                                    ))
+                                },
+                            )?;
+                            rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+                        })
                         .map_err(|e| e.to_string())?;
-                    let truncated = listed.len() > offset.saturating_add(limit);
-                    let sessions: Vec<_> = listed
-                        .into_iter()
-                        .skip(offset)
-                        .take(limit)
-                        .collect();
-                    Ok(serde_json::json!({
-                        "sessions": sessions,
+                    let (mut rows, truncated) = match cursor {
+                        ListCursor::Offset(offset) => {
+                            let truncated =
+                                rows.len() > offset + limit || rows.is_empty() && offset > 0;
+                            let rows = rows.into_iter().skip(offset).take(limit).collect();
+                            (rows, truncated)
+                        }
+                        ListCursor::Keyset(..) => {
+                            let truncated = rows.len() > limit;
+                            rows.truncate(limit);
+                            (rows, truncated)
+                        }
+                    };
+                    let mut reply = serde_json::json!({
+                        "sessions": rows.iter().map(|(s, _, _)| s).collect::<Vec<_>>(),
                         "truncated": truncated,
-                    }))
+                    });
+                    if let Some(next) = list_next_cursor(&rows) {
+                        reply["cursor"] = next;
+                    }
+                    Ok(reply)
                 }),
             );
         }
@@ -1990,9 +2138,17 @@ impl Gateway {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("stdio");
                             let mut client = build_mcp_client(value, transport)?;
-                            client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(3),
+                            ));
                             deadline.check(client.initialize())?;
-                            client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(3),
+                            ));
                             let tools = deadline.check(client.tools_list())?;
                             let tools: Vec<serde_json::Value> = tools
                                 .into_iter()
@@ -2131,9 +2287,8 @@ impl Gateway {
                             ));
                             client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
                             client.set_permission_policy(policy);
-                            let init = deadline.check(
-                                client.initialize().map_err(|e| e.to_string()),
-                            )?;
+                            let init =
+                                deadline.check(client.initialize().map_err(|e| e.to_string()))?;
                             client.set_timeout(bounded_client_timeout(
                                 value,
                                 &deadline,
@@ -2236,9 +2391,8 @@ impl Gateway {
                             ));
                             client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
                             client.set_permission_policy(policy);
-                            let init = deadline.check(
-                                client.initialize().map_err(|e| e.to_string()),
-                            )?;
+                            let init =
+                                deadline.check(client.initialize().map_err(|e| e.to_string()))?;
                             client.set_timeout(bounded_client_timeout(
                                 value,
                                 &deadline,
@@ -2315,17 +2469,14 @@ impl Gateway {
                                 &deadline,
                                 Duration::from_secs(10),
                             ));
-                            deadline.check(
-                                client.initialize().map_err(|e| e.to_string()),
-                            )?;
+                            deadline.check(client.initialize().map_err(|e| e.to_string()))?;
                             client.set_timeout(bounded_client_timeout(
                                 value,
                                 &deadline,
                                 Duration::from_secs(10),
                             ));
-                            let sessions = deadline.check(
-                                client.list_sessions().map_err(|e| e.to_string()),
-                            )?;
+                            let sessions = deadline
+                                .check(client.list_sessions().map_err(|e| e.to_string()))?;
                             client.close();
                             let sessions: Vec<serde_json::Value> = sessions
                                 .into_iter()
@@ -2712,7 +2863,10 @@ fn normalize_settings_shape(section: &str, mut settings: serde_json::Value) -> s
     };
     for field in SETTINGS_OBJECT_FIELDS {
         if map.get(*field).is_none_or(|v| v.is_null()) {
-            map.insert((*field).to_string(), serde_json::Value::Object(serde_json::Map::new()));
+            map.insert(
+                (*field).to_string(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
         }
     }
     settings
@@ -2748,6 +2902,46 @@ fn with_summary_transaction(
         Ok(())
     })
     .map_err(|e| e.to_string())
+}
+
+/// A keyset cursor for newest-first list RPCs: `(updated_at, rowid)` of the
+/// last row already returned. A plain number is the legacy offset cursor and
+/// is kept working for older clients.
+enum ListCursor {
+    Keyset(i64, i64),
+    Offset(usize),
+}
+
+fn list_cursor(value: &serde_json::Value) -> ListCursor {
+    match value.get("cursor") {
+        Some(v) => {
+            let i64_field = |object: &serde_json::Value, names: &[&str]| {
+                names
+                    .iter()
+                    .find_map(|name| object.get(*name))
+                    .and_then(|v| v.as_i64())
+            };
+            match (
+                i64_field(v, &["updatedAt", "updated_at"]),
+                i64_field(v, &["rowId", "rowid"]),
+            ) {
+                (Some(updated_at), Some(rowid)) => ListCursor::Keyset(updated_at, rowid),
+                _ => ListCursor::Offset(
+                    v.as_u64()
+                        .and_then(|n| usize::try_from(n).ok())
+                        .unwrap_or(0),
+                ),
+            }
+        }
+        None => ListCursor::Offset(0),
+    }
+}
+
+/// Return the keyset cursor of the last row in `rows`, if any.
+fn list_next_cursor<T>(rows: &[(T, i64, i64)]) -> Option<serde_json::Value> {
+    rows.last().map(
+        |(_, updated_at, rowid)| serde_json::json!({ "updatedAt": updated_at, "rowId": rowid }),
+    )
 }
 
 fn stmm_upsert_block(value: &serde_json::Value) -> Result<anima_store::StoredSummary, String> {
@@ -2833,6 +3027,10 @@ fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
         .clamp(1, RPC_MAX_LIMIT)
 }
 
+fn limit_i64(limit: usize) -> i64 {
+    i64::try_from(limit).unwrap_or(i64::MAX)
+}
+
 /// Domains accepted from clients for a vault archive. `providers` is
 /// deliberately excluded: its rows carry API credentials that must not cross
 /// the gateway wire (the read-only `vault.status` only reports byte counts).
@@ -2853,7 +3051,9 @@ const VAULT_ARCHIVE_MAX_BYTES: u64 =
 
 /// Validate and normalize a client domain list, rejecting unknown and
 /// credential-bearing domains rather than silently dropping them.
-fn vault_archive_selection(domains: &[String]) -> Result<anima_core::vault::VaultSelection, String> {
+fn vault_archive_selection(
+    domains: &[String],
+) -> Result<anima_core::vault::VaultSelection, String> {
     for domain in domains {
         if !VAULT_ARCHIVE_DOMAINS.contains(&domain.as_str()) {
             return Err(format!("unsupported vault archive domain: {domain}"));
@@ -2927,7 +3127,11 @@ fn adopt(source: &Path, dest: &Path) -> io::Result<PathBuf> {
 
 /// `before_rename` lets tests inspect the temp file while it still holds the
 /// token (production passes a no-op).
-fn adopt_with(source: &Path, dest: &Path, before_rename: impl FnOnce(&Path)) -> io::Result<PathBuf> {
+fn adopt_with(
+    source: &Path,
+    dest: &Path,
+    before_rename: impl FnOnce(&Path),
+) -> io::Result<PathBuf> {
     let raw = fs::read_to_string(source)?;
     // Basic validity check: it must parse as a JSON object. We deliberately
     // do not require a token here — load_or_heal decides freshness.
@@ -4646,15 +4850,77 @@ mod tests {
         assert_eq!(got["card"]["data"]["x_unknown"], 42);
     }
 
-    // Contract: cards.list honours an offset cursor so a truncated page can
-    // be continued without repeating cards.
+    // Contract: cards.list uses a keyset cursor so an insertion between pages
+    // neither repeats nor skips cards.
     #[test]
-    fn cards_list_cursor_returns_the_next_page() {
+    fn cards_list_keyset_cursor_survives_interleaved_create() {
         let (gateway, _tmp) = isolated_gateway();
         enable_actions(&gateway);
         let handlers = handlers(&gateway);
         let create = handlers.get("cards.create").unwrap();
+        let mut created_ids = Vec::new();
         for i in 0..3 {
+            let created = create(
+                "cards.create",
+                &serde_json::json!({
+                    "name": format!("Card {i}"),
+                    "document": serde_json::json!({ "name": format!("Card {i}") }),
+                }),
+            )
+            .unwrap();
+            created_ids.push(created["id"].as_str().unwrap().to_string());
+        }
+        let list = handlers.get("cards.list").unwrap();
+        let first = list("cards.list", &serde_json::json!({ "limit": 2 })).unwrap();
+        assert_eq!(first["cards"].as_array().unwrap().len(), 2);
+        assert_eq!(first["truncated"], true);
+        let cursor = first["cursor"].clone();
+        assert!(cursor["updatedAt"].is_i64() && cursor["rowId"].is_i64());
+
+        // A newer card inserted between pages is newer than the cursor, so
+        // keyset paging skips it and continues with the older cards.
+        create(
+            "cards.create",
+            &serde_json::json!({
+                "name": "Late card",
+                "document": serde_json::json!({ "name": "Late card" }),
+            }),
+        )
+        .unwrap();
+
+        let second = list(
+            "cards.list",
+            &serde_json::json!({ "limit": 2, "cursor": cursor }),
+        )
+        .unwrap();
+
+        let second_ids: Vec<_> = second["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(second_ids, vec![created_ids[0].as_str()]);
+        assert_eq!(second["truncated"], false);
+
+        // Legacy numeric cursors still mean an offset into the list.
+        let legacy = list(
+            "cards.list",
+            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+        )
+        .unwrap();
+        assert_eq!(legacy["cards"].as_array().unwrap().len(), 2);
+    }
+
+    // Legacy numeric cursors must fetch past the offset in SQL: an offset
+    // larger than limit+1 used to return an empty page despite more rows.
+    #[test]
+    fn cards_list_legacy_offset_beyond_fetch_page_returns_rows() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let create = handlers.get("cards.create").unwrap();
+        for i in 0..120 {
             create(
                 "cards.create",
                 &serde_json::json!({
@@ -4665,31 +4931,13 @@ mod tests {
             .unwrap();
         }
         let list = handlers.get("cards.list").unwrap();
-        let first = list("cards.list", &serde_json::json!({ "limit": 2 })).unwrap();
-        assert_eq!(first["cards"].as_array().unwrap().len(), 2);
-        assert_eq!(first["truncated"], true);
-        let second = list(
+        let reply = list(
             "cards.list",
-            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+            &serde_json::json!({ "limit": 50, "cursor": 50 }),
         )
         .unwrap();
-        assert_eq!(second["cards"].as_array().unwrap().len(), 1);
-        assert_eq!(second["truncated"], false);
-        let first_ids: Vec<_> = first["cards"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|c| c["id"].as_str().unwrap())
-            .collect();
-        let second_ids: Vec<_> = second["cards"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|c| c["id"].as_str().unwrap())
-            .collect();
-        assert_eq!(first_ids.len(), 2);
-        assert_eq!(second_ids.len(), 1);
-        assert!(!first_ids.contains(&second_ids[0]));
+        assert_eq!(reply["cards"].as_array().unwrap().len(), 50);
+        assert_eq!(reply["truncated"], true);
     }
 
     #[test]
@@ -4783,8 +5031,8 @@ mod tests {
             .expect_err("missing session_id must fail");
     }
 
-    // Contract: chat.history uses the oldest returned createdAt as a cursor
-    // so a truncated newest page can be continued backwards in time.
+    // Contract: chat.history returns a composite cursor so a truncated newest
+    // page can be continued backwards in time.
     #[test]
     fn chat_history_cursor_returns_older_turns() {
         let (gateway, _tmp) = isolated_gateway();
@@ -4793,12 +5041,18 @@ mod tests {
         }
         let handlers = handlers(&gateway);
         let h = handlers.get("chat.history").unwrap();
-        let first = h("chat.history", &serde_json::json!({ "session_id": "hc", "limit": 2 })).unwrap();
+        let first = h(
+            "chat.history",
+            &serde_json::json!({ "session_id": "hc", "limit": 2 }),
+        )
+        .unwrap();
         assert_eq!(first["truncated"], true);
         let messages = first["messages"].as_array().unwrap();
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1]["content"], "third");
-        let cursor = messages[0]["createdAt"].as_i64().unwrap();
+        let cursor = first["cursor"].clone();
+        assert_eq!(cursor["createdAt"], messages[0]["createdAt"]);
+        assert_eq!(cursor["rowId"], messages[0]["rowId"]);
         let second = h(
             "chat.history",
             &serde_json::json!({ "session_id": "hc", "limit": 2, "cursor": cursor }),
@@ -4808,6 +5062,61 @@ mod tests {
         assert_eq!(older.len(), 1);
         assert_eq!(older[0]["content"], "first");
         assert_eq!(second["truncated"], false);
+    }
+
+    // Contract: a composite cursor partitions rows that share a timestamp;
+    // legacy numeric cursors remain exclusive at that timestamp.
+    #[test]
+    fn chat_history_composite_cursor_does_not_drop_timestamp_ties() {
+        let (gateway, _tmp) = isolated_gateway();
+        let db = gateway.core.db().unwrap();
+        let seed = gateway.core.chat_send("ties", "seed").unwrap();
+        let shared_ts = seed.created_at;
+        let repo = anima_store::MessageRepo::new(db);
+        for i in 0..4 {
+            repo.insert(&anima_store::StoredMessage {
+                id: format!("tie-{i}"),
+                session_id: "ties".to_string(),
+                role: "user".to_string(),
+                content: format!("turn-{i}"),
+                created_at: shared_ts,
+                metadata: serde_json::Value::Null,
+            })
+            .unwrap();
+        }
+        let h = handlers(&gateway);
+        let h = h.get("chat.history").unwrap();
+        let mut collected: Vec<String> = Vec::new();
+        let mut cursor = serde_json::Value::Null;
+        loop {
+            let mut payload = serde_json::json!({ "session_id": "ties", "limit": 2 });
+            if !cursor.is_null() {
+                payload["cursor"] = cursor.clone();
+            }
+            let reply = h("chat.history", &payload).unwrap();
+            for message in reply["messages"].as_array().unwrap() {
+                collected.push(message["content"].as_str().unwrap().to_string());
+            }
+            cursor = reply["cursor"].clone();
+            if !reply["truncated"].as_bool().unwrap() {
+                break;
+            }
+        }
+        // Pages walk oldest-first in (createdAt, rowId) order.
+        assert_eq!(collected, ["turn-2", "turn-3", "turn-0", "turn-1", "seed"]);
+
+        // A legacy numeric cursor at the shared timestamp skips the whole tie
+        // group, as it did before composite cursors existed.
+        let legacy = h(
+            "chat.history",
+            &serde_json::json!({
+                "session_id": "ties",
+                "limit": 2,
+                "cursor": shared_ts,
+            }),
+        )
+        .unwrap();
+        assert!(legacy["messages"].as_array().unwrap().is_empty());
     }
 
     // A crafted cursor that matches many rows must not pin chat.history in
@@ -5366,10 +5675,10 @@ mod tests {
         assert_eq!(clamped["truncated"], false);
     }
 
-    // Contract: sessions.list honours an offset cursor so a truncated page can
-    // be continued without repeating rows.
+    // Contract: sessions.list uses a keyset cursor so an update between pages
+    // neither repeats nor skips sessions.
     #[test]
-    fn sessions_list_cursor_returns_the_next_page() {
+    fn sessions_list_keyset_cursor_survives_interleaved_update() {
         let (gateway, _tmp) = isolated_gateway();
         let repo = anima_store::SessionRepo::new(gateway.core.db().unwrap());
         for i in 0..3 {
@@ -5380,13 +5689,17 @@ mod tests {
         let first = list("sessions.list", &serde_json::json!({ "limit": 2 })).unwrap();
         assert_eq!(first["sessions"].as_array().unwrap().len(), 2);
         assert_eq!(first["truncated"], true);
+        let cursor = first["cursor"].clone();
+        assert!(cursor["updatedAt"].is_i64() && cursor["rowId"].is_i64());
+
+        // A session updated between pages moves ahead of the cursor; keyset
+        // paging skips it instead of repeating an already returned row.
+        repo.update("s0", Some("bumped"), None).unwrap();
         let second = list(
             "sessions.list",
-            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+            &serde_json::json!({ "limit": 2, "cursor": cursor }),
         )
         .unwrap();
-        assert_eq!(second["sessions"].as_array().unwrap().len(), 1);
-        assert_eq!(second["truncated"], false);
         let first_ids: Vec<_> = first["sessions"]
             .as_array()
             .unwrap()
@@ -5399,9 +5712,36 @@ mod tests {
             .iter()
             .map(|s| s["id"].as_str().unwrap())
             .collect();
-        assert_eq!(first_ids.len(), 2);
-        assert_eq!(second_ids.len(), 1);
-        assert!(!first_ids.contains(&second_ids[0]));
+        assert!(!second_ids.iter().any(|id| first_ids.contains(id)));
+        assert_eq!(second["truncated"], false);
+
+        // Legacy numeric cursors still mean an offset into the list.
+        let legacy = list(
+            "sessions.list",
+            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+        )
+        .unwrap();
+        assert_eq!(legacy["sessions"].as_array().unwrap().len(), 1);
+    }
+
+    // Legacy numeric cursors must fetch past the offset in SQL: an offset
+    // larger than limit+1 used to return an empty page despite more rows.
+    #[test]
+    fn sessions_list_legacy_offset_beyond_fetch_page_returns_rows() {
+        let (gateway, _tmp) = isolated_gateway();
+        let repo = anima_store::SessionRepo::new(gateway.core.db().unwrap());
+        for i in 0..120 {
+            repo.create(&format!("s{i}"), "title").unwrap();
+        }
+        let handlers = handlers(&gateway);
+        let list = handlers.get("sessions.list").unwrap();
+        let reply = list(
+            "sessions.list",
+            &serde_json::json!({ "limit": 50, "cursor": 50 }),
+        )
+        .unwrap();
+        assert_eq!(reply["sessions"].as_array().unwrap().len(), 50);
+        assert_eq!(reply["truncated"], true);
     }
 
     // Contract: `sessions.delete` removes the session and its messages through

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "section": "captions",
+    "seq": 102,
+    "ts_ms": 1700000000900
+  },
+  "topic": "settings.changed",
+  "type": "event"
+}

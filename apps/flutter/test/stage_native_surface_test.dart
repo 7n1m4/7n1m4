@@ -241,4 +241,45 @@ void main() {
     expect(backend.ambientPhases, isEmpty);
   });
 
+  testWidgets('an ambient ticker stays idle under a disabled TickerMode', (
+    tester,
+  ) async {
+    final render = StageRenderState(paused: false);
+    client.onCall = (action, payload) => RpcReply(
+      action: action,
+      ok: true,
+      data: <String, dynamic>{
+        'card': _cardWith(<String, dynamic>{
+          'vrm': <String, dynamic>{'source': 'file', 'file': asset.path},
+        }),
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TickerMode(
+            enabled: false,
+            child: StageScreen(
+              backends: ModelBackendRegistry(<ModelKind, ModelBackend>{
+                ModelKind.vrm: backend,
+              }),
+              resolver: InMemoryResolver(asset),
+              client: client,
+              cardId: 'card-1',
+              render: render,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(render.paused, isFalse);
+    for (var i = 0; i < 4; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(backend.loaded, isNotEmpty);
+    expect(backend.ambientPhases, isEmpty);
+  });
 }

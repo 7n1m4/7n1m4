@@ -156,6 +156,7 @@ jobs:
       - run: pnpm test
       - run: pnpm run test:catalog:audit
       - run: pnpm run test:write-shrink-guard
+      - run: pnpm run test:ci-repo-selection
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

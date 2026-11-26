@@ -185,9 +185,18 @@ mod tests {
             }),
         )
         .expect_err("late invalid block must reject the whole batch");
-        assert!(err.contains("block 1"), "error must name the bad block: {err}");
-        assert!(!err.contains("2026-11"), "error must not echo payload content: {err}");
-        assert!(!err.contains("should not land"), "error must not echo payload content: {err}");
+        assert!(
+            err.contains("block 1"),
+            "error must name the bad block: {err}"
+        );
+        assert!(
+            !err.contains("2026-11"),
+            "error must not echo payload content: {err}"
+        );
+        assert!(
+            !err.contains("should not land"),
+            "error must not echo payload content: {err}"
+        );
 
         let listed =
             handlers.get("stmm.list").unwrap()("stmm.list", &serde_json::json!({ "limit": 10 }))
@@ -232,19 +241,29 @@ mod tests {
         assert!(handlers.get("stmm.delete").unwrap()(
             "stmm.delete",
             &serde_json::json!({ "id": "  " }),
-        ).is_err());
+        )
+        .is_err());
 
         let listed =
             handlers.get("stmm.list").unwrap()("stmm.list", &serde_json::json!({ "limit": 10 }))
                 .unwrap();
-        let ids: Vec<_> = listed["summaries"].as_array().unwrap()
-            .iter().map(|row| row["id"].as_str().unwrap()).collect();
+        let ids: Vec<_> = listed["summaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, vec!["kept"]);
         // A prune-only rebuild must not resurrect the deleted row.
         handlers.get("stmm.rebuild").unwrap()("stmm.rebuild", &serde_json::json!({})).unwrap();
-        let after = handlers.get("stmm.list").unwrap()("stmm.list", &serde_json::json!({})).unwrap();
-        let ids: Vec<_> = after["summaries"].as_array().unwrap()
-            .iter().map(|row| row["id"].as_str().unwrap()).collect();
+        let after =
+            handlers.get("stmm.list").unwrap()("stmm.list", &serde_json::json!({})).unwrap();
+        let ids: Vec<_> = after["summaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, vec!["kept"]);
     }
 
@@ -252,12 +271,13 @@ mod tests {
     fn stmm_delete_is_action_gated() {
         let fixture = isolated_gateway();
         let handlers = verbs(&fixture);
-        let err = handlers.get("stmm.delete").unwrap()(
-            "stmm.delete",
-            &serde_json::json!({ "id": "x" }),
-        )
-        .expect_err("delete must be gated");
-        assert!(err.starts_with(crate::gateway::ACTIONS_DISABLED_PREFIX), "{err}");
+        let err =
+            handlers.get("stmm.delete").unwrap()("stmm.delete", &serde_json::json!({ "id": "x" }))
+                .expect_err("delete must be gated");
+        assert!(
+            err.starts_with(crate::gateway::ACTIONS_DISABLED_PREFIX),
+            "{err}"
+        );
     }
 
     // Contract: numeric fields are clamped, never trusted, and the source

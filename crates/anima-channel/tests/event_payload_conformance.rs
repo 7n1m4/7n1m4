@@ -112,6 +112,11 @@ fn token_delta_fixtures_round_trip() {
         assert_eq!(data.final_, source["final"].as_bool().unwrap());
         assert_eq!(data.seq, source["seq"].as_u64().unwrap());
         assert_eq!(data.ts_ms, source["ts_ms"].as_u64().unwrap());
+        assert_eq!(
+            data.reason.as_deref(),
+            source["reason"].as_str(),
+            "{name}: reason must survive the round trip"
+        );
         if name.ends_with(".final") {
             assert_eq!(data.reason.as_deref(), Some("complete"));
             assert_eq!(source["reason"].as_str(), Some("complete"));
@@ -172,6 +177,20 @@ fn status_changed_fixtures_round_trip() {
         assert_eq!(data.seq, source["seq"].as_u64().unwrap());
         assert_eq!(data.ts_ms, source["ts_ms"].as_u64().unwrap());
     }
+}
+
+#[test]
+fn settings_changed_fixture_round_trip() {
+    let name = "event.settings_changed.captions";
+    let source = event_data(name);
+    let decoded = decode_fixture(name, "settings.changed");
+    let EventPayload::SettingsChanged(data) = decoded else {
+        panic!("{name}: wrong payload variant");
+    };
+    assert_eq!(data.section, source["section"].as_str().unwrap());
+    assert_eq!(data.seq, source["seq"].as_u64().unwrap());
+    assert_eq!(data.ts_ms, source["ts_ms"].as_u64().unwrap());
+    assert!(source.get("settings").is_none(), "no values on the wire");
 }
 
 #[test]

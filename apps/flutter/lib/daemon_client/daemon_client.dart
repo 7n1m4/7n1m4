@@ -416,22 +416,27 @@ class DaemonClient {
 
     // Subscriptions are per-socket: a reconnect lands on a fresh peer with no
     // topics, so re-opt in to every topic this client consumes.
-    unawaited(_subscribeEvents());
+    _subscribeEvents();
   }
 
   /// Best-effort re-subscription after auth (initial connect or reconnect).
-  /// A daemon without event support degrades to an error on the status stream;
-  /// chat itself remains usable.
-  Future<void> _subscribeEvents() async {
+  /// Each topic gets its own request: a daemon that rejects an unknown topic
+  /// must not silence the topics it does support. Failures surface on the
+  /// status stream as non-fatal errors; chat itself remains usable.
+  void _subscribeEvents() {
+    for (final topic in <String>[
+      EventTopic.tokenDelta.wireName,
+      EventTopic.settingsChanged.wireName,
+    ]) {
+      unawaited(_subscribeTopic(topic));
+    }
+  }
+
+  Future<void> _subscribeTopic(String topic) async {
     try {
       final reply = await call(
         'event.subscribe',
-        payload: <String, dynamic>{
-          'topics': <String>[
-            'token.delta',
-            EventTopic.settingsChanged.wireName,
-          ],
-        },
+        payload: <String, dynamic>{'topics': <String>[topic]},
       );
       if (!reply.ok && _wantsConnection) {
         _emit(

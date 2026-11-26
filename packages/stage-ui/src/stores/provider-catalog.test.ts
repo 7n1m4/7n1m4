@@ -122,14 +122,57 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     })
   })
 
+  it('maps local-only definition IDs to daemon IDs before mirroring', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider('minimax-global')
+    expect(mockSaveDaemonProvider).toHaveBeenCalledWith(expect.objectContaining({
+      definitionId: 'minimax',
+    }))
+    expect(provider.definitionId).toBe('minimax-global')
+    await store.commitProviderConfig(provider.id, { model: 'mini' }, { validated: false, validationBypassed: false })
+    expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith(expect.objectContaining({
+      definitionId: 'minimax',
+    }))
+  })
+
+  it('retains the daemon kind and enabled flag when reconciling daemon-only rows', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    mockListDaemonProviders.mockResolvedValueOnce({
+      providers: [{ id: 'daemon-row', kind: 'anthropic', model: 'claude', baseUrl: '', enabled: false, updatedAt: 1 }],
+    })
+    const store = useProviderCatalogStore()
+    await store.fetchList()
+    expect(store.configs['daemon-row']).toMatchObject({ definitionId: '', enabled: false })
+    await store.commitProviderConfig('daemon-row', { model: 'claude' }, { validated: false, validationBypassed: false })
+    expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
+      id: 'daemon-row',
+      kind: 'anthropic',
+      enabled: false,
+      model: 'claude',
+      baseUrl: '',
+    })
+  })
+
   it('fetchList keeps the daemon enabled flag for existing local configs', async () => {
     mockHasDaemon.mockReturnValue(true)
     const store = useProviderCatalogStore()
     const provider = await store.addProvider(providerOpenAICompatible.id)
     vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ [provider.id]: provider })
+    mockListDaemonProviders.mockResolvedValueOnce({
+      providers: [{ id: provider.id, kind: 'open-ai-compatible', model: '', baseUrl: '', enabled: false, updatedAt: 1 }],
+    })
     await store.fetchList()
-    expect(mockSaveDaemonProvider).not.toHaveBeenCalledWith(expect.objectContaining({ enabled: false }))
-    expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
+    expect(store.configs[provider.id].enabled).toBe(false)
+    await store.commitProviderConfig(provider.id, { model: 'gpt-test' }, { validated: false, validationBypassed: false })
+    expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
+      id: provider.id,
+      kind: 'open-ai-compatible',
+      definitionId: providerOpenAICompatible.id,
+      enabled: false,
+      model: 'gpt-test',
+      baseUrl: '',
+    })
   })
 
   it('fetchList falls back to local configs when the daemon list fails', async () => {
@@ -140,5 +183,29 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     mockListDaemonProviders.mockRejectedValueOnce(new Error('daemon unreachable'))
     await store.fetchList()
     expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
+  })
+
+  it('omits enabled on commit when a cached row has no daemon flag', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const cached = {
+      id: 'stale-row',
+      definitionId: providerOpenAICompatible.id,
+      name: 'cached',
+      config: {},
+      validated: false,
+      validationBypassed: false,
+    }
+    mockListDaemonProviders.mockResolvedValueOnce({ providers: [] })
+    vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ 'stale-row': cached })
+    const store = useProviderCatalogStore()
+    await store.fetchList()
+    await store.commitProviderConfig('stale-row', { model: 'gpt-test' }, { validated: false, validationBypassed: false })
+    expect(mockSaveDaemonProvider).toHaveBeenCalledWith({
+      id: 'stale-row',
+      kind: 'open-ai-compatible',
+      definitionId: providerOpenAICompatible.id,
+      model: 'gpt-test',
+      baseUrl: '',
+    })
   })
 })

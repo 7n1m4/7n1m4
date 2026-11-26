@@ -61,6 +61,7 @@ void main() {
       'event.presence_changed.offline': 'presence.changed',
       'event.status_changed.healthy': 'status.changed',
       'event.status_changed.unhealthy': 'status.changed',
+      'event.settings_changed.captions': 'settings.changed',
     };
 
     eventFixtures.forEach((fixtureName, expectedTopic) {

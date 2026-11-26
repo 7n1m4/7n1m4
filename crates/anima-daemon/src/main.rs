@@ -25,14 +25,14 @@ mod events;
 mod gateway;
 #[cfg(test)]
 mod gateway_contract_tests;
-#[cfg(test)]
-mod stmm_upsert_tests;
 mod logging;
 mod observe;
 mod redact;
 mod ring;
 mod screen;
 mod state;
+#[cfg(test)]
+mod stmm_upsert_tests;
 mod wake_facts;
 
 use std::collections::HashMap;
@@ -288,7 +288,7 @@ fn run(gateway_enabled: bool) {
         if let Some(mut core_events) = core_service.subscribe_core_events() {
             let event_publisher = publisher.clone();
             std::thread::spawn(move || {
-                while let Ok(event) = core_events.blocking_recv() {
+                while let Some(event) = recv_core_event(&mut core_events) {
                     if let anima_core::CoreEvent::SettingsChanged { key } = event {
                         let section = key
                             .strip_prefix("settings/")
@@ -518,10 +518,57 @@ fn gateway_apply_audit_detail(reply: &str) -> String {
     format!("hostname={hostname}, token: ***, tls={tls}")
 }
 
+/// Receive the next core event, transparently recovering from a lagged
+/// broadcast receiver. `Lagged` means the shared bus dropped events while we
+/// were behind — not that the stream ended. Only `Closed` terminates it.
+fn recv_core_event(
+    rx: &mut tokio::sync::broadcast::Receiver<anima_core::CoreEvent>,
+) -> Option<anima_core::CoreEvent> {
+    loop {
+        match rx.blocking_recv() {
+            Ok(event) => return Some(event),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::acquire_instance_lock;
     use super::gateway_apply_audit_detail;
+    use super::recv_core_event;
+
+    #[test]
+    fn settings_bridge_recovers_from_lagged_core_events() {
+        let (tx, _owner) = tokio::sync::broadcast::channel(1);
+        let mut rx = tx.subscribe();
+        tx.send(anima_core::CoreEvent::ProvidersChanged).unwrap();
+        tx.send(anima_core::CoreEvent::ProvidersChanged).unwrap();
+        tx.send(anima_core::CoreEvent::SettingsChanged {
+            key: "settings/chat".to_string(),
+        })
+        .unwrap();
+
+        // The receiver is behind by the time it reads, but the stream is
+        // still open: the bridge must see the newest notice, not exit.
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+        ));
+        assert!(matches!(
+            recv_core_event(&mut rx),
+            Some(anima_core::CoreEvent::SettingsChanged { key }) if key == "settings/chat"
+        ));
+    }
+
+    #[test]
+    fn settings_bridge_stops_when_core_events_close() {
+        let (tx, _owner) = tokio::sync::broadcast::channel::<anima_core::CoreEvent>(1);
+        let mut rx = tx.subscribe();
+        drop(tx);
+        assert!(recv_core_event(&mut rx).is_none());
+    }
 
     #[test]
     fn logging_init_is_idempotent() {

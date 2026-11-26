@@ -9,6 +9,8 @@ export interface ProviderCatalogProvider {
   validationBypassed: boolean
   /** Last known daemon enabled flag; local-only rows default to enabled. */
   enabled?: boolean
+  /** Kind reported by the daemon for rows without a local definition. */
+  daemonKind?: string
 }
 
 export const providersRepo = {

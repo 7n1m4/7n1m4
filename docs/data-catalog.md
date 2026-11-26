@@ -253,6 +253,7 @@ interface ProviderCatalogProvider {
   config: Record<string, any>
   validated: boolean
   validationBypassed: boolean
+  enabled?: boolean
 }
 ```
 
@@ -483,6 +484,8 @@ interface ProvisioningSession {
   contextLimitTokens?: number
 }
 ```
+
+### 1.9a Sync Lease / Tombstones
 
 > **Disposition (sync lease):** ARCHIVE as client-runtime bookkeeping (no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
@@ -1320,8 +1323,6 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 
 ### 4.21 Other localStorage Keys
 
-> **Disposition (device keypair):** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
-
 | Key | Type | File |
 | :--- | :--- | :--- |
 | `airi-card-active-id` | `string` (default `'default'`) | `stores/modules/airi-card.ts` |
@@ -1363,7 +1364,7 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `lhack_gemini_res` | `string` | `stores/lhack.ts` |
 | `airi_cc_{sha256hash}` | `string` (JSON, cached color data) | `libs/character-media-resolver.ts` |
 | `airi:debug` | `'1'` (string flag) | `stores/providers/helpers.ts` |
-| `local:peers/device-keypair` | `{ publicKeyHex, privateKeyJwk, createdAt }` (JSON string) | `packages/stage-ui/src/composables/use-peer-embassy.ts` |
+| `local:peers/device-keypair` | `{ publicKeyHex, privateKeyJwk, createdAt }` (JSON string); **Disposition (device keypair):** ARCHIVE (TS-reference-only, no daemon port), see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md) | `packages/stage-ui/src/composables/use-peer-embassy.ts` |
 ---
 
 ## 5. IndexedDB — Search Index (Separate DB)

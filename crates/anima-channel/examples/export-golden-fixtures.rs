@@ -24,8 +24,8 @@ use anima_channel::wire::{
     GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData,
     ProviderInfo, ProviderModelInfo, ProviderStatsData, ProvidersListReply, ProvidersModelsReply,
     RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest,
-    SessionImportReply, SessionImportStatus, SettingsGetReply, SettingsSetReply, StatusChangedData,
-    TokenDeltaData, VaultStatsData, VaultStatusReply,
+    SessionImportReply, SessionImportStatus, SettingsChangedData, SettingsGetReply,
+    SettingsSetReply, StatusChangedData, TokenDeltaData, VaultStatsData, VaultStatusReply,
 };
 
 fn fixtures_dir() -> PathBuf {
@@ -164,6 +164,14 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 store_health: "unavailable".into(),
                 seq: 101,
                 ts_ms: 1_700_000_000_800,
+            }),
+        ),
+        (
+            "event.settings_changed.captions",
+            EventPayload::SettingsChanged(SettingsChangedData {
+                section: "captions".into(),
+                seq: 102,
+                ts_ms: 1_700_000_000_900,
             }),
         ),
     ];

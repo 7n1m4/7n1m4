@@ -74,7 +74,8 @@ class _NavigationShellState extends State<NavigationShell> {
   bool _noCardExplicitlySelected = false;
   String? _cardError;
   String? _sceneError;
-  StageCaptionStyle _captionStyle = const StageCaptionStyle();
+  StageCaptionStyle _captionStyle = const StageCaptionStyle(docking: StageCaptionDocking.none);
+  int _captionReadGeneration = 0;
   final _stageRender = StageRenderState();
   bool _stageVisible = false;
 
@@ -170,14 +171,18 @@ class _NavigationShellState extends State<NavigationShell> {
   }
 
   /// Captions are daemon-owned settings; the stage only renders the snapshot.
-  /// A read failure keeps the client defaults and shows no invented state.
+  /// A failed or stale read leaves captions hidden (daemon default docking:none).
   Future<void> _loadCaptionSettings() async {
+    final generation = ++_captionReadGeneration;
     try {
       final settings = await widget.client.settingsGet('captions');
-      if (!mounted) return;
+      if (!mounted || generation != _captionReadGeneration || settings.isEmpty) {
+        return;
+      }
       setState(() => _captionStyle = StageCaptionStyle.fromSettings(settings));
     } on Object {
-      // An unreachable daemon leaves the defaults in place.
+      // An unreachable daemon leaves captions hidden: the daemon default is
+      // docking:none, never the client's visible bottom-docked fallback.
     }
   }
 

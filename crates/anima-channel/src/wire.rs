@@ -1331,7 +1331,7 @@ pub fn type_collection() -> specta::Types {
         .register::<TokenDeltaData>()
         .register::<PresenceChangedData>()
         .register::<StatusChangedData>()
-    .register::<SettingsChangedData>()
+        .register::<SettingsChangedData>()
         .register::<RuntimePingReply>()
         .register::<RuntimeStatusReply>()
         .register::<CoreStatusReply>()
@@ -1640,6 +1640,14 @@ mod tests {
                     ts_ms: 500,
                 }),
             ),
+            GatewayEvent::new(
+                EventTopic::SettingsChanged,
+                EventPayload::SettingsChanged(SettingsChangedData {
+                    section: "captions".to_string(),
+                    seq: 6,
+                    ts_ms: 600,
+                }),
+            ),
         ]
     }
 
@@ -1730,7 +1738,6 @@ mod tests {
         assert!("noise".parse::<EventTopic>().is_err());
     }
 
-    #[test]
     #[test]
     fn settings_changed_topic_carries_section_name() {
         let topic: EventTopic = "settings.changed".parse().unwrap();

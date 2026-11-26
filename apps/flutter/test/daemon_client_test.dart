@@ -252,10 +252,14 @@ void main() {
         .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
         .where((frame) => frame['action'] == 'event.subscribe')
         .toList();
-    expect(subscriptions, hasLength(1));
-    expect(subscriptions.first['payload'], <String, dynamic>{
-      'topics': <String>['token.delta', 'settings.changed'],
-    });
+    expect(subscriptions, hasLength(2));
+    expect(
+      subscriptions.map((frame) => frame['payload']).toList(),
+      <Object>[
+        <String, dynamic>{'topics': <String>['token.delta']},
+        <String, dynamic>{'topics': <String>['settings.changed']},
+      ],
+    );
   });
 
   test('a reconnect re-subscribes on the fresh authenticated socket', () async {
@@ -299,6 +303,9 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 40));
     expect(transports, hasLength(2), reason: 'a fresh transport was opened');
     final fresh = transports.last;
+    final events = <GatewayEventFrame>[];
+    final unsubscribe = client.onEvent(events.add);
+    addTearDown(unsubscribe);
     fresh.receive('{"type":"auth","ok":true}');
     await _pump();
     final freshProbe = jsonDecode(fresh.sent[1]) as Map<String, dynamic>;
@@ -313,12 +320,95 @@ void main() {
     );
     await _pump();
 
-    final subscriptions = transports
-        .expand((transport) => transport.sent)
+    for (final transport in transports) {
+      final subscriptions = transport.sent
+          .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
+          .where((frame) => frame['action'] == 'event.subscribe')
+          .toList();
+      expect(
+        subscriptions.map((frame) => frame['payload']).toList(),
+        <Object>[
+          <String, dynamic>{'topics': <String>['token.delta']},
+          <String, dynamic>{'topics': <String>['settings.changed']},
+        ],
+        reason: 'every authenticated socket re-subscribes to both topics',
+      );
+    }
+
+    // An event on the fresh socket must reach a hook registered before it.
+    fresh.receive(
+      '{"type":"event","topic":"token.delta","data":{"delta":"fresh","message_id":"m-1"}}',
+    );
+    await _pump();
+    expect(events.single.topic, EventTopic.tokenDelta);
+    expect(events.single.data['delta'], 'fresh');
+  });
+
+  test('one rejected subscribe topic does not silence the other', () async {
+    final fake = FakeTransport();
+    final client = DaemonClient(
+      transportFactory: () => fake,
+      authTimeout: const Duration(seconds: 2),
+      rpcTimeout: const Duration(seconds: 2),
+    );
+    addTearDown(client.dispose);
+
+    final events = <GatewayEventFrame>[];
+    final unsubscribe = client.onEvent(events.add);
+    addTearDown(unsubscribe);
+
+    final connecting = client.connect(
+      const ConnectionSettings(authToken: 'tok'),
+    );
+    await _pump();
+    fake.receive('{"type":"auth","ok":true}');
+    await _pump();
+    final probe = jsonDecode(fake.sent[1]) as Map<String, dynamic>;
+    fake.receive(
+      jsonEncode(<String, dynamic>{
+        'type': 'rpc',
+        'action': 'core.status',
+        'ok': true,
+        'data': _healthyCore,
+        'id': probe['id'],
+      }),
+    );
+    await connecting;
+
+    final subscriptions = fake.sent
         .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
         .where((frame) => frame['action'] == 'event.subscribe')
         .toList();
-    expect(subscriptions, hasLength(2), reason: 'one per authenticated socket');
+    expect(subscriptions, hasLength(2));
+
+    // An older daemon rejects settings.changed but accepts token.delta.
+    for (final frame in subscriptions) {
+      final topics = (frame['payload'] as Map<String, dynamic>)['topics'];
+      final rejected = topics is List && topics.contains('settings.changed');
+      fake.receive(
+        jsonEncode(<String, dynamic>{
+          'type': 'rpc',
+          'action': 'event.subscribe',
+          'ok': !rejected,
+          'error': rejected
+              ? <String, dynamic>{
+                  'code': 'rpc_bad_topic',
+                  'message': 'unknown topic',
+                }
+              : null,
+          'id': frame['id'],
+        }),
+      );
+    }
+    await _pump();
+
+    expect(client.snapshot.state, DaemonConnectionState.connected);
+    expect(client.snapshot.error?.code, 'rpc_bad_topic');
+    fake.receive(
+      '{"type":"event","topic":"token.delta","data":{"delta":"still-here"}}',
+    );
+    await _pump();
+    expect(events.single.data['delta'], 'still-here');
   });
 
   test('authenticated client pings on its heartbeat interval', () async {
@@ -847,8 +937,8 @@ void main() {
       );
       expect(
         fake.sent,
-        hasLength(3),
-        reason: 'auth + core.status + event.subscribe',
+        hasLength(4),
+        reason: 'auth + core.status + two event.subscribe requests',
       );
     },
   );

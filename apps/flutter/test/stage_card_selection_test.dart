@@ -23,6 +23,11 @@ import 'package:anima_control/navigation/navigation_shell.dart';
 
 import 'support/fakes.dart';
 
+class _DeferredReply implements Exception {
+  const _DeferredReply(this.future);
+  final Future<RpcReply> future;
+}
+
 class _CardClient extends FakeChatClient {
   List<Map<String, dynamic>> cards;
   final List<String> getIds = <String>[];
@@ -33,6 +38,14 @@ class _CardClient extends FakeChatClient {
 
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
+    final handler = onCall;
+    if (handler != null) {
+      try {
+        return handler(action, payload);
+      } on _DeferredReply catch (deferred) {
+        return await deferred.future;
+      }
+    }
     switch (action) {
       case 'cards.list':
         listCalls++;
@@ -56,6 +69,16 @@ class _CardClient extends FakeChatClient {
           ok: true,
           data: <String, dynamic>{'card': found.isEmpty ? null : found.first},
         );
+      case 'settings.get':
+        final handler = onCall;
+        if (handler != null) {
+          try {
+            return handler(action, payload);
+          } on _DeferredReply catch (deferred) {
+            return await deferred.future;
+          }
+        }
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
       default:
         return RpcReply(action: action, ok: true, data: <String, dynamic>{});
     }
@@ -332,6 +355,71 @@ void main() {
     captured = <String, dynamic>{'docking': 'top', 'enabled': true};
     await _leaveStage(tester);
     await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle?.docking,
+      StageCaptionDocking.top,
+    );
+  });
+
+  testWidgets('captions stay hidden when settings.get fails', (tester) async {
+    final client = _CardClient(<Map<String, dynamic>>[]);
+    addTearDown(client.dispose);
+    client.onCall = (action, payload) {
+      if (action == 'settings.get') {
+        throw const DaemonClientException(
+          kind: DaemonFailureKind.rpc,
+          message: 'settings unavailable',
+        );
+      }
+      if (action == 'cards.get') {
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{'card': null});
+      }
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+
+    final style = tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle;
+    expect(style?.docking, StageCaptionDocking.none);
+    expect(style?.isVisible, isFalse);
+  });
+
+  testWidgets('a stale caption settings reply cannot overwrite a newer read', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[]);
+    addTearDown(client.dispose);
+    final stale = Completer<RpcReply>();
+    var readCount = 0;
+    client.onCall = (action, payload) {
+      if (action == 'settings.get' && payload?['section'] == 'captions') {
+        readCount++;
+        if (readCount == 1) throw _DeferredReply(stale.future);
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'settings': <String, dynamic>{'docking': 'top', 'enabled': true},
+          },
+        );
+      }
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _leaveStage(tester);
+    await _openStage(tester);
+    stale.complete(RpcReply(
+      action: 'settings.get',
+      ok: true,
+      data: <String, dynamic>{
+        'settings': <String, dynamic>{'docking': 'bottom', 'enabled': true},
+      },
+    ));
+    await tester.pump();
+    await tester.pump();
 
     expect(
       tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle?.docking,

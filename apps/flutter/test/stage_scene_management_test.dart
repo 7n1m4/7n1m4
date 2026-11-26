@@ -234,4 +234,20 @@ void main() {
     expect(store.activeBackgroundFor('card-1'), StageBackground.none);
   });
 
+  testWidgets('per-card Clear active ignores the global scene', (tester) async {
+    final store = StageSceneStore(storageDirectory: temp);
+    await tester.runAsync(store.load);
+    final entry = (await tester.runAsync(() => store.add(tint: '#123456')))!;
+    await tester.runAsync(() => store.activate(entry.id));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StageScenesScreen(store: store, cardId: 'card-1'),
+      ),
+    );
+    await _flush(tester);
+
+    final clear = find.widgetWithText(TextButton, 'Clear active');
+    expect(tester.widget<TextButton>(clear).onPressed, isNull);
+  });
 }
