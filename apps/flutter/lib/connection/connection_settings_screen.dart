@@ -29,6 +29,7 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
   late final TextEditingController _port =
       TextEditingController(text: '${ConnectionSettings.defaultPort}');
   late final TextEditingController _token = TextEditingController();
+  late final TextEditingController _caCertPath = TextEditingController();
   String _scheme = ConnectionSettings.defaultScheme;
   bool _busy = false;
   String? _connectError;
@@ -53,6 +54,7 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     _host.dispose();
     _port.dispose();
     _token.dispose();
+    _caCertPath.dispose();
     super.dispose();
   }
 
@@ -62,6 +64,7 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
       port: int.tryParse(_port.text.trim()) ?? -1,
       scheme: _scheme,
       authToken: _token.text.trim(),
+      caCertPath: _caCertPath.text.trim().isEmpty ? null : _caCertPath.text.trim(),
     );
   }
 
@@ -162,6 +165,15 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
               border: OutlineInputBorder(),
             ),
             validator: (_) => settings.validateToken(),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _caCertPath,
+            decoration: const InputDecoration(
+              labelText: 'CA certificate path',
+              helperText: 'PEM CA path from your daemon setup; required for non-loopback wss://.',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 12),
           Row(

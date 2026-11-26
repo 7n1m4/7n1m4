@@ -64,13 +64,24 @@ class StageCaptionSnapshot {
 ///
 /// A turn is keyed by the daemon's `message_id`: the first delta of a turn
 /// resets the buffer (Vue clears on the user turn), later deltas append, and
-/// the terminal marker (`final: true`) ends the turn without clearing it, so
-/// the last sentence stays on screen until the next turn starts.
+/// the terminal marker (`final: true`) splits it into sentences with the first
+/// active, which stay on screen until the next turn starts.
 class StageCaptionController extends ChangeNotifier {
+  /// One amplitude window from `speech/lip_sync_generator.dart`.
+  static const int _rmsWindowMs = 50;
+  static final RegExp _sentenceEnd = RegExp(r'[.!?。！？]');
+  static final RegExp _cjk =
+      RegExp(r'[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]');
+
   StageCaptionSnapshot _snapshot = const StageCaptionSnapshot();
   String? _messageId;
   final StringBuffer _buffer = StringBuffer();
   int? _lastSeq;
+
+  /// Timestamp of the first local TTS frame of this turn. Wall-clock RMS
+  /// timestamps avoid drift when frames are dropped or arrive late (there is
+  /// no AudioContext clock in this client).
+  int? _captionStartTs;
 
   StageCaptionSnapshot get snapshot => _snapshot;
 
@@ -90,30 +101,88 @@ class StageCaptionController extends ChangeNotifier {
     if (id != null && id != _messageId) {
       _messageId = id;
       _buffer.clear();
+      _captionStartTs = null;
     }
     if (delta.isNotEmpty) _buffer.write(delta);
-    if (data['final'] == true) {
+    final isFinal = data['final'] == true;
+    final reason = data['reason'];
+    // The publisher marks cancelled/error turns terminal even on a non-final
+    // frame (gateway.rs:1307,1361); mirror chat_screen.dart:176-182 so a failed
+    // or cancelled turn is never shown as a completed caption.
+    final terminal = isFinal || reason == 'cancelled' || reason == 'error';
+    final failedTurn = terminal && reason != null && reason != 'complete';
+    if (terminal) {
       _messageId = null;
       _lastSeq = null;
+      _captionStartTs = null;
     }
     final buffer = _buffer.toString();
+    // Split only on the terminal marker: splitting per delta would re-chunk
+    // the line as punctuation arrives mid-stream. Failed turns are dropped.
+    final texts = failedTurn
+        ? const <String>[]
+        : terminal
+            ? _splitSentences(buffer)
+            : buffer.isEmpty
+                ? const <String>[]
+                : <String>[buffer];
+    final color = _snapshot.segments.isEmpty ? '' : _snapshot.segments.first.color;
+    final actorId =
+        _snapshot.segments.isEmpty ? '' : _snapshot.segments.first.actorId;
     _snapshot = StageCaptionSnapshot(
       speakerText: _snapshot.speakerText,
-      segments: buffer.isEmpty
-          ? const <CaptionSegment>[]
-          : <CaptionSegment>[
-              CaptionSegment(
-                text: buffer,
-                color: _snapshot.segments.isEmpty
-                    ? ''
-                    : _snapshot.segments.first.color,
-                actorId: _snapshot.segments.isEmpty
-                    ? ''
-                    : _snapshot.segments.first.actorId,
-              ),
-            ],
+      segments: <CaptionSegment>[
+        for (var i = 0; i < texts.length; i++)
+          CaptionSegment(
+            text: texts[i],
+            color: color,
+            actorId: actorId,
+            isActive: terminal && i == 0,
+          ),
+      ],
     );
     notifyListeners();
+  }
+
+  /// Split on `[.!?。！？]`, keeping the terminator. The trailing fragment is
+  /// also a sentence, so a turn without punctuation still captions.
+  static List<String> _splitSentences(String text) {
+    final sentences = <String>[];
+    final current = StringBuffer();
+    final chars = text.runes.toList();
+    for (var i = 0; i < chars.length; i++) {
+      current.writeCharCode(chars[i]);
+      if (!_sentenceEnd.hasMatch(String.fromCharCode(chars[i]))) continue;
+      // Absorb runs like "!!!" / "..." into this sentence so they do not
+      // become junk segments.
+      while (i + 1 < chars.length &&
+          _sentenceEnd.hasMatch(String.fromCharCode(chars[i + 1]))) {
+        i++;
+        current.writeCharCode(chars[i]);
+      }
+      final sentence = current.toString().trim();
+      if (sentence.isNotEmpty) sentences.add(sentence);
+      current.clear();
+    }
+    final tail = current.toString().trim();
+    if (tail.isNotEmpty) sentences.add(tail);
+    return sentences;
+  }
+
+  /// Rough phonetic length from `pause-aligner.ts`: a CJK glyph counts ~1.8
+  /// syllables, a Latin word ~1.3, with a floor of one unit.
+  static double _phoneticWeight(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return 1;
+    final cjkCount = _cjk.allMatches(trimmed).length;
+    final latinWords = trimmed
+        .replaceAll(_cjk, ' ')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .length;
+    final total = cjkCount * 1.8 + latinWords * 1.3;
+    return total < 1 ? 1 : total;
   }
 
   /// Set the speaker nameplate.
@@ -147,10 +216,35 @@ class StageCaptionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Advance the highlighted sentence from a local TTS RMS frame. With only
+  /// 50ms windows and no silence detection, boundaries are the cumulative
+  /// phonetic weights of the sentences; without frames the first stays active.
+  void advanceCaptionPlayback(LipSyncRmsData frame) {
+    final segments = _snapshot.segments;
+    if (segments.isEmpty) return;
+    final baseline = _captionStartTs ??= frame.tsMs;
+    // Count one observation window for the anchoring frame; after that the
+    // real RMS timestamps keep timing honest even if frames are dropped.
+    final elapsedMs = frame.tsMs - baseline + _rmsWindowMs;
+    var cumulativeMs = 0.0;
+    var target = segments.length - 1;
+    for (var i = 0; i < segments.length; i++) {
+      cumulativeMs += _phoneticWeight(segments[i].text) * _rmsWindowMs;
+      if (elapsedMs < cumulativeMs) {
+        target = i;
+        break;
+      }
+    }
+    if (segments.indexWhere((segment) => segment.isActive) != target) {
+      setActiveSentence(target);
+    }
+  }
+
   /// Clear the overlay.
   void clear() {
     _messageId = null;
     _lastSeq = null;
+    _captionStartTs = null;
     _buffer.clear();
     _snapshot = const StageCaptionSnapshot();
     notifyListeners();
@@ -368,6 +462,7 @@ class StageRenderState extends ChangeNotifier {
     if (last != null && frame.seq <= last) return false;
     _lastFrameSeq = frame.seq;
     _frame = frame;
+    _captionController.advanceCaptionPlayback(frame);
     notifyListeners();
     return true;
   }

@@ -887,11 +887,29 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: TextField(
-                      controller: _composer.input,
-                      enabled: !sending,
-                      decoration: const InputDecoration(hintText: 'Message'),
-                      onSubmitted: (_) => _onSubmit(),
+                    // Local Focus so recall keys are consumed only while the
+                    // composer has focus and a later generic Shortcuts/Focus
+                    // wrapper can still compose around it.
+                    child: Focus(
+                      onKeyEvent: (node, event) {
+                        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                          return KeyEventResult.ignored;
+                        }
+                        final recalled = switch (event.logicalKey) {
+                          LogicalKeyboardKey.arrowUp => _composer.recallPrevious(),
+                          LogicalKeyboardKey.arrowDown => _composer.recallNext(),
+                          _ => false,
+                        };
+                        return recalled
+                            ? KeyEventResult.handled
+                            : KeyEventResult.ignored;
+                      },
+                      child: TextField(
+                        controller: _composer.input,
+                        enabled: !sending,
+                        decoration: const InputDecoration(hintText: 'Message'),
+                        onSubmitted: (_) => _onSubmit(),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),

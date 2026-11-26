@@ -86,6 +86,248 @@ void main() {
       controller.clear();
       expect(notifications, 5);
     });
+
+    LipSyncRmsData frame(int seq) => LipSyncRmsData(
+      actorId: 'pet-1',
+      level: 0.5,
+      seq: seq,
+      tsMs: 1700000000000 + seq * 50,
+    );
+
+    test('the final marker splits buffered text into sentences, first active', () {
+      final controller = StageCaptionController();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'Hello. 世界！How?',
+        'seq': 1,
+      });
+      expect(
+        controller.snapshot.segments.single.text,
+        'Hello. 世界！How?',
+        reason: 'per-delta splitting would flicker as punctuation arrives',
+      );
+      expect(controller.snapshot.segments.single.isActive, isFalse);
+
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      expect(
+        controller.snapshot.segments.map((segment) => segment.text).toList(),
+        <String>['Hello.', '世界！', 'How?'],
+      );
+      expect(
+        controller.snapshot.segments.map((segment) => segment.isActive).toList(),
+        <bool>[true, false, false],
+      );
+    });
+
+    test('an unterminated tail is still a sentence', () {
+      final controller = StageCaptionController();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'One! two',
+        'seq': 1,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      expect(
+        controller.snapshot.segments.map((segment) => segment.text).toList(),
+        <String>['One!', 'two'],
+      );
+    });
+
+    test('accepted RMS frames advance the active sentence', () {
+      final state = StageRenderState(actorId: 'pet-1');
+      addTearDown(state.dispose);
+      state.captions.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'One. Two. Three.',
+        'seq': 1,
+      });
+      state.captions.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      // Equal phonetic weights: 1.3 units * 50ms = 65ms per sentence.
+      state.applyFrame(frame(10)); // 50ms
+      expect(
+        state.caption.segments.map((segment) => segment.isActive).toList(),
+        <bool>[true, false, false],
+      );
+      state.applyFrame(frame(11)); // 100ms
+      expect(
+        state.caption.segments.map((segment) => segment.isActive).toList(),
+        <bool>[false, true, false],
+      );
+      state.applyFrame(frame(12)); // 150ms
+      expect(
+        state.caption.segments.map((segment) => segment.isActive).toList(),
+        <bool>[false, false, true],
+      );
+    });
+
+    test('CJK sentences hold the first highlight longer than Latin ones', () {
+      StageCaptionController caption(String text) {
+        final controller = StageCaptionController();
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': text,
+          'seq': 1,
+        });
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': '',
+          'final': true,
+          'seq': 2,
+        });
+        return controller;
+      }
+
+      final cjk = caption('你好！世界？');
+      final latin = caption('One. Two.');
+      // Same real elapsed time for both: the Latin pair has moved on while
+      // the CJK pair is still on its first sentence. This pins the relative
+      // weighting without hardcoding the heuristic constants.
+      for (final controller in <StageCaptionController>[cjk, latin]) {
+        controller.advanceCaptionPlayback(frame(10));
+        controller.advanceCaptionPlayback(frame(11));
+      }
+      expect(
+        cjk.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[true, false],
+      );
+      expect(
+        latin.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[false, true],
+      );
+    });
+
+    test('consecutive terminators stay inside one sentence', () {
+      final controller = StageCaptionController();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'Wow!!! Really?',
+        'seq': 1,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      expect(
+        controller.snapshot.segments.map((s) => s.text).toList(),
+        <String>['Wow!!!', 'Really?'],
+      );
+    });
+
+    test('cancelled and error finals drop the partial turn', () {
+      for (final reason in <String>['cancelled', 'error']) {
+        final controller = StageCaptionController();
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': 'Partial.',
+          'seq': 1,
+        });
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': '',
+          'final': true,
+          'reason': reason,
+          'seq': 2,
+        });
+        expect(controller.snapshot.segments, isEmpty, reason: reason);
+      }
+    });
+
+    test('a new message id or clear resets the frame baseline', () {
+      final controller = StageCaptionController();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'One. Two. Three.',
+        'seq': 1,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      controller.advanceCaptionPlayback(frame(1));
+      controller.advanceCaptionPlayback(frame(3));
+      expect(
+        controller.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[false, false, true],
+      );
+
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm2',
+        'delta': 'Alpha. Beta.',
+        'seq': 4,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm2',
+        'delta': '',
+        'final': true,
+        'seq': 5,
+      });
+      expect(
+        controller.snapshot.segments.map((s) => s.text).toList(),
+        <String>['Alpha.', 'Beta.'],
+      );
+      controller.advanceCaptionPlayback(frame(100));
+      expect(
+        controller.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[true, false],
+        reason: 'a new turn must not inherit the previous playback clock',
+      );
+
+      controller.clear();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm3',
+        'delta': 'Gamma. Delta.',
+        'seq': 6,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm3',
+        'delta': '',
+        'final': true,
+        'seq': 7,
+      });
+      controller.advanceCaptionPlayback(frame(500));
+      expect(
+        controller.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[true, false],
+      );
+    });
+
+    test('without RMS frames the first sentence stays highlighted', () {
+      final controller = StageCaptionController();
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': 'First. Second.',
+        'seq': 1,
+      });
+      controller.applyTokenDelta(<String, dynamic>{
+        'message_id': 'm1',
+        'delta': '',
+        'final': true,
+        'seq': 2,
+      });
+      expect(
+        controller.snapshot.segments.map((s) => s.isActive).toList(),
+        <bool>[true, false],
+      );
+    });
   });
 
   group('StageCaptionStyle', () {

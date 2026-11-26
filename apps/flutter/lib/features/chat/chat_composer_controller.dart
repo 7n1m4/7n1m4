@@ -35,6 +35,14 @@ class ChatComposerController extends ChangeNotifier {
   final DaemonClient _client;
   final TextEditingController _input;
 
+  /// Sent-text recall history. View-local only: never persisted, never sent to
+  /// the daemon. ArrowUp/ArrowDown rewrite the draft from this list.
+  static const int _maxSentTexts = 50;
+  final List<String> _sentTexts = <String>[];
+
+  /// Position counting back from the newest entry: -1 means no active recall.
+  int _recallIndex = -1;
+
   /// The text field's controller: the view owns the widget, this owns the value.
   TextEditingController get input => _input;
 
@@ -147,6 +155,61 @@ class ChatComposerController extends ChangeNotifier {
     _notify();
   }
 
+  /// Walk back through previously sent texts. Returns true only when the draft
+  /// actually changed, so the view can consume the arrow key.
+  bool recallPrevious() {
+    if (_sentTexts.isEmpty) return false;
+    final next = _recallIndex + 1;
+    if (next >= _sentTexts.length) return false;
+    _recallIndex = next;
+    _showRecalled(_sentTexts[_sentTexts.length - 1 - next]);
+    return true;
+  }
+
+  /// Walk forward, past the newest entry back to an empty draft. Returns true
+  /// only when a recall step (including the final clear) happened.
+  bool recallNext() {
+    if (_recallIndex < 0) return false;
+    final next = _recallIndex - 1;
+    if (next < 0) {
+      _recallIndex = -1;
+      _input.clear();
+      _input.selection = const TextSelection.collapsed(offset: 0);
+      return true;
+    }
+    _recallIndex = next;
+    _showRecalled(_sentTexts[_sentTexts.length - 1 - next]);
+    return true;
+  }
+
+  void _showRecalled(String text) {
+    _input.text = text;
+    _input.selection = TextSelection.collapsed(offset: text.length);
+  }
+
+  /// Appends a committed send, deduped against the newest entry. Returns
+  /// whether a new entry was appended so a failed RPC can roll it back.
+  bool _rememberSentText(String text) {
+    // A repeated send still leaves recall at the newest entry; resetting here
+    // (rather than after the dedupe check) prevents a stuck index.
+    _recallIndex = -1;
+    if (_sentTexts.isNotEmpty && _sentTexts.last == text) return false;
+    _sentTexts.add(text);
+    return true;
+  }
+
+  /// Evict only after the RPC succeeds, so a failed 51st send cannot shrink
+  /// history to 49 entries.
+  void _commitSentText() {
+    if (_sentTexts.length > _maxSentTexts) _sentTexts.removeAt(0);
+  }
+
+  void _forgetSentText({required bool appended, required String text}) {
+    if (appended && _sentTexts.isNotEmpty && _sentTexts.last == text) {
+      _sentTexts.removeLast();
+    }
+  }
+
   /// Commit the draft as a `chat.send` turn.
   ///
   /// Returns the acked message id, or null when no turn was started (empty
@@ -171,6 +234,7 @@ class ChatComposerController extends ChangeNotifier {
       _fail('Not connected to the daemon.');
       return null;
     }
+    final appendedToRecall = _rememberSentText(text);
     _error = null;
     _sending = true;
     _input.clear();
@@ -184,22 +248,27 @@ class ChatComposerController extends ChangeNotifier {
         'genUi': true,
       };
       final reply = await _client.call('chat.send', payload: payload);
-      if (reply.ok && reply.data is Map<String, dynamic>) {
-        // ChatSendReply is serde camelCase on the wire (sessionId/messageId);
-        // snake_case here left the session unset so Stop cancelled nothing.
-        final data = reply.data as Map<String, dynamic>;
-        final sid = data['sessionId'] as String?;
-        final mid = data['messageId'] as String?;
-        if (sid != null && sid.isNotEmpty) _sessionId = sid;
-        _notify();
-        return mid;
-      }
-      if (!reply.ok) {
-        _fail(reply.error?.message ?? 'chat.send failed', draft: text);
+      if (!reply.ok || reply.data is! Map<String, dynamic>) {
+        _forgetSentText(appended: appendedToRecall, text: text);
+        _fail(
+          reply.ok
+              ? 'Malformed chat.send reply.'
+              : reply.error?.message ?? 'chat.send failed',
+          draft: text,
+        );
         return null;
       }
-      return null;
+      // ChatSendReply is serde camelCase on the wire (sessionId/messageId);
+      // snake_case here left the session unset so Stop cancelled nothing.
+      final data = reply.data as Map<String, dynamic>;
+      final sid = data['sessionId'] as String?;
+      final mid = data['messageId'] as String?;
+      if (sid != null && sid.isNotEmpty) _sessionId = sid;
+      _commitSentText();
+      _notify();
+      return mid;
     } on Object catch (e) {
+      _forgetSentText(appended: appendedToRecall, text: text);
       _fail(
         e is DaemonClientException ? e.message : 'Could not send message: $e',
         draft: text,
@@ -246,6 +315,8 @@ class ChatComposerController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     attachments.clear();
+    _sentTexts.clear();
+    _recallIndex = -1;
     _input.dispose();
     super.dispose();
   }
