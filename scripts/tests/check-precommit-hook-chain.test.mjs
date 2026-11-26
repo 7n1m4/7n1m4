@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+// eslint-disable-next-line test/no-import-node-test -- this lane runs under `node --test`
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -33,19 +35,19 @@ function run(t, config, options = {}) {
   return result
 }
 
-const without = key => {
+function without(key) {
   const config = { ...CORRECT_CONFIG }
   delete config[key]
   return config
 }
 
-test('correct three mappings pass', t => {
+test('correct three mappings pass', (t) => {
   const result = run(t, CORRECT_CONFIG)
   assert.equal(result.status, 0)
   assert.match(result.stdout, /nano-staged chain OK/)
 })
 
-test('missing eslint mapping fails and names eslint and the JS-family glob', t => {
+test('missing eslint mapping fails and names eslint and the JS-family glob', (t) => {
   const result = run(t, without(JS_GLOB))
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /eslint/)
@@ -58,7 +60,7 @@ const missingFormatterCases = [
 ]
 
 for (const { name, key, named } of missingFormatterCases) {
-  test(`${name} fails`, t => {
+  test(`${name} fails`, (t) => {
     const result = run(t, without(key))
     assert.notEqual(result.status, 0)
     for (const pattern of named)
@@ -73,7 +75,7 @@ const commandMutationCases = [
 ]
 
 for (const { name, config, expected } of commandMutationCases) {
-  test(`${name} fails`, t => {
+  test(`${name} fails`, (t) => {
     const result = run(t, config)
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, expected)
@@ -88,7 +90,7 @@ const docFormatterCases = [
 ]
 
 for (const { name, path, glob } of docFormatterCases) {
-  test(`formatting ${name} fails`, t => {
+  test(`formatting ${name} fails`, (t) => {
     const result = run(t, { ...CORRECT_CONFIG, [name]: 'prettier --write' })
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, path)
@@ -96,7 +98,7 @@ for (const { name, path, glob } of docFormatterCases) {
   })
 }
 
-test('a competing pattern fails even when the witness still holds', t => {
+test('a competing pattern fails even when the witness still holds', (t) => {
   const result = run(t, { ...CORRECT_CONFIG, 'crates/anima-daemon/**/*.rs': 'prettier --write' })
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /crates\/anima-daemon\/\*\*\/\*\.rs/)
@@ -106,7 +108,7 @@ test('a competing pattern fails even when the witness still holds', t => {
 const extglobCases = ['!(*.rs)', '@(AGENTS|README).md', '+(*.dart)', '?(*.ts)']
 
 for (const pattern of extglobCases) {
-  test(`unsupported extglob ${pattern} fails`, t => {
+  test(`unsupported extglob ${pattern} fails`, (t) => {
     const result = run(t, { ...CORRECT_CONFIG, [pattern]: 'prettier --write' })
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /unsupported extglob syntax/)
@@ -120,7 +122,7 @@ const hookCases = [
 ]
 
 for (const { name, hooks } of hookCases) {
-  test(`pre-commit chain fails with ${name}`, t => {
+  test(`pre-commit chain fails with ${name}`, (t) => {
     const result = run(t, CORRECT_CONFIG, { hooks })
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /pre-commit/)
