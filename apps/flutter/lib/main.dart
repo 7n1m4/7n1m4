@@ -53,6 +53,7 @@ void _speakCompletedTurns(DaemonClient client, LipSyncController controller) {
     if (event.data['final'] != true) return;
     final text = buffer.toString().trim();
     buffer.clear();
+    if (reason != null && reason != 'complete') return;
     if (text.isNotEmpty) {
       // Errors are surfaced through engine exceptions, not fake audio.
       controller.speak(text).catchError((Object error) {});

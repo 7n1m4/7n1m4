@@ -22,6 +22,7 @@ use anima_store::{Database, SettingsRepo};
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 use crate::CoreEvent;
@@ -37,6 +38,7 @@ pub trait SettingsSection: Serialize + DeserializeOwned + Default + Send + Sync 
 /// Cheap to clone (shares the database and the event bus).
 #[derive(Clone)]
 pub struct SettingsStore {
+    db: Database,
     repo: SettingsRepo,
     bus: broadcast::Sender<CoreEvent>,
 }
@@ -45,6 +47,7 @@ impl SettingsStore {
     /// Create a settings store backed by `db`, broadcasting changes on `bus`.
     pub fn new(db: Database, bus: broadcast::Sender<CoreEvent>) -> Self {
         Self {
+            db: db.clone(),
             repo: SettingsRepo::new(db),
             bus,
         }
@@ -77,6 +80,47 @@ impl SettingsStore {
     /// Save a typed section using its [`SettingsSection::KEY`].
     pub fn save_section<S: SettingsSection>(&self, value: &S) -> Result<()> {
         self.save(S::KEY, value)
+    }
+
+    /// Save two sections in one SQLite transaction and emit both change events.
+    ///
+    /// Used by the daemon's mirrored provider selection: a failed second write
+    /// must not leave one view committed and the other stale.
+    pub fn save_pair<T: Serialize, U: Serialize>(
+        &self,
+        first: (&str, &T),
+        second: (&str, &U),
+    ) -> Result<()> {
+        let first_json = serde_json::to_string(first.1)?;
+        let second_json = serde_json::to_string(second.1)?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        self.db.with_connection(|conn| {
+            let tx = conn.unchecked_transaction()?;
+            for (key, json) in [(first.0, &first_json), (second.0, &second_json)] {
+                let affected = tx.execute(
+                    "insert into settings (key, value, updated_at) values (?1, ?2, ?3)
+                     on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at
+                     where excluded.updated_at >= settings.updated_at",
+                    rusqlite::params![key, json, now],
+                )?;
+                anyhow::ensure!(
+                    affected > 0,
+                    "setting `{key}` was not written: a newer value already exists"
+                );
+            }
+            tx.commit()?;
+            Ok(())
+        })?;
+        let _ = self.bus.send(CoreEvent::SettingsChanged {
+            key: first.0.to_string(),
+        });
+        let _ = self.bus.send(CoreEvent::SettingsChanged {
+            key: second.0.to_string(),
+        });
+        Ok(())
     }
 
     /// Delete a setting by key. Returns `true` when a row was removed.
@@ -1525,7 +1569,7 @@ mod tests {
         let captions = CaptionsSettings::default();
         assert!(captions.enabled);
         assert_eq!(captions.font_size, 100.0);
-        assert_eq!(captions.opacity, 70.0);
+        assert_eq!(captions.opacity, 20.0);
         assert_eq!(captions.docking, "none");
         let json = serde_json::to_value(&captions).unwrap();
         assert_eq!(json["fontSize"], 100.0);

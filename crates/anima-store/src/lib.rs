@@ -962,6 +962,39 @@ impl MessageRepo {
         Ok(())
     }
 
+    /// Insert a message, creating its session first when absent, in one
+    /// transaction. A failed insert leaves neither a stray session nor a
+    /// half-written message.
+    pub fn insert_with_session(&self, title: &str, msg: &StoredMessage) -> Result<()> {
+        let metadata = serde_json::to_string(&msg.metadata)?;
+        let mut conn = self.db.conn.lock().expect("database mutex poisoned");
+        let tx = conn.transaction()?;
+        let ts = now_ms();
+        tx.execute(
+            "insert or ignore into sessions (id, title, created_at, updated_at, metadata)
+             values (?1, ?2, ?3, ?4, '{}')",
+            params![msg.session_id, title, ts, ts],
+        )?;
+        tx.execute(
+            "insert into messages (id, session_id, role, content, created_at, metadata)
+             values (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                msg.id,
+                msg.session_id,
+                msg.role,
+                msg.content,
+                msg.created_at,
+                metadata
+            ],
+        )?;
+        tx.execute(
+            "update sessions set updated_at = ?1 where id = ?2",
+            params![msg.created_at, msg.session_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Delete a message.
     pub fn delete(&self, id: &str) -> Result<bool> {
         let conn = self.db.conn.lock().expect("database mutex poisoned");
@@ -1652,6 +1685,48 @@ mod tests {
         assert_eq!(rows.len(), 5);
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["s11", "s10", "s9", "s8", "s7"]);
+    }
+
+
+    #[test]
+    fn insert_with_session_rolls_back_together() {
+        let db = test_db();
+        let sessions = SessionRepo::new(db.clone());
+        let messages = MessageRepo::new(db);
+        let msg = StoredMessage {
+            id: "m1".to_string(),
+            session_id: "new".to_string(),
+            role: "user".to_string(),
+            content: "hello".to_string(),
+            created_at: now_ms(),
+            metadata: serde_json::json!({}),
+        };
+        sessions.create("new", "new").unwrap();
+        // A duplicate message id fails after the session insert; neither row
+        // may survive the failed transaction.
+        messages.insert(&msg).unwrap();
+        let other = StoredMessage {
+            id: "m1".to_string(),
+            session_id: "new-other".to_string(),
+            ..msg.clone()
+        };
+        assert!(messages.insert_with_session("new-other", &other).is_err());
+        assert!(sessions.get("new-other").unwrap().is_none());
+        assert!(messages.list("new-other").unwrap().is_empty());
+
+        // A fresh turn into an existing session creates exactly one message.
+        messages
+            .insert_with_session(
+                "fresh",
+                &StoredMessage {
+                    id: "m2".to_string(),
+                    session_id: "fresh".to_string(),
+                    ..msg
+                },
+            )
+            .unwrap();
+        assert!(sessions.get("fresh").unwrap().is_some());
+        assert_eq!(messages.list("fresh").unwrap().len(), 1);
     }
 
     #[test]

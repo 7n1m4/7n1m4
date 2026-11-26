@@ -30,6 +30,21 @@ export 'rpc.dart' show CoreStatus, RpcError, RpcReply, RpcRequest;
 export 'transport.dart'
     show DaemonTransport, DaemonTransportFactory, TransportClosed;
 
+/// One page of a list RPC. [nextCursor] is only set when the daemon says the
+/// list was truncated, so callers never page past the end. Its meaning is
+/// per-verb: a message `createdAt` for chat.history, an offset otherwise.
+class ListPage<T> {
+  const ListPage({
+    required this.items,
+    required this.truncated,
+    this.nextCursor,
+  });
+
+  final List<T> items;
+  final bool truncated;
+  final int? nextCursor;
+}
+
 class CardWriteResult {
   const CardWriteResult({
     required this.id,
@@ -733,25 +748,61 @@ class DaemonClient {
     return data is Map<String, dynamic> && data['cancelled'] == true;
   }
 
-  /// Prior persisted turns of a session (`chat.history`). An unregistered verb
-  /// is promoted to a DaemonClientException; an empty history yields [].
-  Future<List<Map<String, dynamic>>> chatHistory(String sessionId) async {
-    final reply = await _callOk(
-      'chat.history',
-      payload: <String, dynamic>{'session_id': sessionId},
-    );
+  /// Prior persisted turns of a session (`chat.history`), newest page first.
+  ///
+  /// The cursor is the `createdAt` of the oldest turn in the previous page.
+  /// Pages are returned oldest-first for display, but each new page contains
+  /// turns strictly older than that cursor.
+  /// The daemon reports `truncated`; this wrapper turns that into a cursor so
+  /// callers can keep paging without interpreting the wire shape.
+  Future<ListPage<Map<String, dynamic>>> chatHistoryPage(
+    String sessionId, {
+    int limit = 50,
+    int? cursor,
+  }) async {
+    final payload = <String, dynamic>{
+      'session_id': sessionId,
+      'limit': limit,
+      if (cursor != null) 'cursor': cursor,
+    };
+    final reply = await _callOk('chat.history', payload: payload);
     final data = reply.data;
+    // Older daemons reply with a bare array; treat it as a complete page.
     if (data is List) {
-      return data.whereType<Map<String, dynamic>>().toList(growable: false);
+      return ListPage(
+        items: data.whereType<Map<String, dynamic>>().toList(growable: false),
+        truncated: false,
+      );
     }
-    // Tolerate a wrapped `{ "messages": [...] }` reply as well as a bare array.
-    if (data is Map<String, dynamic> && data['messages'] is List) {
-      return (data['messages'] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList(growable: false);
+    if (data is! Map<String, dynamic>) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid chat.history reply.',
+      );
     }
-    return const <Map<String, dynamic>>[];
+    final messages = data['messages'];
+    if (messages is! List) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid messages in chat.history reply.',
+      );
+    }
+    final items = messages.whereType<Map<String, dynamic>>().toList();
+    final truncated = data['truncated'] == true;
+    // Replies are oldest-first; the oldest returned turn is items.first, and
+    // that createdAt is the cursor for the next (older) page.
+    final oldest = items.isEmpty ? null : items.first['createdAt'];
+    return ListPage(
+      items: items.toList(growable: false),
+      truncated: truncated && oldest is int,
+      nextCursor: truncated && oldest is int ? oldest : null,
+    );
   }
+
+  /// Bare-list view of [chatHistoryPage] for callers that only need the first
+  /// page (and for older daemons that reply with an array).
+  Future<List<Map<String, dynamic>>> chatHistory(String sessionId) async =>
+      (await chatHistoryPage(sessionId)).items;
 
   /// Read a typed settings section (`settings.get`). The daemon carries the
   /// section as a JSON string; decode it into a map for callers.
@@ -860,6 +911,23 @@ class DaemonClient {
     return _objects(reply, 'summaries');
   }
 
+  /// Delete one short-term summary (`stmm.delete`). Returns whether a row was
+  /// removed; a missing id is `false`, not an error.
+  Future<bool> stmmDelete(String id) async {
+    final reply = await _callOk(
+      'stmm.delete',
+      payload: <String, dynamic>{'id': id},
+    );
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid stmm.delete reply.',
+      );
+    }
+    return data['deleted'] as bool;
+  }
+
   /// Prune/rebuild short-term memory (`stmm.rebuild`).
   Future<void> stmmRebuild() async {
     await _callOk('stmm.rebuild');
@@ -873,6 +941,23 @@ class DaemonClient {
     );
     final data = reply.data;
     return (data is Map<String, dynamic> ? data['id'] : null)?.toString() ?? '';
+  }
+
+  /// Delete one journal entry (`journal.delete`). Returns whether a row was
+  /// removed; a missing id is `false`, not an error.
+  Future<bool> journalDelete(String id) async {
+    final reply = await _callOk(
+      'journal.delete',
+      payload: <String, dynamic>{'id': id},
+    );
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid journal.delete reply.',
+      );
+    }
+    return data['deleted'] as bool;
   }
 
   /// Search the long-term journal (`journal.search`).
@@ -1019,14 +1104,32 @@ class DaemonClient {
     );
   }
 
-  /// All character cards (`cards.list`).
-  Future<List<Map<String, dynamic>>> cardsList({int limit = 50}) async {
+  /// One page of character cards (`cards.list`). The cursor is an offset into
+  /// the daemon's stable card order.
+  Future<ListPage<Map<String, dynamic>>> cardsListPage({
+    int limit = 50,
+    int? cursor,
+  }) async {
     final reply = await _callOk(
       'cards.list',
-      payload: <String, dynamic>{'limit': limit},
+      payload: <String, dynamic>{
+        'limit': limit,
+        if (cursor != null) 'cursor': cursor,
+      },
     );
-    return _objects(reply, 'cards');
+    final items = _objects(reply, 'cards');
+    final truncated = _field(reply, 'truncated') == true;
+    final nextCursor = truncated ? (cursor ?? 0) + items.length : null;
+    return ListPage(
+      items: items,
+      truncated: truncated,
+      nextCursor: nextCursor,
+    );
   }
+
+  /// Bare-list view of [cardsListPage].
+  Future<List<Map<String, dynamic>>> cardsList({int limit = 50}) async =>
+      (await cardsListPage(limit: limit)).items;
 
   /// One character card, or `null` when the daemon has no such card (`cards.get`).
   Future<Map<String, dynamic>?> cardsGet(String id) async {
@@ -1197,11 +1300,31 @@ class DaemonClient {
     );
   }
 
-  /// All chat sessions (`sessions.list`).
-  Future<List<Map<String, dynamic>>> sessionsList() async {
-    final reply = await _callOk('sessions.list');
-    return _objects(reply, 'sessions');
+  /// One page of chat sessions (`sessions.list`). The cursor is an offset into
+  /// the daemon's most-recent-first order.
+  Future<ListPage<Map<String, dynamic>>> sessionsListPage({
+    int limit = 50,
+    int? cursor,
+  }) async {
+    final reply = await _callOk(
+      'sessions.list',
+      payload: <String, dynamic>{
+        'limit': limit,
+        if (cursor != null) 'cursor': cursor,
+      },
+    );
+    final items = _objects(reply, 'sessions');
+    final truncated = _field(reply, 'truncated') == true;
+    return ListPage(
+      items: items,
+      truncated: truncated,
+      nextCursor: truncated ? (cursor ?? 0) + items.length : null,
+    );
   }
+
+  /// Bare-list view of [sessionsListPage].
+  Future<List<Map<String, dynamic>>> sessionsList() async =>
+      (await sessionsListPage()).items;
 
   /// JSONL export of one chat session (`sessions.export`).
   Future<String> sessionsExport(String sessionId) async {

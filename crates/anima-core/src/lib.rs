@@ -171,6 +171,31 @@ impl AppCore {
         Ok(m)
     }
 
+    /// Persist a user turn, creating its session on demand in the same
+    /// transaction. Emits the same core events as `create_session` +
+    /// `append_message` so existing subscribers see an identical turn.
+    pub fn append_user_turn_with_session(
+        &self,
+        session_id: &str,
+        content: &str,
+    ) -> Result<StoredMessage> {
+        let id = new_id();
+        let m = StoredMessage {
+            id,
+            session_id: session_id.to_string(),
+            role: "user".to_string(),
+            content: content.to_string(),
+            created_at: now_ms(),
+            metadata: serde_json::json!({}),
+        };
+        self.messages.insert_with_session(session_id, &m)?;
+        let _ = self.bus.send(CoreEvent::MessageAppended {
+            session_id: session_id.to_string(),
+            id: m.id.clone(),
+        });
+        Ok(m)
+    }
+
     /// Start a streaming chat completion using a registered provider.
     pub async fn stream_chat(
         &self,
@@ -229,6 +254,28 @@ mod tests {
         let session = core.create_session("Demo").unwrap();
         let msg = core.append_message(&session.id, "user", "hello").unwrap();
         assert_eq!(msg.content, "hello");
+    }
+
+    #[test]
+    fn append_user_turn_creates_exactly_one_session_and_message() {
+        let dir = tempdir().unwrap();
+        let db = anima_store::Database::open(&dir.path().join("test.sqlite")).unwrap();
+        let core = AppCore::new(db.clone());
+        let mut events = core.subscribe();
+
+        let msg = core.append_user_turn_with_session("s1", "hello").unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "hello");
+
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db);
+        assert_eq!(sessions.list().unwrap().len(), 1);
+        assert_eq!(messages.list("s1").unwrap().len(), 1);
+        // Same event the old create + append path emitted.
+        assert!(matches!(
+            events.try_recv(),
+            Ok(CoreEvent::MessageAppended { .. })
+        ));
     }
 
     #[test]

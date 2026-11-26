@@ -66,9 +66,20 @@ class DirectWebSocketTransport implements DaemonTransport {
     await close();
     // Plain `ws://` (loopback) needs no CA; `wss://` always builds one, and an
     // empty context trusts nothing — verification is never disabled.
-    final context = endpoint.scheme == 'wss'
-        ? gatewaySecurityContext(caCertPath)
-        : null;
+    // Plain `ws://` (loopback) needs no CA. A remote `wss://` endpoint MUST
+    // have the daemon-minted CA: without it a fallback to the default
+    // platform-trusted channel could leak the auth token to an impostor.
+    SecurityContext? context;
+    if (endpoint.scheme == 'wss') {
+      final pemPath = caCertPath;
+      if (pemPath?.trim().isEmpty ?? true) {
+        throw const GatewayCaException(
+          'No CA certificate is configured for wss. Get the daemon CA path '
+          'from GetGatewayConfig and retry.',
+        );
+      }
+      context = gatewaySecurityContext(pemPath);
+    }
     final channel = context == null
         ? WebSocketChannel.connect(endpoint)
         : IOWebSocketChannel.connect(

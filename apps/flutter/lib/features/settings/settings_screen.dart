@@ -84,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _settingsError;
   String? _settingsStatus;
   StreamSubscription<DaemonStatus>? _statusSub;
+  void Function()? _unsubscribeEvents;
   bool _wasConnected = false;
 
   @override
@@ -100,12 +101,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       _wasConnected = status.state == DaemonConnectionState.connected;
     });
+    // Another client can change a section while this screen is open. The
+    // event carries only the section name, so reload it from the daemon.
+    _unsubscribeEvents = widget.client.onEvent((event) {
+      if (event.topic != EventTopic.settingsChanged) return;
+      final section = event.data['section'];
+      if (section is! String) return;
+      if (!_SettingsSection.values.any((s) => s.key == section)) return;
+      unawaited(_loadSections());
+    });
     unawaited(_loadSections());
     unawaited(_loadRuntimeState());
   }
 
   @override
   void dispose() {
+    _unsubscribeEvents?.call();
     _statusSub?.cancel();
     _language.dispose();
     _tint.dispose();

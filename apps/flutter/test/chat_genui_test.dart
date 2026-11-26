@@ -16,7 +16,15 @@ class _HistoryChatClient extends FakeChatClient {
   final List<Map<String, dynamic>> history;
 
   @override
-  Future<List<Map<String, dynamic>>> chatHistory(String sessionId) async => history;
+  Future<ListPage<Map<String, dynamic>>> chatHistoryPage(
+    String sessionId, {
+    int limit = 50,
+    int? cursor,
+  }) async =>
+      ListPage(
+        items: history,
+        truncated: false,
+      );
 }
 
 const _catalogId = 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json';

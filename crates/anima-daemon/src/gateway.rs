@@ -48,7 +48,8 @@ use crate::events::EventPublisher;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anima_channel::{
@@ -94,25 +95,73 @@ pub(crate) const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
 const MCP_ACP_DEADLINE: Duration = Duration::from_secs(30);
 const ACP_PROMPT_DEADLINE: Duration = Duration::from_secs(320);
 
+/// Shared cancellation flag for one deadline-bound MCP/ACP call. The caller
+/// sets it on timeout; the worker checks it between RPCs and stops early.
+#[derive(Clone)]
+struct McpAcpDeadline {
+    expired_flag: Arc<AtomicBool>,
+    start: Instant,
+    deadline: Duration,
+}
+
+impl McpAcpDeadline {
+    fn new(deadline: Duration) -> Self {
+        Self {
+            expired_flag: Arc::new(AtomicBool::new(false)),
+            start: Instant::now(),
+            deadline,
+        }
+    }
+
+    fn expired(&self) -> bool {
+        self.expired_flag.load(Ordering::SeqCst)
+    }
+
+    /// Time left before the caller's deadline, minus a safety margin so the
+    /// blocked RPC unwinds before the observer gives up.
+    fn remaining(&self, margin: Duration) -> Duration {
+        self.deadline
+            .saturating_sub(self.start.elapsed())
+            .saturating_sub(margin)
+            .max(Duration::from_millis(1))
+    }
+
+    /// Check after an RPC so the worker stops as soon as the caller times out.
+    fn check<T>(&self, result: Result<T, String>) -> Result<T, String> {
+        if self.expired() {
+            Err("MCP/ACP handler exceeded server deadline".to_string())
+        } else {
+            result
+        }
+    }
+}
+
 /// Run an MCP/ACP handler under a mandatory server-side deadline.
 /// `anima-channel` already runs every registered handler off the connection
 /// reader; this second bound ensures direct callers cannot wait forever.
+/// Client calls are bounded strictly below this deadline, and the token stops
+/// the worker between calls if the caller gives up anyway.
 fn with_mcp_acp_deadline<F>(deadline: Duration, f: F) -> Result<serde_json::Value, String>
 where
-    F: FnOnce() -> Result<serde_json::Value, String> + Send + 'static,
+    F: FnOnce(McpAcpDeadline) -> Result<serde_json::Value, String> + Send + 'static,
 {
+    let token = McpAcpDeadline::new(deadline);
+    let worker_token = token.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
         .name("airi-daemon-mcp-acp".to_string())
         .spawn(move || {
-            let _ = tx.send(f());
+            let _ = tx.send(f(worker_token));
         })
         .map_err(|e| format!("failed to start MCP/ACP handler: {e}"))?;
     match rx.recv_timeout(deadline) {
         Ok(result) => result,
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err(format!(
-            "MCP/ACP handler exceeded {deadline:?} server deadline"
-        )),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            token.expired_flag.store(true, Ordering::SeqCst);
+            Err(format!(
+                "MCP/ACP handler exceeded {deadline:?} server deadline"
+            ))
+        }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
             Err("MCP/ACP handler worker died".to_string())
         }
@@ -1056,11 +1105,16 @@ impl Gateway {
                             })
                             .unwrap_or_default();
                         let core_for_send = core.clone();
-                        std::thread::spawn(move || {
-                            // One process-wide Tokio runtime for every chat
-                            // turn: `Runtime::new()` per turn built (and tore
-                            // down) a whole multi-thread reactor per message.
-                            chat_runtime().block_on(async move {
+                        // Bounded concurrency: queued turns are async tasks,
+                        // so a burst costs no extra OS threads and the RPC
+                        // handler is never blocked waiting for a slot. The
+                        // ack still returns before the stream completes.
+                        chat_runtime().spawn(async move {
+                            let _permit = CHAT_TURNS
+                                .acquire()
+                                .await
+                                .expect("chat semaphore never closed");
+                            {
                                 let resolution = anima_core::providers::resolve_provider_selection(
                                     |k| std::env::var(k).ok(),
                                     &rows,
@@ -1088,7 +1142,10 @@ impl Gateway {
                                 };
                                 let mut rx = svc.subscribe();
                                 let pump_sid = sid.clone();
+                                let pump_message_id = assistant_message_id.clone();
                                 let pump_cancel = cancel_flag.clone();
+                                let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+                                let (done_tx, mut done_rx) = tokio::sync::oneshot::channel::<()>();
                                 let pump = tokio::spawn(async move {
                                     // Real zero-based token index per assistant
                                     // message (wire: `token.delta.index`). A `0`
@@ -1096,7 +1153,21 @@ impl Gateway {
                                     // overwrite earlier tokens of the same turn.
                                     let mut indices: std::collections::HashMap<String, u64> =
                                         std::collections::HashMap::new();
-                                    while let Some(ev) = recv_chat_event(&mut rx).await {
+                                    let mut draining = false;
+                                    while let Some(ev) = if draining {
+                                        // Same handler path as live events;
+                                        // try_recv ends the drain when empty.
+                                        rx.try_recv().ok()
+                                    } else {
+                                        tokio::select! {
+                                            ev = recv_chat_event(&mut rx) => ev,
+                                            _ = &mut stop_rx => None,
+                                            _ = &mut done_rx => {
+                                                draining = true;
+                                                rx.try_recv().ok()
+                                            }
+                                        }
+                                    } {
                                         if pump_cancel.load(std::sync::atomic::Ordering::SeqCst) {
                                             break;
                                         }
@@ -1128,12 +1199,17 @@ impl Gateway {
                                                 let index = indices.remove(&message).unwrap_or(0);
                                                 pub_clone.token_delta(
                                                     session,
-                                                    message,
+                                                    message.clone(),
                                                     String::new(),
                                                     index,
                                                     true,
                                                     None,
                                                 );
+                                                // This turn's own terminal event ends the pump;
+                                                // other sessions share the bus and are ignored.
+                                                if message == pump_message_id {
+                                                    break;
+                                                }
                                             }
                                             _ => {}
                                         }
@@ -1162,14 +1238,26 @@ impl Gateway {
                                     )
                                     .await
                                 };
-                                pump.abort();
                                 match result {
-                                    Ok(_) => {}
-                                    Err(err) => {
-                                        // Same honest terminal marker as the
-                                        // no-provider path: real assistant id,
-                                        // never an empty message_id.
-                                        let _ = err;
+                                    Ok(outcome) => {
+                                        // A persisted reply emits MessageDone
+                                        // before returning; the done signal
+                                        // lets the pump drain it even if the
+                                        // bus lagged. A stopped turn with no
+                                        // content emits none: stop the pump.
+                                        if outcome.assistant_message_id.is_none() {
+                                            let _ = stop_tx.send(());
+                                        } else {
+                                            let _ = done_tx.send(());
+                                        }
+                                        let _ = pump.await;
+                                    }
+                                    Err(_err) => {
+                                        // No MessageDone for a failed turn: stop
+                                        // the pump, then publish the single
+                                        // terminal marker with the ack's id.
+                                        let _ = stop_tx.send(());
+                                        let _ = pump.await;
                                         let _ = err_pub.token_delta(
                                             sid.clone(),
                                             assistant_message_id.clone(),
@@ -1181,15 +1269,15 @@ impl Gateway {
                                     }
                                 }
                                 // Disconnect behavior: this handler returns the chat.send ack before the
-                                // stream completes, and the pump runs in a background thread that is not
-                                // tied to the WebSocket connection lifetime. If a client disconnects
+                                // stream completes, and the turn runs on a bounded async task, not tied
+                                // to the WebSocket connection lifetime. If a client disconnects
                                 // mid-stream, deltas continue to be published on the event bus; with no
                                 // subscriber they are dropped by the bus, and the persisted user turn
                                 // remains honest. The supported way to stop an in-flight turn is
                                 // chat.cancel, which sets cancel_flag so the pump breaks and ChatService
                                 // stops the generation; late events do not resurrect a cancelled turn.
                                 let _ = sid;
-                            });
+                            }
                         });
                         let reply = anima_channel::wire::ChatSendReply {
                             session_id: session_id.clone(),
@@ -1849,16 +1937,17 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let value = value.clone();
-                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move |deadline| {
                             let value = &value;
                             let transport = value
                                 .get("transport")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("stdio");
                             let mut client = build_mcp_client(value, transport)?;
-                            client.set_timeout(rpc_deadline(value));
-                            client.initialize()?;
-                            let tools = client.tools_list()?;
+                            client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                            deadline.check(client.initialize())?;
+                            client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                            let tools = deadline.check(client.tools_list())?;
                             let tools: Vec<serde_json::Value> = tools
                                 .into_iter()
                                 .map(|t| {
@@ -1884,7 +1973,7 @@ impl Gateway {
                 method.to_string(),
                 gated(config_path, hostname, move |_method: &str, value: &serde_json::Value| {
                     let value = value.clone();
-                    with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                    with_mcp_acp_deadline(MCP_ACP_DEADLINE, move |deadline| {
                         let value = &value;
                         let transport = value
                             .get("transport")
@@ -1905,9 +1994,10 @@ impl Gateway {
                             .cloned()
                             .unwrap_or_else(|| serde_json::json!({}));
                         let mut client = build_mcp_client(value, transport)?;
-                        client.set_timeout(rpc_deadline(value));
-                        client.initialize()?;
-                        let result = client.tools_call(tool_name, arguments)?;
+                        client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                        deadline.check(client.initialize())?;
+                        client.set_timeout(bounded_client_timeout(value, &deadline, Duration::from_secs(3)));
+                        let result = deadline.check(client.tools_call(tool_name, arguments))?;
                         let text = result.text();
                         let content: Vec<serde_json::Value> = result
                             .content
@@ -1941,7 +2031,7 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let value = value.clone();
-                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move || {
+                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move |deadline| {
                             let value = &value;
                             let command =
                                 value.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -1991,13 +2081,25 @@ impl Gateway {
                             client.set_timeout(rpc_deadline(value));
                             client.set_prompt_timeout(acp_prompt_deadline(value));
                             client.set_permission_policy(policy);
-                            let init = client.initialize().map_err(|e| e.to_string())?;
-                            let session_id = client
-                                .new_session(cwd_path.as_deref())
-                                .map_err(|e| e.to_string())?;
-                            let result = client
-                                .prompt(&session_id, prompt_text)
-                                .map_err(|e| e.to_string())?;
+                            let init = deadline.check(
+                                client.initialize().map_err(|e| e.to_string()),
+                            )?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            let session_id = deadline.check(
+                                client
+                                    .new_session(cwd_path.as_deref())
+                                    .map_err(|e| e.to_string()),
+                            )?;
+                            client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
+                            let result = deadline.check(
+                                client
+                                    .prompt(&session_id, prompt_text)
+                                    .map_err(|e| e.to_string()),
+                            )?;
                             client.close();
                             let updates: Vec<serde_json::Value> = result
                                 .updates
@@ -2031,7 +2133,7 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let value = value.clone();
-                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move || {
+                        with_mcp_acp_deadline(ACP_PROMPT_DEADLINE, move |deadline| {
                             let value = &value;
                             let command =
                                 value.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -2080,13 +2182,25 @@ impl Gateway {
                             client.set_timeout(rpc_deadline(value));
                             client.set_prompt_timeout(acp_prompt_deadline(value));
                             client.set_permission_policy(policy);
-                            let init = client.initialize().map_err(|e| e.to_string())?;
-                            let session_id = client
-                                .new_session(cwd_path.as_deref())
-                                .map_err(|e| e.to_string())?;
-                            let result = client
-                                .prompt(&session_id, prompt_text)
-                                .map_err(|e| e.to_string())?;
+                            let init = deadline.check(
+                                client.initialize().map_err(|e| e.to_string()),
+                            )?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            let session_id = deadline.check(
+                                client
+                                    .new_session(cwd_path.as_deref())
+                                    .map_err(|e| e.to_string()),
+                            )?;
+                            client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
+                            let result = deadline.check(
+                                client
+                                    .prompt(&session_id, prompt_text)
+                                    .map_err(|e| e.to_string()),
+                            )?;
                             client.close();
                             Ok(serde_json::json!({
                                 "protocolVersion": init.protocol_version,
@@ -2117,7 +2231,7 @@ impl Gateway {
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
                         let value = value.clone();
-                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move || {
+                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move |deadline| {
                             let value = &value;
                             let command =
                                 value.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -2142,9 +2256,22 @@ impl Gateway {
                             )
                             .map_err(|e| e.to_string())?;
                             let mut client = client;
-                            client.set_timeout(rpc_deadline(value));
-                            client.initialize().map_err(|e| e.to_string())?;
-                            let sessions = client.list_sessions().map_err(|e| e.to_string())?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            deadline.check(
+                                client.initialize().map_err(|e| e.to_string()),
+                            )?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            let sessions = deadline.check(
+                                client.list_sessions().map_err(|e| e.to_string()),
+                            )?;
                             client.close();
                             let sessions: Vec<serde_json::Value> = sessions
                                 .into_iter()
@@ -2376,7 +2503,7 @@ impl McpClient {
 
     fn close(self) {
         match self {
-            McpClient::Stdio(mut c) => c.close(),
+            McpClient::Stdio(c) => c.close(),
             McpClient::Http(c) => c.close(),
         }
     }
@@ -2485,6 +2612,13 @@ fn chat_runtime() -> &'static tokio::runtime::Runtime {
             .expect("daemon chat runtime")
     })
 }
+
+/// Maximum number of chat turns generating at once. Further sends queue as
+/// async tasks instead of creating an OS thread each or blocking the RPC
+/// handler waiting for a worker slot.
+const CHAT_MAX_CONCURRENT_TURNS: usize = 4;
+static CHAT_TURNS: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::const_new(CHAT_MAX_CONCURRENT_TURNS));
 
 fn stmm_clamp_i64(value: Option<&serde_json::Value>) -> i64 {
     match value {
@@ -2970,6 +3104,202 @@ mod tests {
     }
 
     #[test]
+    fn chat_send_bounds_concurrent_generations() {
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        /// Records peak live `stream()` calls; each arrival releases the
+        /// waiting test so queued turns cannot outlive the fixture.
+        struct CountingMock {
+            live: Arc<AtomicUsize>,
+            peak: Arc<AtomicUsize>,
+            arrived: std::sync::mpsc::Sender<()>,
+        }
+        #[async_trait]
+        impl anima_llm::ChatProvider for CountingMock {
+            fn id(&self) -> &str {
+                "concurrency-cap"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                let now = self.live.fetch_add(1, Ordering::SeqCst) + 1;
+                self.peak.fetch_max(now, Ordering::SeqCst);
+                let _ = self.arrived.send(());
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                self.live.fetch_sub(1, Ordering::SeqCst);
+                Ok(Box::pin(stream::iter(vec![Ok(ChatChunk::finish("stop"))])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let live = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let (arrived_tx, arrived_rx) = std::sync::mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "concurrency-cap".to_string(),
+            Arc::new(CountingMock {
+                live: live.clone(),
+                peak: peak.clone(),
+                arrived: arrived_tx,
+            }),
+        );
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "concurrency-cap".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let turns = CHAT_MAX_CONCURRENT_TURNS + 4;
+        for i in 0..turns {
+            let reply = send(
+                "chat.send",
+                &serde_json::json!({ "sessionId": format!("cap-{i}"), "content": "go" }),
+            )
+            .expect("chat.send must ack immediately even when turns are queued");
+            assert_eq!(reply["accepted"], true);
+        }
+        // Wait for every generation to start; queued turns cannot outlive the
+        // fixture (and its store) after this test returns.
+        for _ in 0..turns {
+            arrived_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("every acked turn must eventually generate");
+        }
+        for _ in 0..200 {
+            if live.load(Ordering::SeqCst) == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        for _ in 0..500 {
+            if CHAT_TURNS.available_permits() == CHAT_MAX_CONCURRENT_TURNS {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            CHAT_TURNS.available_permits(),
+            CHAT_MAX_CONCURRENT_TURNS,
+            "all bounded turns must release their permits"
+        );
+        assert!(
+            peak.load(Ordering::SeqCst) <= CHAT_MAX_CONCURRENT_TURNS,
+            "no more than {} generations may run at once",
+            CHAT_MAX_CONCURRENT_TURNS
+        );
+    }
+
+    #[test]
+    fn chat_send_nth_turn_waits_for_a_slot() {
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        /// First `CHAT_MAX_CONCURRENT_TURNS` streams park on `gate`; the
+        /// arrivals channel records when `stream()` is actually entered.
+        struct GatedMock {
+            live: Arc<AtomicUsize>,
+            arrived: std::sync::mpsc::Sender<()>,
+            gate: Arc<tokio::sync::Semaphore>,
+        }
+        #[async_trait]
+        impl anima_llm::ChatProvider for GatedMock {
+            fn id(&self) -> &str {
+                "backpressure-gate"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                let _ = self.live.fetch_add(1, Ordering::SeqCst);
+                let _ = self.arrived.send(());
+                let _gate = self.gate.acquire().await.expect("gate never closed");
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                self.live.fetch_sub(1, Ordering::SeqCst);
+                Ok(Box::pin(stream::iter(vec![Ok(ChatChunk::finish("stop"))])))
+            }
+        }
+        let (gateway, _tmp) = isolated_gateway();
+        let live = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let (arrived_tx, arrived_rx) = std::sync::mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "backpressure-gate".to_string(),
+            Arc::new(GatedMock {
+                live: live.clone(),
+                arrived: arrived_tx,
+                gate: gate.clone(),
+            }),
+        );
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "backpressure-gate".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let turns = CHAT_MAX_CONCURRENT_TURNS + 1;
+        for i in 0..turns {
+            let reply = send(
+                "chat.send",
+                &serde_json::json!({ "sessionId": format!("gate-{i}"), "content": "go" }),
+            )
+            .expect("chat.send must ack even with turns queued");
+            assert_eq!(reply["accepted"], true);
+        }
+
+        // Every slot holder has entered the provider; the Nth turn has not.
+        for _ in 0..CHAT_MAX_CONCURRENT_TURNS {
+            arrived_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("all slot holders must start generating");
+        }
+        assert_eq!(
+            live.load(Ordering::SeqCst),
+            CHAT_MAX_CONCURRENT_TURNS,
+            "slot holders must stay parked until released"
+        );
+        assert!(
+            arrived_rx.try_recv().is_err(),
+            "the Nth turn must wait for a slot to free"
+        );
+
+        // Freeing a slot deterministically unblocks the queued turn.
+        gate.add_permits(turns);
+        arrived_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the Nth turn must start once a slot frees");
+        for _ in 0..200 {
+            if live.load(Ordering::SeqCst) == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(live.load(Ordering::SeqCst), 0, "all turns must finish");
+    }
+
+    #[test]
     fn chat_send_pumps_only_forward_their_own_session() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
@@ -3207,6 +3537,17 @@ mod tests {
             .expect("genUi: true must opt into the A2UI system prompt");
         assert!(a2ui.contains("v0.9"));
         assert!(a2ui.contains("unique, stable, slug-like surfaceId"));
+        for _ in 0..500 {
+            if CHAT_TURNS.available_permits() == CHAT_MAX_CONCURRENT_TURNS {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            CHAT_TURNS.available_permits(),
+            CHAT_MAX_CONCURRENT_TURNS,
+            "gen_ui turns must release their permits"
+        );
     }
 
     #[test]
@@ -3950,15 +4291,122 @@ mod tests {
     }
 
     #[test]
+    fn chat_send_stopped_success_emits_no_complete_marker() {
+        use anima_llm::{ChatChunk, ChatRequest, ChatStream, ModelInfo};
+        use async_trait::async_trait;
+        use futures_util::stream;
+        use std::sync::Arc;
+
+        /// Pending stream: cancelling before the first delta yields an Ok
+        /// outcome with `assistant_message_id: None` and no MessageDone.
+        struct PendingMock;
+        #[async_trait]
+        impl anima_llm::ChatProvider for PendingMock {
+            fn id(&self) -> &str {
+                "no-complete-stop"
+            }
+            async fn models(&self) -> Result<Vec<ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(&self, _req: ChatRequest) -> Result<ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(stream::pending::<
+                    Result<ChatChunk, anima_llm::LlmError>,
+                >()))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let bus = gateway.event_bus();
+        let lane = bus.new_lane();
+        lane.subscribe(&[anima_channel::EventTopic::TokenDelta]);
+        bus.register_lane(&lane);
+
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers
+            .lock()
+            .unwrap()
+            .insert("no-complete-stop".to_string(), Arc::new(PendingMock));
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "no-complete-stop".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        assert_eq!(
+            send(
+                "chat.send",
+                &serde_json::json!({"sessionId":"no-complete-session","content":"stop me"}),
+            )
+            .unwrap()["accepted"],
+            true
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let cancel = handlers.get("chat.cancel").unwrap();
+        assert_eq!(
+            cancel(
+                "chat.cancel",
+                &serde_json::json!({"session_id":"no-complete-session"}),
+            )
+            .unwrap()["cancelled"],
+            true
+        );
+
+        // Let the detached turn unwind; its stop signal must end the pump
+        // without publishing a `complete` terminal marker.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let markers: Vec<_> = lane
+            .drain()
+            .into_iter()
+            .filter_map(|ev| match ev.data {
+                anima_channel::EventPayload::TokenDelta(d) if d.final_ => Some(d.reason),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(markers, vec![Some("cancelled".to_string())]);
+    }
+
+    #[test]
     fn mcp_acp_handler_enforces_server_deadline() {
         let start = Instant::now();
-        let err = with_mcp_acp_deadline(Duration::from_millis(200), || {
-            std::thread::sleep(Duration::from_secs(60));
+        let err = with_mcp_acp_deadline(Duration::from_millis(200), |deadline| {
+            while !deadline.expired() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
             Ok(serde_json::json!({}))
         })
         .expect_err("handler must be bounded by the server deadline");
         assert!(err.contains("server deadline"));
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn mcp_acp_deadline_signals_worker_to_stop() {
+        let (exit_tx, exit_rx) = std::sync::mpsc::channel();
+        let err = with_mcp_acp_deadline(Duration::from_millis(100), move |deadline| {
+            while !deadline.expired() {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let result = deadline.check(Ok(serde_json::json!({"finished": true})));
+            let _ = exit_tx.send(result.is_err());
+            result
+        })
+        .expect_err("handler must be bounded by the server deadline");
+        assert!(err.contains("server deadline"));
+        // The worker must unwind on cancellation, not stay live holding its
+        // MCP/ACP client; a result rejected by `check` proves it exited
+        // through the cancellation path.
+        assert_eq!(
+            exit_rx.recv_timeout(Duration::from_secs(2)),
+            Ok(true),
+            "worker did not exit after deadline cancellation"
+        );
     }
 
     #[test]

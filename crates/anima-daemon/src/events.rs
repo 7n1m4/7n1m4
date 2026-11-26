@@ -67,11 +67,17 @@ type StatusKey = (bool, bool, String);
 pub struct EventPublisher {
     bus: EventBus,
     last_status: Arc<Mutex<Option<StatusKey>>>,
-    /// Incremental ACT-marker state shared by all clones, keyed by session so
-    /// concurrent turns cannot interleave a split `<|ACT:…|>` marker. Entries
-    /// are removed on the terminal delta.
-    cue_parsers: Arc<Mutex<HashMap<String, CueParser>>>,
+    /// Incremental ACT-marker state shared by all clones, keyed by the
+    /// publishing turn so concurrent turns of one session cannot parse into
+    /// one another's `<|ACT:…|>` buffer. Entries are removed on a terminal
+    /// delta or when the turn is cancelled/errored.
+    cue_parsers: Arc<Mutex<HashMap<TurnKey, CueParser>>>,
 }
+
+/// Identity of one assistant turn. `message_id` comes from the token stream;
+/// a terminal cancel/error before the first delta carries an empty id, so
+/// `(session_id, message_id)` identifies that terminal notification.
+type TurnKey = (String, String);
 
 /// One renderer-neutral acting cue extracted from a streamed ACT marker.
 #[derive(Debug, Clone, PartialEq)]
@@ -294,6 +300,22 @@ impl EventPublisher {
         true
     }
 
+    /// Publish a notice that a settings section changed on the daemon side.
+    ///
+    /// Carries only the section name: clients must re-read through
+    /// `settings.get` rather than trusting values in the event.
+    pub fn settings_changed(&self, section: impl Into<String>) {
+        self.publish(
+            EventTopic::SettingsChanged,
+            EventPayload::SettingsChanged(anima_channel::SettingsChangedData {
+                section: section.into(),
+                seq: 0,
+                ts_ms: 0,
+            }),
+            None,
+        );
+    }
+
     /// Publish a connectivity/availability transition for `subject`.
     pub fn presence_changed(
         &self,
@@ -321,7 +343,8 @@ impl EventPublisher {
     /// The raw token is still published verbatim; only the derived cue is
     /// normalized, bounded and secret-free (identifier-shaped tag, no text,
     /// no provider data). A marker split across deltas is buffered until its
-    /// `|>` terminator arrives; an unterminated marker is dropped at `final_`.
+    /// `|>` terminator arrives; an unterminated marker is dropped at `final_`
+    /// or on an explicit `cancelled`/`error` terminal reason.
     pub fn token_delta(
         &self,
         session_id: impl Into<String>,
@@ -329,6 +352,7 @@ impl EventPublisher {
         delta: impl Into<String>,
         index: u64,
         final_: bool,
+        reason: Option<String>,
         id: Option<Value>,
     ) {
         let session_id = session_id.into();
@@ -344,21 +368,32 @@ impl EventPublisher {
                 final_,
                 seq: 0,
                 ts_ms: 0,
+                reason: reason.clone(),
             }),
             id.clone(),
         );
 
+        // Explicit error/cancel deltas are terminal too: they may arrive
+        // without `final_`, and must not strand a half-parsed marker.
+        let terminal = final_ || matches!(reason.as_deref(), Some("cancelled" | "error"));
+        let turn: TurnKey = (session_id.clone(), message_id);
         let cues = {
             let mut parsers = self
                 .cue_parsers
                 .lock()
                 .expect("event publisher cue parser lock poisoned");
             let cues = parsers
-                .entry(session_id.clone())
+                .entry(turn.clone())
                 .or_default()
-                .feed(&delta, final_);
-            if final_ {
-                parsers.remove(&session_id);
+                .feed(&delta, terminal);
+            if terminal {
+                if reason.as_deref() == Some("cancelled") && turn.1.is_empty() {
+                    // `chat.cancel` publishes a session-level terminal with no
+                    // message id: clear every turn of that session.
+                    parsers.retain(|(session, _), _| session != &turn.0);
+                } else {
+                    parsers.remove(&turn);
+                }
             }
             cues
         };
@@ -418,6 +453,17 @@ impl EventPublisher {
 mod tests {
     use super::*;
     use anima_channel::EventLane;
+
+    #[test]
+    fn settings_changed_publishes_section_without_values() {
+        let (publisher, lane) = subscribed_publisher();
+        publisher.settings_changed("captions");
+        let event = lane.drain().into_iter().next().expect("settings event");
+        assert_eq!(event.topic, EventTopic::SettingsChanged);
+        let json = serde_json::to_value(&event.data).unwrap();
+        assert_eq!(json["section"], "captions");
+        assert!(json.get("settings").is_none());
+    }
 
     fn subscribed_publisher() -> (EventPublisher, EventLane) {
         let bus = EventBus::with_defaults();
@@ -508,7 +554,7 @@ mod tests {
     #[test]
     fn token_delta_emotion_tag_and_lip_sync_rms_map_to_their_topics() {
         let (publisher, lane) = subscribed_publisher();
-        publisher.token_delta("session", "message", "hi", 2, true, None);
+        publisher.token_delta("session", "message", "hi", 2, true, None, None);
         publisher.emotion_tag(
             "actor",
             "happy",
@@ -557,11 +603,129 @@ mod tests {
                 EventPayload::EmotionTag(d) => (d.seq, d.ts_ms),
                 EventPayload::LipSyncRms(d) => (d.seq, d.ts_ms),
                 EventPayload::PresenceChanged(d) => (d.seq, d.ts_ms),
+                EventPayload::SettingsChanged(d) => (d.seq, d.ts_ms),
                 EventPayload::StatusChanged(d) => (d.seq, d.ts_ms),
             };
             assert_eq!(seq, i as u64);
             assert!(ts_ms > 0);
         }
+    }
+
+    #[test]
+    fn token_delta_carries_terminal_reason_and_omits_it_for_streaming() {
+        let (publisher, lane) = subscribed_publisher();
+        publisher.token_delta("s1", "m1", "partial", 0, false, None, None);
+        for reason in ["complete", "cancelled", "error"] {
+            publisher.token_delta("s1", "m1", "", 1, true, Some(reason.into()), None);
+        }
+
+        let drained = lane.drain();
+        let reasons: Vec<Option<String>> = drained
+            .iter()
+            .map(|event| match &event.data {
+                EventPayload::TokenDelta(data) => data.reason.clone(),
+                other => panic!("expected TokenDelta, got {:?}", other),
+            })
+            .collect();
+        assert_eq!(
+            reasons,
+            vec![
+                None,
+                Some("complete".into()),
+                Some("cancelled".into()),
+                Some("error".into())
+            ]
+        );
+        let wire = serde_json::to_value(&drained[1].data).unwrap();
+        assert_eq!(wire["reason"], "complete");
+        let wire = serde_json::to_value(&drained[0].data).unwrap();
+        assert!(!wire.as_object().unwrap().contains_key("reason"));
+    }
+
+    #[test]
+    fn concurrent_turns_of_one_session_keep_split_act_markers_separate() {
+        let (publisher, lane) = subscribed_publisher();
+        // Two turns of the same session interleave while each marker is split
+        // across deltas. A session-keyed parser concatenates the tails and
+        // emits nothing; a turn-keyed parser emits both cues in completion
+        // order.
+        publisher.token_delta("s1", "m1", "<|ACT:emotion=\"calm\"", 0, false, None, None);
+        publisher.token_delta("s1", "m2", "<|ACT:motion=\"wave\"", 0, false, None, None);
+        publisher.token_delta("s1", "m1", "|>", 1, false, None, None);
+        publisher.token_delta("s1", "m2", "|>", 1, true, None, None);
+
+        let drained = lane.drain();
+        let cues: Vec<_> = drained
+            .iter()
+            .filter_map(|event| match &event.data {
+                EventPayload::EmotionTag(data) => Some(data.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(cues.len(), 2, "each turn must parse its own marker");
+        assert_eq!(cues[0].tag, "calm");
+        assert_eq!(cues[1].tag, "wave");
+        let order: Vec<_> = drained
+            .iter()
+            .map(|event| match &event.data {
+                EventPayload::TokenDelta(data) => {
+                    format!("token:{}:{}", data.message_id, data.delta)
+                }
+                EventPayload::EmotionTag(data) => format!("cue:{}", data.tag),
+                other => panic!("unexpected event: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![
+                "token:m1:<|ACT:emotion=\"calm\"",
+                "token:m2:<|ACT:motion=\"wave\"",
+                "token:m1:|>",
+                "cue:calm",
+                "token:m2:|>",
+                "cue:wave",
+            ],
+            "token events keep their order; a cue follows the delta that completes it"
+        );
+    }
+
+    #[test]
+    fn explicit_error_and_cancel_clear_the_turns_parser_state() {
+        let publisher = {
+            let bus = EventBus::with_defaults();
+            EventPublisher::new(bus)
+        };
+        // An unterminated marker is buffered by the error turn; a later turn
+        // with the same session and message id must not inherit that tail.
+        publisher.token_delta("s1", "m1", "<|ACT:emotion=\"angry\"", 0, false, None, None);
+        publisher.token_delta("s1", "m1", "", 1, false, Some("error".into()), None);
+        publisher.token_delta("s1", "m1", "<|ACT:motion=\"wave\"|>", 0, false, None, None);
+        publisher.token_delta("s1", "m1", "", 1, false, Some("cancelled".into()), None);
+        assert!(
+            publisher
+                .cue_parsers
+                .lock()
+                .expect("cue parser lock poisoned")
+                .is_empty(),
+            "error/cancel terminal paths must not strand parser state"
+        );
+    }
+
+    #[test]
+    fn session_cancel_clears_all_inflight_turns_of_that_session() {
+        let publisher = EventPublisher::new(EventBus::with_defaults());
+        publisher.token_delta("s1", "m1", "<|ACT:emotion=\"calm\"", 0, false, None, None);
+        publisher.token_delta("s1", "m2", "<|ACT:motion=\"wave\"", 0, false, None, None);
+        publisher.token_delta("other", "m3", "<|ACT:vfx=\"fire\"", 0, false, None, None);
+        // `chat.cancel` has no message id: it must clear the buffered turns
+        // of s1 without touching another session.
+        publisher.token_delta("s1", "", "", 0, true, Some("cancelled".into()), None);
+        let parsers = publisher
+            .cue_parsers
+            .lock()
+            .expect("cue parser lock poisoned");
+        assert_eq!(parsers.len(), 1, "only the other session may remain");
+        assert!(parsers.keys().all(|(session, _)| session == "other"));
     }
 
     #[test]
@@ -574,10 +738,11 @@ mod tests {
             0,
             false,
             None,
+            None,
         );
-        publisher.token_delta("s1", "m1", "<|ACT:vfx=\"fire\"|>", 1, false, None);
-        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"angry\"", 0, false, None);
-        publisher.token_delta("s2", "m2", "", 1, true, None);
+        publisher.token_delta("s1", "m1", "<|ACT:vfx=\"fire\"|>", 1, false, None, None);
+        publisher.token_delta("s2", "m2", "<|ACT:emotion=\"angry\"", 0, false, None, None);
+        publisher.token_delta("s2", "m2", "", 1, true, None, None);
 
         let drained = lane.drain();
         let cues: Vec<_> = drained

@@ -44,6 +44,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final StringBuffer _deltaBuffer = StringBuffer();
   bool _assistantStreaming = false;
   bool _historyUnavailable = false;
+  int? _historyCursor;
+  bool _historyLoading = false;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   bool _wasConnected = false;
@@ -253,18 +255,49 @@ class _ChatScreenState extends State<ChatScreen> {
     final sid = _composer.sessionId;
     if (sid == null || sid.isEmpty) return;
     try {
-      final turns = await widget.client.chatHistory(sid);
-      final messages = await Future.wait(turns.map(_messageFromHistory));
+      final page = await widget.client.chatHistoryPage(sid);
+      final messages = await Future.wait(page.items.map(_messageFromHistory));
       if (!mounted) return;
       setState(() {
         _messages
           ..clear()
-          ..addAll(messages);
+          ..addAll(messages.toList());
+        _historyCursor = page.nextCursor;
         _historyUnavailable = false;
       });
     } on DaemonClientException {
       if (!mounted) return;
       setState(() => _historyUnavailable = true);
+    }
+  }
+
+  /// Append the next (older) history page ahead of the loaded transcript.
+  Future<void> _loadOlderHistory() async {
+    final sid = _composer.sessionId;
+    final cursor = _historyCursor;
+    if (sid == null || sid.isEmpty || cursor == null || _historyLoading) {
+      return;
+    }
+    setState(() => _historyLoading = true);
+    try {
+      final page = await widget.client.chatHistoryPage(sid, cursor: cursor);
+      // Older turns go above the current transcript; newest pages are loaded
+      // first, so they are prepended in their existing oldest-first order.
+      final messages = await Future.wait(page.items.map(_messageFromHistory));
+      if (!mounted) return;
+      final existing = _messages.toList();
+      final older = messages.toList();
+      setState(() {
+        _historyCursor = page.nextCursor;
+        _messages
+          ..clear()
+          ..addAll(older)
+          ..addAll(existing);
+      });
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _contextError = e.message);
+    } finally {
+      if (mounted) setState(() => _historyLoading = false);
     }
   }
 
@@ -640,9 +673,21 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
+              itemCount: _messages.length + (_historyCursor == null ? 0 : 1),
               itemBuilder: (context, index) {
-                final m = _messages[index];
+                if (index == 0 && _historyCursor != null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: TextButton(
+                      key: const Key('chat-load-older-history'),
+                      onPressed: _historyLoading ? null : _loadOlderHistory,
+                      child: Text(
+                        _historyLoading ? 'Loading older…' : 'Load older messages',
+                      ),
+                    ),
+                  );
+                }
+                final m = _messages[index - (_historyCursor == null ? 0 : 1)];
                 return Align(
                   alignment: m.isUser
                       ? Alignment.centerRight

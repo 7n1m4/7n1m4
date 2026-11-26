@@ -210,7 +210,14 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       payload['apiKey'] = _apiKey.text;
       payload['rotateSecrets'] = true;
     }
-    await _mutate('providers.save:', () => widget.client.providersSave(payload), (data) {
+    await _mutate('providers.save:', () async {
+      final savedId = await widget.client.providersSave(payload);
+      // A save that the daemon cannot resolve into a usable model is not a
+      // success: surface the validation error rather than an optimistic
+      // 'Saved' message on top of a broken row.
+      await widget.client.providersModels(savedId);
+      return savedId;
+    }, (data) {
       final savedId = data?.toString() ?? id;
       _status = 'Saved provider $savedId';
       _apiKey.clear();

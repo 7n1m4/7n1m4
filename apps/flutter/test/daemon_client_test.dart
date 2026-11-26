@@ -211,7 +211,6 @@ void main() {
     );
   });
 
-  test('event frames reach the hook; client re-subscribes to token.delta after auth', () async {
     final fake = FakeTransport();
     final client = DaemonClient(
       transportFactory: () => fake,
@@ -254,7 +253,6 @@ void main() {
         .toList();
     expect(subscriptions, hasLength(1));
     expect(subscriptions.first['payload'], <String, dynamic>{
-      'topics': <String>['token.delta'],
     });
   });
 
@@ -444,227 +442,26 @@ void main() {
     );
   }
 
-  test(
-    'cancelChat sends chat.cancel with session_id and reads cancelled',
-    () async {
-      final (client, fake) = await connectedClient();
-      addTearDown(client.dispose);
-
-      final pending = client.cancelChat('s1');
-      final request = lastRequest(fake);
-      expect(request['action'], 'chat.cancel');
-      expect(request['payload'], <String, dynamic>{'session_id': 's1'});
-
-      reply(fake, request, <String, dynamic>{'cancelled': true});
-      expect(await pending, isTrue);
-    },
-  );
-
-  test(
-    'cancelChat surfaces a failed rpc reply as DaemonClientException',
-    () async {
-      final (client, fake) = await connectedClient();
-      addTearDown(client.dispose);
-
-      final pending = client.cancelChat('s1');
-      reply(fake, lastRequest(fake), null, ok: false);
-      await expectLater(
-        pending,
-        throwsA(
-          isA<DaemonClientException>().having(
-            (e) => e.kind,
-            'kind',
-            DaemonFailureKind.rpc,
-          ),
-        ),
-      );
-    },
-  );
-
-  test('list verbs decode their data arrays', () async {
     final (client, fake) = await connectedClient();
     addTearDown(client.dispose);
 
-    final cases =
-        <(Future<List<Map<String, dynamic>>> Function(), String, String)>[
-          (() => client.stmmList(), 'stmm.list', 'summaries'),
-          (() => client.journalSearch(), 'journal.search', 'entries'),
-          (() => client.cardsList(), 'cards.list', 'cards'),
-          (() => client.sessionsList(), 'sessions.list', 'sessions'),
-        ];
-    for (final (invoke, action, key) in cases) {
-      final pending = invoke();
-      final request = lastRequest(fake);
-      expect(request['action'], action);
-      reply(fake, request, <String, dynamic>{
-        key: <Map<String, dynamic>>[
-          <String, dynamic>{'id': 'x'},
-        ],
-      });
-      final rows = await pending;
-      expect(rows, hasLength(1));
-      expect(rows.first['id'], 'x');
-    }
-  });
 
-  test('scalar verbs decode their reply fields', () async {
-    final (client, fake) = await connectedClient();
-    addTearDown(client.dispose);
 
-    Future<T> run<T>(
-      String action,
-      Future<T> Function() invoke,
-      Object? data,
-      Object? expected,
-    ) async {
-      final pending = invoke();
-      final request = lastRequest(fake);
-      expect(request['action'], action);
-      reply(fake, request, data);
-      final value = await pending;
-      expect(value, expected);
-      return value;
-    }
 
-    await run(
-      'journal.append',
-      () => client.journalAppend('hi'),
-      <String, dynamic>{'id': 'e1'},
-      'e1',
-    );
-    await run('retrieval.status', client.retrievalStatus, <String, dynamic>{
-      'available': true,
-    }, true);
-    await run('vault.status', client.vaultStatus, <String, dynamic>{
-      'available': true,
-      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
-    }, <String, dynamic>{
-      'available': true,
-      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
     });
-    await run(
-      'sessions.export',
-      () => client.sessionsExport('s1'),
-      <String, dynamic>{'jsonl': '{}\n'},
-      '{}\n',
-    );
-    // A missing session is a successful `false`, not an exception.
-    await run(
-      'sessions.delete',
-      () => client.sessionsDelete('gone'),
-      <String, dynamic>{'deleted': false},
-      false,
     );
     expect(lastRequest(fake)['payload'], <String, dynamic>{
-      'sessionId': 'gone',
     });
-    await run(
-      'sessions.delete',
-      () => client.sessionsDelete('s1'),
-      <String, dynamic>{'deleted': true},
-      true,
-    );
-    expect(lastRequest(fake)['payload'], <String, dynamic>{'sessionId': 's1'});
-    await run(
-      'cards.get',
-      () => client.cardsGet('c1'),
-      <String, dynamic>{
-        'card': <String, dynamic>{'id': 'c1'},
-        'id': 'c1',
-      },
-      <String, dynamic>{'id': 'c1'},
-    );
-
-    for (final (action, invoke) in <(String, Future<void> Function())>[
-      ('stmm.rebuild', client.stmmRebuild),
-    ]) {
-      final pending = invoke();
-      final request = lastRequest(fake);
-      expect(request['action'], action);
-      reply(fake, request, <String, dynamic>{'ok': true});
-      await pending;
-    }
-
-    final importing = client.cardsImport(card: <String, dynamic>{'id': 'c1'});
-    final importRequest = lastRequest(fake);
-    expect(importRequest['action'], 'cards.import');
-    reply(fake, importRequest, <String, dynamic>{
-      'id': 'c1',
-      'name': 'One',
-      'renamed': false,
     });
-    final imported = await importing;
-    expect(imported.id, 'c1');
   });
 
-  test('card verbs send the fixed payloads and decode their replies', () async {
     final (client, fake) = await connectedClient();
     addTearDown(client.dispose);
 
-    // cards.list pages with an explicit limit.
-    final listing = client.cardsList(limit: 5);
-    final listRequest = lastRequest(fake);
-    expect(listRequest['action'], 'cards.list');
-    expect(listRequest['payload'], <String, dynamic>{'limit': 5});
-    reply(fake, listRequest, <String, dynamic>{
-      'cards': <Map<String, dynamic>>[
-        <String, dynamic>{'id': 'c1', 'name': 'One'},
-      ],
-      'truncated': false,
-    });
-    expect((await listing).single['name'], 'One');
 
-    // cards.create sends {name, document} and reads {id, name}.
-    final document = <String, dynamic>{
-      'name': 'One',
-      'spec': 'chara_card_v2',
-      'data': <String, dynamic>{'description': 'first'},
-    };
-    final creating = client.cardsCreate(document);
-    final createRequest = lastRequest(fake);
-    expect(createRequest['action'], 'cards.create');
-    expect(createRequest['payload'], <String, dynamic>{
-      'name': 'One',
-      'document': document,
-    });
-    reply(fake, createRequest, <String, dynamic>{'id': 'c1', 'name': 'One'});
-    final created = await creating;
-    expect(created.id, 'c1');
-    expect(created.name, 'One');
-    expect(created.updated, isFalse);
 
-    // cards.update sends {id, document} and requires updated:true.
-    final updating = client.cardsUpdate('c1', <String, dynamic>{
-      ...document,
-      'data': <String, dynamic>{'description': 'second'},
-    });
-    final updateRequest = lastRequest(fake);
-    expect(updateRequest['action'], 'cards.update');
-    expect(updateRequest['payload'], <String, dynamic>{
-      'id': 'c1',
-      'document': <String, dynamic>{
-        ...document,
-        'data': <String, dynamic>{'description': 'second'},
-      },
-    });
-    reply(fake, updateRequest, <String, dynamic>{
-      'id': 'c1',
-      'name': 'One',
-      'updated': true,
-    });
-    final updated = await updating;
-    expect(updated.updated, isTrue);
-    expect(updated.id, 'c1');
-
-    // cards.update without updated:true is a protocol error, not a false save.
-    final lying = client.cardsUpdate('c1', document);
-    reply(fake, lastRequest(fake), <String, dynamic>{
-      'id': 'c1',
-      'name': 'One',
-      'updated': false,
-    });
     await expectLater(
-      lying,
+      malformed,
       throwsA(
         isA<DaemonClientException>().having(
           (e) => e.kind,
@@ -673,43 +470,6 @@ void main() {
         ),
       ),
     );
-
-    // cards.import sends {card} (or {pngBase64}) and reads {id, name, renamed}.
-    final importing = client.cardsImport(card: document);
-    final importRequest = lastRequest(fake);
-    expect(importRequest['action'], 'cards.import');
-    expect(importRequest['payload'], <String, dynamic>{'card': document});
-    reply(fake, importRequest, <String, dynamic>{
-      'id': 'c2',
-      'name': 'One (2)',
-      'renamed': true,
-    });
-    final imported = await importing;
-    expect(imported.id, 'c2');
-    expect(imported.name, 'One (2)');
-    expect(imported.renamed, isTrue);
-
-    final importingPng = client.cardsImport(pngBase64: 'aGk=');
-    final pngRequest = lastRequest(fake);
-    expect(pngRequest['payload'], <String, dynamic>{'pngBase64': 'aGk='});
-    reply(fake, pngRequest, <String, dynamic>{
-      'id': 'c3',
-      'name': 'Three',
-      'renamed': false,
-    });
-    expect((await importingPng).name, 'Three');
-
-    // cards.delete sends {id}; a missing card is a successful false.
-    final deleting = client.cardsDelete('gone');
-    final deleteRequest = lastRequest(fake);
-    expect(deleteRequest['action'], 'cards.delete');
-    expect(deleteRequest['payload'], <String, dynamic>{'id': 'gone'});
-    reply(fake, deleteRequest, <String, dynamic>{'deleted': false});
-    expect(await deleting, isFalse);
-
-    final deletingExisting = client.cardsDelete('c1');
-    reply(fake, lastRequest(fake), <String, dynamic>{'deleted': true});
-    expect(await deletingExisting, isTrue);
   });
 
   test(
@@ -745,7 +505,6 @@ void main() {
       final bare = client.chatHistory('s1');
       final bareRequest = lastRequest(fake);
       expect(bareRequest['action'], 'chat.history');
-      expect(bareRequest['payload'], <String, dynamic>{'session_id': 's1'});
       reply(fake, bareRequest, <Object>[
         <String, dynamic>{'role': 'user', 'content': 'hi'},
       ]);

@@ -46,9 +46,51 @@ fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
         let parsed: S =
             serde_json::from_value(value).map_err(|_| "invalid settings shape".to_string())?;
         store
-            .save_section(&parsed)
-            .map_err(|_| "save failed".to_string())
+            .load_section::<S>()
+            .map_err(|_| "load failed".to_string())?,
+    )
+    .map_err(|_| "serialize failed".to_string())
+}
+
+fn save_section<S: anima_core::settings::SettingsSection>(
+    store: &anima_core::settings::SettingsStore,
+    patch: serde_json::Value,
+) -> Result<(), String> {
+    let parsed = merged_section::<S>(store, patch)?;
+    store
+        .save_section(&parsed)
+        .map_err(|_| "save failed".to_string())
+}
+
+/// Merge a wire PATCH into one persisted section and return the typed blob.
+///
+/// `settings.set` is a PATCH. Start from the persisted blob so an older
+/// client that sends only the field it edited cannot wipe the rest of the
+/// section. Typed deserialization of the merged value still rejects
+/// unknown fields and invalid shapes before anything is persisted.
+fn merged_section<S: anima_core::settings::SettingsSection>(
+    store: &anima_core::settings::SettingsStore,
+    patch: serde_json::Value,
+) -> Result<S, String> {
+    let patch = patch
+        .as_object()
+        .ok_or_else(|| "invalid settings shape".to_string())?;
+    let mut merged = store
+        .load_opt::<serde_json::Value>(S::KEY)
+        .map_err(|_| "load failed".to_string())?
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    for (key, value) in patch {
+        if value.is_null() {
+            merged.remove(key);
+        } else {
+            merged.insert(key.clone(), value.clone());
+        }
     }
+    serde_json::from_value(serde_json::Value::Object(merged))
+        .map_err(|_| "invalid settings shape".to_string())
+}
+
 
     Some(match section {
         "general" => (
@@ -133,6 +175,24 @@ fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
         ),
         _ => return None,
     })
+}
+
+/// Merge a primary PATCH and its mirror selection, then commit both in one
+/// transaction so a rejected mirror cannot leave a half-applied selection.
+fn save_mirrored<P, M>(
+    store: &anima_core::settings::SettingsStore,
+    patch: serde_json::Value,
+    selection: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String>
+where
+    P: anima_core::settings::SettingsSection,
+    M: anima_core::settings::SettingsSection,
+{
+    let primary = merged_section::<P>(store, patch)?;
+    let mirror = merged_section::<M>(store, serde_json::Value::Object(selection))?;
+    store
+        .save_pair((P::KEY, &primary), (M::KEY, &mirror))
+        .map_err(|_| "save failed".to_string())
 }
 
 /// Project a stored provider into the secret-free wire DTO.
@@ -511,9 +571,45 @@ impl CoreService {
             return Err("store unavailable".to_string());
         };
         let store = core.settings();
-        let (_, save) = settings_section(section)
-            .ok_or_else(|| format!("unknown settings section: {section}"))?;
-        save(&store, settings)?;
+        // Only the chat provider/model selection has a twin section. Other
+        // sections also carry an `activeProvider` field (speech, hearing) and
+        // must use their normal typed save path.
+        let selection = if matches!(section, "chat-provider" | "consciousness") {
+            settings
+                .as_object()
+                .map(|o| {
+                    o.iter()
+                        .filter(|(key, _)| *key == "activeProvider" || *key == "activeModel")
+                        .filter_map(|(key, value)| {
+                            value
+                                .as_str()
+                                .map(|v| (key.clone(), serde_json::Value::String(v.to_string())))
+                        })
+                        .collect::<serde_json::Map<_, _>>()
+                })
+                .filter(|o| !o.is_empty())
+        } else {
+            None
+        };
+        if let Some(selection) = selection {
+            match section {
+                "chat-provider" => save_mirrored::<
+                    anima_core::settings::ChatProviderSettings,
+                    anima_core::settings::ConsciousnessSettings,
+                >(&store, settings, selection),
+                "consciousness" => save_mirrored::<
+                    anima_core::settings::ConsciousnessSettings,
+                    anima_core::settings::ChatProviderSettings,
+                >(&store, settings, selection),
+                // Unknown sections still fail with the same message as before.
+                _ => Err(format!("unknown settings section: {section}")),
+            }?;
+        } else {
+            // Unmirrored edits use the existing section table.
+            let (_, save) = settings_section(section)
+                .ok_or_else(|| format!("unknown settings section: {section}"))?;
+            save(&store, settings)?;
+        }
         Ok(anima_channel::wire::SettingsSetReply { ok: true })
     }
 
@@ -624,17 +720,7 @@ impl CoreService {
             .core
             .as_ref()
             .ok_or_else(|| "store unavailable".to_string())?;
-        let sessions = anima_store::SessionRepo::new(core.db.clone());
-        if sessions
-            .get(session_id)
-            .map_err(|_| "session query failed".to_string())?
-            .is_none()
-        {
-            sessions
-                .create(session_id, session_id)
-                .map_err(|_| "session create failed".to_string())?;
-        }
-        core.append_message(session_id, "user", content)
+        core.append_user_turn_with_session(session_id, content)
             .map_err(|_| "message append failed".to_string())
     }
 
@@ -1191,6 +1277,51 @@ mod tests {
     }
 
     #[test]
+    fn chat_send_creates_one_session_and_one_user_turn() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.chat_send("atomic", "first").unwrap();
+        svc.chat_send("atomic", "second").unwrap();
+
+        let turns = svc.chat_stream("atomic").unwrap();
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].content, "first");
+        assert_eq!(turns[1].content, "second");
+        assert!(turns.iter().all(|m| m.role == "user" && m.session_id == "atomic"));
+
+        // Reopen recomputes counts from disk: exactly one session, two turns.
+        let snap = CoreService::open(Some(dir.path().to_path_buf())).snapshot();
+        assert_eq!(snap.session_count, 1);
+        assert_eq!(snap.message_count, 2);
+    }
+
+    #[test]
+    fn chat_send_failed_message_insert_leaves_no_session() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().expect("daemon db handle");
+        db.with_connection(|conn| {
+            conn.execute_batch(
+                "create trigger reject_message before insert on messages
+                 begin select raise(abort, 'forced message failure'); end;",
+            )?;
+            Ok(())
+        })
+        .expect("install message rejection trigger");
+
+        let err = svc
+            .chat_send("rolled-back", "hello")
+            .expect_err("message insert fails");
+        assert_eq!(err, "message append failed");
+
+        let sessions = anima_store::SessionRepo::new(db);
+        assert!(sessions.get("rolled-back").unwrap().is_none());
+        let snap = CoreService::open(Some(dir.path().to_path_buf())).snapshot();
+        assert_eq!(snap.session_count, 0);
+        assert_eq!(snap.message_count, 0);
+    }
+
+    #[test]
     fn cancel_without_a_turn_is_honest() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
@@ -1713,5 +1844,134 @@ mod tests {
         holder.join().unwrap();
 
         assert!(core_mutex_free);
+    }
+
+    #[test]
+    fn settings_set_merges_partial_section_without_clobbering_other_keys() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set("captions", serde_json::json!({
+            "enabled": true,
+            "fontSize": 140.0,
+            "opacity": 55.0,
+            "docking": "bottom",
+        })).unwrap();
+        // A second client edits one field of the section it loaded earlier.
+        svc.settings_set("captions", serde_json::json!({ "opacity": 20.0 })).unwrap();
+        let reply = svc.settings_get("captions").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["fontSize"], 140.0);
+        assert_eq!(value["opacity"], 20.0);
+        assert_eq!(value["docking"], "bottom");
+    }
+
+    #[test]
+    fn settings_set_keeps_unknown_wire_keys_out_of_the_stored_section() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set("general", serde_json::json!({
+            "language": "ja",
+            "futureField": "must-not-be-persisted",
+        })).unwrap();
+        let reply = svc.settings_get("general").unwrap();
+        assert!(!reply.settings.contains("futureField"), "{}", reply.settings);
+    }
+
+    #[test]
+    fn consciousness_selection_is_authoritative_for_chat_provider() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set("consciousness", serde_json::json!({
+            "activeProvider": "chosen",
+            "activeModel": "chosen-model",
+        })).unwrap();
+        let read = |section: &str| -> serde_json::Value {
+            let reply = svc.settings_get(section).unwrap();
+            serde_json::from_str(&reply.settings).unwrap()
+        };
+        assert_eq!(read("chat-provider")["activeProvider"], "chosen");
+        assert_eq!(read("chat-provider")["activeModel"], "chosen-model");
+        // Explicit chat-provider writes are mirrored to consciousness too.
+        svc.settings_set("chat-provider", serde_json::json!({
+            "activeProvider": "other",
+            "activeModel": "other-model",
+        })).unwrap();
+        assert_eq!(read("consciousness")["activeProvider"], "other");
+        assert_eq!(read("consciousness")["activeModel"], "other-model");
+        // A partial edit still preserves the authoritative model from the twin.
+        svc.settings_set("consciousness", serde_json::json!({ "activeProvider": "third" })).unwrap();
+        assert_eq!(read("chat-provider")["activeProvider"], "third");
+        assert_eq!(read("chat-provider")["activeModel"], "other-model");
+    }
+
+    /// A partially applied dual-section write would leave Providers and
+    /// Modules disagreeing about the active chat provider after a crash or a
+    /// rejected second write; both sections must commit or neither.
+    #[test]
+    fn settings_set_mirror_failure_rolls_back_primary_write() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        let svc = CoreService::open(Some(path.clone()));
+        svc.settings_set("chat-provider", serde_json::json!({
+            "activeProvider": "before",
+            "activeModel": "before-model",
+        })).unwrap();
+        // Give the twin row a future timestamp. Both typed merges succeed, but
+        // the twin's upsert is rejected inside the transaction by the same
+        // staleness guard `SettingsRepo::set` uses. A sequential writer would
+        // have already committed "after" to the primary at that point.
+        let db = anima_store::Database::open(&path.join("airi.sqlite")).unwrap();
+        db.with_connection(|conn| {
+            use anima_store::params;
+            conn.execute(
+                "update settings set updated_at = ?1 where key = ?2",
+                params![i64::MAX / 2, "settings/consciousness"],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        let result = svc.settings_set(
+            "chat-provider",
+            serde_json::json!({
+                "activeProvider": "after",
+                "activeModel": "after-model",
+            }),
+        );
+        assert!(result.is_err(), "the stale twin write must fail loudly");
+        let raw = |key: &str| -> String {
+            db.with_connection(|conn| {
+                conn.query_row(
+                    "select value from settings where key = ?1",
+                    anima_store::params![key],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(Into::into)
+            })
+            .unwrap()
+        };
+        let primary: serde_json::Value =
+            serde_json::from_str(&raw("settings/chat-provider")).unwrap();
+        assert_eq!(primary["activeProvider"], "before", "primary must roll back");
+        assert_eq!(primary["activeModel"], "before-model", "primary must roll back");
+    }
+
+    #[test]
+    fn providers_save_rejects_unknown_provider_definition() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let err = svc.providers_save(&serde_json::json!({
+            "id": "p1",
+            "kind": "open-ai-compatible",
+            "definitionId": "not-a-real-definition",
+        })).unwrap_err();
+        assert!(err.contains("not-a-real-definition"), "{err}");
+        assert!(svc.providers_list().unwrap().providers.is_empty());
+        svc.providers_save(&serde_json::json!({
+            "id": "p1",
+            "kind": "open-ai-compatible",
+            "definitionId": "openai",
+        })).unwrap();
+        assert_eq!(svc.providers_list().unwrap().providers.len(), 1);
     }
 }

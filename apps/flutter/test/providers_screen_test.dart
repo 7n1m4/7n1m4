@@ -61,6 +61,12 @@ Future<_RecordingProviderClient> _pump(
     if (action == 'providers.delete') {
       return _ok(action, <String, dynamic>{'ok': true, 'deleted': true});
     }
+    if (action == 'providers.models') {
+      return _ok(action, <String, dynamic>{
+        'providerId': 'p1',
+        'models': <Map<String, dynamic>>[],
+      });
+    }
     return _ok(action, <String, dynamic>{'ok': true, 'id': 'p1'});
   };
   await tester.pumpWidget(
@@ -365,5 +371,35 @@ void main() {
       (c) => c.action == 'providers.save',
     );
     expect(saveCall.payload!['kind'], 'aws-bedrock');
+  });
+
+  testWidgets('save does not report success when model validation fails',
+      (tester) async {
+    final client = await _pump(tester, providers: <Map<String, dynamic>>[]);
+    client.handler = (action, payload) {
+      if (action == 'providers.save')
+        return _ok(action, <String, dynamic>{'id': 'p-invalid'});
+      if (action == 'providers.models')
+        return _err(action, 'provider model discovery failed');
+      if (action == 'providers.list')
+        return _ok(action, <String, dynamic>{'providers': <dynamic>[]});
+      return _ok(action, <String, dynamic>{});
+    };
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Provider ID'), 'p-invalid');
+    await selectKind(tester, 'anthropic');
+    await tester.enterText(find.widgetWithText(TextField, 'Model'), 'bad-model');
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+        .onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(
+      client.calls.any((c) => c.action == 'providers.models'),
+      isTrue,
+      reason: 'the saved provider must be checked before claiming success',
+    );
+    expect(find.textContaining('Saved provider'), findsNothing);
+    expect(find.textContaining('The daemon could not complete the request.'),
+        findsWidgets);
   });
 }
