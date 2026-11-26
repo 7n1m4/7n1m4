@@ -44,6 +44,7 @@
 
 pub mod cards;
 pub mod chat;
+pub mod compaction;
 pub mod crashlog;
 pub mod grounding;
 pub mod memory;

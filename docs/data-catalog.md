@@ -1234,7 +1234,7 @@ metadata are plain refs, not durable settings.
 | `settings/control-strip/collapsed` | `boolean` | `false` | `stores/settings/control-strip.ts` |
 | `settings/control-strip/selfie-include-bg` | `boolean` | `true` | `stores/settings/control-strip.ts` |
 | `settings/control-strip/buttons` | `ControlStripButton[]` | default catalog | `stores/settings/control-strip.ts` |
-| `settings/control-strip/buttons-version` | `string` | `'v4'` | `stores/settings/control-strip.ts` |
+| `settings/control-strip/buttons-version` | `string` | `'v5'` | `packages/stage-ui/src/stores/settings/control-strip.ts`; Rust canonical button catalog in `crates/anima-core/src/settings.rs` (`airi-zjkw`) |
 | `settings/control-strip/docked-edge` | `'left' \| 'right' \| 'top' \| 'bottom'` | `'right'` | `stores/settings/control-strip.ts` |
 | `settings/control-strip/position` | `{ x: number, y: number }` | `{ x: 20, y: 150 }` | `scenarios/layout/ControlStrip.vue` |
 | `settings/controls-island/icon-size` | `'auto' \| 'large' \| 'small'` | `'auto'` | `stores/settings/controls-island.ts` |

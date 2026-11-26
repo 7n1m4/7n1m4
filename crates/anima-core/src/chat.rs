@@ -40,6 +40,10 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::compaction::{
+    cap_winnow_survivors_to_budget, estimate_message_list_tokens, extract_compaction_message_text,
+    CompactionMessage, MessageContent, WINNOW_TARGET_BUDGET_RATIO,
+};
 use crate::grounding::{assemble, GroundingBlock, GroundingBudget};
 use crate::memory::ShortTermMemoryService;
 #[cfg(feature = "local-llm")]
@@ -113,6 +117,12 @@ pub struct StreamOutcome {
 
 /// How often a running stream checks its stop flag while idle.
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Estimated-token ceiling for a turn's prompt copy. Above it the newest
+/// messages that fit [`WINNOW_TARGET_BUDGET_RATIO`] of this threshold are kept.
+/// This bounds only the request sent to the provider: persisted messages and
+/// sessions are never trimmed, deleted, or rewritten.
+const HISTORY_PROMPT_TOKEN_THRESHOLD: usize = 12_000;
 
 /// Server-side instruction for the A2UI subset Flutter GenUI can render.
 ///
@@ -361,7 +371,10 @@ impl ChatService {
         self.messages.insert(&user_message)?;
 
         let history = self.messages.list(&session_id)?;
-        let messages: Vec<ChatMessage> = history.into_iter().filter_map(to_chat_message).collect();
+        // Bound only the prompt copy. The pure compaction helpers cannot fail,
+        // so this never aborts the turn, and `history` is borrowed, never
+        // mutated — every persisted row stays exactly where it was.
+        let messages = cap_prompt_history(&history);
         let system = self.build_system_prompt(a2ui)?;
         self.run_stream(
             session_id,
@@ -947,21 +960,68 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// Map a persisted message back into an LLM chat message.
+/// Build the prompt copy of a persisted history.
 ///
-/// Messages with unrecognized roles (e.g. `tool` plumbing not yet
-/// implemented, or app-internal rows) are skipped.
-fn to_chat_message(message: StoredMessage) -> Option<ChatMessage> {
-    let role = match message.role.as_str() {
-        "system" => Role::System,
-        "user" => Role::User,
-        "assistant" => Role::Assistant,
-        "tool" => Role::Tool,
-        _ => return None,
+/// Short histories are converted unchanged. Long ones are winnowed with the
+/// pure helpers so the request stays under [`HISTORY_PROMPT_TOKEN_THRESHOLD`];
+/// only the returned vector is affected, never `history` or its store rows.
+///
+/// The last row is the current user turn just inserted by the caller: it is
+/// pinned unconditionally, even when it alone exceeds the budget, so the
+/// provider always receives the question. Winnowing applies only to the older
+/// prefix. Rows with unsupported roles (imported JSONL sessions can carry
+/// arbitrary role strings) are dropped *before* costing, so they cannot evict
+/// real history from the budget.
+fn cap_prompt_history(history: &[StoredMessage]) -> Vec<ChatMessage> {
+    let Some((current, older)) = history.split_last() else {
+        return Vec::new();
     };
+    let as_candidate = |msg: &StoredMessage| CompactionMessage {
+        role: msg.role.clone(),
+        content: MessageContent::Text(msg.content.clone()),
+    };
+    let candidates: Vec<CompactionMessage> = older
+        .iter()
+        .filter(|msg| chat_role(&msg.role).is_some())
+        .map(as_candidate)
+        .collect();
+    let kept = if estimate_message_list_tokens(&candidates) > HISTORY_PROMPT_TOKEN_THRESHOLD {
+        cap_winnow_survivors_to_budget(
+            &candidates,
+            0,
+            Some(HISTORY_PROMPT_TOKEN_THRESHOLD),
+            WINNOW_TARGET_BUDGET_RATIO,
+        )
+    } else {
+        candidates
+    };
+    let mut messages: Vec<ChatMessage> = kept.into_iter().filter_map(to_chat_message).collect();
+    // Pin the current turn outside the winnow; `send_message_inner` guarantees
+    // it is the user's question, so it must always reach the provider.
+    if let Some(message) = to_chat_message(as_candidate(current)) {
+        messages.push(message);
+    }
+    messages
+}
+
+/// Recognized persisted role labels. Unknown roles (e.g. app-internal rows
+/// from imported sessions) are skipped; `tool` maps to [`Role::Tool`].
+fn chat_role(role: &str) -> Option<Role> {
+    match role {
+        "system" => Some(Role::System),
+        "user" => Some(Role::User),
+        "assistant" => Some(Role::Assistant),
+        "tool" => Some(Role::Tool),
+        _ => None,
+    }
+}
+
+/// Map a compaction candidate back into an LLM chat message, skipping
+/// unrecognized roles.
+fn to_chat_message(message: CompactionMessage) -> Option<ChatMessage> {
     Some(ChatMessage {
-        role,
-        content: message.content,
+        role: chat_role(&message.role)?,
+        content: extract_compaction_message_text(Some(&message)),
         tool_call_id: None,
     })
 }
@@ -1875,5 +1935,225 @@ mod tests {
             message.contains("AIRI_QT_LLAMA_MODEL") && message.contains("settings/local-llm"),
             "unexpected error: {message}"
         );
+    }
+
+    #[tokio::test]
+    async fn long_history_is_capped_in_the_prompt_but_persisted_rows_survive() {
+        let (_dir, db) = test_db();
+        let verify_db = db.clone();
+        let service = ChatService::new(db.clone());
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        let session = service.new_session_with_title("Custom title").unwrap();
+        let repo = MessageRepo::new(db);
+        // 20 × ~753 estimated tokens ≈ 15 050, above the 12 000 threshold.
+        // The 75% target (9 000 tokens) fits only the newest 12 messages.
+        for i in 0..20 {
+            repo.insert(&StoredMessage {
+                id: format!("seed-{i}"),
+                session_id: session.id.clone(),
+                role: if i % 2 == 0 { "user" } else { "assistant" }.to_string(),
+                content: format!("seed {i}: {}", "x".repeat(3000)),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        }
+        assert_eq!(repo.list(&session.id).unwrap().len(), 20);
+
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "final question",
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let request = recorded
+            .iter()
+            .find(|req| req.messages.iter().any(|m| m.content == "final question"))
+            .expect("no provider request for the final user turn");
+        // Uncapped, the request would carry all 20 seeded rows plus this turn.
+        // The exact cut point depends on the estimator heuristic; assert the
+        // real invariant: a contiguous newest suffix, with the current turn
+        // pinned after it.
+        assert!(
+            request.messages.len() > 1 && request.messages.len() <= 20,
+            "prompt was not capped to a suffix plus the current turn"
+        );
+        assert_eq!(
+            request.messages.last().unwrap().content,
+            "final question",
+            "the current turn must be pinned last"
+        );
+        let prefix = &request.messages[..request.messages.len() - 1];
+        let first_index: usize = prefix[0]
+            .content
+            .strip_prefix("seed ")
+            .and_then(|rest| rest.split(':').next())
+            .and_then(|n| n.parse().ok())
+            .expect("capped prefix must start with a seeded message");
+        assert!(
+            first_index > 0,
+            "reverse selection should drop the oldest messages first"
+        );
+        let expected_prefix: Vec<String> = (first_index..20)
+            .map(|i| format!("seed {i}: {}", "x".repeat(3000)))
+            .collect();
+        assert_eq!(
+            prefix
+                .iter()
+                .map(|m| m.content.as_str())
+                .collect::<Vec<_>>(),
+            expected_prefix
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            "kept history must be a contiguous newest-first suffix"
+        );
+        assert!(
+            request
+                .messages
+                .iter()
+                .all(|m| !m.content.starts_with("seed 0:")),
+            "the oldest seeded message must not reach the provider"
+        );
+        drop(recorded);
+
+        // The cap touched only the prompt copy: every persisted row remains,
+        // including the oldest ones that fell out of the request.
+        let persisted = MessageRepo::new(verify_db).list(&session.id).unwrap();
+        assert_eq!(
+            persisted.len(),
+            22,
+            "20 seeded + user turn + assistant reply"
+        );
+        assert_eq!(persisted[0].id, "seed-0");
+        assert_eq!(
+            persisted[0].content,
+            format!("seed 0: {}", "x".repeat(3000))
+        );
+        assert_eq!(persisted[19].id, "seed-19");
+        assert_eq!(persisted[20].content, "final question");
+        assert_eq!(persisted[21].content, "reply");
+    }
+
+    #[tokio::test]
+    async fn oversized_current_turn_is_pinned_even_when_it_exceeds_the_budget() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        let session = service.new_session_with_title("Custom title").unwrap();
+        // One ordinary seeded row: if the current turn were winnowed out,
+        // this would be the provider's last message (the regression).
+        let repo = MessageRepo::new(db);
+        repo.insert(&StoredMessage {
+            id: "seed-old".to_string(),
+            session_id: session.id.clone(),
+            role: "user".to_string(),
+            content: "seed question".to_string(),
+            created_at: now_ms(),
+            metadata: serde_json::json!({}),
+        })
+        .unwrap();
+
+        // 50 000 ASCII chars -> ~12 500 tokens, above the 12 000 threshold
+        // and far above the 9 000 winnow target.
+        let current_turn = format!("final question: {}", "z".repeat(50_000));
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                &current_turn,
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let request = recorded
+            .iter()
+            .find(|req| req.messages.iter().any(|m| m.content == "seed question"))
+            .expect("no provider request for the seeded session");
+        assert_eq!(
+            request.messages.last().unwrap().content,
+            current_turn,
+            "the current user turn must never be winnowed out"
+        );
+        assert_eq!(request.messages.first().unwrap().content, "seed question");
+    }
+
+    #[tokio::test]
+    async fn unknown_roles_do_not_consume_the_prompt_budget() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        let session = service.new_session_with_title("Custom title").unwrap();
+        let repo = MessageRepo::new(db);
+        repo.insert(&StoredMessage {
+            id: "old-real".to_string(),
+            session_id: session.id.clone(),
+            role: "user".to_string(),
+            content: "keep me: older question".to_string(),
+            created_at: now_ms(),
+            metadata: serde_json::json!({}),
+        })
+        .unwrap();
+        // 30 imported rows at ~750 tokens each (~22 500 total) with an
+        // unsupported role. Before filtering they fill the 9 000-token
+        // target and evict the real message, then get dropped by the mapper.
+        for i in 0..30 {
+            repo.insert(&StoredMessage {
+                id: format!("unknown-{i}"),
+                session_id: session.id.clone(),
+                role: "imported-role".to_string(),
+                content: format!("junk {i}: {}", "y".repeat(3000)),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        }
+
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "final question",
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let request = recorded
+            .iter()
+            .find(|req| req.messages.iter().any(|m| m.content == "final question"))
+            .expect("no provider request for the final user turn");
+        assert!(
+            request
+                .messages
+                .iter()
+                .any(|m| m.content == "keep me: older question"),
+            "older real history must survive the cap"
+        );
+        assert!(
+            request
+                .messages
+                .iter()
+                .all(|m| !m.content.starts_with("junk ")),
+            "unknown-role rows must not reach the provider"
+        );
+        assert_eq!(request.messages.last().unwrap().content, "final question");
     }
 }

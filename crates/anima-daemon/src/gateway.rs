@@ -929,6 +929,43 @@ impl Gateway {
             );
         }
         {
+            // Read-only and ungated: the policy is public constant data, so
+            // backup/sync paths can drop their hand-maintained key lists
+            // without an `allowActions` opt-in. Never reports stored keys or
+            // values — only the matching patterns and synthetic example checks.
+            m.insert(
+                "vault.secret_key_policy".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    use anima_core::providers::{
+                        is_secret_config_key, SECRET_CONFIG_KEY_SUBSTRINGS,
+                        SECRET_CONFIG_KEY_SUFFIXES,
+                    };
+                    let examples = [
+                        "apiKey",
+                        "api_key",
+                        "X-New-Token",
+                        "customBearer",
+                        "endpoint",
+                        "model",
+                    ]
+                    .iter()
+                    .map(|key| {
+                        serde_json::json!({
+                            "key": key,
+                            "is_secret": is_secret_config_key(key),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                    Ok(serde_json::json!({
+                        "substrings": SECRET_CONFIG_KEY_SUBSTRINGS,
+                        "suffixes": SECRET_CONFIG_KEY_SUFFIXES,
+                        "rule": "Normalize by keeping ASCII alphanumerics and lowercasing; a key is secret when its normalized form contains a substring or ends with a suffix. Example keys are synthetic shapes, never stored keys.",
+                        "examples": examples,
+                    }))
+                }),
+            );
+        }
+        {
             let core = core.clone();
             m.insert(
                 "vault.archive.collect".to_string(),
@@ -4677,6 +4714,111 @@ mod tests {
         assert!(!obj.contains_key("config"));
         assert!(!obj.contains_key("keys"));
         assert!(!obj.contains_key("ciphertext"));
+    }
+
+    #[test]
+    fn vault_secret_key_policy_matches_rust_constants() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let h = handlers
+            .get("vault.secret_key_policy")
+            .expect("vault.secret_key_policy registered");
+        let reply = h("vault.secret_key_policy", &serde_json::json!({})).expect("policy Ok");
+
+        use anima_core::providers::{SECRET_CONFIG_KEY_SUBSTRINGS, SECRET_CONFIG_KEY_SUFFIXES};
+        assert_eq!(
+            reply["substrings"],
+            serde_json::json!(SECRET_CONFIG_KEY_SUBSTRINGS)
+        );
+        assert_eq!(
+            reply["suffixes"],
+            serde_json::json!(SECRET_CONFIG_KEY_SUFFIXES)
+        );
+
+        // Only the policy itself: no stored key names, values or config blobs.
+        let obj = reply.as_object().unwrap();
+        let mut fields: Vec<_> = obj.keys().cloned().collect();
+        fields.sort();
+        assert_eq!(fields, ["examples", "rule", "substrings", "suffixes"]);
+        assert!(obj["rule"].as_str().unwrap().contains("Normalize"));
+    }
+
+    #[test]
+    fn vault_secret_key_policy_classifies_unknown_secret_shapes() {
+        use anima_core::providers::is_secret_config_key;
+
+        // Renamed/unknown spellings are caught by the shared policy, including
+        // wire (camelCase) and stored (snake_case) forms of the same key.
+        for (key, expected) in [
+            ("hf_token", true),
+            ("x-new-api-key", true),
+            ("X-New-Token", true),
+            ("customBearerHeader", true),
+            ("AUTHORIZATION", true),
+            ("client_secret", true),
+            ("apiKey", true),
+            ("api_key", true),
+            // Each row pins one published substring pattern: deleting it from
+            // the reported policy must fail this test.
+            ("dbPassword", true),
+            ("awsCredentialChain", true),
+            ("authHeader", true),
+            ("s3Endpoint", false),
+            ("model", false),
+        ] {
+            assert_eq!(
+                is_secret_config_key(key),
+                expected,
+                "classification of {key}"
+            );
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let reply = handlers.get("vault.secret_key_policy").unwrap()(
+            "vault.secret_key_policy",
+            &serde_json::json!({}),
+        )
+        .expect("policy Ok");
+        // The documented example checks agree with the Rust classifier.
+        for example in reply["examples"].as_array().unwrap() {
+            let key = example["key"].as_str().unwrap();
+            assert_eq!(
+                example["is_secret"].as_bool().unwrap(),
+                is_secret_config_key(key),
+                "example check for {key}"
+            );
+        }
+        assert!(reply["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["key"] == "X-New-Token" && e["is_secret"] == true));
+    }
+
+    #[test]
+    fn vault_secret_key_policy_needs_no_actions_gate() {
+        let (gateway, _tmp) = isolated_gateway();
+        // No allowActions key: mutating verbs fail closed in this fixture.
+        let handlers = handlers(&gateway);
+        let set = handlers.get("settings.set").unwrap();
+        let err = set(
+            "settings.set",
+            &serde_json::json!({ "section": "chat", "settings": {} }),
+        )
+        .expect_err("mutating verb denied without opt-in");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "got: {err}");
+
+        // The read-only policy verb works without the opt-in, loopback or not.
+        let h = handlers.get("vault.secret_key_policy").unwrap();
+        h("vault.secret_key_policy", &serde_json::json!({}))
+            .expect("read-only policy verb must work without opt-in");
+        let remote = handlers_with_hostname(&gateway, "0.0.0.0");
+        remote.get("vault.secret_key_policy").unwrap()(
+            "vault.secret_key_policy",
+            &serde_json::json!({}),
+        )
+        .expect("read-only policy verb must work on a non-loopback bind");
     }
 
     #[test]

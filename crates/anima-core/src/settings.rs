@@ -402,97 +402,165 @@ pub struct ControlStripButton {
     pub icon: String,
 }
 
+/// One entry in the canonical desktop control-strip button catalog.
+///
+/// This uses `&'static str` so the catalog can live in a `static`; the
+/// persisted [`ControlStripButton`] owns its strings and is derived from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControlStripButtonDef {
+    /// Stable button id (e.g. `chat`, `actor-characters`).
+    pub id: &'static str,
+    /// User-facing label.
+    pub label: &'static str,
+    /// Icon class (Iconify).
+    pub icon: &'static str,
+    /// Whether the button is on the strip by default.
+    pub enabled: bool,
+}
+
+impl ControlStripButtonDef {
+    const fn new(id: &'static str, label: &'static str, icon: &'static str, enabled: bool) -> Self {
+        Self {
+            id,
+            label,
+            icon,
+            enabled,
+        }
+    }
+}
+
 /// Catalog version written by the Electron app for `settings/control-strip/buttons`.
 ///
-/// Bumping it wipes user customizations back to defaults in the Electron
-/// build; keep it in sync when the default catalog changes.
+/// This is only for incompatible schema changes, not for catalog edits: the
+/// TS store's `mergeButtons` treats any version other than v4/v5 as invalid
+/// and resets every user's button arrangement to defaults (see the
+/// `BUTTONS_CATALOG_VERSION` comment in
+/// `packages/stage-ui/src/stores/settings/control-strip.ts`). The keyed merge
+/// appends/prunes defaults without wiping user layouts, so do not bump this
+/// when adding buttons or changing defaults.
 pub const CONTROL_STRIP_BUTTONS_VERSION: &str = "v5";
 
-fn default_button(id: &str, label: &str, icon: &str) -> ControlStripButton {
-    ControlStripButton {
-        id: id.to_string(),
-        enabled: true,
-        label: label.to_string(),
-        icon: icon.to_string(),
-    }
-}
-
-fn optional_button(id: &str, label: &str, icon: &str) -> ControlStripButton {
-    ControlStripButton {
-        enabled: false,
-        ..default_button(id, label, icon)
-    }
-}
+/// Canonical desktop (tamagotchi) control-strip button catalog, in display order.
+///
+/// Rust is the source of truth for the id/label/icon triples mirrored by the
+/// TS store (`packages/stage-ui/src/stores/settings/control-strip.ts`,
+/// `DEFAULT_BUTTONS`) and the desktop customizer window
+/// (`apps/stage-tamagotchi/src/renderer/pages/customizer.vue`, `DEFAULT_ORDER`).
+/// [`default_control_strip_buttons`] derives the persisted defaults from this
+/// catalog, so its order and enabled flags are the shipped behavior.
+///
+/// Do not bump [`CONTROL_STRIP_BUTTONS_VERSION`] when editing this list: the
+/// TS keyed merge appends/prunes defaults without wiping user arrangements.
+pub static CONTROL_STRIP_BUTTON_CATALOG: &[ControlStripButtonDef] = &[
+    ControlStripButtonDef::new("chat", "Chat Toggle", "i-solar:chat-line-linear", true),
+    ControlStripButtonDef::new(
+        "actor-characters",
+        "Characters",
+        "i-solar:users-group-rounded-outline",
+        true,
+    ),
+    ControlStripButtonDef::new("mic", "Microphone Toggle", "i-solar:muted-linear", true),
+    ControlStripButtonDef::new(
+        "stage",
+        "Actor Stage",
+        "i-solar:clapperboard-play-bold-duotone",
+        true,
+    ),
+    ControlStripButtonDef::new(
+        "stage-atmosphere",
+        "Stage & Chat Theme",
+        "i-solar:magic-stick-3-linear",
+        true,
+    ),
+    ControlStripButtonDef::new(
+        "caption",
+        "Captions",
+        "i-ph:closed-captioning-duotone",
+        true,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-session",
+        "Toggle Speech Session",
+        "i-ph:sparkle",
+        true,
+    ),
+    ControlStripButtonDef::new("settings", "Settings", "i-solar:settings-linear", true),
+    ControlStripButtonDef::new(
+        "layout",
+        "Customize Control Strip",
+        "i-solar:widget-linear",
+        true,
+    ),
+    ControlStripButtonDef::new(
+        "viewport-auto-hide",
+        "Auto Hide / Always Show",
+        "i-ph:eye-slash",
+        true,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-witness",
+        "Witness Vision Mode",
+        "i-solar:camera-linear",
+        false,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-frequency",
+        "Proactive Interval",
+        "i-solar:clock-circle-linear",
+        false,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-tts",
+        "TTS Output Toggle",
+        "i-solar:volume-loud-linear",
+        false,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-voice",
+        "Voice Switch",
+        "i-solar:user-speak-linear",
+        false,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-schedule",
+        "Respect Schedule",
+        "i-solar:calendar-linear",
+        false,
+    ),
+    ControlStripButtonDef::new(
+        "gemini-grounding",
+        "Google Search Grounding",
+        "i-solar:global-linear",
+        false,
+    ),
+    ControlStripButtonDef::new("actor-selfies", "Selfies", "i-solar:camera-linear", false),
+    ControlStripButtonDef::new("workspace", "Workspace", "i-solar:code-square-linear", true),
+    ControlStripButtonDef::new(
+        "actor-all-emotions",
+        "All Emotions",
+        "i-solar:emoji-funny-square-linear",
+        true,
+    ),
+    ControlStripButtonDef::new("actor-vfx", "VFX & Auras", "i-solar:fire-linear", true),
+    ControlStripButtonDef::new(
+        "actor-motion-playground",
+        "Motion",
+        "i-solar:walking-round-linear",
+        true,
+    ),
+];
 
 /// Default desktop (tamagotchi) control strip catalog, in display order.
 pub fn default_control_strip_buttons() -> Vec<ControlStripButton> {
-    vec![
-        default_button("chat", "Chat Toggle", "i-solar:chat-line-linear"),
-        default_button(
-            "actor-characters",
-            "Characters",
-            "i-solar:users-group-rounded-outline",
-        ),
-        default_button("mic", "Microphone Toggle", "i-solar:muted-linear"),
-        default_button(
-            "stage",
-            "Actor Stage",
-            "i-solar:clapperboard-play-bold-duotone",
-        ),
-        default_button(
-            "stage-atmosphere",
-            "Stage & Chat Theme",
-            "i-solar:magic-stick-3-linear",
-        ),
-        default_button("caption", "Captions", "i-ph:closed-captioning-duotone"),
-        default_button("gemini-session", "Toggle Speech Session", "i-ph:sparkle"),
-        default_button("settings", "Settings", "i-solar:settings-linear"),
-        default_button("layout", "Customize Control Strip", "i-solar:widget-linear"),
-        default_button(
-            "viewport-auto-hide",
-            "Auto Hide / Always Show",
-            "i-ph:eye-slash",
-        ),
-        optional_button(
-            "gemini-witness",
-            "Witness Vision Mode",
-            "i-solar:camera-linear",
-        ),
-        optional_button(
-            "gemini-frequency",
-            "Proactive Interval",
-            "i-solar:clock-circle-linear",
-        ),
-        optional_button(
-            "gemini-tts",
-            "TTS Output Toggle",
-            "i-solar:volume-loud-linear",
-        ),
-        optional_button("gemini-voice", "Voice Switch", "i-solar:user-speak-linear"),
-        optional_button(
-            "gemini-schedule",
-            "Respect Schedule",
-            "i-solar:calendar-linear",
-        ),
-        optional_button(
-            "gemini-grounding",
-            "Google Search Grounding",
-            "i-solar:global-linear",
-        ),
-        optional_button("actor-selfies", "Selfies", "i-solar:camera-linear"),
-        default_button("workspace", "Workspace", "i-solar:code-square-linear"),
-        default_button(
-            "actor-all-emotions",
-            "All Emotions",
-            "i-solar:emoji-funny-square-linear",
-        ),
-        default_button("actor-vfx", "VFX & Auras", "i-solar:fire-linear"),
-        default_button(
-            "actor-motion-playground",
-            "Motion",
-            "i-solar:walking-round-linear",
-        ),
-    ]
+    CONTROL_STRIP_BUTTON_CATALOG
+        .iter()
+        .map(|def| ControlStripButton {
+            id: def.id.to_string(),
+            enabled: def.enabled,
+            label: def.label.to_string(),
+            icon: def.icon.to_string(),
+        })
+        .collect()
 }
 
 fn default_background_tint() -> String {
@@ -1620,7 +1688,19 @@ mod tests {
         assert_eq!(strip.docked_edge, ControlStripDockedEdge::Right);
         assert_eq!(strip.position, ControlStripPosition { x: 20.0, y: 150.0 });
         assert_eq!(strip.buttons_version, "v5");
-        assert!(!strip.buttons.is_empty());
+        assert_eq!(
+            strip
+                .buttons
+                .iter()
+                .map(|b| b.id.as_str())
+                .collect::<Vec<_>>(),
+            CONTROL_STRIP_BUTTON_CATALOG
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(strip.buttons.iter().filter(|b| !b.enabled).count(), 7);
+        assert_eq!(strip.buttons.iter().filter(|b| b.enabled).count(), 14);
 
         // Wire format uses the Electron literals.
         let json = serde_json::to_value(&strip).unwrap();
@@ -1632,6 +1712,138 @@ mod tests {
         store.save_section(&strip).unwrap();
         let reloaded = store.load_section::<ControlStripSettings>().unwrap();
         assert_eq!(reloaded, strip);
+    }
+
+    /// Slice a TS/Vue array literal out of `source`, from `start_marker` to the
+    /// first line whose trimmed content is `]`. Keeps drift checks scoped to
+    /// the real default block instead of a whole file.
+    fn slice_array_block<'a>(source: &'a str, start_marker: &str) -> &'a str {
+        let start = source
+            .find(start_marker)
+            .unwrap_or_else(|| panic!("missing `{start_marker}` in mirrored source"))
+            + start_marker.len();
+        let rest = &source[start..];
+        let mut offset = 0usize;
+        for line in rest.split_inclusive('\n') {
+            if line.trim().trim_end_matches(';') == "]" {
+                return &rest[..offset];
+            }
+            offset += line.len();
+        }
+        panic!("unterminated `{start_marker}` block");
+    }
+
+    /// Strip formatting-only differences: whitespace outside string literals
+    /// and quote style. Label/icon contents stay intact.
+    fn normalize_ts(source: &str) -> String {
+        let mut out = String::new();
+        let mut quote: Option<char> = None;
+        for c in source.chars() {
+            if let Some(q) = quote {
+                if c == q {
+                    quote = None;
+                    out.push('\'');
+                } else {
+                    out.push(c);
+                }
+            } else if c == '\'' || c == '"' {
+                quote = Some(c);
+                out.push('\'');
+            } else if !c.is_whitespace() {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// Parse normalized `DEFAULT_BUTTONS` objects into the catalog's tuple
+    /// shape: `(id, label, icon, enabled)`.
+    fn parse_ts_buttons(block: &str) -> Vec<(String, String, String, bool)> {
+        fn field<'a>(body: &'a str, key: &str) -> &'a str {
+            let marker = format!("{key}:");
+            let start = body
+                .find(&marker)
+                .map(|i| i + marker.len())
+                .unwrap_or(body.len());
+            let rest = &body[start..];
+            if let Some(stripped) = rest.strip_prefix('\'') {
+                stripped.split('\'').next().unwrap_or("")
+            } else {
+                rest.find(|c: char| c == ',' || c == '}')
+                    .map(|i| &rest[..i])
+                    .unwrap_or(rest)
+            }
+        }
+
+        let normalized = normalize_ts(block);
+        let mut parsed = Vec::new();
+        for object in normalized.split('}') {
+            let Some(body) = object.split('{').nth(1) else {
+                continue;
+            };
+            parsed.push((
+                field(body, "id").to_string(),
+                field(body, "label").to_string(),
+                field(body, "icon").to_string(),
+                field(body, "enabled") == "true",
+            ));
+        }
+        parsed
+    }
+
+    /// airi-zjkw: the Rust catalog is canonical. `include_str!` resolves at
+    /// compile time relative to `crates/anima-core/src/`, so a moved or
+    /// renamed TS mirror breaks the build instead of leaving a stale catalog.
+    #[test]
+    fn control_strip_catalog_ids_match_ts_sources() {
+        const STORE_TS: &str =
+            include_str!("../../../packages/stage-ui/src/stores/settings/control-strip.ts");
+        const CUSTOMIZER_VUE: &str =
+            include_str!("../../../apps/stage-tamagotchi/src/renderer/pages/customizer.vue");
+
+        let store_buttons = slice_array_block(
+            STORE_TS,
+            "export const DEFAULT_BUTTONS: ControlStripButton[] = [",
+        );
+        let customizer_order = slice_array_block(CUSTOMIZER_VUE, "const DEFAULT_ORDER = [");
+
+        // Full ordered comparison: catches flipped enabled flags, removed or
+        // reordered defaults, and TS-only additions instead of just presence.
+        let expected: Vec<(String, String, String, bool)> = CONTROL_STRIP_BUTTON_CATALOG
+            .iter()
+            .map(|d| {
+                (
+                    d.id.to_string(),
+                    d.label.to_string(),
+                    d.icon.to_string(),
+                    d.enabled,
+                )
+            })
+            .collect();
+        assert_eq!(parse_ts_buttons(store_buttons), expected);
+
+        // These three desktop defaults live only in the TS store's
+        // `DEFAULT_BUTTONS`; the customizer's `DEFAULT_ORDER` uses
+        // `actor-motions` instead of `actor-motion-playground`.
+        const CUSTOMIZER_ORDER_EXCEPTIONS: &[&str] =
+            &["actor-selfies", "workspace", "actor-motion-playground"];
+
+        let order = normalize_ts(customizer_order);
+        for def in CONTROL_STRIP_BUTTON_CATALOG {
+            let id = def.id;
+            let needle = format!("'{id}'");
+            if CUSTOMIZER_ORDER_EXCEPTIONS.contains(&def.id) {
+                assert!(
+                    !order.contains(&needle),
+                    "exception id `{id}` unexpectedly present in customizer.vue DEFAULT_ORDER; update CUSTOMIZER_ORDER_EXCEPTIONS"
+                );
+            } else {
+                assert!(
+                    order.contains(&needle),
+                    "catalog id `{id}` is missing from customizer.vue DEFAULT_ORDER"
+                );
+            }
+        }
     }
 
     #[test]

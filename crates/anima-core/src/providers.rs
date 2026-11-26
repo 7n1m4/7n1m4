@@ -17,24 +17,35 @@ pub const ENV_BASE_URL: &str = "AIRI_SLINT_BASE_URL";
 /// Environment variable for the model of the env-selected provider.
 pub const ENV_MODEL: &str = "AIRI_SLINT_MODEL";
 
+/// Substring matches in a normalized config key. Public so the read-only
+/// `vault.secret_key_policy` RPC can report the exact policy without clients
+/// hand-maintaining a copy. Patterns only — never stored key names or values.
+pub const SECRET_CONFIG_KEY_SUBSTRINGS: &[&str] = &[
+    "apikey",
+    "authheader",
+    "authorization",
+    "secret",
+    "password",
+    "credential",
+    "bearer",
+];
+
+/// Suffix matches in a normalized config key. See
+/// [`SECRET_CONFIG_KEY_SUBSTRINGS`] for the exposure contract.
+pub const SECRET_CONFIG_KEY_SUFFIXES: &[&str] = &["token", "key"];
+
 /// TS `isSecretConfigKey`: normalized names ending in `key`/`token` or
 /// containing an auth word are secrets. Used to keep pooled/system-row
 /// credentials out of thin-client replies (`toSafeSystemRow` in the TS
 /// reference) and to stop a PATCH from rotating a managed secret.
 pub fn is_secret_config_key(key: &str) -> bool {
     let normalized = normalize_config_key(key);
-    const SUBSTRINGS: &[&str] = &[
-        "apikey",
-        "authheader",
-        "authorization",
-        "secret",
-        "password",
-        "credential",
-        "bearer",
-    ];
-    const SUFFIXES: &[&str] = &["token", "key"];
-    SUBSTRINGS.iter().any(|s| normalized.contains(s))
-        || SUFFIXES.iter().any(|s| normalized.ends_with(s))
+    SECRET_CONFIG_KEY_SUBSTRINGS
+        .iter()
+        .any(|s| normalized.contains(s))
+        || SECRET_CONFIG_KEY_SUFFIXES
+            .iter()
+            .any(|s| normalized.ends_with(s))
 }
 
 /// Match wire (`apiKey`) and stored (`api_key`) spellings of the same key.
@@ -165,9 +176,7 @@ pub fn resolve_provider_selection(
 ) -> Option<ProviderResolution> {
     let active_provider = active_provider.trim();
     if !active_provider.is_empty() {
-        let provider = rows
-            .iter()
-            .find(|p| p.enabled && p.id == active_provider)?;
+        let provider = rows.iter().find(|p| p.enabled && p.id == active_provider)?;
         let config: ProviderConfig = match serde_json::from_value(provider.config.clone()) {
             Ok(c) => c,
             Err(err) => {
@@ -330,7 +339,11 @@ mod tests {
         ]);
         let rows = [
             row("first", true, serde_json::json!({ "model": "first-model" })),
-            row("chosen", true, serde_json::json!({ "model": "stored-model", "api_key": "sk-stored" })),
+            row(
+                "chosen",
+                true,
+                serde_json::json!({ "model": "stored-model", "api_key": "sk-stored" }),
+            ),
         ];
         let r = resolve_provider_selection(env, &rows, "chosen", "picked-model").unwrap();
         assert_eq!(r.id, "chosen");
@@ -342,7 +355,11 @@ mod tests {
     fn active_selection_without_model_uses_stored_model() {
         let rows = [
             row("first", true, serde_json::json!({ "model": "first-model" })),
-            row("chosen", true, serde_json::json!({ "model": "stored-model" })),
+            row(
+                "chosen",
+                true,
+                serde_json::json!({ "model": "stored-model" }),
+            ),
         ];
         let r = resolve_provider_selection(empty_env, &rows, " chosen ", "  ").unwrap();
         assert_eq!(r.id, "chosen");
