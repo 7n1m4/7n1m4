@@ -116,30 +116,37 @@ fn save_section<S: anima_core::settings::SettingsSection>(
     store: &anima_core::settings::SettingsStore,
     patch: serde_json::Value,
 ) -> Result<(), String> {
-    let parsed = merged_section::<S>(store, patch)?;
+    let value = merged_section::<S>(store, patch)?;
     store
-        .save_section(&parsed)
+        .save(S::KEY, &value)
         .map_err(|_| "save failed".to_string())
 }
 
-/// Merge a wire PATCH into one persisted section and return the typed blob.
+/// Merge a wire PATCH into one persisted section and return the blob to save.
 ///
 /// `settings.set` is a PATCH. Start from the persisted blob so an older
 /// client that sends only the field it edited cannot wipe the rest of the
-/// section. Typed deserialization of the merged value still rejects
-/// unknown fields and invalid shapes before anything is persisted.
+/// section. Typed deserialization of the merged value still drops unknown
+/// fields and rejects invalid shapes before anything is persisted, and remains
+/// the allowlist for *incoming* keys. Undeclared keys already in the stored blob
+/// are re-injected afterwards so a client-only field survives an unrelated
+/// edit; an unknown key present only in the PATCH never reaches storage.
 fn merged_section<S: anima_core::settings::SettingsSection>(
     store: &anima_core::settings::SettingsStore,
     patch: serde_json::Value,
-) -> Result<S, String> {
+) -> Result<serde_json::Value, String> {
     let patch = patch
         .as_object()
         .ok_or_else(|| "invalid settings shape".to_string())?;
-    let mut merged = store
+    // Capture the raw stored blob before applying the PATCH. Only its
+    // undeclared keys are re-injected after the typed round-trip, so an
+    // incoming unknown key can never be mistaken for a stored one.
+    let stored = store
         .load_opt::<serde_json::Value>(S::KEY)
         .map_err(|_| "load failed".to_string())?
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
+    let mut merged = stored.clone();
     if S::KEY == "settings/faculties" {
         // Faculty groups are nested configs. Every field is serde-defaulted,
         // so a shallow PATCH of one field would silently reset the rest of
@@ -258,8 +265,26 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
             }
         }
     }
-    serde_json::from_value(serde_json::Value::Object(merged))
-        .map_err(|_| "invalid settings shape".to_string())
+    let parsed: S = serde_json::from_value(serde_json::Value::Object(merged))
+        .map_err(|_| "invalid settings shape".to_string())?;
+    let mut saved = serde_json::to_value(parsed)
+        .map_err(|_| "serialize failed".to_string())?
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    // Re-inject only keys the typed section does not declare. `or_insert`
+    // leaves every declared field — including scrubbed/onboarding and secret
+    // fields — exactly as the typed round-trip produced it. A key the PATCH
+    // explicitly nulls is a delete, not a stored extra: HashMap-backed
+    // sections (e.g. `settings/mcp`) have no declared top-level keys, so
+    // without this guard the removed entry would be resurrected here.
+    for (key, value) in stored {
+        if patch.get(&key).is_some_and(|v| v.is_null()) {
+            continue;
+        }
+        saved.entry(key).or_insert(value);
+    }
+    Ok(serde_json::Value::Object(saved))
 }
 
 /// Recursive object merge for nested settings sections. `null` removes a key;
@@ -1803,6 +1828,37 @@ mod tests {
     }
 
     #[test]
+    fn mcp_null_patch_removes_server_without_resurrecting_it() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set(
+            "mcp",
+            serde_json::json!({
+                "remove-me": { "transport": "stdio", "command": "gone" },
+                "keep-me": { "transport": "stdio", "command": "stays" },
+            }),
+        )
+        .unwrap();
+
+        // A null server entry is a delete instruction. `McpSettings` is a
+        // HashMap, so the removed name is not a declared field: the stored-key
+        // re-injection must not bring it back.
+        svc.settings_set("mcp", serde_json::json!({ "remove-me": null }))
+            .unwrap();
+
+        let db = svc.db().unwrap();
+        let raw: serde_json::Value = anima_store::SettingsRepo::new(db)
+            .get("settings/mcp")
+            .unwrap()
+            .unwrap();
+        assert!(
+            raw.get("remove-me").is_none(),
+            "a null PATCH must delete the server: {raw}"
+        );
+        assert_eq!(raw["keep-me"]["command"], "stays");
+    }
+
+    #[test]
     fn healthy_open_is_available() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));
@@ -2565,6 +2621,46 @@ mod tests {
             !reply.settings.contains("futureField"),
             "{}",
             reply.settings
+        );
+    }
+
+    #[test]
+    fn settings_set_preserves_stored_unknown_keys_but_drops_incoming_unknown_keys() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        let db = svc.db().unwrap();
+        let repo = anima_store::SettingsRepo::new(db);
+        // Seed the raw blob directly: `activeSessionId` and `legacyFlag` are
+        // not declared by `ChatSettings`, so a typed round-trip must keep them.
+        repo.set(
+            "settings/chat",
+            &serde_json::json!({
+                "showDirectorNotes": false,
+                "activeSessionId": "kept-session",
+                "legacyFlag": 7,
+            }),
+        )
+        .unwrap();
+
+        svc.settings_set(
+            "chat",
+            serde_json::json!({
+                "showDirectorNotes": true,
+                "futureField": "must-not-be-persisted",
+            }),
+        )
+        .unwrap();
+
+        let stored: serde_json::Value = repo
+            .get("settings/chat")
+            .unwrap()
+            .expect("chat blob must still be stored");
+        assert_eq!(stored["showDirectorNotes"], true);
+        assert_eq!(stored["activeSessionId"], "kept-session");
+        assert_eq!(stored["legacyFlag"], 7);
+        assert!(
+            stored.get("futureField").is_none(),
+            "incoming undeclared keys must never be persisted: {stored}"
         );
     }
 
