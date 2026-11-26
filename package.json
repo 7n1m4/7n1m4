@@ -53,6 +53,7 @@
     "test:keyless-providers": "tsx scripts/test-keyless-providers.ts",
     "test:catalog:audit": "node scripts/audit-test-catalog.mjs",
     "test:doc-citations": "node scripts/tests/audit-doc-citations.mjs",
+    "test:nano-staged-scope": "node scripts/tests/check-nano-staged-scope.mjs",
     "test:write-shrink-guard": "node --test scripts/tests/test-write-shrink-guard.mjs",
     "test:ci-repo-selection": "node --test scripts/tests/test-ci-repo-selection.mjs",
     "free-ai:sync-platforms": "tsx scripts/sync-free-ai-platforms.ts",
@@ -121,7 +122,9 @@
     "apps/**"
   ],
   "nano-staged": {
-    "*": "eslint --fix"
+    "*.rs": "rustfmt --edition 2021",
+    "*.dart": "dart format",
+    "*.{js,cjs,mjs,ts,tsx,vue}": "eslint --fix"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm nano-staged"
