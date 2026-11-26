@@ -40,6 +40,10 @@ function extractLeafKeys(obj: any, prefix = ''): string[] {
   return keys
 }
 
+function getAtPath(obj: any, dottedPath: string): unknown {
+  return dottedPath.split('.').reduce<any>((value, segment) => value?.[segment], obj)
+}
+
 function checkDuplicateKeys(filePath: string): string[] {
   const content = fs.readFileSync(filePath, 'utf8')
   const duplicates: string[] = []
@@ -76,14 +80,17 @@ describe('@proj-anima/i18n locale integrity', () => {
     }
   })
 
-  it('contains valid syntax and zero duplicate keys in all base.yaml files', () => {
+  it('contains valid syntax and zero duplicate keys in all locale YAML files', () => {
     for (const locale of SUPPORTED_LOCALES) {
-      const filePath = path.join(LOCALES_DIR, locale, 'base.yaml')
-      if (fs.existsSync(filePath)) {
+      const localeDir = path.join(LOCALES_DIR, locale)
+      const files = fs.readdirSync(localeDir).filter(file => file.endsWith('.yaml'))
+      expect(files.length, `No YAML files for locale: ${locale}`).toBeGreaterThan(0)
+      for (const file of files) {
+        const filePath = path.join(localeDir, file)
         const content = fs.readFileSync(filePath, 'utf8')
-        expect(() => yaml.parse(content)).not.toThrow()
+        expect(() => yaml.parse(content), `Invalid YAML in ${filePath}`).not.toThrow()
         const dups = checkDuplicateKeys(filePath)
-        expect(dups).toEqual([])
+        expect(dups, `Duplicate keys in ${filePath}: ${dups.slice(0, 5).join(', ')}`).toEqual([])
       }
     }
   })
@@ -117,6 +124,26 @@ describe('@proj-anima/i18n locale integrity', () => {
       const missing = enKeys.filter(k => !targetKeys.has(k))
       expect(missing, `Locale ${locale} is missing keys in onboarding.yaml: ${missing.slice(0, 5).join(', ')}`).toEqual([])
     }
+  })
+
+  it('has every settings.pages.* catalog title/description key in en/settings.yaml', () => {
+    const catalogPath = path.resolve(__dirname, '../../../apps/flutter/lib/features/settings/settings_catalog.dart')
+    expect(fs.existsSync(catalogPath), `Missing settings catalog: ${catalogPath}`).toBe(true)
+    const catalog = fs.readFileSync(catalogPath, 'utf8')
+    const catalogKeys = new Set(
+      [...catalog.matchAll(/(?:titleKey|descriptionKey):\s*(['"])(settings\.pages\.[^'"]+)\1/g)].map(m => m[2]),
+    )
+    expect(catalogKeys.size).toBe(31)
+
+    const enData = yaml.parse(fs.readFileSync(path.join(LOCALES_DIR, 'en', 'settings.yaml'), 'utf8')) || {}
+    const missing = [...catalogKeys].filter(k => getAtPath(enData, k) === undefined)
+    expect(missing, `en/settings.yaml is missing catalog page keys: ${missing.join(', ')}`).toEqual([])
+
+    const blank = [...catalogKeys].filter((k) => {
+      const value = getAtPath(enData, k)
+      return typeof value !== 'string' || value.trim() === ''
+    })
+    expect(blank, `en/settings.yaml has empty catalog page values: ${blank.join(', ')}`).toEqual([])
   })
 
   it('maintains 100% key parity for shell.yaml across all supported languages', () => {

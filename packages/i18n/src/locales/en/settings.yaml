@@ -244,6 +244,9 @@ settings:
         label: Hugging Face Token
         description: Hugging Face access token used for gated model downloads
         placeholder: hf_...
+      title: Connection & Downloads
+      description: Configure server endpoints, local channel gateway, and model
+        download credentials.
     modules:
       agentic-os:
         title: 'Agentic OS'
@@ -274,6 +277,60 @@ settings:
         title: 'Friends & Companions'
         description: 'Connect your devices, manage trusted friends, and configure
           autonomous nap-chat'
+      title: Companion Connectors
+      description: Configure perception sensors, speech, hearing, consciousness, and
+        integrations.
+      artistry:
+        title: Artistry (Deprecated)
+        description: Image generation is deprecated.
+    card:
+      title: AIRI Card Editor
+      description: Create, edit, and manage character cards, import custom presets, or
+        discover new ones online.
+    models:
+      title: Companion Avatars
+      description: Manage physical assets, animations, and motion mappings for Live2D,
+        VRM, Spine, and MMD.
+    scene:
+      title: Stage Backgrounds
+      description: Customize virtual backdrops and stage wallpaper images for your
+        characters.
+    memory:
+      title: Memory Systems
+      description: Review daemon-backed short-term summaries and text journals.
+      dream:
+        title: The Dream State
+        description: Configure idle-time consolidation, journaling density, and dream
+          triggers for the active character.
+    providers:
+      title: Inference Providers
+      description: Set up LLM brains, speech synthesis engines, and transcription providers.
+    sessions:
+      title: Sessions
+      description: Browse, import, and export chats.
+    data:
+      title: Data Management
+      description: Backup, restore, and manage cached assets or IndexedDB persistence
+        stores through the externally supplied data screen.
+    system:
+      title: System Preferences
+      description: Customize app language, 24-color theme palette, vibrancy, and user
+        identity.
+      general:
+        title: General Preferences
+        description: Interface language, date formats, fallback localization, and
+          application startup defaults.
+    stage:
+      title: Floating Controls
+      description: Customize floating action strip slots, docking edge, and quick triggers.
+    docs:
+      title: Documentation
+      description: Access tutorials, architectural overviews, API guides, and manual
+        reference.
+    about:
+      title: About AIRI
+      description: Application version, release changelog, open source credits, and
+        community links.
   modules:
     libp2p:
       title: 'Local Mesh (libp2p)'
@@ -386,7 +443,8 @@ settings:
         while you are at your desk, an autonomous cycle acts when the machine is
         considered unattended.'
       modeDisabled: 'Disabled'
-      modeDisabledDesc: 'Anima never acts autonomously. Heartbeats and manual chat work as usual.'
+      modeDisabledDesc: 'Anima never acts autonomously. Heartbeats and manual chat
+        work as usual.'
       modeWhenAway: 'When away'
       modeWhenAwayDesc: 'Anima runs an autonomous cycle only when presence is derived
         as away — extended idle with no interaction.'
