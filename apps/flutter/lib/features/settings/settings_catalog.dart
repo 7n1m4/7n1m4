@@ -175,7 +175,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     shortLabel: 'Memory',
     titleKey: 'settings.pages.memory.title',
     descriptionKey: 'settings.pages.memory.description',
-    description: 'Review short-term summaries, text journals, lifetime archives, and echo chips.',
+    description: 'Review daemon-backed short-term summaries and text journals.',
     glyph: '憶',
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/memory',

@@ -45,6 +45,7 @@
 pub mod cards;
 pub mod chat;
 pub mod crashlog;
+pub mod grounding;
 pub mod memory;
 pub mod providers;
 pub mod sessions;

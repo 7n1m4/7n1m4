@@ -652,11 +652,71 @@ fn default_captions_docking() -> String {
     "none".to_string()
 }
 
+/// Caption layout mode (`settings/captions.layoutMode`).
+///
+/// Wire values match the TS `'single' | 'multi'` union: `single` shows only
+/// the active spoken sentence, `multi` shows the whole dialog block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CaptionLayoutMode {
+    /// Show only the sentence currently being spoken.
+    #[default]
+    Single,
+    /// Show the full dialog block.
+    Multi,
+}
+
+/// Pixel offset of the in-scene head-tethered caption plank from its head anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadTetheredCaptionOffset {
+    /// Horizontal offset in pixels.
+    #[serde(default = "default_head_tethered_caption_offset_x")]
+    pub x: f64,
+    /// Vertical offset in pixels; negative values move the plank up.
+    #[serde(default = "default_head_tethered_caption_offset_y")]
+    pub y: f64,
+}
+
+impl Default for HeadTetheredCaptionOffset {
+    fn default() -> Self {
+        Self {
+            x: default_head_tethered_caption_offset_x(),
+            y: default_head_tethered_caption_offset_y(),
+        }
+    }
+}
+
+/// Per-field defaults matter because `settings.set` shallow-merges nested
+/// objects: a partial `{ "x": 12 }` must not reset `y` to `0.0`.
+fn default_head_tethered_caption_offset_x() -> f64 {
+    0.0
+}
+
+fn default_head_tethered_caption_offset_y() -> f64 {
+    -15.0
+}
+
+fn default_head_tethered_caption_offset() -> HeadTetheredCaptionOffset {
+    HeadTetheredCaptionOffset::default()
+}
+
+fn default_head_tethered_caption_follow_strength() -> f64 {
+    100.0
+}
+
 /// Captions overlay settings (`settings/captions`).
 ///
 /// `font_size` and `opacity` are percentages (`100` == 100%); consumers
 /// divide by 100 to feed the overlay. `docking` is `top` | `bottom` |
 /// `head` (alias of `bottom`) | `none` (overlay hidden).
+///
+/// The follow/layout/head-tether fields mirror the TS-only knobs in
+/// `stores/settings/captions.ts`, which deliberately keeps them outside the
+/// daemon bridge. The Rust section carries them so a client can later own
+/// them without changing the wire shape. Head-tethered *rendering* stays
+/// client-local (native Live2D head tracking); the daemon only persists the
+/// numbers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptionsSettings {
@@ -672,6 +732,27 @@ pub struct CaptionsSettings {
     /// Docking edge: `top` | `bottom` | `head` | `none`.
     #[serde(default = "default_captions_docking")]
     pub docking: String,
+    /// Mirror the stage window's show/hide state (desktop-only).
+    #[serde(default = "default_true")]
+    pub follow_stage_visibility: bool,
+    /// Mirror the stage window's position (desktop-only).
+    #[serde(default = "default_true")]
+    pub follow_stage_position: bool,
+    /// Whether to show the active sentence only or the full dialog block.
+    #[serde(default)]
+    pub layout_mode: CaptionLayoutMode,
+    /// Monotonic trigger used by clients to reset the caption panel; `0` means none.
+    #[serde(default)]
+    pub reset_trigger: u64,
+    /// Enable the in-scene head-tethered caption plank (Live2D-only MVP).
+    #[serde(default)]
+    pub head_tethered_caption_enabled: bool,
+    /// Pixel offset of the head-tethered plank from the head anchor.
+    #[serde(default = "default_head_tethered_caption_offset")]
+    pub head_tethered_caption_offset: HeadTetheredCaptionOffset,
+    /// Strength of the head-tether perspective transform in percent (100 == full).
+    #[serde(default = "default_head_tethered_caption_follow_strength")]
+    pub head_tethered_caption_follow_strength: f64,
 }
 
 impl Default for CaptionsSettings {
@@ -681,6 +762,13 @@ impl Default for CaptionsSettings {
             font_size: default_captions_font_size(),
             opacity: default_captions_opacity(),
             docking: default_captions_docking(),
+            follow_stage_visibility: true,
+            follow_stage_position: true,
+            layout_mode: CaptionLayoutMode::Single,
+            reset_trigger: 0,
+            head_tethered_caption_enabled: false,
+            head_tethered_caption_offset: HeadTetheredCaptionOffset::default(),
+            head_tethered_caption_follow_strength: default_head_tethered_caption_follow_strength(),
         }
     }
 }
@@ -1074,7 +1162,6 @@ impl Default for LocalLlmSettings {
 impl SettingsSection for LocalLlmSettings {
     const KEY: &'static str = "settings/local-llm";
 }
-
 
 // ============================================================================
 // Companion module sections (Vue module stores)
@@ -1609,6 +1696,7 @@ mod tests {
                 font_size: 150.0,
                 opacity: 40.0,
                 docking: "bottom".to_string(),
+                ..CaptionsSettings::default()
             })
             .unwrap();
         let captions = store.load_section::<CaptionsSettings>().unwrap();
@@ -1628,6 +1716,97 @@ mod tests {
         assert_eq!(window.x, Some(120.0));
         assert_eq!(window.y, Some(-40.0));
         assert!(!window.visible);
+    }
+
+    /// airi-oj6v: a legacy blob holding only the original four fields must
+    /// load the follow/layout/head-tether knobs from their documented TS
+    /// defaults.
+    #[test]
+    fn captions_legacy_blob_uses_documented_defaults() {
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+
+        store
+            .save(
+                CaptionsSettings::KEY,
+                &serde_json::json!({
+                    "enabled": false,
+                    "fontSize": 125.0,
+                    "opacity": 50.0,
+                    "docking": "top",
+                }),
+            )
+            .unwrap();
+
+        let captions = store.load_section::<CaptionsSettings>().unwrap();
+        assert!(!captions.enabled);
+        assert_eq!(captions.font_size, 125.0);
+        assert_eq!(captions.opacity, 50.0);
+        assert_eq!(captions.docking, "top");
+        assert!(captions.follow_stage_visibility);
+        assert!(captions.follow_stage_position);
+        assert_eq!(captions.layout_mode, CaptionLayoutMode::Single);
+        assert_eq!(captions.reset_trigger, 0);
+        assert!(!captions.head_tethered_caption_enabled);
+        assert_eq!(
+            captions.head_tethered_caption_offset,
+            HeadTetheredCaptionOffset { x: 0.0, y: -15.0 }
+        );
+        assert_eq!(captions.head_tethered_caption_follow_strength, 100.0);
+
+        // The defaults are emitted with the exact camelCase TS keys.
+        let json = serde_json::to_value(CaptionsSettings::default()).unwrap();
+        assert_eq!(json["followStageVisibility"], true);
+        assert_eq!(json["followStagePosition"], true);
+        assert_eq!(json["layoutMode"], "single");
+        assert_eq!(json["resetTrigger"], serde_json::json!(0));
+        assert_eq!(json["headTetheredCaptionEnabled"], false);
+        assert_eq!(
+            json["headTetheredCaptionOffset"],
+            serde_json::json!({ "x": 0.0, "y": -15.0 })
+        );
+        assert_eq!(json["headTetheredCaptionFollowStrength"], 100.0);
+    }
+
+    /// airi-oj6v: every new field survives a save/load round trip and uses
+    /// the camelCase names of the TS settings store.
+    #[test]
+    fn captions_full_blob_round_trips_every_field() {
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+
+        let full = CaptionsSettings {
+            enabled: false,
+            font_size: 150.0,
+            opacity: 80.0,
+            docking: "head".to_string(),
+            follow_stage_visibility: false,
+            follow_stage_position: false,
+            layout_mode: CaptionLayoutMode::Multi,
+            reset_trigger: 1_700_000_000_123,
+            head_tethered_caption_enabled: true,
+            head_tethered_caption_offset: HeadTetheredCaptionOffset { x: 12.5, y: -30.0 },
+            head_tethered_caption_follow_strength: 65.0,
+        };
+        store.save_section(&full).unwrap();
+        assert_eq!(store.load_section::<CaptionsSettings>().unwrap(), full);
+
+        let json = serde_json::to_value(&full).unwrap();
+        assert_eq!(json["followStageVisibility"], false);
+        assert_eq!(json["followStagePosition"], false);
+        assert_eq!(json["layoutMode"], "multi");
+        assert_eq!(
+            json["resetTrigger"],
+            serde_json::json!(1_700_000_000_123u64)
+        );
+        assert_eq!(json["headTetheredCaptionEnabled"], true);
+        assert_eq!(json["headTetheredCaptionOffset"]["x"], 12.5);
+        assert_eq!(json["headTetheredCaptionOffset"]["y"], -30.0);
+        assert_eq!(json["headTetheredCaptionFollowStrength"], 65.0);
+
+        // A full JSON blob from a client deserializes back into the same shape.
+        let from_json: CaptionsSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(from_json, full);
     }
 
     #[test]
@@ -1853,7 +2032,9 @@ mod tests {
         assert!(!vision.witness_enabled);
         assert!(vision.respect_schedule);
         assert!(vision.prompt_shim.contains("vision-capable stand-in"));
-        assert!(vision.prompt_shim_forward.contains("objective image analysis model"));
+        assert!(vision
+            .prompt_shim_forward
+            .contains("objective image analysis model"));
         assert!(vision.witness_prompt.contains("Carefully observe"));
 
         // Wire keys stay camelCase; enum literals match the Vue store values.
@@ -1891,7 +2072,10 @@ mod tests {
             active_model: "picked-model".to_string(),
         };
         store.save_section(&selected).unwrap();
-        assert_eq!(store.load_section::<ChatProviderSettings>().unwrap(), selected);
+        assert_eq!(
+            store.load_section::<ChatProviderSettings>().unwrap(),
+            selected
+        );
 
         store
             .save(
@@ -1932,7 +2116,10 @@ mod tests {
             .unwrap();
         let hearing = store.load_section::<HearingSettings>().unwrap();
         assert_eq!(hearing.speech_provider_settings, serde_json::json!({}));
-        assert_eq!(hearing.transcription_provider_settings, serde_json::json!({}));
+        assert_eq!(
+            hearing.transcription_provider_settings,
+            serde_json::json!({})
+        );
 
         store
             .save(
@@ -1943,7 +2130,10 @@ mod tests {
             )
             .unwrap();
         let vision = store.load_section::<VisionSettings>().unwrap();
-        assert_eq!(vision.active_advanced, serde_json::json!({ "detail": "high" }));
+        assert_eq!(
+            vision.active_advanced,
+            serde_json::json!({ "detail": "high" })
+        );
 
         // A null in an older blob is normalized too; anything else is opaque.
         let nulls: HearingSettings = serde_json::from_value(serde_json::json!({
@@ -2086,12 +2276,21 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "lastHeartbeat": 1234 })).unwrap();
         assert_eq!(vision.strategy, VisionSettings::default().strategy);
         assert!(vision.active_provider.is_empty());
-        assert!(serde_json::to_value(&vision).unwrap().get("lastHeartbeat").is_none());
+        assert!(serde_json::to_value(&vision)
+            .unwrap()
+            .get("lastHeartbeat")
+            .is_none());
         let hearing: HearingSettings =
             serde_json::from_value(serde_json::json!({ "micOwner": "composer" })).unwrap();
-        assert_eq!(hearing.detection_mode, HearingSettings::default().detection_mode);
+        assert_eq!(
+            hearing.detection_mode,
+            HearingSettings::default().detection_mode
+        );
         assert!(hearing.active_provider.is_empty());
-        assert!(serde_json::to_value(&hearing).unwrap().get("micOwner").is_none());
+        assert!(serde_json::to_value(&hearing)
+            .unwrap()
+            .get("micOwner")
+            .is_none());
         let saved = serde_json::to_value(&vision).unwrap();
         assert!(saved.get("lastHeartbeat").is_none());
     }

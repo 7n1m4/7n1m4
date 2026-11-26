@@ -2084,6 +2084,74 @@ impl Gateway {
             );
         }
         {
+            let core = core.clone();
+            m.insert(
+                "sessions.fork".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        // Raw Value DTO: no wire type, so fork stays out of the
+                        // specta drift check. Both spellings match the other
+                        // session verbs (`session_id` and camelCase clients).
+                        let session_id = value
+                            .get("session_id")
+                            .or_else(|| value.get("sessionId"))
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| "missing session_id".to_string())?;
+                        // The TS reference treats `atIndex` as optional and
+                        // forks the whole history when it is absent.
+                        let at_index = value
+                            .get("at_index")
+                            .or_else(|| value.get("atIndex"))
+                            .map(|v| {
+                                v.as_u64()
+                                    .and_then(|n| usize::try_from(n).ok())
+                                    .ok_or_else(|| "invalid at_index".to_string())
+                            })
+                            .transpose()?
+                            .unwrap_or(usize::MAX);
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let new_id = fork_session(&db, session_id, at_index)?;
+                        Ok(serde_json::json!({ "session_id": new_id }))
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "sessions.activate".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let sessions = anima_store::SessionRepo::new(db);
+                        let requested = value
+                            .get("session_id")
+                            .or_else(|| value.get("sessionId"))
+                            .and_then(serde_json::Value::as_str);
+                        let active_id = match requested {
+                            Some(id) => {
+                                // Validate before any write: a bogus id must not
+                                // clobber the stored choice.
+                                if sessions.get(id).map_err(|e| e.to_string())?.is_none() {
+                                    return Err(format!("unknown session: {id}"));
+                                }
+                                id.to_string()
+                            }
+                            // No id requested: keep a valid stored choice, or
+                            // heal a missing/orphaned one to the busiest session.
+                            None => resolve_active_session(&core)?,
+                        };
+                        persist_active_session_id(&core, &active_id)?;
+                        Ok(serde_json::json!({ "ok": true, "session_id": active_id }))
+                    },
+                ),
+            );
+        }
+        {
             m.insert(
                 "sessions.auto_title".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
@@ -3029,6 +3097,142 @@ fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
 
 fn limit_i64(limit: usize) -> i64 {
     i64::try_from(limit).unwrap_or(i64::MAX)
+}
+
+/// Fork a session by copying its first `at_index` messages into a new session.
+///
+/// Everything happens in one SQLite transaction, so a failure leaves neither a
+/// new session nor a partial message prefix behind. Copied messages keep their
+/// role/content/timestamp/metadata but get fresh ids; the new session inherits
+/// the source title and metadata (which carries `universeId`). A missing source
+/// is an error rather than an empty fork.
+fn fork_session(
+    db: &anima_store::Database,
+    source_id: &str,
+    at_index: usize,
+) -> Result<String, String> {
+    db.with_connection(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let mut source = conn.prepare("select title, metadata from sessions where id = ?1")?;
+        let found = source
+            .query_map(anima_store::params![source_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let Some((title, metadata)) = found.into_iter().next() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("unknown session: {source_id}"),
+            )
+            .into());
+        };
+        drop(source);
+
+        let new_id = uuid_v4();
+        let ts = crate::audit::now_ms() as i64;
+        conn.execute(
+            "insert into sessions (id, title, created_at, updated_at, metadata)
+             values (?1, ?2, ?3, ?4, ?5)",
+            anima_store::params![new_id, title, ts, ts, metadata],
+        )?;
+
+        let mut rows = conn.prepare(
+            "select role, content, created_at, metadata from messages
+             where session_id = ?1 order by created_at asc, rowid asc limit ?2",
+        )?;
+        let copied = rows
+            .query_map(
+                anima_store::params![source_id, limit_i64(at_index)],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(rows);
+
+        for (role, content, created_at, metadata) in copied {
+            conn.execute(
+                "insert into messages (id, session_id, role, content, created_at, metadata)
+                 values (?1, ?2, ?3, ?4, ?5, ?6)",
+                anima_store::params![uuid_v4(), new_id, role, content, created_at, metadata],
+            )?;
+        }
+        tx.commit()?;
+        Ok(new_id)
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Active session id stored in the `settings/chat` blob.
+///
+/// NOTICE: `ChatSettings` is a typed section, so `core.settings_get` would drop
+/// a key it does not declare. Read the same blob directly so the choice can
+/// live beside the existing chat settings without a new section or wire type.
+fn stored_active_session_id(core: &CoreService) -> Result<Option<String>, String> {
+    let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+    let blob: Option<serde_json::Value> = anima_store::SettingsRepo::new(db)
+        .get("settings/chat")
+        .map_err(|e| e.to_string())?;
+    Ok(blob
+        .as_ref()
+        .and_then(|value| value.get("activeSessionId"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string))
+}
+
+/// Keep the `settings/chat` blob's `activeSessionId` in sync with the choice.
+///
+/// NOTICE: this writes the raw blob in one read-modify-write. The typed
+/// `settings.set` path deserializes into `ChatSettings`, which does not declare
+/// `activeSessionId` (or any future client-only key), so a typed round-trip
+/// would silently drop every undeclared key. A single raw write preserves them
+/// and emits no premature `SettingsChanged` event for a half-applied value.
+fn persist_active_session_id(core: &CoreService, session_id: &str) -> Result<(), String> {
+    let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+    let repo = anima_store::SettingsRepo::new(db);
+    let mut blob: serde_json::Value = repo
+        .get("settings/chat")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| serde_json::json!({}));
+    let map = blob
+        .as_object_mut()
+        .ok_or_else(|| "invalid chat settings".to_string())?;
+    map.insert(
+        "activeSessionId".to_string(),
+        serde_json::Value::String(session_id.to_string()),
+    );
+    repo.set("settings/chat", &blob).map_err(|e| e.to_string())
+}
+
+/// Resolve the active session, mirroring the Vue recovery bridge: an absent or
+/// orphaned stored id heals to the session with the most messages (ties break
+/// on `updated_at`). With no sessions at all there is nothing to activate.
+fn resolve_active_session(core: &CoreService) -> Result<String, String> {
+    let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+    let sessions = anima_store::SessionRepo::new(db.clone());
+    let messages = anima_store::MessageRepo::new(db);
+    if let Some(id) = stored_active_session_id(core)? {
+        if sessions.get(&id).map_err(|e| e.to_string())?.is_some() {
+            return Ok(id);
+        }
+    }
+    let mut best: Option<(String, usize, i64)> = None;
+    for session in sessions.list().map_err(|e| e.to_string())? {
+        let count = messages.list(&session.id).map_err(|e| e.to_string())?.len();
+        if best
+            .as_ref()
+            .map_or(true, |(_, c, u)| (count, session.updated_at) > (*c, *u))
+        {
+            best = Some((session.id, count, session.updated_at));
+        }
+    }
+    best.map(|(id, _, _)| id)
+        .ok_or_else(|| "no sessions available".to_string())
 }
 
 /// Domains accepted from clients for a vault archive. `providers` is
@@ -5808,6 +6012,320 @@ mod tests {
             &serde_json::json!({ "session_id": "s1" }),
         )
         .expect_err("delete must be denied by default");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{err}");
+    }
+
+    // Contract: `sessions.fork` copies only the requested prefix into a new
+    // session with fresh message ids and the source's universe metadata.
+    #[test]
+    fn sessions_fork_copies_message_prefix_with_fresh_ids() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db);
+        sessions.create("fork-src", "source title").unwrap();
+        sessions
+            .update(
+                "fork-src",
+                None,
+                Some(&serde_json::json!({ "universeId": "u-1" })),
+            )
+            .unwrap();
+        let source_ids = ["fork-m0", "fork-m1", "fork-m2", "fork-m3"];
+        for (i, id) in source_ids.iter().enumerate() {
+            messages
+                .insert(&anima_store::StoredMessage {
+                    id: (*id).into(),
+                    session_id: "fork-src".into(),
+                    role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
+                    content: format!("msg-{i}"),
+                    created_at: i as i64 + 1,
+                    metadata: serde_json::json!({ "i": i }),
+                })
+                .unwrap();
+        }
+
+        let handlers = handlers(&gateway);
+        let fork = handlers.get("sessions.fork").unwrap();
+        let reply = fork(
+            "sessions.fork",
+            &serde_json::json!({ "session_id": "fork-src", "at_index": 2 }),
+        )
+        .unwrap();
+        let new_id = reply["session_id"]
+            .as_str()
+            .expect("fork must return the new session id")
+            .to_string();
+        assert_ne!(new_id, "fork-src");
+
+        let copied = messages.list(&new_id).unwrap();
+        assert_eq!(copied.len(), 2, "only the prefix is copied");
+        assert_eq!(copied[0].content, "msg-0");
+        assert_eq!(copied[1].content, "msg-1");
+        assert_eq!(copied[0].role, "user");
+        assert_eq!(copied[1].role, "assistant");
+        assert_eq!(copied[0].created_at, 1);
+        assert_eq!(copied[1].metadata, serde_json::json!({ "i": 1 }));
+        for msg in &copied {
+            assert!(!source_ids.contains(&msg.id.as_str()), "fresh message id");
+        }
+        assert_ne!(copied[0].id, copied[1].id);
+
+        let new_session = sessions.get(&new_id).unwrap().unwrap();
+        assert_eq!(new_session.title, "source title");
+        assert_eq!(
+            new_session.metadata,
+            serde_json::json!({ "universeId": "u-1" })
+        );
+        assert_eq!(messages.list("fork-src").unwrap().len(), 4, "source intact");
+    }
+
+    #[test]
+    fn sessions_fork_empty_prefix_creates_empty_session() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db);
+        sessions.create("empty-src", "source").unwrap();
+        messages
+            .insert(&anima_store::StoredMessage {
+                id: "empty-m0".into(),
+                session_id: "empty-src".into(),
+                role: "user".into(),
+                content: "keep me".into(),
+                created_at: 1,
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let fork = handlers.get("sessions.fork").unwrap();
+        let reply = fork(
+            "sessions.fork",
+            &serde_json::json!({ "session_id": "empty-src", "at_index": 0 }),
+        )
+        .unwrap();
+        let new_id = reply["session_id"].as_str().unwrap();
+        assert_ne!(new_id, "empty-src");
+        assert!(sessions.get(new_id).unwrap().is_some());
+        assert!(messages.list(new_id).unwrap().is_empty());
+        assert_eq!(messages.list("empty-src").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sessions_fork_without_at_index_copies_whole_history() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db);
+        sessions.create("full-src", "source").unwrap();
+        for i in 0..3 {
+            messages
+                .insert(&anima_store::StoredMessage {
+                    id: format!("full-m{i}"),
+                    session_id: "full-src".into(),
+                    role: "user".into(),
+                    content: format!("msg-{i}"),
+                    created_at: i,
+                    metadata: serde_json::json!({}),
+                })
+                .unwrap();
+        }
+
+        let handlers = handlers(&gateway);
+        let fork = handlers.get("sessions.fork").unwrap();
+        let reply = fork(
+            "sessions.fork",
+            &serde_json::json!({ "session_id": "full-src" }),
+        )
+        .unwrap();
+        let new_id = reply["session_id"].as_str().unwrap();
+        assert_eq!(messages.list(new_id).unwrap().len(), 3, "full history fork");
+    }
+
+    #[test]
+    fn sessions_fork_rejects_invalid_at_index() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let sessions = anima_store::SessionRepo::new(gateway.core.db().unwrap());
+        sessions.create("invalid-src", "source").unwrap();
+        let handlers = handlers(&gateway);
+        let fork = handlers.get("sessions.fork").unwrap();
+        for bad in [serde_json::json!(-1), serde_json::json!("x")] {
+            let err = fork(
+                "sessions.fork",
+                &serde_json::json!({ "session_id": "invalid-src", "at_index": bad }),
+            )
+            .expect_err("invalid at_index must be rejected");
+            assert!(err.contains("invalid at_index"), "{err}");
+        }
+    }
+
+    #[test]
+    fn sessions_fork_rejects_unknown_source() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let sessions = anima_store::SessionRepo::new(gateway.core.db().unwrap());
+        sessions.create("known", "source").unwrap();
+        let before = sessions.list().unwrap().len();
+
+        let handlers = handlers(&gateway);
+        let fork = handlers.get("sessions.fork").unwrap();
+        let err = fork(
+            "sessions.fork",
+            &serde_json::json!({ "session_id": "missing", "at_index": 2 }),
+        )
+        .expect_err("an unknown source must be rejected");
+        assert!(err.contains("unknown session"), "{err}");
+        assert_eq!(sessions.list().unwrap().len(), before, "no phantom session");
+    }
+
+    // Contract: forking writes data, so it stays denied without `allowActions`.
+    #[test]
+    fn sessions_fork_is_denied_without_actions_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let fork = handlers
+            .get("sessions.fork")
+            .expect("sessions.fork must stay registered");
+        let err = fork(
+            "sessions.fork",
+            &serde_json::json!({ "session_id": "s1", "at_index": 0 }),
+        )
+        .expect_err("fork must be denied by default");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{err}");
+    }
+
+    // Contract: `sessions.activate` stores the choice in the `settings/chat`
+    // blob, merging it with the settings already there.
+    #[test]
+    fn sessions_activate_persists_active_session_id() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        sessions.create("act-1", "one").unwrap();
+        sessions.create("act-2", "two").unwrap();
+        // Seed a declared setting plus an undeclared client-only key. The raw
+        // write path must preserve both; a typed `settings.set` round-trip
+        // would silently drop `customFlag`.
+        anima_store::SettingsRepo::new(db.clone())
+            .set(
+                "settings/chat",
+                &serde_json::json!({ "showDirectorNotes": false, "customFlag": true }),
+            )
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let activate = handlers.get("sessions.activate").unwrap();
+        let reply = activate(
+            "sessions.activate",
+            &serde_json::json!({ "sessionId": "act-2" }),
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["session_id"], "act-2");
+
+        let blob: serde_json::Value = anima_store::SettingsRepo::new(db)
+            .get("settings/chat")
+            .unwrap()
+            .unwrap();
+        assert_eq!(blob["activeSessionId"], "act-2");
+        assert_eq!(blob["showDirectorNotes"], false, "partial merge keeps keys");
+        assert_eq!(
+            blob["customFlag"], true,
+            "undeclared key survives the write"
+        );
+    }
+
+    // Contract: an unknown id is an error and never overwrites the stored
+    // choice (the client keeps talking to the previous session).
+    #[test]
+    fn sessions_activate_rejects_unknown_id_without_clobbering() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        sessions.create("act-known", "known").unwrap();
+        let handlers = handlers(&gateway);
+        let activate = handlers.get("sessions.activate").unwrap();
+        activate(
+            "sessions.activate",
+            &serde_json::json!({ "session_id": "act-known" }),
+        )
+        .unwrap();
+
+        let err = activate(
+            "sessions.activate",
+            &serde_json::json!({ "session_id": "act-gone" }),
+        )
+        .expect_err("an unknown session must be rejected");
+        assert!(err.contains("unknown session"), "{err}");
+        let blob: serde_json::Value = anima_store::SettingsRepo::new(db)
+            .get("settings/chat")
+            .unwrap()
+            .unwrap();
+        assert_eq!(blob["activeSessionId"], "act-known", "stored id unchanged");
+    }
+
+    // Contract: an orphaned stored id heals to the most-populated session, as
+    // the Vue recovery bridge does when the active session no longer exists.
+    #[test]
+    fn sessions_activate_heals_orphaned_stored_id_to_most_populated() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        let messages = anima_store::MessageRepo::new(db.clone());
+        sessions.create("act-small", "small").unwrap();
+        sessions.create("act-big", "big").unwrap();
+        for (i, session_id) in ["act-small", "act-big", "act-big", "act-big"]
+            .iter()
+            .enumerate()
+        {
+            messages
+                .insert(&anima_store::StoredMessage {
+                    id: format!("act-msg-{i}").into(),
+                    session_id: (*session_id).into(),
+                    role: "user".into(),
+                    content: format!("m{i}"),
+                    created_at: i as i64 + 1,
+                    metadata: serde_json::json!({}),
+                })
+                .unwrap();
+        }
+        anima_store::SettingsRepo::new(db.clone())
+            .set(
+                "settings/chat",
+                &serde_json::json!({ "activeSessionId": "act-orphan" }),
+            )
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let reply =
+            handlers.get("sessions.activate").unwrap()("sessions.activate", &serde_json::json!({}))
+                .unwrap();
+        assert_eq!(reply["session_id"], "act-big");
+        let blob: serde_json::Value = anima_store::SettingsRepo::new(db)
+            .get("settings/chat")
+            .unwrap()
+            .unwrap();
+        assert_eq!(blob["activeSessionId"], "act-big", "healed id persisted");
+    }
+
+    // Contract: activation writes state, so it stays denied without opt-in.
+    #[test]
+    fn sessions_activate_is_denied_without_actions_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let activate = handlers
+            .get("sessions.activate")
+            .expect("sessions.activate must stay registered");
+        let err = activate("sessions.activate", &serde_json::json!({}))
+            .expect_err("activate must be denied by default");
         assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{err}");
     }
 

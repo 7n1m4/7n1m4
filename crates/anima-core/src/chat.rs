@@ -40,6 +40,8 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::grounding::{assemble, GroundingBlock, GroundingBudget};
+use crate::memory::ShortTermMemoryService;
 #[cfg(feature = "local-llm")]
 use crate::settings::{LocalLlmSettings, SettingsSection};
 use crate::{new_id, now_ms};
@@ -129,6 +131,8 @@ Rules: mint a new unique, stable, slug-like surfaceId per widget (e.g. "weather-
 /// and event bus.
 #[derive(Clone)]
 pub struct ChatService {
+    /// Shared database handle, used to read stored daily-summary context.
+    db: Database,
     sessions: SessionRepo,
     messages: MessageRepo,
     /// Read access to `settings/local-llm` for the native llama.cpp provider.
@@ -164,6 +168,7 @@ impl ChatService {
         let (bus, _) = broadcast::channel(64);
         let settings = SettingsRepo::new(db.clone());
         Self {
+            db: db.clone(),
             sessions: SessionRepo::new(db.clone()),
             messages: MessageRepo::new(db),
             settings,
@@ -357,6 +362,7 @@ impl ChatService {
 
         let history = self.messages.list(&session_id)?;
         let messages: Vec<ChatMessage> = history.into_iter().filter_map(to_chat_message).collect();
+        let system = self.build_system_prompt(a2ui)?;
         self.run_stream(
             session_id,
             assistant_message_id.map(str::to_string),
@@ -365,7 +371,7 @@ impl ChatService {
             ChatRequest {
                 model: model.to_string(),
                 messages,
-                system: a2ui.then(|| A2UI_SYSTEM_PROMPT.to_string()),
+                system,
                 temperature: None,
                 max_tokens: None,
                 tools: Vec::new(),
@@ -373,6 +379,45 @@ impl ChatService {
             cancel,
         )
         .await
+    }
+
+    /// Assemble the turn's system prompt: the A2UI instruction when requested,
+    /// followed by any stored daily-summary continuity block routed through
+    /// the grounding formatter. An empty block leaves the prompt shape
+    /// unchanged (`None` for ordinary turns).
+    fn build_system_prompt(&self, a2ui: bool) -> Result<Option<String>> {
+        let days = recent_utc_day_keys(now_ms() / 1000);
+        // Continuity is best-effort: a locked/busy summary store must never
+        // abort a turn or discard the user's message.
+        let context = ShortTermMemoryService::new(self.db.clone())
+            .build_context(&days)
+            .unwrap_or_default();
+        let grounding = if context.is_empty() {
+            String::new()
+        } else {
+            let blocks = [GroundingBlock::short_term_memory(context)];
+            // STMM is a single block holding up to three daily summaries with
+            // its own per-day budget; TS's generic 2500-char per-block cap
+            // would discard the newest day, so let the whole total budget through.
+            assemble(
+                &blocks,
+                GroundingBudget {
+                    max_per_block_chars: 7000,
+                    ..GroundingBudget::default()
+                },
+            )
+        };
+        if grounding.is_empty() {
+            return Ok(a2ui.then(|| A2UI_SYSTEM_PROMPT.to_string()));
+        }
+        let mut system = a2ui
+            .then(|| A2UI_SYSTEM_PROMPT.to_string())
+            .unwrap_or_default();
+        if !system.is_empty() {
+            system.push_str("\n\n");
+        }
+        system.push_str(&grounding);
+        Ok(Some(system))
     }
 
     /// Stream a completion over an explicit message list.
@@ -877,6 +922,31 @@ fn sanitize_title(raw: &str) -> String {
     capped
 }
 
+/// Day keys for today and the previous two days in UTC (`YYYY-MM-DD`).
+fn recent_utc_day_keys(now_unix_secs: i64) -> Vec<String> {
+    let today = now_unix_secs.div_euclid(86_400);
+    (0..3)
+        .map(|back| {
+            let (year, month, day) = civil_from_days(today - back);
+            format!("{year:04}-{month:02}-{day:02}")
+        })
+        .collect()
+}
+
+/// Howard Hinnant's civil-from-days conversion (std-only, UTC).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
 /// Map a persisted message back into an LLM chat message.
 ///
 /// Messages with unrecognized roles (e.g. `tool` plumbing not yet
@@ -900,6 +970,7 @@ fn to_chat_message(message: StoredMessage) -> Option<ChatMessage> {
 mod tests {
     use super::*;
     use anima_llm::{ChatChunk, ChatStream, ModelInfo};
+    use anima_store::{StoredSummary, SummaryRepo};
     use async_trait::async_trait;
     use tempfile::tempdir;
 
@@ -1238,6 +1309,207 @@ mod tests {
                 .all(|m| !m.content.contains("a2ui.org")),
             "system prompt must never leak into persisted/user-visible messages"
         );
+    }
+
+    #[tokio::test]
+    async fn send_message_injects_stored_daily_summaries_into_system() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        let summaries = SummaryRepo::new(db);
+        for day in recent_utc_day_keys(now_ms() / 1000) {
+            summaries
+                .insert(&StoredSummary {
+                    id: new_id(),
+                    day,
+                    content: "Daily note: rebuild the deck on Saturday".to_string(),
+                    source_session_ids: vec![],
+                    token_estimate: 9,
+                    created_at: now_ms(),
+                })
+                .unwrap();
+        }
+
+        // A custom title avoids an auto-title request in the recording.
+        let session = service.new_session_with_title("Custom title").unwrap();
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "plain continuity check",
+            )
+            .await
+            .unwrap();
+        service
+            .send_message_with_a2ui(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "widget continuity check",
+                None,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let system_for = |text: &str| {
+            recorded
+                .iter()
+                .find(|req| req.messages.iter().any(|m| m.content == text))
+                .and_then(|req| req.system.clone())
+                .unwrap_or_else(|| panic!("no provider request for {text:?}"))
+        };
+        let plain = system_for("plain continuity check");
+        assert!(plain.contains("[PAST CONTINUITY / DAILY SUMMARIES]"));
+        assert!(plain.contains("Daily note: rebuild the deck on Saturday"));
+        assert!(!plain.contains("v0.9"));
+
+        let a2ui = system_for("widget continuity check");
+        assert!(a2ui.contains("[PAST CONTINUITY / DAILY SUMMARIES]"));
+        assert!(a2ui.contains("Daily note: rebuild the deck on Saturday"));
+        // The A2UI instruction survives the merge.
+        assert!(a2ui.contains("v0.9"));
+        assert!(a2ui.contains("createSurface"));
+        assert!(a2ui.contains("https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"));
+    }
+
+    #[test]
+    fn build_system_prompt_routes_continuity_through_grounding_assembler() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let summaries = SummaryRepo::new(db);
+        summaries
+            .insert(&StoredSummary {
+                id: new_id(),
+                day: recent_utc_day_keys(now_ms() / 1000)[0].clone(),
+                content: "Daily note: assemble via grounding".to_string(),
+                source_session_ids: vec![],
+                token_estimate: 6,
+                created_at: now_ms(),
+            })
+            .unwrap();
+
+        let plain = service
+            .build_system_prompt(false)
+            .unwrap()
+            .expect("continuity must produce a system prompt");
+        assert!(plain.starts_with("[PAST CONTINUITY / DAILY SUMMARIES]"));
+        assert!(plain.contains("Daily note: assemble via grounding"));
+        assert!(!plain.contains("v0.9"));
+
+        let a2ui = service
+            .build_system_prompt(true)
+            .unwrap()
+            .expect("A2UI turn must keep both blocks");
+        assert!(a2ui.starts_with(A2UI_SYSTEM_PROMPT));
+        assert!(a2ui.contains("\n\n[PAST CONTINUITY / DAILY SUMMARIES]"));
+        assert!(a2ui.contains("Daily note: assemble via grounding"));
+    }
+
+    #[tokio::test]
+    async fn continuity_read_is_best_effort_when_summary_store_fails() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db.clone());
+        let summaries = SummaryRepo::new(db.clone());
+        summaries
+            .insert(&StoredSummary {
+                id: new_id(),
+                day: recent_utc_day_keys(now_ms() / 1000)[0].clone(),
+                content: "stored before the failure".to_string(),
+                source_session_ids: vec![],
+                token_estimate: 4,
+                created_at: now_ms(),
+            })
+            .unwrap();
+        // Simulate the locked/busy summary DB that previously aborted 13 chat
+        // tests after the user turn had already been persisted.
+        db.with_connection(|conn| Ok(conn.execute_batch("DROP TABLE summaries")?))
+            .unwrap();
+
+        assert_eq!(
+            service.build_system_prompt(false).unwrap(),
+            None,
+            "a failed continuity read must degrade to no extra system prompt"
+        );
+
+        let (client, _requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+        let session = service.new_session_with_title("Custom title").unwrap();
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "turn survives a broken summary store",
+            )
+            .await
+            .expect("the user turn must still be accepted");
+    }
+
+    #[tokio::test]
+    async fn send_message_without_summaries_leaves_system_shape_unchanged() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db);
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+
+        let session = service.new_session_with_title("Custom title").unwrap();
+        service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "plain no memory",
+            )
+            .await
+            .unwrap();
+        service
+            .send_message_with_a2ui(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "widget no memory",
+                None,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let request_for = |text: &str| {
+            recorded
+                .iter()
+                .find(|req| req.messages.iter().any(|m| m.content == text))
+                .unwrap_or_else(|| panic!("no provider request for {text:?}"))
+        };
+        assert!(request_for("plain no memory").system.is_none());
+        let a2ui = request_for("widget no memory")
+            .system
+            .as_deref()
+            .expect("A2UI turn still needs its system prompt");
+        assert_eq!(a2ui, A2UI_SYSTEM_PROMPT);
+        assert!(!a2ui.contains("[PAST CONTINUITY / DAILY SUMMARIES]"));
+    }
+
+    #[test]
+    fn recent_utc_day_keys_cover_today_and_previous_two_days() {
+        // 2026-11-26T00:00:00Z
+        let midnight = 1_795_651_200;
+        assert_eq!(
+            recent_utc_day_keys(midnight),
+            vec!["2026-11-26", "2026-11-25", "2026-11-24"]
+        );
+        // Late in the same UTC day must not roll over.
+        assert_eq!(recent_utc_day_keys(midnight + 86_399)[0], "2026-11-26");
     }
 
     #[tokio::test]

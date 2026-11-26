@@ -76,8 +76,8 @@ client may fabricate these values when a frame is missing.
 
 Keyset list cursors are also daemon-owned wire values, not persisted state:
 `cards.list`/`sessions.list` return `{ updatedAt, rowId }` and `chat.history`
-returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1424,1791,2009`,
-`list_cursor` at `gateway.rs:2907-2926`). `ListPage.nextCursor` in
+returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1343,1720,1932`,
+`list_cursor` at `gateway.rs:2983`). `ListPage.nextCursor` in
 `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,732-745` forwards them
 verbatim; only older daemons without a cursor fall back to a numeric offset
 (`airi-dib9`). `stmm.upsert` writes short-term summary rows via the gated
@@ -1256,7 +1256,14 @@ metadata are plain refs, not durable settings.
 | `settings/captions/head-tethered/offset` | `{ x: number, y: number }` | `{ x: 0, y: -15 }` | `stores/settings/captions.ts` |
 | `settings/captions/head-tethered/follow-strength` | `number` | `100` | `stores/settings/captions.ts` |
 
-Note: head-tethered captions render as a floating PIXIRenderer panel pointing at the model head (Live2D-only MVP); they are separate from the windowed caption flow.
+All eleven keys are now carried by the daemon section `settings/captions`
+(`CaptionsSettings` in `crates/anima-core/src/settings.rs`, registered in
+`crates/anima-daemon/src/core.rs`), using camelCase field names on the wire and
+`#[serde(default)]` for legacy blobs. The TS store still writes its flat
+`localStorage` keys and has not migrated to the daemon bridge. Head-tethered
+captions render as a floating PIXIRenderer panel pointing at the model head
+(Live2D-only MVP); they are separate from the windowed caption flow, and their
+rendering stays client-local pending native Live2D head tracking.
 
 ### 4.13 Live2D
 
@@ -1344,7 +1351,12 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `onboarding/v2-state` | `{ stepId, path }` | `'welcome'` / `'new'` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-skipped` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-completed` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
+| `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` — **disposition: TS-only draft**, `useLocalStorageManualReset`, no daemon port |
+| `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` — **disposition: TS-only first-run flag**, no daemon port |
+| `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` — **disposition: TS-only first-run flag**, no daemon port |
 | `airi:onboarding:magic-wand-seen` | `boolean` | `false` | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
+
+Disposition note: the V3 draft and completion/skip flags are TS-written `localStorage` with no daemon mirror and no Flutter consumer; `stores/onboarding.ts:17-20` states legacy `onboarding/completed` / `onboarding/skipped` (rows above) are intentionally never read. Onboarding V3 is an outstanding parity gap (`gap — track in tracker`).
 
 ### 4.20 Dating Sim / Producer
 
