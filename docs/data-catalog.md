@@ -67,12 +67,25 @@ activeModel: string }` — the provider/model selection used by daemon
 payloads (not persisted keys and no `local:*` mirror): `PresenceChangedData`
 `{ subject, state, seq, ts_ms }` and secret-free `StatusChangedData`
 `{ core_available, store_available, store_health, seq, ts_ms }` in
-`crates/anima-channel/src/wire.rs:1085,1104`. Flutter decodes them in
+`crates/anima-channel/src/wire.rs:1125,1144` (`PresenceChangedData`,
+`StatusChangedData`). Flutter decodes them in
 `apps/flutter/lib/daemon_client/protocol.dart:110,144`, registers typed hooks at
 `daemon_client.dart:274,283`, and renders them through
 `apps/flutter/lib/features/stage/presence_event_state.dart` + `presence_status_chip.dart`
 (`airi-pntk`, `airi-rs74`). `core.status` remains the read-only health probe; no
 client may fabricate these values when a frame is missing.
+
+`discord.status` is likewise a wire-only reply, not a persisted key and with no
+`local:*` mirror: `DiscordStatusReply` `{ running, hasToken }`
+(`crates/anima-channel/src/wire.rs:288`, registered via
+`.register::<DiscordStatusReply>()` at `wire.rs:1431`) reports only
+lifecycle state plus a bot-token presence bit — no token value and no config
+echo. `CoreService::discord_status` (`crates/anima-daemon/src/core.rs:859`) builds
+the projection; the status handler stays ungated because the reply is
+secret-free (`crates/anima-daemon/src/gateway.rs:2566`), while `discord.start`
+and `discord.stop` are registered through `gated()` at `gateway.rs:2576,2590`
+(`airi-ro6o`, commit `bbdf37fa`). The stored credential itself remains the
+write-only `settings/discord` field inventoried in §4.7.
 
 Keyset list cursors are also daemon-owned wire values, not persisted state:
 `cards.list`/`sessions.list` return `{ updatedAt, rowId }` and `chat.history`
@@ -1127,6 +1140,15 @@ in `apps/flutter/lib/speech/ust_transform.dart:25-45,163` (`airi-f2xw`). It stay
 inside the opaque `settings/speech.voiceProfiles` JSON — no daemon field was
 added.
 
+Flutter's speech audio cache is **client-local and not persisted**: the pure
+Dart mirror in `apps/flutter/lib/speech/audio_cache.dart` ports only the key
+builder `createSpeechAudioCacheKey` (`:15`) and in-process LRU
+`SpeechAudioCache` (`:104`, `get` at `:122`, `set` at `:136`, `clear` at `:164`,
+bounds 200 entries / 50 MB). BroadcastChannel sync, the global singleton,
+message associations and engine wiring were deliberately not ported, and no
+Replay caller exists yet, so there is no `local:*` mirror and no daemon key for
+it (`airi-rr2l`, commit `2b249cd3`).
+
 ### 4.5 Hearing (STT)
 
 The primary persisted keys below are now **daemon-backed** in one typed blob,
@@ -1207,8 +1229,10 @@ projection is `DiscordSettingsView` (`settings.rs:1943-1983`), which replaces th
 secret with a wire-only boolean `hasToken` (serde `has_token`). A `settings.set`
 PATCH that omits `token`, nulls it, or echoes the mask keeps the stored secret;
 only an explicit new token rotates it (`core.rs:231-243`, test at `:1607`).
-Commit `1bbe6942`, bead `airi-bav5` (closed); live lifecycle verbs remain open
-(`airi-ro6o`). See `docs/decision-token-safe-settings-projection.md`.
+Commit `1bbe6942`, bead `airi-bav5` (closed). Token-free lifecycle verbs landed
+in `bbdf37fa`, bead `airi-ro6o` (closed 2026-11-27); their wire-only
+`DiscordStatusReply` is inventoried above. See
+`docs/decision-token-safe-settings-projection.md`.
 
 ### 4.8 Artistry (Image Generation)
 
@@ -1409,6 +1433,17 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `settings/credentials/providers` | `Record<string, Record<string, unknown>>` | `stores/providers.ts` |
 | `settings/providers/added` | `Record<string, boolean>` | `stores/providers.ts` |
 | `settings/providers/runtime` | `Record<string, ProviderRuntimeState>` | `stores/providers.ts` |
+
+Flutter has **no persisted mirror** of these TS provider rows: the pure Dart
+helper library `apps/flutter/lib/speech/provider_instance.dart` ports only the
+shape logic — `providerInstancesStorageKey` (`:18`, kept for parity with the
+TS constant but never read or written), `primaryInstanceInfix` (`:21`),
+`cleanInfix` (`:26`), `toStorageKey` (`:40`), `normalizeInstance` (`:46`),
+`healInstanceRows` (`:73`) and `listInstances` (`:117`). Callers own the row
+map; `options` holds raw credentials and stays opaque. There are no storage
+writes, no credentials proxy, no HMAC mint, no network and no UI, so this is
+the shared pure core only — not a Flutter `local:*` key (`airi-bzu3`, commit
+`2b249cd3`).
 
 ### 4.19 Onboarding
 
@@ -1837,7 +1872,10 @@ When implementing MOSS-TTS-Nano voice cloning, the voice profile store should fo
 ### Daemon RPC / event wire sources (not persisted keys)
 | File | Role |
 | :--- | :--- |
-| `crates/anima-channel/src/wire.rs:1085,1104` | Presence/health payloads (`PresenceChangedData`, `StatusChangedData`); `CueKind` at `:982-989` |
+| `crates/anima-channel/src/wire.rs:1125,1144` | `PresenceChangedData` / `StatusChangedData` presence/health payloads; `CueKind` at `:982-989` |
+| `crates/anima-channel/src/wire.rs:288,1431` | `DiscordStatusReply` `{running, hasToken}` struct and its `.register::<DiscordStatusReply>()` entry; wire-only, no `local:*` mirror |
+| `crates/anima-daemon/src/core.rs:859,878` | `CoreService::discord_status` token-free projection and `discord_set_running` state write |
+| `crates/anima-daemon/src/gateway.rs:2566,2576,2590` | Ungated `discord.status` read; gated `discord.start` / `discord.stop` handlers |
 | `crates/anima-daemon/src/gateway.rs:1608-1609,1975,2204` | Keyset cursors for `chat.history`, `cards.list`, `sessions.list` (`list_cursor` at `:3292`); `stmm.upsert` handler at `:1652-1665` |
 | `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,267-288,732-745` | `ListPage.nextCursor` verbatim cursor forwarding, typed presence/status hooks, `stmmUpsert` at `:1003-1065` |
 | `apps/flutter/lib/features/stage/presence_event_state.dart:65-173` | Seq-deduped presence/health snapshot and typed hook binding |

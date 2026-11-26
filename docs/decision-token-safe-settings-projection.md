@@ -13,4 +13,4 @@ Credential-bearing settings reads never return a credential field. The daemon pr
 
 ## Scope
 
-Settings projection only. Live Discord start/stop/status verbs are a separate open slice (`airi-ro6o`) and must reuse the same token-free status read. The parity row is `docs/feature-parity-checklist.md` (Discord / MCP config); the persisted keys are inventoried in `docs/data-catalog.md` §4.7 and §4.21.
+Settings projection only. Live Discord start/stop/status verbs shipped separately in `bbdf37fa` (`airi-ro6o`, closed 2026-11-27) and reuse this same token-free projection: `CoreService::discord_status` (`crates/anima-daemon/src/core.rs:859`) returns only wire-only `DiscordStatusReply` `{ running, hasToken }` (`crates/anima-channel/src/wire.rs:288`); `discord.status` is ungated while `discord.start` / `discord.stop` stay gated (`crates/anima-daemon/src/gateway.rs:2566,2576,2590`). No credential value or config echo crosses the wire. The parity row is `docs/feature-parity-checklist.md` (Discord / MCP config); the persisted keys are inventoried in `docs/data-catalog.md` §4.7 and §4.21.
