@@ -4,8 +4,9 @@
 //! Pure dating-sim storyline presets, frozen from the Vue reference at
 //! `packages/stage-ui/src/constants/dating-sim/storylines.ts:1-135`.
 //!
-//! This module is a read-only catalog: it owns no store, daemon verb, wire
-//! type, persistence, LLM hook, interpreter or UI state. Each preset carries
+//! This module owns the catalog plus a pure dating-sim mini-script interpreter;
+//! it owns no store, daemon verb, wire type, persistence, LLM hook or UI state.
+//! Each preset carries
 //! the nine narrative fields declared by the TypeScript `StorylinePreset`
 //! interface, and the array retains the Vue declaration order. The unit tests
 //! check internal structure and a few spot values only; they do not verify
@@ -169,6 +170,206 @@ pub fn storyline_preset(id: &str) -> Option<&'static StorylinePreset> {
     STORYLINE_PRESETS.iter().find(|preset| preset.id == id)
 }
 
+/// Named numeric variables backing the dating-sim mini-script (TS
+/// `variables.value` record). A missing name reads as `0.0`, matching the TS
+/// `getVariable` fallback of `variables.value[name] || 0`.
+pub type ScriptVariables = std::collections::HashMap<String, f64>;
+
+/// A pure output effect of [`execute_script`], named after the Live2D DSL cue
+/// verbs in `packages/live2d-runtime/src/dsl/command-parser.ts:54-80`. Unlike
+/// the Vue source, no event is dispatched: the caller owns every side effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScriptCue {
+    /// `start_mtn`: trigger a motion by its raw DSL target.
+    StartMotion(String),
+    /// `clear_exp`: clear all expressions.
+    ClearExpression,
+    /// `motions`: enable (`true`) or disable (`false`) idle motions.
+    Motions(bool),
+    /// `change_cos`: hot-swap the model with the given target descriptor.
+    ChangeCos(String),
+}
+
+impl ScriptCue {
+    /// The DSL cue verb this effect corresponds to.
+    pub fn cue_name(&self) -> &'static str {
+        match self {
+            Self::StartMotion(_) => "start_mtn",
+            Self::ClearExpression => "clear_exp",
+            Self::Motions(_) => "motions",
+            Self::ChangeCos(_) => "change_cos",
+        }
+    }
+}
+
+/// `Number.parseFloat`-like conversion: the longest leading numeric prefix,
+/// or NaN when there is none. Trailing junk is ignored, as in TypeScript.
+fn parse_float(raw: &str) -> f64 {
+    let trimmed = raw.trim_start();
+    // JS parseFloat only accepts the exact `Infinity` spelling; Rust's parser
+    // also accepts case-insensitive `inf`/`infinity`/`nan`, which must stay NaN.
+    let body = trimmed
+        .strip_prefix('-')
+        .or_else(|| trimmed.strip_prefix('+'))
+        .unwrap_or(trimmed);
+    let word_len = body.bytes().take_while(u8::is_ascii_alphabetic).count();
+    if word_len > 0 {
+        return if body[..word_len].starts_with("Infinity") {
+            if trimmed.starts_with('-') {
+                f64::NEG_INFINITY
+            } else {
+                f64::INFINITY
+            }
+        } else {
+            f64::NAN
+        };
+    }
+    for end in (1..=trimmed.len()).rev() {
+        if !trimmed.is_char_boundary(end) {
+            continue;
+        }
+        if let Ok(value) = trimmed[..end].parse::<f64>() {
+            return value;
+        }
+    }
+    f64::NAN
+}
+
+/// TS `getVariable`: `variables.value[name] || 0`. NaN and `-0` are falsy and
+/// collapse to `0`; Infinity is truthy and survives unchanged.
+fn get_variable(variables: &ScriptVariables, name: &str) -> f64 {
+    let value = variables.get(name).copied().unwrap_or(0.0);
+    if value == 0.0 || value.is_nan() {
+        0.0
+    } else {
+        value
+    }
+}
+
+/// Find the first `/rand\((\d+),(\d+)\)/` match: digits only and unanchored at
+/// the end, so signs are rejected and trailing junk after `)` is ignored.
+/// Bounds are f64 (JS numbers are f64), so no script input can overflow.
+fn parse_rand_bounds(expr: &str) -> Option<(f64, f64)> {
+    let mut search = expr;
+    while let Some(idx) = search.find("rand(") {
+        let rest = &search[idx + "rand(".len()..];
+        if let Some(bounds) = parse_bounds_pair(rest) {
+            return Some(bounds);
+        }
+        search = rest;
+    }
+    None
+}
+
+fn parse_bounds_pair(rest: &str) -> Option<(f64, f64)> {
+    let min_len = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if min_len == 0 {
+        return None;
+    }
+    let after_min = &rest[min_len..];
+    let after_comma = after_min.strip_prefix(',')?;
+    let max_len = after_comma.bytes().take_while(u8::is_ascii_digit).count();
+    if max_len == 0 {
+        return None;
+    }
+    if !after_comma[max_len..].starts_with(')') {
+        return None;
+    }
+    Some((
+        rest[..min_len].parse::<f64>().ok()?,
+        after_comma[..max_len].parse::<f64>().ok()?,
+    ))
+}
+
+/// Pure port of TS `evaluateCondition`. `None` or an empty condition passes;
+/// a statement that is not `<var> <op> <number>` with a known operator fails.
+pub fn evaluate_condition(variables: &ScriptVariables, condition: Option<&str>) -> bool {
+    let Some(condition) = condition else {
+        return true;
+    };
+    if condition.is_empty() {
+        return true;
+    }
+    let parts: Vec<&str> = condition.split(' ').collect();
+    if parts.len() < 3 {
+        return false;
+    }
+    let current = get_variable(variables, parts[0]);
+    let target = parse_float(parts[2]);
+    match parts[1] {
+        "equal" => current == target,
+        "greater" => current > target,
+        "less" => current < target,
+        "greater_eq" => current >= target,
+        "less_eq" => current <= target,
+        _ => false,
+    }
+}
+
+/// Pure port of TS `executeAssignment`. `rng` replaces `Math.random()` and must
+/// return a value in `[0, 1)`; all mutation stays inside `variables`.
+pub fn execute_assignment<F>(variables: &mut ScriptVariables, code: &str, rng: F)
+where
+    F: Fn() -> f64,
+{
+    let parts: Vec<&str> = code.split(' ').collect();
+    if parts.len() < 3 {
+        return;
+    }
+    let name = parts[0];
+    let op = parts[1];
+    let expr = parts[2..].join(" ");
+    let current = get_variable(variables, name);
+
+    match op {
+        "assign" => {
+            if expr.starts_with("rand(") {
+                if let Some((min, max)) = parse_rand_bounds(&expr) {
+                    // JS does this in f64: no integer overflow for huge bounds.
+                    let value = (rng() * ((max - min) + 1.0)).floor() + min;
+                    variables.insert(name.to_string(), value);
+                }
+                // A malformed rand(...) is ignored, like the TS regex miss.
+            } else {
+                variables.insert(name.to_string(), parse_float(&expr));
+            }
+        }
+        "add" => {
+            variables.insert(name.to_string(), current + parse_float(&expr));
+        }
+        "subtract" => {
+            variables.insert(name.to_string(), current - parse_float(&expr));
+        }
+        _ => {}
+    }
+}
+
+/// Pure port of TS `executeScript`: split on `;`, trim, and emit one
+/// [`ScriptCue`] per recognised command; unknown and blank statements vanish.
+pub fn execute_script(script: &str) -> Vec<ScriptCue> {
+    let mut cues = Vec::new();
+    for raw in script.split(';') {
+        let cmd = raw.trim();
+        if cmd.is_empty() {
+            continue;
+        }
+        if let Some(target) = cmd.strip_prefix("start_mtn") {
+            cues.push(ScriptCue::StartMotion(target.trim().to_string()));
+        } else if cmd.starts_with("clear_exp") {
+            cues.push(ScriptCue::ClearExpression);
+        } else if let Some(rest) = cmd.strip_prefix("motions ") {
+            if rest.starts_with("enable") {
+                cues.push(ScriptCue::Motions(true));
+            } else if rest.starts_with("disable") {
+                cues.push(ScriptCue::Motions(false));
+            }
+        } else if let Some(target) = cmd.strip_prefix("change_cos") {
+            cues.push(ScriptCue::ChangeCos(target.trim().to_string()));
+        }
+    }
+    cues
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +441,190 @@ mod tests {
                 preset.id
             );
         }
+    }
+
+    #[test]
+    fn evaluate_condition_matches_ts_operators() {
+        let mut vars = ScriptVariables::new();
+        vars.insert("intimacy".to_string(), 50.0);
+        let cases = [
+            ("intimacy equal 50", true),
+            ("intimacy greater 49", true),
+            ("intimacy less 50", false),
+            ("intimacy greater_eq 50", true),
+            ("intimacy less_eq 49", false),
+        ];
+        for (condition, expected) in cases {
+            assert_eq!(
+                evaluate_condition(&vars, Some(condition)),
+                expected,
+                "{condition}"
+            );
+        }
+    }
+
+    #[test]
+    fn evaluate_condition_fallbacks_match_ts() {
+        let vars = ScriptVariables::new();
+        let cases: &[(Option<&str>, bool)] = &[
+            (None, true),
+            (Some(""), true),
+            (Some("intimacy greater"), false), // too few parts
+            (Some("intimacy unknown 5"), false),
+            (Some("missing equal 0"), true), // missing var reads as 0
+            (Some("missing greater 0"), false),
+            (Some("intimacy equal not_a_number"), false), // NaN compares false
+        ];
+        for (condition, expected) in cases {
+            assert_eq!(
+                evaluate_condition(&vars, *condition),
+                *expected,
+                "{condition:?}"
+            );
+        }
+    }
+
+    fn rng_zero() -> f64 {
+        0.0
+    }
+    fn rng_half() -> f64 {
+        0.5
+    }
+    fn rng_high() -> f64 {
+        0.999999
+    }
+
+    #[test]
+    fn execute_assignment_table() {
+        let cases: &[(&str, fn() -> f64, f64)] = &[
+            ("x assign 42", rng_zero, 42.0),
+            ("x assign 42abc", rng_zero, 42.0),
+            ("x assign -3.5", rng_zero, -3.5),
+            ("x add 5", rng_zero, 5.0),
+            ("x subtract 5", rng_zero, -5.0),
+            ("x assign rand(1,3)", rng_zero, 1.0),
+            ("x assign rand(1,3)", rng_half, 2.0),
+            ("x assign rand(1,3)", rng_high, 3.0),
+        ];
+        for (code, rng, expected) in cases {
+            let mut vars = ScriptVariables::new();
+            execute_assignment(&mut vars, code, rng);
+            assert_eq!(vars.get("x"), Some(expected), "{code}");
+        }
+    }
+
+    #[test]
+    fn execute_assignment_accumulates_and_ignores_bad_input() {
+        let mut vars = ScriptVariables::new();
+        vars.insert("x".to_string(), 10.0);
+        execute_assignment(&mut vars, "x add 5", rng_zero);
+        assert_eq!(vars["x"], 15.0);
+        execute_assignment(&mut vars, "x subtract 3", rng_zero);
+        assert_eq!(vars["x"], 12.0);
+
+        execute_assignment(&mut vars, "x add", rng_zero); // too few parts
+        execute_assignment(&mut vars, "x multiply 2", rng_zero); // unknown op
+        execute_assignment(&mut vars, "x assign rand(foo)", rng_zero); // bad rand
+        assert_eq!(vars["x"], 12.0);
+    }
+
+    #[test]
+    fn nan_reads_collapse_to_zero_like_ts_or_fallback() {
+        let mut vars = ScriptVariables::new();
+        vars.insert("x".to_string(), f64::NAN);
+
+        execute_assignment(&mut vars, "x add 5", rng_zero);
+        assert_eq!(vars["x"], 5.0, "NaN || 0 then add");
+
+        vars.insert("x".to_string(), f64::NAN);
+        assert!(
+            evaluate_condition(&vars, Some("x equal 0")),
+            "NaN || 0 == 0"
+        );
+        assert!(
+            evaluate_condition(&vars, Some("x greater -1")),
+            "NaN || 0 > -1"
+        );
+
+        vars.insert("x".to_string(), f64::INFINITY);
+        assert!(
+            evaluate_condition(&vars, Some("x greater 0")),
+            "Infinity survives || 0"
+        );
+    }
+
+    #[test]
+    fn parse_float_infinity_spellings_match_js() {
+        assert_eq!(parse_float("Infinity"), f64::INFINITY);
+        assert_eq!(parse_float("-Infinity"), f64::NEG_INFINITY);
+        assert_eq!(parse_float("Infinityabc"), f64::INFINITY);
+        assert!(parse_float("inf").is_nan());
+        assert!(parse_float("infinity").is_nan());
+        assert!(parse_float("-inf").is_nan());
+        assert!(parse_float("nan").is_nan());
+    }
+
+    #[test]
+    fn rand_bounds_match_unanchored_digit_regex_and_do_not_overflow() {
+        let mut vars = ScriptVariables::new();
+        vars.insert("x".to_string(), 99.0);
+
+        execute_assignment(&mut vars, "x assign rand(1,3)abc", rng_zero);
+        assert_eq!(vars["x"], 1.0, "trailing junk after ')' is ignored");
+
+        execute_assignment(&mut vars, "x assign rand(-1,3)", rng_zero);
+        assert_eq!(vars["x"], 1.0, "signed bounds do not match the regex");
+        execute_assignment(&mut vars, "x assign rand(+1,3)", rng_zero);
+        assert_eq!(vars["x"], 1.0, "signed bounds do not match the regex");
+
+        execute_assignment(&mut vars, "x assign rand(0,9223372036854775807)", rng_zero);
+        assert_eq!(vars["x"], 0.0, "i64::MAX bound must not panic or drop");
+        execute_assignment(&mut vars, "x assign rand(0,9223372036854775807)", rng_high);
+        assert!(vars["x"] >= 0.0 && vars["x"] <= 9_223_372_036_854_775_807.0);
+
+        vars.insert("x".to_string(), 99.0);
+        execute_assignment(
+            &mut vars,
+            "x assign rand(0,99999999999999999999999999999999999999999999999999999)",
+            rng_half,
+        );
+        assert!(vars["x"] > 1e50, "bounds past u128::MAX must not drop");
+
+        vars.insert("x".to_string(), 99.0);
+        let saturated = format!("x assign rand(0,{})", "9".repeat(400));
+        execute_assignment(&mut vars, &saturated, rng_half);
+        assert!(
+            vars["x"].is_infinite(),
+            "f64 saturation must not drop assignment"
+        );
+    }
+
+    #[test]
+    fn execute_script_emits_dsl_cues() {
+        let script = " start_mtn B40 ; clear_exp ; motions enable ; motions disable ; change_cos model1.json ; unknown_verb 42 ; ; start_mtn Sound#1:011 ";
+        let cues = execute_script(script);
+        assert_eq!(cues.len(), 6);
+        assert_eq!(cues[0], ScriptCue::StartMotion("B40".to_string()));
+        assert_eq!(cues[1], ScriptCue::ClearExpression);
+        assert_eq!(cues[2], ScriptCue::Motions(true));
+        assert_eq!(cues[3], ScriptCue::Motions(false));
+        assert_eq!(cues[4], ScriptCue::ChangeCos("model1.json".to_string()));
+        assert_eq!(cues[5], ScriptCue::StartMotion("Sound#1:011".to_string()));
+        assert!(execute_script("").is_empty());
+        assert!(execute_script(" ; ; ").is_empty());
+    }
+
+    #[test]
+    fn cue_names_match_dsl_verbs() {
+        assert_eq!(
+            ScriptCue::StartMotion("x".to_string()).cue_name(),
+            "start_mtn"
+        );
+        assert_eq!(ScriptCue::ClearExpression.cue_name(), "clear_exp");
+        assert_eq!(ScriptCue::Motions(true).cue_name(), "motions");
+        assert_eq!(
+            ScriptCue::ChangeCos("m.json".to_string()).cue_name(),
+            "change_cos"
+        );
     }
 }
