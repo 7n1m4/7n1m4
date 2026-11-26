@@ -16,21 +16,28 @@ import 'support/fakes.dart';
 
 const _router = 'lib/features/settings/settings_screen.dart';
 
+Set<String> handledCatalogCases(String source) {
+  final catalogMethod = RegExp(r'_openCatalogNode\s*\([^)]*\)\s*(?:async\s*)?\{')
+      .firstMatch(source);
+  if (catalogMethod == null) return const <String>{};
+  final catalogStart = catalogMethod.start;
+  final catalogEnd = source.indexOf('\n  }', catalogStart);
+  final catalogSwitch = catalogEnd == -1
+      ? source.substring(catalogStart)
+      : source.substring(catalogStart, catalogEnd);
+  return RegExp(r"case '([a-z][a-z0-9-]*)':")
+      .allMatches(catalogSwitch)
+      .map((match) => match.group(1)!)
+      .toSet();
+}
+
 void main() {
   test('every visible catalog node has a router case', () {
     final source = File(_router).readAsStringSync();
     final catalogMethod = RegExp(r'_openCatalogNode\s*\([^)]*\)\s*(?:async\s*)?\{')
         .firstMatch(source);
     expect(catalogMethod, isNotNull, reason: '_openCatalogNode switch is present');
-    final catalogStart = catalogMethod!.start;
-    final catalogEnd = source.indexOf('\n  }', catalogStart);
-    final catalogSwitch = catalogEnd == -1
-        ? source.substring(catalogStart)
-        : source.substring(catalogStart, catalogEnd);
-    final handled = RegExp(r"case '(area-[a-z-]+|sys-[a-z-]+|mem-[a-z-]+)':")
-        .allMatches(catalogSwitch)
-        .map((match) => match.group(1))
-        .toSet();
+    final handled = handledCatalogCases(source);
     final visible = settingsCatalogTopology.nodesById.values
         .where((node) => node.visible && node.id != settingsCatalogTopology.rootId);
     for (final node in visible) {
@@ -42,6 +49,11 @@ void main() {
         .where((node) => !node.visible && node.id.startsWith('area-'))) {
       expect(handled, isNot(contains(node.id)), reason: '${node.id} is hidden');
     }
+  });
+
+  test('scanner detects a new id prefix without a regex change', () {
+    const syntheticRouter = '_openCatalogNode(node) {\n  switch (node.id) {\n    case \'zz-future-feature\':\n      return;\n  }\n}\n';
+    expect(handledCatalogCases(syntheticRouter), contains('zz-future-feature'));
   });
 
   testWidgets('routing every visible catalog tile has a behavior', (tester) async {
