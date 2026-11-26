@@ -4,6 +4,7 @@
 // No daemon client, sockets, assets or platform channels are involved: the
 // widget renders a snapshot and the accumulator consumes plain maps.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -842,13 +843,68 @@ void main() {
       expect(captionTexts(), <String>['S2 NEW']);
     });
   });
+
+  group('stage event-lane replacement ordering', () {
+    testWidgets(
+      'a render replacement keeps one token.delta subscription when unsubscribe is delayed',
+      (tester) async {
+        final client = _ShellCaptionClient(delayEventUnsubscribe: true);
+        addTearDown(client.dispose);
+        final first = StageRenderState();
+        final second = StageRenderState();
+        addTearDown(first.dispose);
+        addTearDown(second.dispose);
+
+        Future<void> pumpStage(StageRenderState render) => tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: StageScreen(client: client, render: render)),
+          ),
+        );
+
+        await pumpStage(first);
+        expect(client.eventRpcCount('event.subscribe'), 1);
+        expect(client.eventRpcCount('event.unsubscribe'), 0);
+        expect(client.activeTokenDeltaSubscriptions, 1);
+
+        // Same client, new render surface: StageScreen disposes the old binding
+        // and immediately constructs a replacement. The old unsubscribe RPC is
+        // held open, so only the order the two RPCs landed can keep the shared
+        // daemon topic subscribed.
+        await pumpStage(second);
+        await tester.pump();
+
+        expect(client.eventRpcCount('event.subscribe'), 2);
+        expect(client.eventRpcCount('event.unsubscribe'), 1);
+        expect(
+          client.activeTokenDeltaSubscriptions,
+          1,
+          reason: 'a late unsubscribe must not overwrite the new subscribe',
+        );
+
+        client.completeEventUnsubscribe();
+        await tester.pump();
+        expect(client.activeTokenDeltaSubscriptions, 1);
+      },
+    );
+  });
 }
 
 class _ShellCaptionClient extends FakeChatClient {
+  _ShellCaptionClient({this.delayEventUnsubscribe = false});
+
   /// Event-lane RPCs this fake has seen, with their topic lists. The stage
   /// binding carries `token.delta`; chat only ever carries `emotion.tag`.
   final List<String> eventActions = <String>[];
   final List<List<String>> eventTopics = <List<String>>[];
+
+  /// Hold `event.unsubscribe` RPCs open so a replacement binding subscribes
+  /// while the old binding's dispose is still suspended.
+  final bool delayEventUnsubscribe;
+  final Completer<void> _unsubscribeGate = Completer<void>();
+
+  void completeEventUnsubscribe() {
+    if (!_unsubscribeGate.isCompleted) _unsubscribeGate.complete();
+  }
 
   int eventRpcCount(String action) {
     var count = 0;
@@ -858,6 +914,18 @@ class _ShellCaptionClient extends FakeChatClient {
       }
     }
     return count;
+  }
+
+  /// Net active `token.delta` subscriptions from the daemon's point of view:
+  /// each subscribe activates the topic, each unsubscribe deactivates it, so
+  /// the final value depends on the order the RPCs landed.
+  int get activeTokenDeltaSubscriptions {
+    var active = 0;
+    for (var i = 0; i < eventActions.length; i++) {
+      if (!eventTopics[i].contains('token.delta')) continue;
+      active = eventActions[i] == 'event.subscribe' ? 1 : 0;
+    }
+    return active;
   }
 
   @override
@@ -877,6 +945,9 @@ class _ShellCaptionClient extends FakeChatClient {
             .map((topic) => topic.toString())
             .toList(),
       );
+      if (action == 'event.unsubscribe' && delayEventUnsubscribe) {
+        await _unsubscribeGate.future;
+      }
     }
     switch (action) {
       case 'cards.list':

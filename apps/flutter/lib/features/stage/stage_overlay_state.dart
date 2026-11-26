@@ -561,10 +561,10 @@ class StageRenderStateBinding {
   bool get isBound => _unsubscribe != null;
 
   /// Retarget the caption filter to a new shell session without tearing down
-  /// the event lane. Disposing and recreating the binding would queue
-  /// `event.unsubscribe` after an `await` while the replacement queues
-  /// `event.subscribe` immediately — the unsubscribe can land last and leave
-  /// the daemon topic unsubscribed (captions and TTS stop until reconnect).
+  /// the event lane. A session switch only changes the client-local filter, so
+  /// recreating the binding would drop in-flight captions and churn the daemon
+  /// topic for no benefit (unlike a client/render change, which needs a fresh
+  /// subscribe).
   void setBoundSessionId(String? id) {
     final normalized = (id == null || id.isEmpty) ? null : id;
     if (normalized == _boundSessionId) return;
@@ -632,9 +632,12 @@ class StageRenderStateBinding {
   Future<void> dispose() async {
     _unsubscribe?.call();
     _unsubscribe = null;
+    // Queue the topic unsubscribe before any await: a replacement binding
+    // constructed while this dispose is suspended would otherwise subscribe
+    // first, and the late unsubscribe would land on the shared daemon topic.
+    _requestEventRpc('event.unsubscribe');
     await _statusSubscription?.cancel();
     _statusSubscription = null;
-    _requestEventRpc('event.unsubscribe');
     await _eventRpc;
   }
 }

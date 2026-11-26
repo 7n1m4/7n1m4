@@ -163,10 +163,10 @@ class _StageScreenState extends State<StageScreen> {
   }
 
   /// Retarget the caption session filter in place. The stage mounts before a
-  /// chat session is chosen, so the filter must follow the shell's id. Keeping
-  /// the event subscription intact matters: dispose queues `event.unsubscribe`
-  /// after an await while a replacement queues `event.subscribe` immediately,
-  /// so a session-only recreate could leave the daemon topic unsubscribed.
+  /// chat session is chosen, so the filter must follow the shell's id. Dispose
+  /// queues its unsubscribe before any await, so a session-only recreate would
+  /// tear down and re-subscribe the topic; retargeting in place avoids caption
+  /// churn and needless daemon RPCs.
   void _rebindSessionFilter() {
     _binding?.setBoundSessionId(widget.boundSessionId);
   }
