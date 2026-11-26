@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../../daemon_client/daemon_client.dart';
+import 'composer_draft_store.dart';
 
 /// A composer attachment.
 ///
@@ -23,17 +26,56 @@ class ChatComposerAttachment {
 /// Mirrors `useChatComposer` (packages/stage-ui/src/composables/use-chat-composer.ts)
 /// and `WhisperComposerBar.onSubmit`: the draft is cleared only once a send is
 /// committed, a failed send puts the text back, and Stop cancels the in-flight
-/// turn through `chat.cancel`. The transcript, the token-delta reconciliation
-/// and GenUI rehydration stay in the view.
+/// turn through `chat.cancel`. The unsent text is mirrored client-locally in
+/// [ComposerDraftStore], keyed by session; it never goes to the daemon. The
+/// transcript, the token-delta reconciliation and GenUI rehydration stay in
+/// the view.
 class ChatComposerController extends ChangeNotifier {
   ChatComposerController({
     required this._client,
     this._sessionId,
     this.onMessageCommitted,
-  }) : _input = TextEditingController();
+    ComposerDraftStore? draftStore,
+  }) : _input = TextEditingController(),
+       _drafts = draftStore ?? ComposerDraftStore() {
+    _input.addListener(_onDraftChanged);
+    // Best-effort: an unavailable platform channel leaves an empty draft.
+    unawaited(restoreDraft());
+  }
 
   final DaemonClient _client;
   final TextEditingController _input;
+
+  /// Client-local, file-backed drafts (one per session). Never sent to the
+  /// daemon; injected in tests so no platform channel is needed.
+  final ComposerDraftStore _drafts;
+
+  /// Suppresses the text listener while the controller itself writes the field
+  /// (restore, session switch) so those writes do not become new drafts.
+  bool _restoring = false;
+
+  /// The empty key holds a draft typed before any session was assigned.
+  String get _draftKey => _sessionId ?? '';
+
+  void _onDraftChanged() {
+    if (_disposed || _restoring) return;
+    _drafts.write(_draftKey, _input.text);
+  }
+
+  /// Load the current session's draft into the composer. Safe to call more
+  /// than once: it never overwrites text the user has already typed.
+  Future<void> restoreDraft() async {
+    await _drafts.ready();
+    final sessionAtStart = _sessionId;
+    final draft = _drafts.read(sessionAtStart ?? '');
+    if (_disposed || _sending || _input.text.isNotEmpty) return;
+    if (draft == null || draft.isEmpty || _sessionId != sessionAtStart) return;
+    _restoring = true;
+    _input.text = draft;
+    _input.selection = TextSelection.collapsed(offset: draft.length);
+    _restoring = false;
+    _notify();
+  }
 
   /// Sent-text recall history. View-local only: never persisted, never sent to
   /// the daemon. ArrowUp/ArrowDown rewrite the draft from this list.
@@ -83,7 +125,14 @@ class ChatComposerController extends ChangeNotifier {
 
   set sessionId(String? value) {
     if (_sessionId == value) return;
+    // Park the outgoing draft before switching: the listener would otherwise
+    // write it under the incoming session id.
+    if (_input.text.isNotEmpty) _drafts.write(_sessionId ?? '', _input.text);
     _sessionId = value;
+    _restoring = true;
+    _input.clear();
+    _restoring = false;
+    unawaited(restoreDraft());
     _notify();
   }
 
@@ -250,6 +299,9 @@ class ChatComposerController extends ChangeNotifier {
     }
     final text = _input.text.trim();
     if (text.isEmpty) return null;
+    // A session switch during the RPC must not file a restored draft under the
+    // session the user is now looking at. Pin the key the text was sent from.
+    final draftKey = _draftKey;
     if (!_client.snapshot.isConnected) {
       _fail('Not connected to the daemon.');
       return null;
@@ -275,6 +327,7 @@ class ChatComposerController extends ChangeNotifier {
               ? 'Malformed chat.send reply.'
               : reply.error?.message ?? 'chat.send failed',
           draft: text,
+          draftKey: draftKey,
         );
         return null;
       }
@@ -292,6 +345,7 @@ class ChatComposerController extends ChangeNotifier {
       _fail(
         e is DaemonClientException ? e.message : 'Could not send message: $e',
         draft: text,
+        draftKey: draftKey,
       );
       return null;
     }
@@ -319,10 +373,22 @@ class ChatComposerController extends ChangeNotifier {
     }
   }
 
-  void _fail(String message, {String? draft}) {
+  void _fail(String message, {String? draft, String? draftKey}) {
     _error = message;
     _sending = false;
-    if (draft != null) _input.text = draft;
+    if (draft != null) {
+      final key = draftKey ?? _draftKey;
+      if (key == _draftKey) {
+        // Restore the field only while it still belongs to this session. The
+        // listener is suppressed so the draft is filed once, under [key].
+        _restoring = true;
+        _input.text = draft;
+        _restoring = false;
+      }
+      // A session switch mid-RPC must not put the old text in the new field,
+      // nor file it under the new session: persist to the send's own key.
+      _drafts.write(key, draft);
+    }
     _notify();
   }
 
@@ -334,6 +400,9 @@ class ChatComposerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _input.removeListener(_onDraftChanged);
+    _drafts.write(_draftKey, _input.text);
+    _drafts.flush();
     attachments.clear();
     _sentTexts.clear();
     _recallIndex = -1;

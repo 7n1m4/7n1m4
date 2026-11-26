@@ -72,6 +72,7 @@ class ChatScreenState extends State<ChatScreen> {
   bool _historyUnavailable = false;
   Object? _historyCursor;
   bool _historyLoading = false;
+  final ScrollController _scrollController = ScrollController();
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   int _contextReadGeneration = 0;
@@ -136,6 +137,7 @@ class ChatScreenState extends State<ChatScreen> {
     _requestEventRpc('event.unsubscribe');
     _composer.dispose();
     _genUi.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -316,8 +318,13 @@ class ChatScreenState extends State<ChatScreen> {
     if (output.isEmpty || target.surfaceIds.isNotEmpty || target.genUiFailed) {
       return;
     }
+    // A reload or session switch can replace the transcript while the parse
+    // is in flight. Both bump _historyReadGeneration; the session check also
+    // catches a switch that did not need a history read.
+    final generation = _historyReadGeneration;
+    final sid = _composer.sessionId;
     final turn = await _parseGenUi(output);
-    if (!mounted ||
+    if (!_readStillCurrent(generation, sid) ||
         index >= _messages.length ||
         _messages.last.isUser ||
         _messages[index].text != output) {
@@ -435,15 +442,15 @@ class ChatScreenState extends State<ChatScreen> {
   /// session) and an unregistered/failing `chat.history` are both non-fatal:
   /// the user can still chat, the screen just starts empty.
   Future<void> _loadHistory() async {
-    // Invalidate any in-flight read even when there is no session to load:
-    // clearing the transcript must not let an older reply repopulate it.
-    final generation = ++_historyReadGeneration;
     final sid = _composer.sessionId;
     if (sid == null || sid.isEmpty) return;
+    // Only bump once there is a read to guard: a sessionless reload must not
+    // invalidate an in-flight GenUI parse for the still-empty transcript.
+    final generation = ++_historyReadGeneration;
     try {
       final page = await widget.client.chatHistoryPage(sid);
       final messages = await Future.wait(page.items.map(_messageFromHistory));
-      if (!mounted || generation != _historyReadGeneration) return;
+      if (!_readStillCurrent(generation, sid)) return;
       setState(() {
         _messages
           ..clear()
@@ -452,10 +459,18 @@ class ChatScreenState extends State<ChatScreen> {
         _historyUnavailable = false;
       });
     } on DaemonClientException {
-      if (!mounted || generation != _historyReadGeneration) return;
+      if (!_readStillCurrent(generation, sid)) return;
       setState(() => _historyUnavailable = true);
     }
   }
+
+  /// True only while the generation/session that started a read still owns
+  /// the transcript. Reloads and session switches bump the generation; a
+  /// switch also changes the session id even when no history read is needed.
+  bool _readStillCurrent(int generation, String? sid) =>
+      mounted &&
+      generation == _historyReadGeneration &&
+      _composer.sessionId == sid;
 
   /// Append the next (older) history page ahead of the loaded transcript.
   Future<void> _loadOlderHistory() async {
@@ -464,15 +479,23 @@ class ChatScreenState extends State<ChatScreen> {
     if (sid == null || sid.isEmpty || cursor == null || _historyLoading) {
       return;
     }
+    final generation = _historyReadGeneration;
     setState(() => _historyLoading = true);
     try {
       final page = await widget.client.chatHistoryPage(sid, cursor: cursor);
       // Older turns go above the current transcript; newest pages are loaded
       // first, so they are prepended in their existing oldest-first order.
       final messages = await Future.wait(page.items.map(_messageFromHistory));
-      if (!mounted) return;
+      if (!_readStillCurrent(generation, sid)) return;
       final existing = _messages.toList();
       final older = messages.toList();
+      // Prepending grows the content above the viewport. Capture the current
+      // geometry before the rebuild, then shift the offset by that growth so
+      // the same rows stay under the user's eyes (history.vue loadMore).
+      final controller = _scrollController;
+      final hadClient = controller.hasClients;
+      final oldExtent = hadClient ? controller.position.maxScrollExtent : 0.0;
+      final oldOffset = hadClient ? controller.offset : 0.0;
       setState(() {
         _historyCursor = page.nextCursor;
         _messages
@@ -480,8 +503,17 @@ class ChatScreenState extends State<ChatScreen> {
           ..addAll(older)
           ..addAll(existing);
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_readStillCurrent(generation, sid) || !controller.hasClients) {
+          return;
+        }
+        final delta = controller.position.maxScrollExtent - oldExtent;
+        if (delta > 0) controller.jumpTo(oldOffset + delta);
+      });
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _contextError = e.message);
+      if (_readStillCurrent(generation, sid)) {
+        setState(() => _contextError = e.message);
+      }
     } finally {
       if (mounted) setState(() => _historyLoading = false);
     }
@@ -878,6 +910,7 @@ class ChatScreenState extends State<ChatScreen> {
           ),
           Expanded(
             child: ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length + (_historyCursor == null ? 0 : 1),
               itemBuilder: (context, index) {

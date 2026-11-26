@@ -96,6 +96,58 @@ class _ChatRefreshClient extends FakeChatClient {
   }
 }
 
+/// A history client whose `chat.history` replies (including their cursors) can
+/// be swapped between reads, so a stale page can be held and completed after a
+/// reload has already installed a newer transcript.
+class _PagingRefreshClient extends _ChatRefreshClient {
+  List<Map<String, dynamic>> page = const <Map<String, dynamic>>[];
+  Object? nextCursor;
+  bool truncated = false;
+  final List<Object?> requestedCursors = <Object?>[];
+
+  @override
+  Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
+    if (action == 'chat.history') {
+      counts[action] = count(action) + 1;
+      requestedCursors.add(payload?['cursor']);
+      if (deferredHistory.isNotEmpty) {
+        return deferredHistory.removeAt(0).future;
+      }
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'messages': page,
+          'truncated': truncated,
+          if (nextCursor != null) 'cursor': nextCursor,
+        },
+      );
+    }
+    return super.call(action, payload: payload);
+  }
+}
+
+/// A `chat.send` ack binds the daemon-created session id directly in the
+/// composer, without a history read or a generation bump. This makes a session
+/// switch observable while an older session's history reply is still in flight.
+class _SendCreatesSessionClient extends _ChatRefreshClient {
+  @override
+  Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
+    if (action == 'chat.send') {
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'sessionId': 's2',
+          'messageId': 'm-new',
+          'accepted': true,
+        },
+      );
+    }
+    return super.call(action, payload: payload);
+  }
+}
+
 GatewayEventFrame _settingsChanged(String section) => GatewayEventFrame(
       topic: EventTopic.settingsChanged,
       rawTopic: 'settings.changed',
@@ -285,6 +337,129 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(client.listeners, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a stale older page after reload cannot replace the fresh transcript or cursor', (
+    tester,
+  ) async {
+    final client = _PagingRefreshClient();
+    addTearDown(client.dispose);
+    final key = GlobalKey<ChatScreenState>();
+    client.page = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'user',
+        'content': 'fresh newest',
+        'createdAt': 30,
+      },
+    ];
+    client.truncated = true;
+    client.nextCursor = 2;
+    await _pumpChat(tester, client, key: key, initialSessionId: 's1');
+    await tester.pumpAndSettle();
+
+    expect(find.text('fresh newest'), findsOneWidget);
+    expect(find.byKey(const Key('chat-load-older-history')), findsOneWidget);
+
+    // Start an older-page read with the current cursor, but hold its reply.
+    final stalePage = Completer<RpcReply>();
+    client.deferredHistory.add(stalePage);
+    await tester.tap(find.byKey(const Key('chat-load-older-history')));
+    await tester.pump();
+
+    // A reload bumps the generation and installs a newer transcript/cursor.
+    client.page = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'user',
+        'content': 'reloaded newest',
+        'createdAt': 40,
+      },
+    ];
+    client.nextCursor = 4;
+    final reloading = key.currentState!.reload();
+    await tester.pump();
+    await reloading;
+    await tester.pumpAndSettle();
+
+    expect(find.text('reloaded newest'), findsOneWidget);
+    expect(find.text('fresh newest'), findsNothing);
+
+    // The stale page finally lands; its text and cursor must be discarded.
+    stalePage.complete(const RpcReply(
+      action: 'chat.history',
+      ok: true,
+      data: <String, dynamic>{
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'role': 'user',
+            'content': 'STALE OLDER TEXT',
+            'createdAt': 10,
+          },
+        ],
+        'truncated': true,
+        'cursor': 6,
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('STALE OLDER TEXT'), findsNothing);
+
+    // Fresh cursor wins: the next older read carries 4.
+    client.requestedCursors.clear();
+    final nextPage = Completer<RpcReply>();
+    client.deferredHistory.add(nextPage);
+    await tester.tap(find.byKey(const Key('chat-load-older-history')));
+    await tester.pump();
+    expect(client.requestedCursors, contains(4));
+    expect(client.requestedCursors, isNot(contains(6)));
+    nextPage.complete(const RpcReply(
+      action: 'chat.history',
+      ok: true,
+      data: <String, dynamic>{
+        'messages': <Map<String, dynamic>>[],
+        'truncated': false,
+      },
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a late history reply for the previous session cannot wipe a newly created transcript', (
+    tester,
+  ) async {
+    final client = _SendCreatesSessionClient();
+    addTearDown(client.dispose);
+    final stale = Completer<RpcReply>();
+    client.deferredHistory.add(stale);
+    await _pumpChat(tester, client, initialSessionId: 's1');
+    client.emitStatus(DaemonConnectionState.connected);
+    await tester.pump();
+
+    // The ack binds s2 without a history read, so the generation is unchanged;
+    // only the session half of _readStillCurrent can reject the s1 reply.
+    await tester.enterText(find.byType(TextField), 'live message');
+    tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send)).onPressed!();
+    await tester.pumpAndSettle();
+
+    stale.complete(const RpcReply(
+      action: 'chat.history',
+      ok: true,
+      data: <String, dynamic>{
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'role': 'user',
+            'content': 'STALE OLD MESSAGE',
+            'createdAt': 20,
+          },
+        ],
+        'truncated': false,
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('STALE OLD MESSAGE'), findsNothing);
+    expect(find.text('live message'), findsOneWidget);
+    expect(find.text('Session s2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
