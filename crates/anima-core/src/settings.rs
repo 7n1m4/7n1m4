@@ -1596,6 +1596,197 @@ impl SettingsSection for VisionSettings {
     const KEY: &'static str = "settings/vision";
 }
 
+// ============================================================================
+// Faculties (global failover defaults)
+// ============================================================================
+
+/// Why a faculty should abandon its primary provider for its fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FacultyFailoverTrigger {
+    /// Authentication credentials were rejected.
+    Auth,
+    /// The provider's rate or usage quota was exhausted.
+    Quota,
+    /// The provider returned a server-side error.
+    ServerError,
+    /// The provider request timed out.
+    Timeout,
+}
+
+/// How a faculty failover is presented to the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FacultyNotificationStyle {
+    /// Transient toast notification (the factory default).
+    #[default]
+    Toast,
+    /// Persistent badge.
+    Badge,
+    /// No notification.
+    Silent,
+}
+
+/// Strip credential-shaped keys from an opaque advanced blob before it is
+/// persisted or returned by `settings.get`, which serializes the whole
+/// section. Mirrors the provider-config policy in [`crate::providers`].
+fn serialize_advanced<S>(
+    value: &Option<serde_json::Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        Some(value) => crate::providers::strip_secret_config_keys(value).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+/// Primary/fallback choice and failover policy for one faculty.
+///
+/// Mirrors `FacultyConfig` in `stores/faculty-defaults.ts`. The `advanced`
+/// blobs are opaque provider options and never carry credentials on the wire.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FacultyConfig {
+    /// Primary provider id.
+    #[serde(default)]
+    pub primary_provider: String,
+    /// Primary model id within the provider.
+    #[serde(default)]
+    pub primary_model: String,
+    /// Primary voice id (speech faculty only).
+    #[serde(default)]
+    pub primary_voice_id: String,
+    /// Opaque primary provider options.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_advanced"
+    )]
+    pub primary_advanced: Option<serde_json::Value>,
+    /// Fallback provider id; empty means no fallback.
+    #[serde(default)]
+    pub fallback_provider: String,
+    /// Fallback model id within the provider.
+    #[serde(default)]
+    pub fallback_model: String,
+    /// Fallback voice id (speech faculty only).
+    #[serde(default)]
+    pub fallback_voice_id: String,
+    /// Opaque fallback provider options.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_advanced"
+    )]
+    pub fallback_advanced: Option<serde_json::Value>,
+    /// Whether the faculty automatically switches to its fallback.
+    #[serde(default)]
+    pub auto_failover: bool,
+    /// Conditions that trigger failover.
+    #[serde(default)]
+    pub failover_triggers: Vec<FacultyFailoverTrigger>,
+    /// How a failover is surfaced to the user.
+    #[serde(default)]
+    pub notification_style: FacultyNotificationStyle,
+    /// Minutes before returning to the primary provider (0 = no recovery).
+    #[serde(default)]
+    pub recovery_interval_minutes: u64,
+}
+
+fn default_consciousness_faculty() -> FacultyConfig {
+    FacultyConfig {
+        primary_provider: "kilo".to_string(),
+        primary_model: "kilo-auto/free".to_string(),
+        fallback_provider: "web-llm".to_string(),
+        auto_failover: true,
+        failover_triggers: vec![
+            FacultyFailoverTrigger::Auth,
+            FacultyFailoverTrigger::Quota,
+            FacultyFailoverTrigger::ServerError,
+            FacultyFailoverTrigger::Timeout,
+        ],
+        recovery_interval_minutes: 15,
+        ..FacultyConfig::default()
+    }
+}
+
+fn default_speech_faculty() -> FacultyConfig {
+    FacultyConfig {
+        primary_provider: "kokoro-local".to_string(),
+        primary_model: "onnx-community/Kokoro-82M-v1.0-ONNX".to_string(),
+        primary_voice_id: "af_heart".to_string(),
+        fallback_provider: "web-speech-api".to_string(),
+        auto_failover: true,
+        failover_triggers: vec![
+            FacultyFailoverTrigger::ServerError,
+            FacultyFailoverTrigger::Timeout,
+        ],
+        ..FacultyConfig::default()
+    }
+}
+
+fn default_hearing_faculty() -> FacultyConfig {
+    FacultyConfig {
+        primary_provider: "whisper-local".to_string(),
+        primary_model: "onnx-community/whisper-tiny".to_string(),
+        fallback_provider: "web-speech-api".to_string(),
+        auto_failover: true,
+        failover_triggers: vec![
+            FacultyFailoverTrigger::ServerError,
+            FacultyFailoverTrigger::Timeout,
+        ],
+        ..FacultyConfig::default()
+    }
+}
+
+fn default_vision_faculty() -> FacultyConfig {
+    FacultyConfig {
+        primary_provider: "moondream-local".to_string(),
+        primary_model: "Xenova/moondream2".to_string(),
+        ..FacultyConfig::default()
+    }
+}
+
+/// Global faculty defaults (`settings/faculties`).
+///
+/// Daemon-owned mirror of `stores/faculty-defaults.ts`. Only the four live
+/// faculties are represented: the deprecated `artistry` faculty has no field,
+/// so an unknown `artistry` key in a legacy blob is ignored by serde.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FacultiesSettings {
+    /// Consciousness (LLM) faculty.
+    #[serde(default = "default_consciousness_faculty")]
+    pub consciousness: FacultyConfig,
+    /// Speech (TTS) faculty.
+    #[serde(default = "default_speech_faculty")]
+    pub speech: FacultyConfig,
+    /// Hearing (STT) faculty.
+    #[serde(default = "default_hearing_faculty")]
+    pub hearing: FacultyConfig,
+    /// Vision (VLM) faculty.
+    #[serde(default = "default_vision_faculty")]
+    pub vision: FacultyConfig,
+}
+
+impl Default for FacultiesSettings {
+    fn default() -> Self {
+        Self {
+            consciousness: default_consciousness_faculty(),
+            speech: default_speech_faculty(),
+            hearing: default_hearing_faculty(),
+            vision: default_vision_faculty(),
+        }
+    }
+}
+
+impl SettingsSection for FacultiesSettings {
+    const KEY: &'static str = "settings/faculties";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2354,6 +2545,130 @@ mod tests {
             assert!(!raw.contains("apiKey"));
             assert!(!raw.contains("token"));
         }
+    }
+
+    /// airi-wkfa: an absent or legacy blob yields the Vue factory-safe
+    /// defaults, and a deprecated `artistry` key is ignored by serde.
+    #[test]
+    fn faculties_section_defaults_from_empty_and_legacy_blobs() {
+        assert_eq!(FacultiesSettings::KEY, "settings/faculties");
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+
+        let defaults = FacultiesSettings::default();
+        assert_eq!(store.load_section::<FacultiesSettings>().unwrap(), defaults);
+
+        // Exact values mirror FACTORY_SAFE_DEFAULTS in faculty-defaults.ts.
+        assert_eq!(defaults.consciousness.primary_provider, "kilo");
+        assert_eq!(defaults.consciousness.primary_model, "kilo-auto/free");
+        assert_eq!(defaults.consciousness.fallback_provider, "web-llm");
+        assert_eq!(defaults.consciousness.recovery_interval_minutes, 15);
+        assert_eq!(defaults.consciousness.failover_triggers.len(), 4);
+        assert_eq!(defaults.speech.primary_provider, "kokoro-local");
+        assert_eq!(
+            defaults.speech.primary_model,
+            "onnx-community/Kokoro-82M-v1.0-ONNX"
+        );
+        assert_eq!(defaults.speech.primary_voice_id, "af_heart");
+        assert_eq!(defaults.speech.fallback_provider, "web-speech-api");
+        assert_eq!(
+            defaults.speech.failover_triggers,
+            vec![
+                FacultyFailoverTrigger::ServerError,
+                FacultyFailoverTrigger::Timeout
+            ]
+        );
+        assert_eq!(defaults.hearing.primary_provider, "whisper-local");
+        assert_eq!(
+            defaults.hearing.primary_model,
+            "onnx-community/whisper-tiny"
+        );
+        assert_eq!(defaults.hearing.fallback_provider, "web-speech-api");
+        assert_eq!(defaults.vision.primary_provider, "moondream-local");
+        assert_eq!(defaults.vision.primary_model, "Xenova/moondream2");
+        assert_eq!(defaults.vision.fallback_provider, "");
+        assert!(!defaults.vision.auto_failover);
+        assert!(defaults.vision.failover_triggers.is_empty());
+        assert_eq!(defaults.vision.recovery_interval_minutes, 0);
+
+        // The retired artistry faculty has no field, so serde drops it and
+        // every live faculty keeps its factory default.
+        store
+            .save(
+                FacultiesSettings::KEY,
+                &serde_json::json!({
+                    "artistry": { "primaryProvider": "pollinations", "autoFailover": true }
+                }),
+            )
+            .unwrap();
+        assert_eq!(store.load_section::<FacultiesSettings>().unwrap(), defaults);
+    }
+
+    #[test]
+    fn faculties_section_camel_case_round_trip_strips_credentials() {
+        let parsed: FacultiesSettings = serde_json::from_value(serde_json::json!({
+            "consciousness": {
+                "primaryProvider": "kilo",
+                "primaryModel": "kilo-auto/free",
+                "primaryVoiceId": "",
+                "primaryAdvanced": { "temperature": 0.2, "apiKey": "leak-me" },
+                "fallbackProvider": "web-llm",
+                "fallbackModel": "",
+                "fallbackVoiceId": "",
+                "fallbackAdvanced": { "api_key": "also-leak" },
+                "autoFailover": true,
+                "failoverTriggers": ["auth", "quota", "server_error", "timeout"],
+                "notificationStyle": "badge",
+                "recoveryIntervalMinutes": 15
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            parsed.consciousness.failover_triggers,
+            vec![
+                FacultyFailoverTrigger::Auth,
+                FacultyFailoverTrigger::Quota,
+                FacultyFailoverTrigger::ServerError,
+                FacultyFailoverTrigger::Timeout
+            ]
+        );
+        assert_eq!(
+            parsed.consciousness.notification_style,
+            FacultyNotificationStyle::Badge
+        );
+
+        let wire = serde_json::to_value(&parsed).unwrap();
+        let consciousness = &wire["consciousness"];
+        assert_eq!(consciousness["primaryProvider"], "kilo");
+        assert_eq!(consciousness["primaryModel"], "kilo-auto/free");
+        assert_eq!(consciousness["primaryVoiceId"], "");
+        assert_eq!(consciousness["fallbackProvider"], "web-llm");
+        assert_eq!(consciousness["autoFailover"], true);
+        assert_eq!(
+            consciousness["failoverTriggers"],
+            serde_json::json!(["auth", "quota", "server_error", "timeout"])
+        );
+        assert_eq!(consciousness["notificationStyle"], "badge");
+        assert_eq!(consciousness["recoveryIntervalMinutes"], 15);
+        // Credential-shaped keys are stripped before the blob leaves the daemon.
+        assert_eq!(
+            consciousness["primaryAdvanced"],
+            serde_json::json!({ "temperature": 0.2 })
+        );
+        assert_eq!(consciousness["fallbackAdvanced"], serde_json::json!({}));
+        // Faculties omitted from the blob keep their factory defaults.
+        assert_eq!(
+            wire["speech"],
+            serde_json::to_value(default_speech_faculty()).unwrap()
+        );
+        assert_eq!(
+            wire["hearing"],
+            serde_json::to_value(default_hearing_faculty()).unwrap()
+        );
+        assert_eq!(
+            wire["vision"],
+            serde_json::to_value(default_vision_faculty()).unwrap()
+        );
     }
 
     /// airi-vfea: the chat provider selection has its own daemon-owned

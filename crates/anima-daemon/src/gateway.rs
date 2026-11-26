@@ -4114,9 +4114,11 @@ mod tests {
         )
         .unwrap();
         let plain_system = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Ordinary turns now carry a recent-topics grounding block, so assert
+        // the actual contract: the A2UI instruction is opt-in only.
         assert!(
-            plain_system.is_none(),
-            "default chat.send must stay ungated"
+            !plain_system.as_deref().unwrap_or_default().contains("v0.9"),
+            "default chat.send must not opt into the A2UI system prompt"
         );
 
         // Only start the second generation after the provider has recorded the

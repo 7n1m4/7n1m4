@@ -34,20 +34,26 @@ use std::time::Duration;
 use anima_llm::{
     build_client, ChatMessage, ChatProvider, ChatRequest, ProviderConfig, ProviderRegistry, Role,
 };
-use anima_store::{Database, MessageRepo, SessionRepo, SettingsRepo, StoredMessage, StoredSession};
+use anima_store::{
+    CardRepo, Database, MessageRepo, SessionRepo, SettingsRepo, StoredMessage, StoredSession,
+    SummaryRepo,
+};
 use anyhow::{anyhow, Context, Result};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::cards::{parse_card_json, AiriCard, AiriCardExtensions, AiriExtension};
 use crate::compaction::{
     cap_winnow_survivors_to_budget, estimate_message_list_tokens, extract_compaction_message_text,
     CompactionMessage, MessageContent, WINNOW_TARGET_BUDGET_RATIO,
 };
 use crate::grounding::{assemble, GroundingBlock, GroundingBudget};
 use crate::memory::ShortTermMemoryService;
+use crate::recent_topics::{score_recent_topics, RecentTopicsInput};
 #[cfg(feature = "local-llm")]
-use crate::settings::{LocalLlmSettings, SettingsSection};
+use crate::settings::LocalLlmSettings;
+use crate::settings::{CardsSettings, SettingsSection};
 use crate::{new_id, now_ms};
 
 /// Lifecycle status of a chat session.
@@ -375,7 +381,7 @@ impl ChatService {
         // so this never aborts the turn, and `history` is borrowed, never
         // mutated — every persisted row stays exactly where it was.
         let messages = cap_prompt_history(&history);
-        let system = self.build_system_prompt(a2ui)?;
+        let system = self.build_system_prompt(&session_id, a2ui)?;
         self.run_stream(
             session_id,
             assistant_message_id.map(str::to_string),
@@ -394,21 +400,87 @@ impl ChatService {
         .await
     }
 
+    /// Recent-topic grounding is opt-in per card, mirroring the TS
+    /// `extensions.airi.groundingTopicsEnabled` check in chat.ts:841.
+    fn grounding_topics_enabled(&self) -> bool {
+        let Ok(Some(cards)) = self.settings.get::<CardsSettings>(CardsSettings::KEY) else {
+            return false;
+        };
+        if cards.active_card_id.is_empty() {
+            return false;
+        }
+        let Ok(Some(card)) = CardRepo::new(self.db.clone()).get(&cards.active_card_id) else {
+            return false;
+        };
+        // Cards are stored verbatim: editor-envelope AiriCard documents and
+        // spec-wrapped CC v2/v3 documents both occur, so normalize first.
+        let Ok(card) = parse_card_json(card.document.as_bytes()) else {
+            return false;
+        };
+        card.airi_extension()
+            .and_then(|airi| airi.grounding_topics_enabled)
+            .unwrap_or(false)
+    }
+
     /// Assemble the turn's system prompt: the A2UI instruction when requested,
-    /// followed by any stored daily-summary continuity block routed through
-    /// the grounding formatter. An empty block leaves the prompt shape
+    /// followed by stored continuity and recent-topic blocks routed through the
+    /// grounding formatter. With no grounding at all the prompt shape is
     /// unchanged (`None` for ordinary turns).
-    fn build_system_prompt(&self, a2ui: bool) -> Result<Option<String>> {
+    fn build_system_prompt(&self, session_id: &str, a2ui: bool) -> Result<Option<String>> {
         let days = recent_utc_day_keys(now_ms() / 1000);
         // Continuity is best-effort: a locked/busy summary store must never
         // abort a turn or discard the user's message.
         let context = ShortTermMemoryService::new(self.db.clone())
             .build_context(&days)
             .unwrap_or_default();
-        let grounding = if context.is_empty() {
+        let mut blocks = Vec::new();
+        if !context.is_empty() {
+            blocks.push(GroundingBlock::short_term_memory(context));
+        }
+
+        // TS injects topics only for cards that opt in (chat.ts:841). Both
+        // topic sources are best-effort for the same reason as continuity.
+        if self.grounding_topics_enabled() {
+            let turns = self
+                .messages
+                .list(session_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|m| m.role == "user" || m.role == "assistant")
+                .map(|m| m.content)
+                .collect();
+            let summaries = SummaryRepo::new(self.db.clone());
+            let mut summary_texts = Vec::new();
+            // `days` and TS's `stmBlocks` are newest-first: index 0 gets the
+            // best distance, so the newest day must be scored first.
+            // Summaries have no character column; scope known rows to this
+            // session and keep legacy rows with no source list.
+            for day in &days {
+                if let Ok(rows) = summaries.list_by_day(day) {
+                    summary_texts.extend(
+                        rows.into_iter()
+                            .filter(|s| {
+                                s.source_session_ids.is_empty()
+                                    || s.source_session_ids.iter().any(|id| id == session_id)
+                            })
+                            .map(|s| s.content),
+                    );
+                }
+            }
+            // shortcut: no Rust echo-chip store exists yet, so chips stay empty.
+            let topics = score_recent_topics(&RecentTopicsInput {
+                turns,
+                summaries: summary_texts,
+                echo_chips: Vec::new(),
+            });
+            if !topics.is_empty() {
+                blocks.push(GroundingBlock::RecentTopics { topics });
+            }
+        }
+
+        let grounding = if blocks.is_empty() {
             String::new()
         } else {
-            let blocks = [GroundingBlock::short_term_memory(context)];
             // STMM is a single block holding up to three daily summaries with
             // its own per-day budget; TS's generic 2500-char per-block cap
             // would discard the newest day, so let the whole total budget through.
@@ -1127,6 +1199,35 @@ mod tests {
         (dir, db)
     }
 
+    /// Opt the active card into recent-topic grounding, as the TS card flag does.
+    fn enable_grounding_topics(db: &Database) {
+        SettingsRepo::new(db.clone())
+            .set(
+                CardsSettings::KEY,
+                &CardsSettings {
+                    active_card_id: "card-1".to_string(),
+                },
+            )
+            .unwrap();
+        let card = AiriCard {
+            extensions: Some(AiriCardExtensions {
+                airi: Some(AiriExtension {
+                    grounding_topics_enabled: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        CardRepo::new(db.clone())
+            .insert(
+                "card-1",
+                &serde_json::to_string(&card).unwrap(),
+                "Test card",
+            )
+            .unwrap();
+    }
+
     fn drain_events(rx: &mut broadcast::Receiver<ChatEvent>) -> Vec<ChatEvent> {
         let mut events = Vec::new();
         loop {
@@ -1313,7 +1414,11 @@ mod tests {
         };
         let plain_request = turn_for("ordinary question");
         assert!(
-            plain_request.system.is_none(),
+            !plain_request
+                .system
+                .as_deref()
+                .unwrap_or_default()
+                .contains("v0.9"),
             "ordinary turns must not get the A2UI instruction"
         );
 
@@ -1442,7 +1547,19 @@ mod tests {
     #[test]
     fn build_system_prompt_routes_continuity_through_grounding_assembler() {
         let (_dir, db) = test_db();
+        enable_grounding_topics(&db);
         let service = ChatService::new(db.clone());
+        let session = service.new_session_with_title("Custom title").unwrap();
+        MessageRepo::new(db.clone())
+            .insert(&StoredMessage {
+                id: new_id(),
+                session_id: session.id.clone(),
+                role: "user".to_string(),
+                content: "garden roses bloom".to_string(),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
         let summaries = SummaryRepo::new(db);
         summaries
             .insert(&StoredSummary {
@@ -1456,20 +1573,68 @@ mod tests {
             .unwrap();
 
         let plain = service
-            .build_system_prompt(false)
+            .build_system_prompt(&session.id, false)
             .unwrap()
-            .expect("continuity must produce a system prompt");
+            .expect("continuity and topics must produce a system prompt");
         assert!(plain.starts_with("[PAST CONTINUITY / DAILY SUMMARIES]"));
         assert!(plain.contains("Daily note: assemble via grounding"));
+        assert!(plain.contains("[RECENT TOPICS]\n"));
+        // One turn at distance 0 gives bigrams their full 1.5 weight.
+        assert!(plain.contains("garden roses (weight: 1.50)"));
         assert!(!plain.contains("v0.9"));
 
         let a2ui = service
-            .build_system_prompt(true)
+            .build_system_prompt(&session.id, true)
             .unwrap()
             .expect("A2UI turn must keep both blocks");
         assert!(a2ui.starts_with(A2UI_SYSTEM_PROMPT));
         assert!(a2ui.contains("\n\n[PAST CONTINUITY / DAILY SUMMARIES]"));
-        assert!(a2ui.contains("Daily note: assemble via grounding"));
+        assert!(a2ui.contains("garden roses (weight: 1.50)"));
+    }
+
+    #[test]
+    fn build_system_prompt_with_empty_session_keeps_shape_unchanged() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db);
+        assert_eq!(service.build_system_prompt("", false).unwrap(), None);
+        assert_eq!(
+            service.build_system_prompt("", true).unwrap().as_deref(),
+            Some(A2UI_SYSTEM_PROMPT)
+        );
+    }
+
+    #[test]
+    fn build_system_prompt_respects_card_topics_opt_in() {
+        let (_dir, db) = test_db();
+        let session = ChatService::new(db.clone())
+            .new_session_with_title("Topics gate")
+            .unwrap();
+        MessageRepo::new(db.clone())
+            .insert(&StoredMessage {
+                id: new_id(),
+                session_id: session.id.clone(),
+                role: "user".to_string(),
+                content: "garden roses bloom".to_string(),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        let service = ChatService::new(db.clone());
+        let without_flag = service
+            .build_system_prompt(&session.id, false)
+            .unwrap()
+            .unwrap_or_default();
+        assert!(
+            !without_flag.contains("[RECENT TOPICS]"),
+            "topics must stay off until the card opts in"
+        );
+
+        enable_grounding_topics(&db);
+        let with_flag = service
+            .build_system_prompt(&session.id, false)
+            .unwrap()
+            .expect("opted-in card must emit topics");
+        assert!(with_flag.contains("[RECENT TOPICS]"));
     }
 
     #[tokio::test]
@@ -1493,7 +1658,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            service.build_system_prompt(false).unwrap(),
+            service.build_system_prompt("", false).unwrap(),
             None,
             "a failed continuity read must degrade to no extra system prompt"
         );
@@ -1513,9 +1678,54 @@ mod tests {
             .expect("the user turn must still be accepted");
     }
 
-    #[tokio::test]
-    async fn send_message_without_summaries_leaves_system_shape_unchanged() {
+    #[test]
+    fn build_system_prompt_honors_wrapped_card_topics_opt_in() {
         let (_dir, db) = test_db();
+        let session = ChatService::new(db.clone())
+            .new_session_with_title("Wrapped card")
+            .unwrap();
+        MessageRepo::new(db.clone())
+            .insert(&StoredMessage {
+                id: new_id(),
+                session_id: session.id.clone(),
+                role: "user".to_string(),
+                content: "garden roses bloom".to_string(),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+        SettingsRepo::new(db.clone())
+            .set(
+                CardsSettings::KEY,
+                &CardsSettings {
+                    active_card_id: "wrapped".to_string(),
+                },
+            )
+            .unwrap();
+        let card = serde_json::json!({
+            "spec": "chara_card_v3",
+            "spec_version": "3.0",
+            "data": {
+                "name": "Wrapped",
+                "extensions": { "airi": { "groundingTopicsEnabled": true } },
+            },
+        });
+        CardRepo::new(db.clone())
+            .insert("wrapped", &card.to_string(), "Wrapped")
+            .unwrap();
+
+        let service = ChatService::new(db);
+        let system = service
+            .build_system_prompt(&session.id, false)
+            .unwrap()
+            .expect("a spec-wrapped card must still opt in");
+        assert!(system.contains("[RECENT TOPICS]"));
+    }
+
+    #[tokio::test]
+    async fn send_message_without_summaries_adds_only_recent_topics() {
+        let (_dir, db) = test_db();
+        enable_grounding_topics(&db);
         let service = ChatService::new(db);
         let (client, requests) = MockChatClient::recording(&["reply"]);
         service.register_client("mock", Arc::new(client));
@@ -1551,12 +1761,21 @@ mod tests {
                 .find(|req| req.messages.iter().any(|m| m.content == text))
                 .unwrap_or_else(|| panic!("no provider request for {text:?}"))
         };
-        assert!(request_for("plain no memory").system.is_none());
+        let plain = request_for("plain no memory")
+            .system
+            .as_deref()
+            .expect("recent topics ground even a turn with no summaries");
+        assert!(plain.contains("[RECENT TOPICS]"));
+        assert!(plain.contains("plain memory (weight: 1.50)"));
+        assert!(!plain.contains("[PAST CONTINUITY / DAILY SUMMARIES]"));
+        assert!(!plain.contains("v0.9"));
+
         let a2ui = request_for("widget no memory")
             .system
             .as_deref()
             .expect("A2UI turn still needs its system prompt");
-        assert_eq!(a2ui, A2UI_SYSTEM_PROMPT);
+        assert!(a2ui.starts_with(A2UI_SYSTEM_PROMPT));
+        assert!(a2ui.contains("\n\n[RECENT TOPICS]"));
         assert!(!a2ui.contains("[PAST CONTINUITY / DAILY SUMMARIES]"));
     }
 

@@ -79,11 +79,39 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
         .map_err(|_| "load failed".to_string())?
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
-    for (key, value) in patch {
-        if value.is_null() {
-            merged.remove(key);
-        } else {
-            merged.insert(key.clone(), value.clone());
+    if S::KEY == "settings/faculties" {
+        // Faculty groups are nested configs. Every field is serde-defaulted,
+        // so a shallow PATCH of one field would silently reset the rest of
+        // that faculty to factory values instead of merging like the TS store.
+        for (key, value) in patch {
+            if value.is_null() {
+                merged.remove(key);
+                continue;
+            }
+            if let (Some(base), Some(incoming)) = (
+                merged.get(key).and_then(|v| v.as_object()),
+                value.as_object(),
+            ) {
+                let mut nested = base.clone();
+                for (nested_key, nested_value) in incoming {
+                    if nested_value.is_null() {
+                        nested.remove(nested_key);
+                    } else {
+                        nested.insert(nested_key.clone(), nested_value.clone());
+                    }
+                }
+                merged.insert(key.clone(), serde_json::Value::Object(nested));
+            } else {
+                merged.insert(key.clone(), value.clone());
+            }
+        }
+    } else {
+        for (key, value) in patch {
+            if value.is_null() {
+                merged.remove(key);
+            } else {
+                merged.insert(key.clone(), value.clone());
+            }
         }
     }
     serde_json::from_value(serde_json::Value::Object(merged))
@@ -111,6 +139,7 @@ settings_sections!(
     ("speech", anima_core::settings::SpeechSettings),
     ("hearing", anima_core::settings::HearingSettings),
     ("vision", anima_core::settings::VisionSettings),
+    ("faculties", anima_core::settings::FacultiesSettings),
 );
 
 /// Resolve a settings-section name to its typed load/save operations.
@@ -1243,6 +1272,7 @@ mod tests {
             "speech",
             "hearing",
             "vision",
+            "faculties",
         ];
         assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
         for ((key, _, _), expected) in SETTINGS_SECTIONS.iter().zip(expected_keys) {
@@ -1935,6 +1965,37 @@ mod tests {
         assert_eq!(value["fontSize"], 140.0);
         assert_eq!(value["opacity"], 20.0);
         assert_eq!(value["docking"], "bottom");
+    }
+
+    #[test]
+    fn settings_set_merges_nested_faculty_patch() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set(
+            "faculties",
+            serde_json::json!({
+                "consciousness": {
+                    "primaryModel": "first/model",
+                    "recoveryIntervalMinutes": 30,
+                },
+                "speech": { "primaryProvider": "kokoro-local" },
+            }),
+        )
+        .unwrap();
+        svc.settings_set(
+            "faculties",
+            serde_json::json!({
+                "consciousness": { "primaryProvider": "new-provider" },
+            }),
+        )
+        .unwrap();
+
+        let reply = svc.settings_get("faculties").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert_eq!(value["consciousness"]["primaryProvider"], "new-provider");
+        assert_eq!(value["consciousness"]["primaryModel"], "first/model");
+        assert_eq!(value["consciousness"]["recoveryIntervalMinutes"], 30);
+        assert_eq!(value["speech"]["primaryProvider"], "kokoro-local");
     }
 
     #[test]

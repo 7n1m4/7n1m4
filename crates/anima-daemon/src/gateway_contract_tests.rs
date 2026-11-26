@@ -1146,6 +1146,22 @@ mod tests {
         let fixture = isolated_gateway();
         enable_actions(&fixture);
 
+        // airi-wkfa: one faculty is enough to pin the camelCase wire shape;
+        // the other three fall back to their factory-safe defaults on read.
+        let faculties = serde_json::json!({
+            "consciousness": {
+                "primaryProvider": "kilo",
+                "primaryModel": "kilo-auto/free",
+                "primaryVoiceId": "",
+                "fallbackProvider": "web-llm",
+                "fallbackModel": "",
+                "fallbackVoiceId": "",
+                "autoFailover": true,
+                "failoverTriggers": ["auth", "quota", "server_error", "timeout"],
+                "notificationStyle": "toast",
+                "recoveryIntervalMinutes": 15
+            }
+        });
         let cases: Vec<(&str, serde_json::Value, serde_json::Value, &str)> = vec![
             (
                 "consciousness",
@@ -1228,6 +1244,13 @@ mod tests {
                 }),
                 "contextWindow",
             ),
+            (
+                "faculties",
+                faculties.clone(),
+                faculties.clone(),
+                "consciousness",
+            ),
+            ("faculties", faculties.clone(), faculties, "speech"),
         ];
 
         for (section, incoming, expected, probe) in cases {
