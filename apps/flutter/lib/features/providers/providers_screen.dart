@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../../connection/connection_error.dart';
+import '../../ui/loading_placeholder.dart';
 
 /// Read-only projection of a provider row. Only allowlisted metadata from
 /// `providers.list` reaches the widget tree: credentials never do.
@@ -390,7 +391,24 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? LoadingPlaceholder(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  for (final height in <double>[320, 180, 96, 96])
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colorScheme.onSurface.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SizedBox(height: height, width: double.infinity),
+                      ),
+                    ),
+                ],
+              ),
+            )
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(

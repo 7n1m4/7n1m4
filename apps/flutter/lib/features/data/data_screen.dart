@@ -220,8 +220,18 @@ class _DataScreenState extends State<DataScreen> {
     final value = stats?[domain];
     if (value is! Map<String, dynamic>) return null;
     final bytes = value['bytes'];
-    if (bytes is! num) return null;
-    return '${bytes.toInt()} B';
+    if (bytes is! num || !bytes.isFinite || bytes < 0) return null;
+    if (bytes == 0) return '0 B';
+    const units = <String>['B', 'KB', 'MB', 'GB'];
+    var scaled = bytes.toDouble();
+    var unit = 0;
+    while (scaled >= 1024 && unit < units.length - 1) {
+      scaled /= 1024;
+      unit++;
+    }
+    var text = scaled.toStringAsFixed(1);
+    if (text.endsWith('.0')) text = text.substring(0, text.length - 2);
+    return '$text ${units[unit]}';
   }
 
   Widget _archiveDomainTile(String domain, Map<String, dynamic>? stats) {

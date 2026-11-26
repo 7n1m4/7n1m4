@@ -132,53 +132,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _settingsBusy = true;
       _settingsError = null;
     });
-    try {
-      // One real `settings.get` per section: nothing is fabricated
-      // client-side, and a section that will not load stays unsaved.
-      final results = await Future.wait(<Future<Map<String, dynamic>>>[
-        for (final section in _SettingsSection.values)
-          widget.client.settingsGet(section.key),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        var index = 0;
-        for (final section in _SettingsSection.values) {
-          _drafts[section] = _SectionDraft(results[index++]);
-        }
-        final general = _drafts[_SettingsSection.general]!.values;
-        final language = general['language'];
-        final tint = _drafts[_SettingsSection.controlStrip]!.values['backgroundTint'];
-        _language.text = language is String ? language : '';
-        _languageError = null;
-        _tint.text = tint is String ? tint : '#171717';
-        // Normalize the four theme fields through the same decoder the app
-        // uses, so the editor only ever writes back well-typed values. Other
-        // keys in the section are carried through untouched.
-        final themeDraft = _drafts[_SettingsSection.theme]!;
-        final theme = AppThemeSettings.fromSettings(themeDraft.values);
-        themeDraft.values = <String, dynamic>{
-          ...themeDraft.values,
-          'dark': theme.dark,
-          'hue': theme.hue,
-          'hueDynamic': theme.hueDynamic,
-          'chromaMultiplier': theme.chromaMultiplier,
-        };
-      });
-    } on DaemonClientException catch (e) {
-      if (mounted) {
+
+    // One real `settings.get` per section, each with its own error boundary:
+    // a section that will not load stays unsaved without disabling siblings.
+    Future<void> loadSection(_SettingsSection section) async {
+      try {
+        final values = await widget.client.settingsGet(section.key);
+        if (!mounted) return;
         setState(() {
-          for (final section in _SettingsSection.values) {
-            _drafts[section] = _SectionDraft.unavailable();
+          final draft = _SectionDraft(values);
+          _drafts[section] = draft;
+          if (section == _SettingsSection.general) {
+            final language = values['language'];
+            _language.text = language is String ? language : '';
+            _languageError = null;
+          } else if (section == _SettingsSection.controlStrip) {
+            final tint = values['backgroundTint'];
+            _tint.text = tint is String ? tint : '#171717';
+          } else if (section == _SettingsSection.theme) {
+            // Normalize the four theme fields through the same decoder the app
+            // uses, so the editor only writes back well-typed values. Other
+            // keys in the section are carried through untouched.
+            final theme = AppThemeSettings.fromSettings(values);
+            draft.values = <String, dynamic>{
+              ...values,
+              'dark': theme.dark,
+              'hue': theme.hue,
+              'hueDynamic': theme.hueDynamic,
+              'chromaMultiplier': theme.chromaMultiplier,
+            };
           }
-          _language.text = '';
-          _languageError = null;
-          _tint.text = '';
-          _settingsError = userSafeConnectionError(
-            e,
-            context: 'settings.load',
-          );
+        });
+      } on Object catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _drafts[section] = _SectionDraft.unavailable();
+          // Only the controllers owned by the failing section are touched;
+          // they are shared across reloads, so a sibling's value survives.
+          if (section == _SettingsSection.general) {
+            _language.text = '';
+            _languageError = null;
+          } else if (section == _SettingsSection.controlStrip) {
+            _tint.text = '';
+          }
+          _settingsError = e is DaemonClientException
+              ? userSafeConnectionError(
+                  e,
+                  context: 'settings.load:${section.key}',
+                )
+              : 'Settings could not be loaded.';
         });
       }
+    }
+
+    try {
+      await Future.wait(<Future<void>>[
+        for (final section in _SettingsSection.values) loadSection(section),
+      ]);
     } finally {
       if (mounted) setState(() => _settingsBusy = false);
     }

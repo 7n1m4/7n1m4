@@ -224,4 +224,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<CheckboxListTile>(_domain('backgrounds')).secondary, isNull);
   });
+
+  testWidgets('byte counts use 1024-based units and drop trailing .0',
+      (tester) async {
+    client.statusStats = <String, dynamic>{
+      'characters': <String, dynamic>{'bytes': 1536},
+      'chats': <String, dynamic>{'bytes': 1048576},
+      'memory': <String, dynamic>{'bytes': 0},
+    };
+    await _pump(tester, client);
+    // The domain tiles sit below the status rows in a lazy ListView.
+    await tester.drag(find.byType(ListView), const Offset(0, -1500));
+    await tester.pumpAndSettle();
+
+    String? shown(String domain) =>
+        (tester.widget<CheckboxListTile>(_domain(domain)).secondary! as Text).data;
+
+    expect(shown('characters'), '1.5 KB');
+    expect(shown('chats'), '1 MB');
+    expect(shown('memory'), '0 B');
+    // backgrounds was not reported by the daemon, so no figure is shown.
+    expect(tester.widget<CheckboxListTile>(_domain('backgrounds')).secondary, isNull);
+  });
+
+  testWidgets('corrupt byte counts are not presented as real figures',
+      (tester) async {
+    client.statusStats = <String, dynamic>{
+      'characters': <String, dynamic>{'bytes': -1},
+      'chats': <String, dynamic>{'bytes': double.nan},
+      'memory': <String, dynamic>{'bytes': double.infinity},
+    };
+    await _pump(tester, client);
+    await tester.drag(find.byType(ListView), const Offset(0, -1500));
+    await tester.pumpAndSettle();
+
+    for (final domain in <String>['characters', 'chats', 'memory', 'backgrounds']) {
+      expect(
+        tester.widget<CheckboxListTile>(_domain(domain)).secondary,
+        isNull,
+        reason: '$domain reported a corrupt byte count',
+      );
+    }
+  });
 }

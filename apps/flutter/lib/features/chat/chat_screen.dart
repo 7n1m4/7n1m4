@@ -4,6 +4,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
@@ -31,6 +33,17 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  // Streamed LLM turns can contain a stray, unterminated ``` fence on its own
+  // line. The default gitHubFlavored set parses that as a code block and hides
+  // any trailing text, so drop only the fenced-code syntax and keep everything
+  // else (bold/italic/lists/strikethrough).
+  static final md.ExtensionSet _chatMarkdownExtensions = md.ExtensionSet(
+    md.ExtensionSet.gitHubFlavored.blockSyntaxes
+        .where((syntax) => syntax is! md.FencedCodeBlockSyntax)
+        .toList(growable: false),
+    md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+  );
+
   final List<_ChatMessage> _messages = <_ChatMessage>[];
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
@@ -774,13 +787,19 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(displayed.isEmpty ? '…' : displayed),
+                          MarkdownBody(
+                            data: displayed.isEmpty ? '…' : displayed,
+                            extensionSet: _chatMarkdownExtensions,
+                            // Assistant text is untrusted: never fetch remote
+                            // images from it (IP leak / tracking / probing).
+                            imageBuilder: (_, __, alt) => Text(alt ?? ''),
+                          ),
                           Align(
                             alignment: Alignment.centerRight,
                             child: IconButton(
                               key: Key('chat-copy-$messageIndex'),
                               icon: const Icon(Icons.copy_all_outlined, size: 18),
-                              tooltip: 'Copy',
+                              tooltip: 'Copy source',
                               onPressed: () => Clipboard.setData(
                                 ClipboardData(text: displayed),
                               ),

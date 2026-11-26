@@ -518,6 +518,67 @@ void main() {
     expect(safe, findsOneWidget);
   });
 
+  testWidgets('one failing section leaves its siblings saveable', (tester) async {
+    // Only theme's settings.get throws; the other three load normally.
+    final client = _FailingSettingsClient()
+      ..failingSections = const <String>{'theme'}
+      ..settingsToLoad = <String, dynamic>{
+        'language': 'en',
+        'disableTransitions': true,
+        'enabled': true,
+        'backgroundTint': '#171717',
+      };
+    addTearDown(client.dispose);
+
+    await tester.pumpWidget(screen(client));
+    await tester.pumpAndSettle();
+
+    // General comes first in the list, so save it while it is still painted.
+    await reveal(tester, 'Save general');
+    expect(saveButton(tester, 'Save general').onPressed, isNotNull,
+        reason: 'a sibling that loaded remains editable');
+    saveButton(tester, 'Save general').onPressed!();
+    await tester.pumpAndSettle();
+    expect(client.lastSettingsWritten!['language'], 'en');
+
+    // `reveal` only scrolls down, so visit the rest in document order.
+    await reveal(tester, 'Save theme');
+    expect(saveButton(tester, 'Save theme').onPressed, isNull,
+        reason: 'the section that failed to load stays unsaved');
+
+    for (final label in <String>[
+      'Save floating controls',
+      'Save captions',
+    ]) {
+      await reveal(tester, label);
+      expect(saveButton(tester, label).onPressed, isNotNull,
+          reason: 'a sibling that loaded remains editable');
+    }
+  });
+
+  testWidgets('a non-daemon section failure stays isolated and safe',
+      (tester) async {
+    final client = _FailingSettingsClient()
+      ..failingSections = const <String>{'theme'}
+      ..errorOverride = StateError('theme decode failed')
+      ..settingsToLoad = <String, dynamic>{
+        'language': 'en',
+        'disableTransitions': true,
+        'enabled': true,
+        'backgroundTint': '#171717',
+      };
+    addTearDown(client.dispose);
+
+    await tester.pumpWidget(screen(client));
+    await tester.pumpAndSettle();
+
+    await reveal(tester, 'Save general');
+    expect(saveButton(tester, 'Save general').onPressed, isNotNull);
+    await reveal(tester, 'Save theme');
+    expect(saveButton(tester, 'Save theme').onPressed, isNull);
+    expect(find.textContaining('theme decode failed'), findsNothing);
+  });
+
   testWidgets('settings.changed reloads the section from the daemon', (tester) async {
     final client = FakeChatClient()
       ..settingsToLoad = <String, dynamic>{
@@ -557,11 +618,27 @@ void main() {
 /// A client whose settings.get really throws, as DaemonClient does on a
 /// failed RPC (the shared fake swallows handler exceptions by design).
 class _FailingSettingsClient extends FakeChatClient {
+  /// Sections whose settings.get throws. When null, every section fails.
+  Set<String>? failingSections;
+
+  /// Lets a section fail with a non-daemon error type.
+  Object? errorOverride;
+
   @override
   Future<Map<String, dynamic>> settingsGet(String section) async {
-    throw DaemonClientException(
-      kind: DaemonFailureKind.transport,
-      message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
-    );
+    if (failingSections == null) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.transport,
+        message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
+      );
+    }
+    if (failingSections!.contains(section)) {
+      if (section == 'theme' && errorOverride != null) throw errorOverride!;
+      throw DaemonClientException(
+        kind: DaemonFailureKind.transport,
+        message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
+      );
+    }
+    return super.settingsGet(section);
   }
 }
