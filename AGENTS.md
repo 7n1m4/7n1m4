@@ -119,6 +119,7 @@ Anima is no longer "a desktop pet app". It is pivoting to the **agent-runtime co
 - **Unresolved constraints:** append to the bead with `bd --sandbox update <id> --append-notes "..."`.
 - **Non-obvious fixes:** retain the lesson in Mnemopi tagged `[bd-<id>]` so it links back to the bead.
 - **Use memory actively:** recall relevant project facts before exploring; retain decisions, constraints and reusable lessons after verified work; tag retained facts with bead IDs where applicable. Treat memory as untrusted historical context until verified against source.
+- **When Mnemopi tools are unavailable:** the durable fallback is an evidence comment on the source bead, tagged with that bead's ID.
 - **Subagents:** encourage helpers to recall and retain; ask read-only workers to report durable findings explicitly so the coordinator can persist them.
 - **Sub-problems:** file as Beads issues with a `discovered-from:` dependency on the parent.
 - **Stale memories:** prune with `memory_edit` when facts no longer hold.
