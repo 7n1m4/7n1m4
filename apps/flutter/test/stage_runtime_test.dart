@@ -150,6 +150,44 @@ void main() {
     },
   );
 
+  test(
+    'per-model sequence state resets on load',
+    () async {
+      await runtime.load(_vrm(asset.path));
+
+      await runtime.lipSync(
+        const LipSyncRmsData(actorId: 'pet-1', level: 0.5, seq: 100, tsMs: 2000),
+      );
+      final cue = StageExpressionCue(
+        tag: 'happy',
+        kind: 'emotion',
+        intensity: 0.8,
+        actorId: 'pet-1',
+        seq: 100,
+        tsMs: 2000,
+      );
+      await runtime.emotion(cue);
+
+      await runtime.load(_vrm(asset.path));
+
+      await runtime.lipSync(
+        const LipSyncRmsData(actorId: 'pet-1', level: 0.25, seq: 1, tsMs: 3000),
+      );
+      final cue2 = StageExpressionCue(
+        tag: 'sad',
+        kind: 'emotion',
+        intensity: 0.5,
+        actorId: 'pet-1',
+        seq: 1,
+        tsMs: 3000,
+      );
+      await runtime.emotion(cue2);
+
+      expect(backend.lipSyncWeights, hasLength(2));
+      expect(backend.emotions, hasLength(2));
+    },
+  );
+
   test('ambient phases reach the backend once and reset on clear', () async {
     await runtime.load(_vrm(asset.path));
 

@@ -50,7 +50,31 @@ fn main() {
     for entry in walk_cpp(&src_dir) {
         build.file(entry);
     }
-    build.file(manifest_dir.join("cpp/spine_shell.cpp"));
+    // Native backends, compiled into their own archive so the linker pulls the
+    // Rust-side entry points they reference (cc archives are scanned once, in
+    // order, so a backend that references the rlib must sit *after* it).
+    let mut backends = cc::Build::new();
+    backends
+        .cpp(true)
+        .std("c++17")
+        .include(&include_dir)
+        .include(manifest_dir.join("cpp"))
+        .define(
+            if is_4_2 {
+                "AIRI_SPINE_42"
+            } else {
+                "AIRI_SPINE_PRE_42"
+            },
+            None,
+        )
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-Wno-unused-variable")
+        .flag_if_supported("-w");
+    backends.file(manifest_dir.join("cpp/spine_shell.cpp"));
+    backends.file(manifest_dir.join("cpp/render_contract.cpp"));
+    backends.file(manifest_dir.join("cpp/vrm_backend.cpp"));
+    backends.file(manifest_dir.join("cpp/mmd_backend.cpp"));
+    backends.compile("airi_render_backends");
 
     build.compile("airi_spine_cpp");
 
@@ -62,6 +86,34 @@ fn main() {
     println!(
         "cargo:rerun-if-changed={}",
         manifest_dir.join("cpp/spine_shell.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/render_contract.cpp").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/render_contract.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/render_contract_internal.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/vrm_backend.cpp").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/vrm_backend.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/mmd_backend.cpp").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest_dir.join("cpp/mmd_backend.h").display()
     );
     emit_rerun_if_changed(&src_dir);
     emit_rerun_if_changed(&include_dir);

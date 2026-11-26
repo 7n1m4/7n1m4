@@ -11,6 +11,8 @@ import { nanoid } from 'nanoid'
 import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
+import { hasDaemonMemory, listDaemonSummaries, toShortTermMemoryBlock, upsertDaemonSummaries, type DaemonSummary } from '../composables/daemon-memory'
+import { daemonRequest } from '../composables/daemon-rpc'
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
 import { shortTermMemoryRepo } from '../database/repos/short-term-memory.repo'
 import { LOCAL_USER_ID } from '../local-user'
@@ -37,6 +39,15 @@ interface DayBucket {
 }
 
 const MAX_SOURCE_CHARS_PER_DAY = 24000
+// `stmm.list` clamps `limit` server-side; ask for the ceiling so the daemon is
+// the authority for the whole block set rather than the newest page of it.
+const DAEMON_SUMMARY_LIST_LIMIT = 500
+
+/** Remove one daemon-owned summary row. Narrow verb; no rebuild side effects. */
+async function deleteDaemonSummary(id: string): Promise<boolean> {
+  const reply = await daemonRequest<{ deleted?: unknown }>('stmm.delete', { id })
+  return reply?.deleted === true
+}
 
 function normalizeBlock(block: ShortTermMemoryBlock): ShortTermMemoryBlock {
   return {
@@ -218,6 +229,38 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
     }
   })
 
+  /**
+   * Merge one page of daemon-owned rows into the locally known blocks.
+   *
+   * The daemon row has no character/universe columns, so a row only describes
+   * a block the local cache already knows (matched by id) or is dropped: the
+   * daemon is the authority for the *content* of a block, never for which card
+   * or universe it belongs to. That keeps per-card budgets and universe
+   * scoping Vue-owned while `stmm.list` heals stale or foreign-edited bodies.
+   */
+  function mergeDaemonSummaries(local: ShortTermMemoryBlock[], summaries: DaemonSummary[]) {
+    if (summaries.length === 0)
+      return local
+
+    const byId = new Map(local.map(block => [block.id, block]))
+    for (const summary of summaries) {
+      const existing = byId.get(summary.id)
+      if (!existing)
+        continue
+      byId.set(summary.id, normalizeBlock(toShortTermMemoryBlock(summary, {
+        userId: existing.userId,
+        characterId: existing.characterId,
+        characterName: existing.characterName,
+        source: existing.source,
+        messageCount: existing.messageCount,
+        updatedAt: existing.updatedAt,
+        universeId: existing.universeId,
+        sessionId: existing.sessionId,
+      })))
+    }
+    return [...byId.values()]
+  }
+
   async function load(force = false, silent = false) {
     const currentUserId = getCurrentUserId()
     if ((!force && initializedForUserId.value === currentUserId) || loading.value)
@@ -228,7 +271,20 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
     error.value = null
 
     try {
-      blocks.value = normalizeBlocks(await shortTermMemoryRepo.getAll(currentUserId) ?? [])
+      const cached = normalizeBlocks(await shortTermMemoryRepo.getAll(currentUserId) ?? [])
+      // Daemon first: `stmm.list` is the authority for block bodies. The local
+      // IndexedDB copy stays the cache/fallback for stage-web and for a
+      // temporarily unreachable gateway.
+      let next = cached
+      if (hasDaemonMemory()) {
+        try {
+          next = normalizeBlocks(mergeDaemonSummaries(cached, await listDaemonSummaries(DAEMON_SUMMARY_LIST_LIMIT)))
+        }
+        catch (daemonError) {
+          console.error('[ShortTermMemory] Daemon summary list unavailable; using local cache', daemonError)
+        }
+      }
+      blocks.value = next
       initializedForUserId.value = currentUserId
     }
     catch (loadError) {
@@ -239,6 +295,19 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
       if (!silent)
         loading.value = false
     }
+  }
+
+  /**
+   * Write generated or deleted blocks through the daemon.
+   *
+   * `stmm.upsert` is the only daemon write verb for summaries: it replaces a
+   * row by id (so re-sending a regenerated block is idempotent) and has no
+   * delete, which is why a local delete is expressed as the remaining snapshot
+   * plus a prune. Chunking and the empty-batch guard live in the daemon-memory
+   * helper `upsertDaemonSummaries`.
+   */
+  async function persistToDaemon(snapshot: ShortTermMemoryBlock[]) {
+    return await upsertDaemonSummaries(snapshot)
   }
 
   async function persist(nextBlocks: ShortTermMemoryBlock[]) {
@@ -271,6 +340,17 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
         error: persistError,
       })
       throw persistError
+    }
+
+    if (hasDaemonMemory()) {
+      try {
+        await persistToDaemon(snapshot)
+      }
+      catch (daemonError) {
+        // The local snapshot is already durable; a temporarily unreachable
+        // gateway must not fail the user's save. The next load re-lists.
+        console.error('[ShortTermMemory] Failed to mirror short-term blocks to the daemon; local snapshot retained', daemonError)
+      }
     }
   }
 
@@ -587,7 +667,26 @@ export const useShortTermMemoryStore = defineStore('short-term-memory', () => {
     if (targetIndex < 0)
       return false
 
+    // ROOT CAUSE:
+    //
+    // `stmm.upsert` only replaces by id and `stmm.rebuild` prunes by age, so
+    // re-sending the surviving snapshot left a deleted summary row in the
+    // daemon; a reload (or any client that reads the daemon directly)
+    // resurrected it. Delete the daemon row explicitly through `stmm.delete`.
     const nextBlocks = blocks.value.filter(b => b.id !== blockId)
+    if (hasDaemonMemory()) {
+      // Delete on the daemon first: never remove the local copy when the
+      // daemon call fails, so a transient failure cannot silently fork state.
+      try {
+        const deleted = await deleteDaemonSummary(blockId)
+        if (!deleted)
+          console.warn('[ShortTermMemory] Daemon summary was already absent', blockId)
+      }
+      catch (daemonError) {
+        console.error('[ShortTermMemory] Daemon delete failed; keeping the local block', daemonError)
+        throw daemonError
+      }
+    }
     await persist(nextBlocks)
     return true
   }

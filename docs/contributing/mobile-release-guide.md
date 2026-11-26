@@ -26,6 +26,14 @@ No signing material committed. CI decodes into temp paths and deletes after job.
 - Play Console track promotion and store listing.
 - App Store Connect submission review and release scheduling.
 - Keystore/certificate creation and renewal; secret rotation.
+- Re-copy the repo-root notices into `apps/flutter/assets/notices/` before release:
+  ```
+  cp THIRD_PARTY_NOTICES.md apps/flutter/assets/notices/ && cp LICENSES/*.txt apps/flutter/assets/notices/LICENSES/
+  ```
+  Verify with `cmp`/`diff`:
+  ```
+  cmp THIRD_PARTY_NOTICES.md apps/flutter/assets/notices/THIRD_PARTY_NOTICES.md && diff -rq LICENSES apps/flutter/assets/notices/LICENSES
+  ```
 
 ## Not signed/shipped
 

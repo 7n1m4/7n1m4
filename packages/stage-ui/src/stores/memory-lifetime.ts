@@ -9,6 +9,7 @@ import { nanoid } from 'nanoid'
 import { defineStore, storeToRefs } from 'pinia'
 import { ref, watch } from 'vue'
 
+import { hasDaemonMemory, listDaemonSummaries, searchDaemonJournal, toShortTermMemoryBlock, toTextJournalEntry } from '../composables/daemon-memory'
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
 import { lifetimeMemoryRepo } from '../database/repos/lifetime-memory.repo'
 import { provisioningSessionRepo } from '../database/repos/provisioning-session.repo'
@@ -837,7 +838,7 @@ export const useMemoryLifetimeStore = defineStore('memory-lifetime', () => {
     }
 
     // 2. STMM Blocks (use local end-of-day timestamp so YYYY-MM-DD never shifts to previous day in Western timezones)
-    const stmmBlocks = await shortTermMemoryRepo.getAll(currentUserId)
+    const stmmBlocks = hasDaemonMemory() ? (await listDaemonSummaries()).map(summary => toShortTermMemoryBlock(summary, { characterId, universeId })) : await shortTermMemoryRepo.getAll(currentUserId)
     if (stmmBlocks) {
       stmmBlocks
         .filter(b => b.characterId === characterId && (b.universeId || 'global') === universeId)
@@ -857,7 +858,7 @@ export const useMemoryLifetimeStore = defineStore('memory-lifetime', () => {
     }
 
     // 3. LTMM Entries
-    const ltmmEntries = await textJournalRepo.getAll(currentUserId)
+    const ltmmEntries = hasDaemonMemory() ? (await searchDaemonJournal('', Number.MAX_SAFE_INTEGER)).map(entry => toTextJournalEntry(entry, { characterId, universeId })) : await textJournalRepo.getAll(currentUserId)
     if (ltmmEntries) {
       ltmmEntries
         .filter(e => e.characterId === characterId && (e.universeId || 'global') === universeId)
@@ -1461,7 +1462,7 @@ export const useMemoryLifetimeStore = defineStore('memory-lifetime', () => {
       }
     }
 
-    const ltmmEntries = await textJournalRepo.getAll(currentUserId)
+    const ltmmEntries = hasDaemonMemory() ? (await searchDaemonJournal('', Number.MAX_SAFE_INTEGER)).map(entry => toTextJournalEntry(entry, { characterId, universeId })) : await textJournalRepo.getAll(currentUserId)
     if (ltmmEntries) {
       const sinceCutoff = sinceDay ? parseLocalDayEnd(sinceDay) : 0
       const untilCutoff = untilDay ? parseLocalDayEnd(untilDay) : Number.MAX_SAFE_INTEGER

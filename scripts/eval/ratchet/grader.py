@@ -201,6 +201,7 @@ def parse_unified_diff(text: str) -> list[FilePatch]:
             token = raw[4:].strip()
             if cur is None:
                 cur = FilePatch(path="")
+                files.append(cur)
             if token == "/dev/null":
                 cur.is_delete = True
             else:
@@ -266,7 +267,7 @@ def _find_block(base: Sequence[str], block: Sequence[str], start: int,
 
 def apply_hunks(base: Sequence[str], hunks: Sequence[tuple[int, list[str], list[str]]],
                 path: str) -> list[str]:
-    out: list[str] = []
+    out: list[str] = list(base[:0])
     idx = 0
     for old_start, old_block, new_block in hunks:
         hint = max(0, old_start - 1)
@@ -386,6 +387,21 @@ def _changed_from_report(run_dir: Path, root: Path) -> tuple[dict[str, str], lis
     return changed, added
 
 
+def _materialize_parents(root: Path, target: Path) -> None:
+    """Walk from root down to target, replacing symlinked dirs with real copies."""
+    rel = target.relative_to(root) if target.is_absolute() else target
+    cur = root
+    for part in rel.parts:
+        nxt = cur / part
+        if nxt.is_symlink() and nxt.is_dir():
+            real = nxt.resolve()
+            nxt.unlink()
+            shutil.copytree(real, nxt)
+        cur = nxt
+        if not cur.exists():
+            break
+
+
 def prepare_candidate(run_dir: Path, repo_root: Path) -> Candidate:
     worktree = run_dir / "worktree"
     if worktree.is_dir():
@@ -416,14 +432,21 @@ def prepare_candidate(run_dir: Path, repo_root: Path) -> Candidate:
     if text is None:
         return Candidate(None, {}, [], False,
                          f"{patch_path.name} is missing or unreadable")
+    if not text.strip():
+        tmp = Path(tempfile.mkdtemp(prefix="ratchet-grade-"))
+        _overlay_base_tree(repo_root, tmp)
+        return Candidate(tmp, {}, [], True, "patch.diff (empty)", temp_dir=tmp)
     try:
         parsed = parse_unified_diff(text)
     except PatchError as exc:
         return Candidate(None, {}, [], False, f"parse: {exc}")
     if not parsed:
-        return Candidate(None, {}, [], False, "parse: diff has no file sections")
+        tmp = Path(tempfile.mkdtemp(prefix="ratchet-grade-"))
+        _overlay_base_tree(repo_root, tmp)
+        return Candidate(tmp, {}, [], True, "patch.diff (empty)", temp_dir=tmp)
 
     tmp = Path(tempfile.mkdtemp(prefix="ratchet-grade-"))
+    _overlay_base_tree(repo_root, tmp)
     changed: dict[str, str] = {}
     added: list[tuple[str, str]] = []
     try:
@@ -436,11 +459,18 @@ def prepare_candidate(run_dir: Path, repo_root: Path) -> Candidate:
             except PatchError as exc:
                 return Candidate(None, {}, [], False, f"apply: {exc}")
             dest = tmp / fp.path
+            if fp.is_delete:
+                if dest.exists():
+                    dest.unlink()
+                changed[fp.path] = "deleted"
+                continue
+            _materialize_parents(tmp, dest.parent)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.is_symlink() or dest.exists():
+                dest.unlink()
             dest.write_text("\n".join(new_lines) + ("\n" if new_lines else ""),
                             encoding="utf-8")
             changed[fp.path] = ("added" if fp.is_new else
-                                "deleted" if fp.is_delete else
                                 "renamed" if fp.old_path and fp.old_path != fp.path
                                 else "modified")
             added.extend((fp.path, ln) for ln in fp.added)
@@ -448,7 +478,100 @@ def prepare_candidate(run_dir: Path, repo_root: Path) -> Candidate:
         shutil.rmtree(tmp, ignore_errors=True)
         return Candidate(None, {}, [], False, f"write temp tree: {exc}")
 
-    return Candidate(tmp, changed, added, True, "patch.diff", temp_dir=tmp)
+    _prune_empty_dirs(tmp)
+
+    note = "patch.diff (empty)" if not parsed else "patch.diff"
+    return Candidate(tmp, changed, added, True, note, temp_dir=tmp)
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    """Remove empty scaffolding dirs; never follow or remove symlinks."""
+    for d in sorted(root.rglob("*"), reverse=True):
+        if d.is_symlink() or not d.is_dir() or any(d.iterdir()):
+            continue
+        d.rmdir()
+
+
+def _overlay_base_tree(repo_root: Path, overlay: Path) -> None:
+    """Mirror the base repo into `overlay`.
+
+    Unchanged regular files are copied (shutil.copy2) so the overlay is a full,
+    independent tree that verify commands can run against; hardlinks are avoided
+    because copy-on-write filesystems (btrfs) would let a write to the overlay
+    mutate the base.  Dependency / build
+    output directories in SKIP_DIRS (node_modules, .dart_tool, target, ...) are
+    symlinked so commands keep their environment without duplicating gigabytes.
+    The base repo is only ever read: a patched destination (or a symlinked
+    dependency directory on its path) is replaced with a real file before it is
+    rewritten, so the base is never mutated.
+    """
+    overlay.mkdir(parents=True, exist_ok=True)
+
+    def walk(src: Path, dst: Path) -> None:
+        dst.mkdir(parents=True, exist_ok=True)
+        with os.scandir(src) as it:
+            entries = sorted(it, key=lambda e: e.name)
+        for entry in entries:
+            s = Path(entry.path)
+            d = dst / entry.name
+            if entry.is_dir(follow_symlinks=False):
+                if entry.name in SKIP_DIRS:
+                    try:
+                        d.symlink_to(s, target_is_directory=True)
+                    except OSError:
+                        shutil.copytree(s, d, symlinks=True, dirs_exist_ok=True)
+                else:
+                    walk(s, d)
+            elif entry.is_file(follow_symlinks=False):
+                shutil.copy2(s, d, follow_symlinks=False)
+            else:
+                try:
+                    d.symlink_to(s)
+                except OSError:
+                    pass
+
+    walk(repo_root, overlay)
+
+
+def self_check() -> None:
+    """Assert the overlay never writes through a SKIP_DIRS symlink."""
+    with tempfile.TemporaryDirectory(prefix="ratchet-self-check-") as scratch:
+        base = Path(scratch) / "base"
+        overlay = Path(scratch) / "overlay"
+        deps = Path(scratch) / "shared-deps"
+        (deps / "node_modules" / "pkg").mkdir(parents=True)
+        (deps / "node_modules" / "pkg" / "keep.txt").write_text("keep\n", encoding="utf-8")
+        base.mkdir(parents=True)
+        (base / "node_modules").symlink_to(deps / "node_modules", target_is_directory=True)
+        (base / "src").mkdir(parents=True)
+        (base / "src" / "keep.txt").write_text("kept\n", encoding="utf-8")
+
+        _overlay_base_tree(base, overlay)
+        link = overlay / "node_modules"
+        assert link.is_symlink(), "SKIP_DIRS entry must stay a symlink"
+        assert (overlay / "src" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
+
+        target = overlay / "node_modules" / "pkg" / "patched.txt"
+        _materialize_parents(overlay, target.parent)
+        target.write_text("patched\n", encoding="utf-8")
+        assert not (overlay / "node_modules").is_symlink(), \
+            "symlinked parent must be materialized before writing"
+        assert not (deps / "node_modules" / "pkg" / "patched.txt").exists(), \
+            "a patch must never reach the real dependency tree"
+        assert (deps / "node_modules" / "pkg" / "keep.txt").read_text(
+            encoding="utf-8") == "keep\n"
+
+        # The prune helper must keep symlinks (even empty SKIP_DIRS targets)
+        # while removing genuinely empty regular directories.
+        empty_link = overlay / "empty-link"
+        empty_link.symlink_to(deps / "empty-target", target_is_directory=True)
+        (deps / "empty-target").mkdir()
+        (overlay / "src" / "scaffold").mkdir()
+        _prune_empty_dirs(overlay)
+        assert empty_link.is_symlink(), "prune must not follow or remove symlinks"
+        assert (deps / "empty-target").is_dir(), "prune must not touch symlink targets"
+        assert not (overlay / "src" / "scaffold").exists(), \
+            "prune must remove empty scaffolding directories"
 
 
 # --------------------------------------------------------------------------- #
@@ -563,7 +686,20 @@ def _behavior(case: dict[str, Any], cand: Candidate) -> tuple[float, list[str]]:
             if text is not None:
                 haystacks.append(text)
     else:
-        haystacks = [text for _, text in _iter_text_files(cand.root)]
+        # No submitted files: scan only case-relevant paths, not the mirrored
+        # repo (which naturally contains prompts, fixtures and case data that
+        # mention forbidden strings without the candidate writing them).
+        paths = list(expected)
+        paths.extend(p for p in forbidden if p not in paths)
+        haystacks = []
+        for rel in paths:
+            target = cand.root / rel
+            if target.is_dir():
+                haystacks.extend(text for _, text in _iter_text_files(target))
+            else:
+                text = read_text(target)
+                if text is not None:
+                    haystacks.append(text)
     corpus = "\n".join(haystacks)
 
     hit_forbidden = [p for p in forbidden
@@ -757,13 +893,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--case-id", help="select this case id from --cases")
     ap.add_argument("--case-json", help="inline case row JSON")
     ap.add_argument("--case-file", help="file holding one case row JSON")
-    ap.add_argument("--run-dir", required=True, help="dir with worktree/ or patch.diff")
+    ap.add_argument("--run-dir", help="dir with worktree/ or patch.diff")
     ap.add_argument("--repo-root", default=None)
     ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S)
     ap.add_argument("--truncated", choices=["auto", "yes", "no"], default="auto")
     ap.add_argument("--out", default=None, help="write grade JSON here (default <run-dir>/grade.json)")
     ap.add_argument("--no-write", action="store_true")
+    ap.add_argument("--self-check", action="store_true",
+                    help="assert symlink-safe overlay/pruning and exit")
     args = ap.parse_args(argv)
+
+    if args.self_check:
+        self_check()
+        print("symlink-safe grader self-check: OK")
+        return 0
+    if not args.run_dir:
+        ap.error("--run-dir is required unless --self-check is used")
 
     if args.case_json:
         case = json.loads(args.case_json)

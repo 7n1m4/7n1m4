@@ -4,6 +4,8 @@ import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { onMounted } from 'vue'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
+
 const languageRemap: Record<string, string> = {
   'zh': 'zh-Hans',
   'zh-CN': 'zh-Hans',
@@ -25,6 +27,16 @@ const languageRemap: Record<string, string> = {
   'ja-JP': 'ja',
 }
 
+/** `settings/general` as the daemon (`GeneralSettings`) carries it. */
+export interface DaemonGeneralSettings {
+  language: string
+  disableTransitions: boolean
+  usePageSpecificTransitions: boolean
+  remoteSyncEnabled: boolean
+  websocketSecureEnabled: boolean
+  autostart: boolean
+}
+
 export const useSettingsGeneral = defineStore('settings-general', () => {
   const language = useLocalStorageManualReset<string>('settings/language', '')
 
@@ -32,6 +44,11 @@ export const useSettingsGeneral = defineStore('settings-general', () => {
   const usePageSpecificTransitions = useLocalStorageManualReset<boolean>('settings/use-page-specific-transitions', true)
 
   const websocketSecureEnabled = useLocalStorageManualReset<boolean>('settings/websocket/secure-enabled', false)
+
+  // Not owned by this store: mirrored so the daemon round trip preserves them
+  // instead of resetting them to their defaults on every write-back.
+  const remoteSyncEnabled = useLocalStorageManualReset<boolean>('settings/privacy/remote-sync-enabled', false)
+  const autostart = useLocalStorageManualReset<boolean>('settings/autostart', false)
 
   function getLanguage() {
     let language = localStorage.getItem('settings/language')
@@ -56,23 +73,46 @@ export const useSettingsGeneral = defineStore('settings-general', () => {
     disableTransitions.reset()
     usePageSpecificTransitions.reset()
     websocketSecureEnabled.reset()
+    remoteSyncEnabled.reset()
+    autostart.reset()
   }
 
   onMounted(() => language.value = getLanguage())
+
+  bridgeDaemonSettings<DaemonGeneralSettings>(
+    'general',
+    () => ({
+      language: language.value,
+      disableTransitions: disableTransitions.value,
+      usePageSpecificTransitions: usePageSpecificTransitions.value,
+      remoteSyncEnabled: remoteSyncEnabled.value,
+      websocketSecureEnabled: websocketSecureEnabled.value,
+      autostart: autostart.value,
+    }),
+    (value) => {
+      language.value = value.language
+      disableTransitions.value = value.disableTransitions
+      usePageSpecificTransitions.value = value.usePageSpecificTransitions
+      remoteSyncEnabled.value = value.remoteSyncEnabled
+      websocketSecureEnabled.value = value.websocketSecureEnabled
+      autostart.value = value.autostart
+    },
+  )
 
   return {
     language,
     disableTransitions,
     usePageSpecificTransitions,
     websocketSecureEnabled,
+    remoteSyncEnabled,
+    autostart,
     getLanguage,
     resetState,
   }
 })
 
-// Phase 0B: pure localStorage-backed state, no timers/channels/handles — safe
-// for direct Pinia HMR patching. No dispose ledger needed (nothing to tear
-// down). No-op in production (import.meta.hot is undefined).
+// Phase 0B: pure localStorage-backed state plus one settings bridge — safe for
+// direct Pinia HMR patching. No-op in production (import.meta.hot is undefined).
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useSettingsGeneral, import.meta.hot))
 }

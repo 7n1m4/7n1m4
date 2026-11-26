@@ -85,6 +85,12 @@ int32_t airi_spine_set_animation(airi_spine_session *session, size_t track, cons
 void airi_spine_set_empty_animation(airi_spine_session *session, size_t track, float mix_duration);
 /** Set the default mix for AnimationStateData (seconds). */
 void airi_spine_set_default_mix(airi_spine_session *session, float seconds);
+/** Set the continuous mouth-open weight in [0,1] (modulates the mouth slot alpha). */
+void airi_spine_set_lip_sync(airi_spine_session *session, float weight);
+/** Select the slot name lip-sync modulates (empty clears). */
+void airi_spine_set_mouth_slot(airi_spine_session *session, const char *name);
+/** Current lip-sync weight (0 when unset). */
+float airi_spine_get_lip_sync(airi_spine_session *session);
 
 /* Per-frame ------------------------------------------------------------ */
 
@@ -97,6 +103,8 @@ size_t airi_spine_page_count(airi_spine_session *session);
 const char *airi_spine_page_image(airi_spine_session *session, size_t index);
 /** 1 when the page atlas entry was packed with premultiplied alpha. */
 int32_t airi_spine_page_pma(airi_spine_session *session, size_t index);
+/** Page pixel dimensions (0 when unknown). */
+void airi_spine_page_size(airi_spine_session *session, size_t index, uint32_t *out_width, uint32_t *out_height);
 
 /** Fill counts; Rust sizes its buffers from these. */
 void airi_spine_draw_counts(airi_spine_session *session,

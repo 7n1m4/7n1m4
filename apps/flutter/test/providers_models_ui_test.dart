@@ -25,6 +25,17 @@ class _RecordingProviderClient extends FakeChatClient {
     calls.add((action: action, payload: payload));
     return handler(action, payload);
   }
+
+  @override
+  Future<Map<String, dynamic>> settingsGet(String section) async {
+    calls.add((action: 'settings.get', payload: <String, dynamic>{'section': section}));
+    final reply = handler('settings.get', <String, dynamic>{'section': section});
+    final data = reply.data;
+    if (data is Map<String, dynamic> && data['settings'] is Map<String, dynamic>) {
+      return data['settings'] as Map<String, dynamic>;
+    }
+    return <String, dynamic>{};
+  }
 }
 
 RpcReply _ok(String action, Object? data) =>
@@ -32,7 +43,7 @@ RpcReply _ok(String action, Object? data) =>
 RpcReply _err(String action, String message) => RpcReply(
       action: action,
       ok: false,
-      error: RpcError(code: 'provider_not_found', message: message),
+      error: RpcError(code: 'rpc_bad_payload', message: message),
     );
 
 Map<String, dynamic> _seededProvider() => <String, dynamic>{
@@ -62,6 +73,12 @@ Future<_RecordingProviderClient> _pump(
             'models': <Map<String, dynamic>>[],
           });
     }
+    if (action == 'settings.get') {
+      return _ok(action, <String, dynamic>{
+        'section': payload?['section'],
+        'settings': <String, dynamic>{},
+      });
+    }
     return _ok(action, <String, dynamic>{'ok': true, 'id': 'p1'});
   };
   await tester.pumpWidget(
@@ -85,7 +102,7 @@ void main() {
       }),
     );
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Models'));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(OutlinedButton, 'Models'));
     await tester.pumpAndSettle();
@@ -106,12 +123,12 @@ void main() {
           _err(action, 'provider not found'),
     );
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Models'));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(OutlinedButton, 'Models'));
     await tester.pumpAndSettle();
 
-    expect(find.text('provider not found'), findsOneWidget);
+    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
     expect(find.text('gpt-4o'), findsNothing);
   });
 
@@ -127,7 +144,7 @@ void main() {
       }),
     );
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Models'));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(OutlinedButton, 'Models'));
     await tester.pumpAndSettle();

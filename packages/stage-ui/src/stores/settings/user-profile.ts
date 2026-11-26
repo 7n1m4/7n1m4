@@ -1,6 +1,16 @@
 import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables'
 import { defineStore } from 'pinia'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
+
+/** `settings/user-profile` as the daemon (`UserProfileSettings`) carries it. */
+export interface DaemonUserProfileSettings {
+  name: string
+  description: string
+  prompt: string
+  voiceProfileId: string
+}
+
 export const useSettingsUserProfile = defineStore('settings-user-profile', () => {
   const name = useLocalStorageManualReset<string>('settings/user-profile/name', 'Richy')
   const description = useLocalStorageManualReset<string>(
@@ -16,6 +26,22 @@ export const useSettingsUserProfile = defineStore('settings-user-profile', () =>
     prompt.reset()
     voiceProfileId.reset()
   }
+
+  bridgeDaemonSettings<DaemonUserProfileSettings>(
+    'user-profile',
+    () => ({
+      name: name.value,
+      description: description.value,
+      prompt: prompt.value,
+      voiceProfileId: voiceProfileId.value,
+    }),
+    (value) => {
+      name.value = value.name
+      description.value = value.description
+      prompt.value = value.prompt
+      voiceProfileId.value = value.voiceProfileId
+    },
+  )
 
   return {
     name,

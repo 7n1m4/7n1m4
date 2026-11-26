@@ -1,12 +1,18 @@
 import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables'
 import { defineStore } from 'pinia'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
 import { useDatingSimStore } from '../dating-sim'
 
 export interface PositionScale {
   x: number
   y: number
   scale: number
+}
+
+/** `settings/positioning` as the daemon (`PositioningSettings`) carries it. */
+export interface DaemonPositioningSettings {
+  models: Record<string, PositionScale>
 }
 
 export const usePositioningStore = defineStore('positioning', () => {
@@ -42,6 +48,14 @@ export const usePositioningStore = defineStore('positioning', () => {
   function resetState() {
     positions.reset()
   }
+
+  bridgeDaemonSettings<DaemonPositioningSettings>(
+    'positioning',
+    () => ({ models: positions.value }),
+    (value) => {
+      positions.value = value.models
+    },
+  )
 
   return {
     positions,

@@ -78,10 +78,12 @@ fn w_bone_key(buf: &mut Vec<u8>, name: &str, frame: u32, pos: [f32; 3], rot: [f3
     }
 }
 
-fn w_morph_key(buf: &mut Vec<u8>, name: &str, frame: u32, weight: f32) {
-    w_fixed(buf, name, 15);
-    w_u32(buf, frame);
-    w_f32(buf, weight);
+/// Write a NUL-padded fixed-width field from raw CP932 bytes.
+fn w_fixed_bytes(buf: &mut Vec<u8>, raw: &[u8], width: usize) {
+    let mut field = vec![0_u8; width];
+    let n = raw.len().min(width);
+    field[..n].copy_from_slice(&raw[..n]);
+    buf.extend_from_slice(&field);
 }
 
 /// Minimal 3-bone-key + 1-morph fixture with camera, light and shadow keys,
@@ -121,7 +123,10 @@ fn build_full_fixture() -> Vec<u8> {
     );
 
     let mut morphs = Vec::new();
-    w_morph_key(&mut morphs, "まばたき", 5, 0.8);
+    // CP932 bytes for `まばたき`.
+    w_fixed_bytes(&mut morphs, &[0x82, 0xdc, 0x82, 0xce, 0x82, 0xbd, 0x82, 0xab], 15);
+    w_u32(&mut morphs, 5);
+    w_f32(&mut morphs, 0.8);
 
     // Camera key: 61 bytes (frame, distance, target, rotation, 24 interp, fov, perspective).
     let mut camera = Vec::new();
@@ -191,13 +196,14 @@ fn parses_synthetic_motion_all_sections() {
     // Interpolation pattern written by the fixture: 0x00..0x3f.
     assert_eq!(motion.bones[0].interpolation[0], 0x00);
     assert_eq!(motion.bones[0].interpolation[63], 0x3f);
-    assert_eq!(motion.bones[0].name_raw[..9], *"センタ".as_bytes());
+    assert_eq!(motion.bones[0].name_raw[..6], [0x83, 0x5a, 0x83, 0x93, 0x83, 0x5e]);
 
     assert_eq!(motion.morphs.len(), 1);
     let m = &motion.morphs[0];
     assert_eq!(m.frame, 5);
     assert_f32(m.weight, 0.8);
-    assert_eq!(m.name_raw[..12], *"まばたき".as_bytes());
+    assert_eq!(m.name, "まばたき");
+    assert_eq!(m.name_raw[..8], [0x82, 0xdc, 0x82, 0xce, 0x82, 0xbd, 0x82, 0xab]);
 
     assert_eq!(motion.camera_count, 1);
     assert_eq!(motion.light_count, 1);
@@ -238,7 +244,7 @@ fn empty_motion_has_no_frame_range() {
 }
 
 #[test]
-fn japanese_name_kept_raw_decoded_lossy() {
+fn japanese_name_decoded_from_cp932() {
     // CP932 bytes for "右足ＩＫ" with NUL padding.
     let jp: [u8; 15] = [
         0x89, 0x45, 0x91, 0xab, 0x82, 0x68, 0x82, 0x6a, 0, 0, 0, 0, 0, 0, 0,
@@ -261,9 +267,7 @@ fn japanese_name_kept_raw_decoded_lossy() {
     );
     let motion = VmdMotion::parse(&bytes).expect("fixture must parse");
     assert_eq!(motion.bones[0].name_raw, jp);
-    // Without an encoding crate the CP932 bytes decode lossily; the raw bytes
-    // are the recovery path, never the `name` string.
-    assert!(motion.bones[0].name.contains('\u{FFFD}'));
+    assert_eq!(motion.bones[0].name, "右足ＩＫ");
 }
 
 #[test]

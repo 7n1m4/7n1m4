@@ -22,15 +22,16 @@ Map<String, dynamic> _cardWith(Map<String, dynamic> airi) => <String, dynamic>{
 
 Future<FakeChatClient> _pumpCard(
   WidgetTester tester,
-  Map<String, dynamic> card,
-) async {
+  Map<String, dynamic> card, {
+  RpcReply Function(String action, Map<String, dynamic>? payload)? onCall,
+}) async {
   final client = FakeChatClient();
   addTearDown(client.dispose);
-  client.onCall = (action, payload) => RpcReply(
+  client.onCall = onCall ?? ((action, payload) => RpcReply(
         action: action,
         ok: true,
         data: <String, dynamic>{'card': card},
-      );
+      ));
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(body: ModelStage(client: client, cardId: 'card-1')),
@@ -64,9 +65,12 @@ void main() {
   });
 
   testWidgets('an id-only display model is an unknown model kind', (tester) async {
-    await _pumpCard(tester, _cardWith(<String, dynamic>{
+    final card = _cardWith(<String, dynamic>{
       'displayModelId': 'live2d-test',
-    }));
+    });
+    await _pumpCard(tester, card, onCall: (action, payload) => action == 'display-model.resolve'
+        ? RpcReply(action: action, ok: false, error: RpcError(code: DisplayModel.unknownModelKindCode, message: 'Model kind is unresolved: unknown format in catalog.'))
+        : RpcReply(action: action, ok: true, data: <String, dynamic>{'card': card}));
 
     expect(find.byIcon(Icons.error_outline), findsOneWidget);
     expect(find.textContaining('Model kind is unresolved'), findsOneWidget);

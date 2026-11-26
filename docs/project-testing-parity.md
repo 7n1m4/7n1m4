@@ -532,6 +532,17 @@ The following harnesses execute outside the default headless `pnpm run test:run`
 | **Live OpenRouter LLM Evaluation** | [`packages/stage-ui/src/stores/llm.test.ts`](../packages/stage-ui/src/stores/llm.test.ts) | Validates live LLM response and vision capability detection against remote OpenRouter models (phi-4, gpt-4o, gpt-4o-mini). | `LLM_API_OPENROUTER_API_KEY` environment variable | Skipped in CI if API key absent (`describe.skipIf`) |
 | **Warpdrive S3 Provider Integration** | [`packages/vite-plugin-warpdrive/src/providers/s3.test.ts`](../packages/vite-plugin-warpdrive/src/providers/s3.test.ts) | Validates remote S3 upload and pre-signed URL generation. | S3 credentials environment variables | Skipped in CI if credentials absent |
 
+### 2.1 Headless Verification Plan for Native Renderer & Platform Work
+
+The following plan covers verification of the native renderer (`anima-render`) and platform-facing work without a display.
+
+1. Frozen C ABI symbol/export check: run `cargo build -p anima-render`, then `nm -g --defined-only` on the static archive `target/<profile>/libanima_render.a` and diff the exported symbols against `crates/anima-render/cpp/render_contract.h`. The crate builds a staticlib only — there is **no** `libanima_render.so`; the Linux plugin links the archive plus the C++ backend archives left under `target/<profile>/build/anima-render-*/out` (build them with `packages/flutter_anima_render/linux/build_native.sh`). Also verify `AIRI_RENDER_KIND_*` index agreement across the header, Rust, and Dart sources, then run `cargo test -p anima-render`.
+2. Dart tests: run `flutter test` in `packages/flutter_anima_render` and `apps/flutter`, plus `flutter analyze`.
+3. Affected build/typecheck: `cargo check --workspace`; `tsc` via `node node_modules/typescript/bin/tsc` under `setsid … < /dev/null` per the §4.1 caveat; and `flutter build linux --debug` only when the toolchain is present.
+
+> [!IMPORTANT]
+> `flutter test` runs on the Dart VM with a mock MethodChannel and no GPU, so real Texture/PlatformView paint cannot be proven headlessly. That path requires a human `flutter run -d linux` when GUI use is permitted.
+
 > [!NOTE]
 > **CI Job Exists vs Branch Protection Enforcement:**
 > The `.github/workflows/ci.yml` workflow now establishes an automated `unit-test` job running `pnpm run test:run` on every push to `main` and all pull requests.
@@ -603,6 +614,13 @@ pnpm -F @proj-anima/live2d-runtime test
 
 # Run a specific test file
 pnpm vitest run packages/stage-ui/src/libs/pacing/turn-pacing-coordinator.test.ts
+
+# Scoped checks for the daemon/renderer/Linux-plugin workstream (2026-11-26)
+cargo test -p anima-daemon                 # gateway contracts and gating
+cargo test -p anima-render                 # frozen C ABI + native backend tests
+cd packages/flutter_anima_render && flutter test   # mock-channel contract seam
+flutter test                               # from apps/flutter: app-side stage tests
+pnpm -F @proj-anima/stage-ui typecheck      # Vue behavior-reference surface
 
 # Run cleanroom domain script harnesses
 pnpm run test:dsl          # Live2D DSL interpreter scenario harness

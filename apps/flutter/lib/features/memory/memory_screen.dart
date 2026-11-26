@@ -45,9 +45,9 @@ class _MemoryScreenState extends State<MemoryScreen> {
       _error = null;
     });
     try {
-      final vaultReply = await widget.client.call('vault.status');
-      if (!vaultReply.ok) {
-        setState(() => _error = vaultReply.error?.message ?? 'vault.status failed');
+      final vault = await widget.client.vaultStatus();
+      if (vault == null) {
+        setState(() => _error = 'vault.status failed');
         return;
       }
       // Each read is a real daemon verb; no data is fabricated client-side.
@@ -55,7 +55,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
       final entries = await widget.client.journalSearch();
       final retrieval = await widget.client.retrievalStatus();
       final settingsReply = await widget.client.settingsGet('general');
-      final data = vaultReply.data;
+      final data = vault;
       final section = settingsReply;
       if (mounted) {
         setState(() {
@@ -64,7 +64,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
         });
       }
       setState(() {
-        _stats = (data is Map<String, dynamic>) ? data : null;
+        _stats = data;
         _summaries = summaries;
         _entries = entries;
         _retrievalAvailable = retrieval;

@@ -9,7 +9,35 @@ const args = process.argv.slice(2)
 const isWatch = args.includes('--watch') || args.includes('-w')
 const isRelease = args.includes('--release') || args.includes('-r')
 const isLogError = args.includes('--log-error') || args.includes('-e')
+const isSelfTest = args.includes('--self-test')
+const isAdvisory = args.includes('--advisory')
 const tagArg = args.find(a => a.startsWith('--tag='))?.split('=')[1]
+
+// A release is only complete when every platform artifact is attached. Names
+// match by stable fragments because versions and artifact prefixes change
+// between releases. The Rust binaries are the ones installed into ~/.local/bin
+// by the systemd/D-Bus units, so a release without them is broken on Linux.
+const REQUIRED_RELEASE_ARTIFACTS = [
+  { label: 'macOS dmg', pattern: /\.dmg$/ },
+  { label: 'macOS zip', pattern: /-mac\.zip$/ },
+  { label: 'Windows installer', pattern: /-windows-x64-setup\.exe$/ },
+  { label: 'Windows zip', pattern: /-windows-x64\.zip$/ },
+  { label: 'Linux x64 bundle', pattern: /-linux-(x64|amd64).*\.(deb|rpm|flatpak|tar\.zst|tar\.gz)$/ },
+  { label: 'Linux arm64 bundle', pattern: /-linux-(arm64|aarch64).*\.(deb|rpm|flatpak|tar\.zst|tar\.gz)$/ },
+  { label: 'Linux x64 daemon', pattern: /-linux-x64-anima-daemon$/ },
+  { label: 'Linux x64 supervisor', pattern: /-linux-x64-anima-supervisor$/ },
+  { label: 'Linux arm64 daemon', pattern: /-linux-arm64-anima-daemon$/ },
+  { label: 'Linux arm64 supervisor', pattern: /-linux-arm64-anima-supervisor$/ },
+  { label: 'Android APK', pattern: /\.apk$/ },
+  { label: 'iOS IPA', pattern: /\.ipa$/ },
+]
+
+function missingReleaseArtifacts(assets) {
+  const names = assets.map(a => typeof a === 'string' ? a : a.name)
+  return REQUIRED_RELEASE_ARTIFACTS
+    .filter(({ pattern }) => !names.some(name => pattern.test(name)))
+    .map(({ label }) => label)
+}
 
 function gh(cmd) {
   try {
@@ -38,25 +66,113 @@ function formatDuration(startedAt, completedAt) {
   return `${min}m${remSec}s`
 }
 
-function printReleaseAssets(tag) {
+function printReleaseAssets(tag, assets, publishedAt) {
   console.info(`\n📦 Assets for Release [${tag}]:`)
-  try {
-    const data = ghJson(`release view ${tag} -R ${REPO} --json assets,tagName,publishedAt`)
-    if (!data || !data.assets || data.assets.length === 0) {
-      console.info('  No assets attached yet.')
-      return
-    }
+  if (!assets || assets.length === 0) {
+    console.info('  No assets attached yet.')
+    return
+  }
 
-    console.info(`  Published: ${data.publishedAt} | Total Assets: ${data.assets.length}\n`)
-    const maxName = Math.max(...data.assets.map(a => a.name.length), 10)
-    for (const a of data.assets) {
-      const sizeMb = (a.size / (1024 * 1024)).toFixed(2)
-      console.info(`  • ${a.name.padEnd(maxName + 2)} ${sizeMb.padStart(7)} MB  (${a.contentType || 'file'})`)
+  console.info(`  Published: ${publishedAt} | Total Assets: ${assets.length}\n`)
+  const maxName = Math.max(...assets.map(a => a.name.length), 10)
+  for (const a of assets) {
+    const sizeMb = (a.size / (1024 * 1024)).toFixed(2)
+    console.info(`  • ${a.name.padEnd(maxName + 2)} ${sizeMb.padStart(7)} MB  (${a.contentType || 'file'})`)
+  }
+}
+
+function verifyReleaseAssets(tag, { advisory = false } = {}) {
+  const data = ghJson(`release view ${tag} -R ${REPO} --json assets,tagName,publishedAt`)
+  printReleaseAssets(tag, data?.assets, data?.publishedAt)
+  const missing = missingReleaseArtifacts(data?.assets ?? [])
+  if (missing.length === 0) {
+    console.info(`\n✅ Release ${tag} has all required platform artifacts.`)
+    return
+  }
+
+  const level = advisory ? console.warn : console.error
+  level(`\n${advisory ? '⚠️' : '❌'} Release ${tag} is incomplete. Missing artifacts:`)
+  for (const label of missing)
+    level(`  - ${label}`)
+
+  if (advisory) {
+    console.info(`ℹ️ Linux assets may still be building; the release gate has not failed.`)
+    return
+  }
+
+  process.exitCode = 1
+  throw new Error(`Release ${tag} is missing ${missing.length} required artifact(s)`)
+}
+
+function selfTest() {
+  const complete = [
+    'AIRI-1.2.3-ios.ipa',
+    'AIRI-1.2.3-pocket.apk',
+    'airi-1.2.3-darwin-arm64.dmg',
+    'airi-1.2.3-arm64-mac.zip',
+    'airi-1.2.3-windows-x64-setup.exe',
+    'airi-1.2.3-windows-x64.zip',
+    'airi-1.2.3-linux-amd64.deb',
+    'airi-1.2.3-linux-aarch64.rpm',
+    'airi-1.2.3-linux-x64-anima-daemon',
+    'airi-1.2.3-linux-x64-anima-supervisor',
+    'airi-1.2.3-linux-arm64-anima-daemon',
+    'airi-1.2.3-linux-arm64-anima-supervisor',
+  ]
+  const hutchNames = [
+    'stable-linux-x64-AIRI.tar.zst',
+    'linux-x64-AIRI-Setup.tar.gz',
+    'stable-linux-arm64-AIRI.tar.zst',
+    'linux-arm64-AIRI-Setup.tar.gz',
+    'stable-linux-x64-update.json',
+  ]
+  const cases = [
+    { name: 'complete release', assets: complete, expected: [] },
+    { name: 'no assets', assets: [], expected: REQUIRED_RELEASE_ARTIFACTS.map(a => a.label) },
+    {
+      name: 'missing linux and mobile',
+      assets: complete.filter(n => !/-linux-|\.ipa$|\.apk$/.test(n)),
+      expected: [
+        'Linux x64 bundle',
+        'Linux arm64 bundle',
+        'Linux x64 daemon',
+        'Linux x64 supervisor',
+        'Linux arm64 daemon',
+        'Linux arm64 supervisor',
+        'Android APK',
+        'iOS IPA',
+      ],
+    },
+    {
+      name: 'missing daemon binaries',
+      assets: complete.filter(n => !n.endsWith('-anima-daemon') && !n.endsWith('-anima-supervisor')),
+      expected: [
+        'Linux x64 daemon',
+        'Linux x64 supervisor',
+        'Linux arm64 daemon',
+        'Linux arm64 supervisor',
+      ],
+    },
+    {
+      name: 'hutch tarball names count as Linux bundles',
+      assets: [...complete.filter(n => !/-linux-(amd64|aarch64)\./.test(n)), ...hutchNames],
+      expected: [],
+    },
+  ]
+
+  let failed = false
+  for (const { name, assets, expected } of cases) {
+    const actual = missingReleaseArtifacts(assets)
+    const ok = JSON.stringify(actual) === JSON.stringify(expected)
+    console.info(`${ok ? '✓' : '✗'} ${name}: ${actual.length} missing`)
+    if (!ok) {
+      console.error(`  expected: ${expected.join(', ') || '(none)'}`)
+      console.error(`  actual:   ${actual.join(', ') || '(none)'}`)
+      failed = true
     }
   }
-  catch (err) {
-    console.error(`  Failed to fetch release: ${err.message}`)
-  }
+
+  process.exitCode = failed ? 1 : 0
 }
 
 function getWorkflowSummary() {
@@ -163,12 +279,17 @@ function printStatusTable() {
 }
 
 async function main() {
+  if (isSelfTest) {
+    selfTest()
+    return
+  }
+
   if (isRelease) {
     if (!tagArg) {
       console.error('❌ Error: --release requires --tag=<tag> (a release check without a tag verifies the wrong release).')
       process.exit(1)
     }
-    printReleaseAssets(tagArg)
+    verifyReleaseAssets(tagArg, { advisory: isAdvisory })
     return
   }
 
@@ -188,11 +309,15 @@ async function main() {
       const res = printStatusTable()
       if (res.activeCount === 0) {
         console.info('\n🎉 All runs completed.')
-        printReleaseAssets(tagArg)
-        process.exit(res.hasFailure ? 1 : 0)
+        if (tagArg)
+          verifyReleaseAssets(tagArg)
+        process.exit(res.hasFailure || process.exitCode ? 1 : 0)
       }
     }
   }
 }
 
-main()
+main().catch((err) => {
+  console.error(`❌ ${err.message}`)
+  process.exit(process.exitCode || 1)
+})

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
@@ -78,6 +80,15 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   bool _modelsLoading = false;
   String? _modelsError;
 
+  // Daemon-owned selection, mirrored in this widget only as read-only UI
+  // state. Writes go through `settings.set` on the daemon, never local storage.
+  static const String _activeSection = 'chat-provider';
+  String _activeProvider = '';
+  String _activeModel = '';
+  String? _activeProviderId;
+  String? _activeModelId;
+  bool _activeSaving = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,35 +104,47 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     super.dispose();
   }
 
-  /// A non-ok reply is promoted to an exception so no mutation path can
-  /// silently report success or lose the daemon's error text.
-  Future<RpcReply> _call(String action, {Map<String, dynamic>? payload}) async {
-    final reply = await widget.client.call(action, payload: payload);
-    if (!reply.ok) {
-      throw DaemonClientException(
-        kind: DaemonFailureKind.rpc,
-        message: reply.error?.message ?? '$action failed.',
-        code: reply.error?.code,
-      );
-    }
-    return reply;
-  }
-
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final reply = await _call('providers.list');
-      final data = reply.data;
-      final list = data is Map ? data['providers'] : null;
+      final providers = await widget.client.providersList();
       final rows = <_ProviderRow>[];
-      if (list is List) {
-        for (final item in list) {
-          if (item is Map<String, dynamic>) {
-            rows.add(_ProviderRow.fromJson(item));
-          }
-        }
+      for (final item in providers) {
+        rows.add(_ProviderRow.fromJson(item));
       }
-      if (mounted) setState(() => _providers = rows);
+      final activeReply = await widget.client.call('settings.get', payload: <String, dynamic>{
+        'section': _activeSection,
+      });
+      if (!activeReply.ok) {
+        throw DaemonClientException(
+          kind: DaemonFailureKind.rpc,
+          message: activeReply.error?.message ?? 'settings.get failed.',
+          code: activeReply.error?.code,
+        );
+      }
+      final replyData = activeReply.data;
+      final rawActive = replyData is Map ? replyData['settings'] : null;
+      Map<String, dynamic> active = const <String, dynamic>{};
+      if (rawActive is String) {
+        try {
+          final decoded = jsonDecode(rawActive);
+          if (decoded is Map<String, dynamic>) active = decoded;
+        } on FormatException {
+          active = const <String, dynamic>{};
+        }
+      } else if (rawActive is Map<String, dynamic>) {
+        active = rawActive;
+      }
+      if (mounted) {
+        setState(() {
+          _providers = rows;
+          _activeProvider = (active['activeProvider'] ?? '').toString();
+          _activeModel = (active['activeModel'] ?? '').toString();
+          _activeProviderId = _activeProvider.isEmpty ? null : _activeProvider;
+          _activeModelId = _activeModel.isEmpty ? null : _activeModel;
+        });
+        if (_activeProvider.isNotEmpty) _loadActiveModels(_activeProvider);
+      }
     } on DaemonClientException catch (e) {
       if (mounted) setState(() {
         _error = userSafeConnectionError(e, context: 'providers.list:');
@@ -137,9 +160,12 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
     }
   }
 
+  /// Run a mutation through its typed wrapper, surface a sanitized error on
+  /// failure, then refresh the list. [onSuccess] receives the wrapper's typed
+  /// result (a saved id or a deleted flag).
   Future<void> _mutate(
-    String action,
-    Map<String, dynamic> payload,
+    String context,
+    Future<Object?> Function() action,
     void Function(Object? data) onSuccess,
   ) async {
     setState(() {
@@ -148,13 +174,13 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       _status = null;
     });
     try {
-      final reply = await _call(action, payload: payload);
-      if (mounted) setState(() => onSuccess(reply.data));
+      final data = await action();
+      if (mounted) setState(() => onSuccess(data));
       await _load();
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = userSafeConnectionError(e, context: '$action:'));
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: context));
     } catch (e) {
-      if (mounted) setState(() => _error = userSafeConnectionError(e, context: '$action:'));
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: context));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -184,8 +210,8 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       payload['apiKey'] = _apiKey.text;
       payload['rotateSecrets'] = true;
     }
-    await _mutate('providers.save', payload, (data) {
-      final savedId = (data is Map ? data['id'] : null)?.toString() ?? id;
+    await _mutate('providers.save:', () => widget.client.providersSave(payload), (data) {
+      final savedId = data?.toString() ?? id;
       _status = 'Saved provider $savedId';
       _apiKey.clear();
     });
@@ -200,7 +226,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       });
       return;
     }
-    await _mutate('providers.delete', <String, dynamic>{'id': id}, (_) {
+    await _mutate('providers.delete:', () => widget.client.providersDelete(id), (_) {
       _status = 'Deleted provider $id';
       _clearForm();
     });
@@ -210,13 +236,85 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   /// them, so toggling enabled must never send a (possibly empty) key.
   /// It omits `rotateSecrets` too, so a toggle never rotates the stored credential.
   Future<void> _setEnabled(_ProviderRow row, bool enabled) async {
-    await _mutate('providers.save', <String, dynamic>{
+    await _mutate('providers.save:', () => widget.client.providersSave(<String, dynamic>{
       'id': row.id,
       'kind': row.kind,
       'enabled': enabled,
-    }, (_) {
+    }), (_) {
       _status = '${enabled ? 'Enabled' : 'Disabled'} provider ${row.id}';
     });
+  }
+
+  void _onActiveProviderChanged(String? id) {
+    setState(() {
+      _activeProviderId = id;
+      _activeModelId = null;
+    });
+    if (id != null) _loadActiveModels(id);
+  }
+
+  Future<void> _loadActiveModels(String id) async {
+    setState(() {
+      _modelsLoading = true;
+      _modelsError = null;
+      _modelsProviderId = id;
+    });
+    try {
+      final (_, modelsReply) = await widget.client.providersModels(id);
+      if (mounted) {
+        setState(() {
+          _modelsByProvider = <String, List<_ProviderModel>>{
+            ..._modelsByProvider,
+            id: modelsReply.map(_ProviderModel.fromJson).toList(),
+          };
+        });
+      }
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
+    } catch (e) {
+      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
+    } finally {
+      if (mounted) setState(() => _modelsLoading = false);
+    }
+  }
+
+  Future<void> _saveActiveSelection() async {
+    final providerId = _activeProviderId ?? '';
+    final model = _activeModelId ?? '';
+    setState(() {
+      _busy = true;
+      _activeSaving = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final ok = await widget.client.settingsSet(_activeSection, <String, dynamic>{
+        'activeProvider': providerId,
+        'activeModel': model,
+      });
+      if (mounted) {
+        setState(() {
+          if (ok) {
+            _activeProvider = providerId;
+            _activeModel = model;
+            _status = providerId.isEmpty
+                ? 'Cleared chat provider selection'
+                : 'Chat provider: $providerId${model.isEmpty ? '' : ' · $model'}';
+          } else {
+            _error = 'Could not save the active chat provider.';
+          }
+        });
+      }
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: 'settings.set:'));
+    } catch (e) {
+      if (mounted) setState(() => _error = userSafeConnectionError(e, context: 'settings.set:'));
+    } finally {
+      if (mounted) setState(() {
+        _busy = false;
+        _activeSaving = false;
+      });
+    }
   }
 
   Future<void> _loadModels(_ProviderRow row) async {
@@ -229,9 +327,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
       final models = <_ProviderModel>[];
       final (_, modelsReply) = await widget.client.providersModels(row.id);
       for (final item in modelsReply) {
-        if (item is Map<String, dynamic>) {
-          models.add(_ProviderModel.fromJson(item));
-        }
+        models.add(_ProviderModel.fromJson(item));
       }
       if (mounted) {
         setState(() {
@@ -242,7 +338,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
         });
       }
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _modelsError = e.message);
+      if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
     } catch (e) {
       if (mounted) setState(() => _modelsError = userSafeConnectionError(e, context: 'providers.models:'));
     } finally {
@@ -345,6 +441,68 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
                                 child: const Text('Delete'),
                               ),
                             ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          const Text('Active chat provider', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: _activeProviderId,
+                            decoration: const InputDecoration(labelText: 'Provider for chat'),
+                            hint: const Text('Automatic (first enabled)'),
+                            items: <DropdownMenuItem<String>>[
+                              const DropdownMenuItem<String>(value: null, child: Text('Automatic (first enabled)')),
+                              if (_activeProviderId != null &&
+                                  !_providers.any((p) => p.enabled && p.id == _activeProviderId))
+                                DropdownMenuItem<String>(
+                                  value: _activeProviderId,
+                                  child: Text('$_activeProviderId (unavailable)'),
+                                ),
+                              for (final row in _providers.where((p) => p.enabled))
+                                DropdownMenuItem<String>(value: row.id, child: Text(row.id)),
+                            ],
+                            onChanged: _busy ? null : _onActiveProviderChanged,
+                          ),
+                          DropdownButtonFormField<String>(
+                            value: _activeModelId,
+                            decoration: const InputDecoration(labelText: 'Model for chat'),
+                            hint: const Text('Provider default'),
+                            items: <DropdownMenuItem<String>>[
+                              const DropdownMenuItem<String>(value: null, child: Text('Provider default')),
+                              if (_activeModelId != null &&
+                                  !(_modelsByProvider[_activeProviderId] ?? const <_ProviderModel>[])
+                                      .any((m) => m.id == _activeModelId))
+                                DropdownMenuItem<String>(value: _activeModelId, child: Text(_activeModelId!)),
+                              for (final model in _modelsByProvider[_activeProviderId] ?? const <_ProviderModel>[])
+                                DropdownMenuItem<String>(value: model.id, child: Text(model.id)),
+                            ],
+                            onChanged: _busy || _activeProviderId == null
+                                ? null
+                                : (value) => setState(() => _activeModelId = value),
+                          ),
+                          if (_modelsLoading && _modelsProviderId == _activeProviderId)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: LinearProgressIndicator(),
+                            ),
+                          if (_modelsError != null && _modelsProviderId == _activeProviderId)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(_modelsError!, style: TextStyle(color: colorScheme.error)),
+                            ),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                            onPressed: _busy || _activeSaving ? null : _saveActiveSelection,
+                            child: const Text('Use for chat'),
                           ),
                         ],
                       ),

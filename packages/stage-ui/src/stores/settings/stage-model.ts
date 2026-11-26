@@ -6,10 +6,18 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
 import { DisplayModelFormat, useDisplayModelsStore } from '../display-models'
 
 export type StageModelRenderer = 'live2d' | 'vrm' | 'spine' | 'mmd' | 'disabled' | undefined
 export type GunslingerStance = 'off' | 'cat' | 'blk' | 'gray'
+
+interface DaemonStageModelSettings {
+  modelId: string
+  catalog: unknown[]
+}
+
+const EMPTY_CATALOG: unknown[] = []
 
 // HMR epoch (Strategy C): bumped by the single dispose ledger at the bottom of
 // this module. Guards the selection watcher below against double model loads
@@ -41,6 +49,21 @@ export const useSettingsStageModel = defineStore('settings-stage-model', () => {
       gunslingerStanceState.value = val
     },
   })
+
+  // The daemon owns the whole stage-model blob; selection writes must carry the
+  // hydrated catalog so `display-model.resolve` keeps finding registered ids.
+  let hydratedCatalog: unknown[] = EMPTY_CATALOG
+  bridgeDaemonSettings<DaemonStageModelSettings>(
+    'stage-model',
+    () => ({ modelId: stageModelSelectedState.value, catalog: hydratedCatalog }),
+    (settings) => {
+      // Keep the write-back snapshot identical to the fetched blob: the bridge
+      // suppresses hydration writes by comparing its snapshot to `read()`.
+      hydratedCatalog = Array.isArray(settings.catalog) ? settings.catalog : EMPTY_CATALOG
+      stageModelSelectedState.value = settings.modelId
+    },
+    { deep: false },
+  )
 
   function cycleGunslingerStance(): GunslingerStance {
     const sequence: GunslingerStance[] = ['off', 'cat', 'blk', 'gray']
@@ -128,7 +151,7 @@ export const useSettingsStageModel = defineStore('settings-stage-model', () => {
     try {
       const model = await displayModelsStore.getDisplayModel(selectedModelId)
 
-      const isControlStrip = typeof window !== 'undefined' && (window as any).electron && (
+      const isControlStrip = typeof window !== 'undefined' && 'electron' in window && window.electron && (
         window.location.hash === '#/'
         || window.location.hash === ''
       )
@@ -163,17 +186,18 @@ export const useSettingsStageModel = defineStore('settings-stage-model', () => {
         return
       }
 
+      const file = model && 'file' in model ? model.file : undefined
       console.info('[StageModel:performUpdateStageModel] Fetched model from displayModelsStore:', {
         selectedModelId,
         modelFound: !!model,
         modelType: model?.type,
         modelFormat: model?.format,
-        file: (model as any)?.file,
-        fileType: typeof (model as any)?.file,
-        fileIsFile: (model as any)?.file instanceof File,
-        fileIsBlob: (model as any)?.file instanceof Blob,
-        fileHasArrayBuffer: typeof (model as any)?.file?.arrayBuffer === 'function',
-        fileKeys: (model as any)?.file && typeof (model as any)?.file === 'object' ? Object.keys((model as any)?.file) : [],
+        file,
+        fileType: typeof file,
+        fileIsFile: file instanceof File,
+        fileIsBlob: file instanceof Blob,
+        fileHasArrayBuffer: typeof file?.arrayBuffer === 'function',
+        fileKeys: file && typeof file === 'object' ? Object.keys(file) : [],
       })
 
       if (!model) {

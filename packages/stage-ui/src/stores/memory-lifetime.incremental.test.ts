@@ -26,6 +26,9 @@ const shared = vi.hoisted(() => ({
   systemOneConfigured: false,
   runLifetimeDayGate: vi.fn(),
   runWinnowTurnCompaction: vi.fn(async (windows: Array<{ id: string }>) => new Set(windows.map(w => w.id))),
+  useDaemonMemory: false,
+  daemonSummaries: [] as Array<{ id: string, summary: string, date: string, title: string, createdAt: number, characterId: string, universeId: string }>,
+  daemonJournalEntries: [] as Array<{ id: string, summary: string, date: string, title: string, createdAt: number, characterId: string, universeId: string }>,
 }))
 
 vi.mock('./modules/airi-card', () => ({
@@ -95,11 +98,19 @@ vi.mock('../database/repos/provisioning-session.repo', () => ({
 }))
 
 vi.mock('../database/repos/short-term-memory.repo', () => ({
-  shortTermMemoryRepo: { getAll: async () => [] },
+  shortTermMemoryRepo: { getAll: async () => (shared.useDaemonMemory ? shared.daemonSummaries : []) },
 }))
 
 vi.mock('../database/repos/text-journal.repo', () => ({
-  textJournalRepo: { getAll: async () => [] },
+  textJournalRepo: { getAll: async () => (shared.useDaemonMemory ? shared.daemonJournalEntries : []) },
+}))
+
+vi.mock('../composables/daemon-memory', () => ({
+  hasDaemonMemory: () => shared.useDaemonMemory,
+  listDaemonSummaries: async () => shared.daemonSummaries,
+  searchDaemonJournal: async () => shared.daemonJournalEntries,
+  toShortTermMemoryBlock: (s: { id: string, summary: string, date: string, title: string, createdAt: number, characterId: string, universeId: string }) => ({ summary: s.summary, date: s.date, title: s.title, createdAt: s.createdAt, characterId: s.characterId, universeId: s.universeId, kind: 'stmm', source: 'daemon' }),
+  toTextJournalEntry: (j: { id: string, summary: string, date: string, title: string, createdAt: number, characterId: string, universeId: string }) => ({ summary: j.summary, content: j.summary, date: j.date, title: j.title, createdAt: j.createdAt, characterId: j.characterId, universeId: j.universeId, kind: 'ltmm', source: 'daemon' }),
 }))
 
 // ---------------------------------------------------------------------------
@@ -201,6 +212,9 @@ beforeEach(() => {
   // NOTICE: System-1 stays unconfigured by default so every existing suite
   // keeps exercising the hardened System-2 baseline untouched.
   shared.systemOneConfigured = false
+  shared.useDaemonMemory = false
+  shared.daemonSummaries = []
+  shared.daemonJournalEntries = []
   shared.runLifetimeDayGate.mockReset()
   shared.runWinnowTurnCompaction.mockReset()
   shared.generate.mockReset()
@@ -411,6 +425,24 @@ describe('f-05 multi-timeline collection', () => {
     const all = docs.map(d => d.text).join('\n')
     expect(all).toContain('# Canonical Timeline: Canonical Journey')
     expect(all).toContain('# Timeline Branch: Alt Night (Alternative Path)')
+  })
+
+  it('sources STMM/LTMM docs through daemon client when daemon memory is enabled', async () => {
+    shared.useDaemonMemory = true
+    shared.daemonSummaries = [{ id: 'st-1', summary: 'global stmm block', date: '2026-10-13', title: 'st-1', createdAt: at(9, 13), characterId: 'char-1', universeId: 'global' }]
+    shared.daemonJournalEntries = [{ id: 'lt-1', summary: 'global ltmm entry', date: '2026-10-13', title: 'lt-1', createdAt: at(9, 13), characterId: 'char-1', universeId: 'global' }]
+    // decoy in another universe must never leak
+    shared.daemonSummaries.push({ id: 'st-cyber', summary: 'cyberpunk stmm', date: '2026-10-13', title: 'st-cyber', createdAt: at(9, 13), characterId: 'char-1', universeId: 'cyberpunk-au' })
+    shared.daemonJournalEntries.push({ id: 'lt-cyber', summary: 'cyberpunk ltmm', date: '2026-10-13', title: 'lt-cyber', createdAt: at(9, 13), characterId: 'char-1', universeId: 'cyberpunk-au' })
+
+    const store = freshStore()
+    const docs = await store.collectSourceDocs('char-1', 'global')
+
+    const all = docs.map(d => d.text).join('\n')
+    expect(all).toContain('global stmm block')
+    expect(all).toContain('global ltmm entry')
+    expect(all).not.toContain('cyberpunk stmm')
+    expect(all).not.toContain('cyberpunk ltmm')
   })
 })
 

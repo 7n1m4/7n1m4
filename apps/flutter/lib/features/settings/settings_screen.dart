@@ -7,7 +7,9 @@ import 'package:flutter/services.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../cards/cards_screen.dart';
+import '../data/data_screen.dart';
 import '../memory/memory_screen.dart';
+import '../modules/modules_screen.dart';
 import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
 import '../stage/stage_control_strip_state.dart';
@@ -235,9 +237,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'area-card':
         _push(CardsScreen(client: widget.client));
       case 'area-modules':
+        _push(ModulesScreen(client: widget.client));
+      case 'area-sessions':
         _push(SessionsScreen(client: widget.client));
+      case 'area-data':
+        _push(DataScreen(client: widget.client));
       case 'area-stage':
         _scrollTo(_SettingsSection.controlStrip);
+      case 'area-system':
       case 'sys-general':
         _scrollTo(_SettingsSection.general);
       default:
@@ -512,13 +519,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     switch (node.id) {
       case 'area-card':
         return Icons.person_outline;
-      case 'area-models':
-        return Icons.people_outline;
-      case 'area-scene':
-        return Icons.image_outlined;
       case 'area-memory':
         return Icons.psychology_outlined;
       case 'area-modules':
+        return Icons.layers_outlined;
+      case 'area-sessions':
         return Icons.forum_outlined;
       case 'area-providers':
         return Icons.extension_outlined;
@@ -528,10 +533,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return Icons.link;
       case 'area-stage':
         return Icons.tune;
-      case 'area-docs':
-        return Icons.menu_book_outlined;
-      case 'area-about':
-        return Icons.info_outline;
       default:
         return Icons.settings_outlined;
     }

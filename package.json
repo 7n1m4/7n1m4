@@ -17,6 +17,7 @@
   },
   "scripts": {
     "ci:status": "node scripts/github/ci-status.mjs",
+    "ci:status:self-test": "node scripts/github/ci-status.mjs --self-test",
     "check:wire-types": "cargo run -p anima-channel --example export-wire-types --locked -- --check",
     "postinstall": "simple-git-hooks",
     "dev": "pnpm -r -F @proj-anima/stage-web dev",

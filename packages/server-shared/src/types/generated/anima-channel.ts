@@ -124,6 +124,39 @@ export type CardUpdateRequest = {
 	document: unknown,
 };
 
+/**  Descriptor of a catalog entry. */
+export type CatalogDescriptor = {
+	/**  Stable catalog identifier. */
+	id: string,
+	/**  Display name. */
+	name: string,
+	/**  Format of the catalog entry. */
+	format: CatalogFormat,
+	/**  Source of the entry. */
+	source: string,
+	/**  File path. */
+	file: string,
+	/**  URL. */
+	url: string,
+};
+
+/**  Format of a catalog asset. */
+export type CatalogFormat =
+/**  VRM model. */
+"vrm" |
+/**  Live2D zip archive. */
+"live2d-zip" |
+/**  Live2D directory. */
+"live2d-directory" |
+/**  Spine zip archive. */
+"spine-zip" |
+/**  PMX zip archive. */
+"pmx-zip" |
+/**  PMX directory. */
+"pmx-directory" |
+/**  PMD model. */
+"pmd";
+
 /**  The persisted channel-server configuration. */
 export type ChannelConfig = {
 	/**
@@ -695,6 +728,24 @@ export type SessionInfo = {
 	metadata: unknown,
 };
 
+/**  Reply payload for `sessions.media.scrub`. */
+export type SessionMediaScrubReply = {
+	/**  Inline images found and extracted. */
+	imagesFound: number,
+	/**  Total decoded bytes written to the local backgrounds store. */
+	bytesExtracted: number,
+	/**  Sessions that contained at least one extracted image. */
+	sessionsScanned: number,
+	/**  Local path of the pre-scrub backup, when one was requested. */
+	backupPath?: string | null,
+};
+
+/**  Request payload for `sessions.media.scrub`. */
+export type SessionMediaScrubRequest = {
+	/**  Write a pre-scrub vault archive before rewriting messages. */
+	createBackup: boolean,
+};
+
 /**  `data` payload of a `settings.get` reply. */
 export type SettingsGetReply = {
 	/**  Settings section name. */
@@ -764,6 +815,89 @@ export type TokenDeltaData = {
 	seq: number,
 	/**  Producer timestamp, unix epoch milliseconds (stamped by the bus). */
 	ts_ms: number,
+};
+
+/**  Reply payload for `vault.archive.apply`. */
+export type VaultArchiveApplyReply = {
+	/**  Sessions inserted. */
+	sessionsInserted: number,
+	/**  Sessions skipped because the id already exists. */
+	sessionsSkipped: number,
+	/**  Messages inserted. */
+	messagesInserted: number,
+	/**  Messages skipped because the id already exists. */
+	messagesSkipped: number,
+	/**  Summaries inserted. */
+	summariesInserted: number,
+	/**  Journal entries inserted. */
+	journalEntriesInserted: number,
+	/**  Domains applied (`chats`, `memory`). */
+	applied: string[],
+	/**  Domains present but intentionally not applied. */
+	notApplied: string[],
+};
+
+/**
+ *  Request payload for `vault.archive.collect`.
+ *
+ *  `domains` accepts `characters`, `chats`, `memory` and `backgrounds`.
+ *  `providers` is rejected: provider configuration contains API credentials
+ *  and must never cross the gateway wire.
+ */
+export type VaultArchiveCollectRequest = {
+	/**  Data domains to include in the archive. */
+	domains: string[],
+};
+
+/**  Reply payload for `vault.archive.inspect` (metadata only, never contents). */
+export type VaultArchiveInspectReply = {
+	/**  Format marker (`airi-vault`). */
+	format: string,
+	/**  Format version. */
+	version: number,
+	/**  Archive creation time in epoch milliseconds, when present. */
+	createdAt?: number,
+	/**
+	 *  Whether the archive advertises provider credentials.
+	 *
+	 *  Such archives are rejected by `vault.archive.apply`; the flag exists so
+	 *  callers can explain the rejection without receiving the credentials.
+	 */
+	includesSecrets: boolean,
+	/**  Per-domain counts and byte sizes (no payload bytes). */
+	domains: unknown[],
+	/**  Session count inside the archive. */
+	sessionCount: number,
+	/**  Message count inside the archive. */
+	messageCount: number,
+	/**  Companion names found in the archive. */
+	companionNames: string[],
+};
+
+/**
+ *  Reply payload for `vault.archive.collect`.
+ *
+ *  The archive is a base64-encoded ZIP. The daemon refuses to include the
+ *  providers domain, so no credentials are present in `archive`.
+ */
+export type VaultArchiveReply = {
+	/**  Base64-encoded stored ZIP archive. */
+	archive: string,
+	/**  Decoded archive byte size. */
+	bytes: number,
+	/**  Data domains actually included (`characters|chats|memory|backgrounds`). */
+	domains: string[],
+};
+
+/**
+ *  Request payload for `vault.archive.inspect` and `vault.archive.apply`.
+ *
+ *  The archive is a base64-encoded ZIP previously returned by
+ *  `vault.archive.collect`.
+ */
+export type VaultArchiveRequest = {
+	/**  Base64-encoded vault archive. */
+	archive: string,
 };
 
 /**  Vault statistics data. */

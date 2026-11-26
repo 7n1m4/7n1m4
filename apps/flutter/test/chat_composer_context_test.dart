@@ -50,6 +50,48 @@ void main() {
     expect(controller.input.text, isEmpty);
   });
 
+  test('chat.send leaves daemon-owned provider/model selection out of the payload', () async {
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
+    Map<String, dynamic>? sentPayload;
+    client.onCall = (action, payload) {
+      if (action == 'settings.get' && payload?['section'] == 'chat-provider') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'settings': <String, dynamic>{
+              'activeProvider': 'chosen',
+              'activeModel': 'picked-model',
+            },
+          },
+        );
+      }
+      if (action == 'chat.send') {
+        sentPayload = payload;
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{'sessionId': 's1', 'messageId': 'm-1'},
+        );
+      }
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+    client.emitStatus(DaemonConnectionState.connected);
+    final controller = ChatComposerController(client: client);
+    await controller.loadContextSettings();
+    expect(controller.activeProvider, 'chosen');
+    expect(controller.activeModel, 'picked-model');
+    controller.input.text = 'hi';
+    expect(await controller.handleSend(), 'm-1');
+    expect(sentPayload, isNotNull);
+    final payload = sentPayload!;
+    expect(payload, isNot(contains('activeProvider')));
+    expect(payload, isNot(contains('activeModel')));
+    expect(payload['sessionId'], '');
+    expect(payload['content'], 'hi');
+  });
+
   test('invalid attachment adds are ignored', () async {
     final client = FakeChatClient();
     addTearDown(client.dispose);

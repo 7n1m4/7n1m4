@@ -7,8 +7,6 @@
 // fabricated model. Once the descriptor is valid, [NativeModelSurface] drives
 // the native backend through a client-local [ModelStageRuntime].
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../daemon_client/daemon_client.dart';
@@ -20,7 +18,36 @@ import '../features/stage/stage_overlay_state.dart';
 import '../speech/lip_sync_rms_data.dart';
 
 /// Display-model kinds the card schema can name.
-enum ModelKind { none, vrm, live2d, mmd, spine }
+enum ModelKind {
+  none,
+  vrm,
+  live2d,
+  mmd,
+  spine;
+
+  /// Wire/catalog name used by the card schema.
+  String get wireName => name;
+
+  static ModelKind fromWireName(String? name) {
+    switch (name) {
+      case 'none':
+        return ModelKind.none;
+      case 'vrm':
+        return ModelKind.vrm;
+      case 'live2d-zip':
+      case 'live2d-directory':
+        return ModelKind.live2d;
+      case 'pmx-zip':
+      case 'pmx-directory':
+      case 'pmd':
+        return ModelKind.mmd;
+      case 'spine-zip':
+        return ModelKind.spine;
+      default:
+        return ModelKind.none;
+    }
+  }
+}
 
 /// Where a display model's asset lives: a `file`/`url` source plus its value,
 /// or a bare display-model id.
@@ -40,10 +67,11 @@ class ModelAssetRef {
 
 /// The display model a card asks for, resolved from `cards.get` output.
 class DisplayModel {
-  const DisplayModel({required this.kind, this.asset});
+  const DisplayModel({required this.kind, this.asset, this.displayModelId});
 
   final ModelKind kind;
   final ModelAssetRef? asset;
+  final String? displayModelId;
 
   static const DisplayModel none = DisplayModel(kind: ModelKind.none);
 
@@ -81,6 +109,7 @@ class DisplayModel {
       return DisplayModel(
         kind: ModelKind.none,
         asset: ModelAssetRef(kind: ModelKind.none, value: displayModelId),
+        displayModelId: displayModelId,
       );
     }
     return none;
@@ -90,10 +119,9 @@ class DisplayModel {
   /// problem. Never throws.
   String? get problem {
     if (kind == ModelKind.none) {
-      final value = asset?.value;
+      final value = displayModelId ?? asset?.value;
       if (value != null && value.trim().isNotEmpty) {
-        return 'Model kind is unresolved: display model "$value" is named by id '
-            'only, and this client cannot resolve ids to assets yet.';
+        return 'Display model "$value" requires daemon catalog resolution.';
       }
       return null;
     }
@@ -156,6 +184,64 @@ class DisplayModel {
   }
 }
 
+Future<DisplayModel> resolveDisplayModel(DaemonClient client, DisplayModel model) async {
+  final id = model.displayModelId;
+  if (id == null || id.trim().isEmpty) return model;
+  final reply = await client.call('display-model.resolve', payload: {'id': id});
+  if (!reply.ok) {
+    throw ModelStageError(
+      reply.error?.code ?? 'display-model-unresolved',
+      reply.error?.message ?? 'display model could not be resolved',
+    );
+  }
+  final data = reply.data;
+  if (data is! Map) {
+    throw const ModelStageError(
+      'display-model-unresolved',
+      'missing data',
+    );
+  }
+  final resolvedId = data['id'];
+  final name = data['name'];
+  final format = data['format'];
+  final source = data['source'];
+  if (resolvedId is! String || name is! String || format is! String || source is! String) {
+    throw const ModelStageError(
+      'display-model-unresolved',
+      'incomplete data',
+    );
+  }
+  final kind = ModelKind.fromWireName(format);
+  if (kind == ModelKind.none) {
+    throw ModelStageError(
+      'display-model-unresolved',
+      'unknown model kind',
+    );
+  }
+  final file = data['file'];
+  final url = data['url'];
+  final value = file is String && file.isNotEmpty
+      ? file
+      : url is String && url.isNotEmpty
+          ? url
+          : null;
+  if (value == null) {
+    throw ModelStageError(
+      'display-model-unresolved',
+      'missing asset value',
+    );
+  }
+  return DisplayModel(
+    kind: kind,
+    asset: ModelAssetRef(
+      kind: kind,
+      source: source,
+      value: value,
+    ),
+    displayModelId: resolvedId,
+  );
+}
+
 /// A loud, typed stage failure. Nothing is rendered in place of the model.
 class ModelStageError implements Exception {
   const ModelStageError(this.code, this.message);
@@ -181,6 +267,7 @@ class ModelStage extends StatefulWidget {
     this.cardId,
     this.backends,
     this.resolver,
+    this.cacheDirectoryProvider,
     this.frames,
     this.actorId,
     this.render,
@@ -198,6 +285,10 @@ class ModelStage extends StatefulWidget {
   /// Injectable asset resolver for tests.
   final ModelAssetResolver? resolver;
 
+  /// Injectable cache-directory provider for tests; production uses the
+  /// application cache directory, never `Directory.systemTemp`.
+  final ModelCacheDirectoryProvider? cacheDirectoryProvider;
+
   /// Real stamped frames from the local TTS pipeline, when available.
   final Stream<LipSyncRmsData>? frames;
 
@@ -213,35 +304,42 @@ class ModelStage extends StatefulWidget {
 }
 
 class _ModelStageState extends State<ModelStage> {
-  Future<Map<String, dynamic>?>? _card;
+  Future<DisplayModel>? _displayModel;
   late final ModelBackendRegistry _backends;
   late final ModelAssetResolver _resolver;
 
   @override
   void initState() {
     super.initState();
-    _card = _load();
+    _displayModel = _loadDisplayModel();
     _backends =
         widget.backends ??
         ModelBackendRegistry.fromRuntimes(
           create: (info) =>
               MethodChannelModelBackend(info.kind, info.channelName),
         );
-    _resolver =
-        widget.resolver ??
-        ModelAssetResolver(cacheDirectory: Directory.systemTemp);
+    _resolver = widget.resolver ??
+        ModelAssetResolver(cacheDirectoryProvider: widget.cacheDirectoryProvider);
   }
 
   @override
   void didUpdateWidget(ModelStage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.cardId != widget.cardId) _card = _load();
+    if (oldWidget.cardId != widget.cardId) {
+      _displayModel = _loadDisplayModel();
+    }
   }
 
-  Future<Map<String, dynamic>?> _load() async {
+  Future<DisplayModel> _loadDisplayModel() async {
     final cardId = widget.cardId;
-    if (cardId == null || cardId.isEmpty) return null;
-    return widget.client.cardsGet(cardId);
+    if (cardId == null || cardId.isEmpty) return DisplayModel.none;
+    final card = await widget.client.cardsGet(cardId);
+    final displayModel = DisplayModel.fromCard(card);
+    final id = displayModel.displayModelId;
+    if (id != null && id.trim().isNotEmpty) {
+      return resolveDisplayModel(widget.client, displayModel);
+    }
+    return displayModel;
   }
 
   @override
@@ -250,25 +348,29 @@ class _ModelStageState extends State<ModelStage> {
     if (cardId == null || cardId.isEmpty) {
       return const _NoModelPlaceholder();
     }
-    return FutureBuilder<Map<String, dynamic>?>(
-      future: _card,
+    return FutureBuilder<DisplayModel>(
+      future: _displayModel,
       builder:
           (
             BuildContext context,
-            AsyncSnapshot<Map<String, dynamic>?> snapshot,
+            AsyncSnapshot<DisplayModel> snapshot,
           ) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
+              final err = snapshot.error;
+              if (err is ModelStageError) {
+                return _LoudError(err);
+              }
               return _LoudError(
                 ModelStageError(
                   'load-failed',
-                  _loadFailureMessage(snapshot.error),
+                  _loadFailureMessage(err),
                 ),
               );
             }
-            final displayModel = DisplayModel.fromCard(snapshot.data);
+            final displayModel = snapshot.data ?? DisplayModel.none;
             final problem = displayModel.problem;
             if (problem != null) {
               return _LoudError(
@@ -301,6 +403,7 @@ class _ModelStageState extends State<ModelStage> {
   /// the daemon's own message is already user-safe, anything else is named by
   /// its failure kind.
   static String _loadFailureMessage(Object? error) {
+    if (error is ModelStageError) return error.message;
     if (error is DaemonClientException) return error.message;
     return 'The card could not be loaded '
         '(${error?.runtimeType ?? 'unknown error'}).';

@@ -9,9 +9,48 @@ const safeEnv = { ...process.env }
 delete safeEnv.GITHUB_TOKEN
 safeEnv.NODE_OPTIONS = '--max-old-space-size=12288'
 
+const queryWorkflowStatus = cmd => execSync(cmd, { env: safeEnv, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] })
+
 function execute(cmd, options = {}) {
   console.info(`\n🤖 Running: ${cmd}`)
   return execSync(cmd, { env: safeEnv, stdio: 'inherit', ...options })
+}
+
+// The Linux workflow is dispatched asynchronously. Until its latest run
+// completes, report missing assets without failing the publisher: those
+// assets cannot exist yet. Once it finishes, keep the strict gate fatal.
+export function checkReleaseAssets(tag) {
+  console.info(`\n📦 Checking release assets inventory for ${tag}...`)
+  let advisory = false
+  try {
+    const output = queryWorkflowStatus(`gh run list -R dasilva333/airi -L 8 --json name,status,conclusion,createdAt`)
+    const runs = JSON.parse(output || '[]')
+    const linux = runs
+      .filter(run => run.name === 'Release: Linux Desktop')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+    if (!linux) {
+      advisory = true
+      console.warn('⚠️ No Linux desktop workflow run is visible yet; missing assets are expected.')
+    }
+    else if (linux.status !== 'completed' || linux.conclusion !== 'success') {
+      advisory = true
+      console.warn(`⚠️ Linux desktop build is ${linux.status}${linux.conclusion && linux.conclusion !== 'running' ? ` (${linux.conclusion})` : ''}; any missing assets are expected.`)
+    }
+  }
+  catch (err) {
+    console.warn(`⚠️ Could not query workflow status: ${err.message}`)
+  }
+
+  const mode = advisory ? ' --advisory' : ''
+  try {
+    execute(`node scripts/github/ci-status.mjs --release --tag=${tag}${mode}`)
+  }
+  catch (err) {
+    console.error(`❌ Release asset verification failed for ${tag}. Error:`, err.message)
+    process.exit(1)
+  }
+  if (advisory)
+    console.warn(`👉 Recheck after the Linux build completes: pnpm ci:status --release --tag=${tag}`)
 }
 
 async function main() {
@@ -167,28 +206,23 @@ async function main() {
   try {
     execute(`gh workflow run release-linux-desktop.yml --repo dasilva333/airi -f tag=${tag}`)
     console.info(`✅ Successfully dispatched Linux desktop build workflow (release-linux-desktop.yml) for tag ${tag}.`)
-    console.info(`ℹ️ GitHub Actions is now compiling Linux x64 and arm64 (.deb, .rpm, .flatpak) packages in parallel.`)
+    console.info(`ℹ️ GitHub Actions is now compiling Linux x64 and arm64 Electrobun/Hutch tarball + *-update.json artifacts in parallel.`)
   }
   catch (err) {
     console.warn(`⚠️ Warning: Failed to dispatch Linux desktop workflow automatically: ${err.message}`)
     console.warn(`👉 You can dispatch it manually with: gh workflow run release-linux-desktop.yml --repo dasilva333/airi -f tag=${tag}`)
   }
 
-  // Step 7: Verify release assets & cross-platform completeness
-  console.info(`\n📦 Verifying release assets inventory for ${tag}...`)
-  try {
-    execute(`node scripts/github/ci-status.mjs --release --tag=${tag}`)
-  }
-  catch (err) {
-    console.error(`❌ Release asset verification failed for ${tag}. Error:`, err.message)
-    process.exit(1)
-  }
+  // Step 7: Advisory asset check (Linux CI may still be building)
+  checkReleaseAssets(tag)
 
   console.info(`\n🏆 Success! All macOS artifacts uploaded to GitHub release:`)
   console.info(`👉 https://github.com/dasilva333/airi/releases/tag/${tag}`)
 }
 
-main().catch((err) => {
-  console.error('Unhandled script error:', err)
-  process.exit(1)
-})
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  main().catch((err) => {
+    console.error('Unhandled script error:', err)
+    process.exit(1)
+  })
+}

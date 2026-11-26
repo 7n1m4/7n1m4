@@ -2,7 +2,14 @@ import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables
 import { defineStore } from 'pinia'
 import { onMounted, watch } from 'vue'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
 import { useAudioContext, useAudioDevice } from '../audio'
+
+interface DaemonAudioDeviceSettings {
+  selectedInputDevice: string
+  selectedOutputDevice: string
+  inputEnabled: boolean
+}
 
 export const useSettingsAudioDevice = defineStore('settings-audio-devices', () => {
   const {
@@ -28,6 +35,21 @@ export const useSettingsAudioDevice = defineStore('settings-audio-devices', () =
   const selectedAudioInputEnabledPersist = useLocalStorageManualReset<boolean>('settings/audio/input/enabled', false)
 
   const selectedAudioOutputPersist = useLocalStorageManualReset<string>('settings/audio/output', selectedAudioOutputNonPersist.value)
+
+  bridgeDaemonSettings<DaemonAudioDeviceSettings>(
+    'audio-device',
+    () => ({
+      selectedInputDevice: selectedAudioInputPersist.value,
+      selectedOutputDevice: selectedAudioOutputPersist.value,
+      inputEnabled: selectedAudioInputEnabledPersist.value,
+    }),
+    (settings) => {
+      selectedAudioInputPersist.value = settings.selectedInputDevice
+      selectedAudioOutputPersist.value = settings.selectedOutputDevice
+      selectedAudioInputEnabledPersist.value = settings.inputEnabled
+    },
+    { deep: false },
+  )
 
   let stopPendingAudioInput = false
 

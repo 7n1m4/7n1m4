@@ -2,6 +2,8 @@ import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables
 import { converter } from 'culori'
 import { defineStore } from 'pinia'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
+
 export const DEFAULT_THEME_COLORS_HUE = 220.44
 export const DEFAULT_THEME_COLORS_CHROMA_MULTIPLIER = 1.0
 
@@ -12,10 +14,22 @@ export function getEffectiveChroma(hue: number, multiplier = 1.0) {
   return (0.18 + Math.cos((hue * Math.PI) / 180) * 0.04) * multiplier
 }
 
+/** `settings/theme` as the daemon (`ThemeSettings`) carries it. */
+export interface DaemonThemeSettings {
+  hue: number
+  hueDynamic: boolean
+  chromaMultiplier: number
+  dark: boolean
+}
+
 export const useSettingsTheme = defineStore('settings-theme', () => {
   const themeColorsHue = useLocalStorageManualReset<number>('settings/theme/colors/hue', DEFAULT_THEME_COLORS_HUE)
   const themeColorsHueDynamic = useLocalStorageManualReset<boolean>('settings/theme/colors/hue-dynamic', false)
   const themeColorsChromaMultiplier = useLocalStorageManualReset<number>('settings/theme/colors/chroma-multiplier', DEFAULT_THEME_COLORS_CHROMA_MULTIPLIER)
+
+  // Not owned by this store (the shell keeps dark-only defaults); mirrored so the
+  // daemon round trip preserves it instead of resetting it to the default.
+  const themeDark = useLocalStorageManualReset<boolean>('settings/theme/dark', true)
 
   function setThemeColorsHue(hue = DEFAULT_THEME_COLORS_HUE) {
     themeColorsHue.value = hue
@@ -57,12 +71,30 @@ export const useSettingsTheme = defineStore('settings-theme', () => {
     themeColorsHue.reset()
     themeColorsHueDynamic.reset()
     themeColorsChromaMultiplier.reset()
+    themeDark.reset()
   }
+
+  bridgeDaemonSettings<DaemonThemeSettings>(
+    'theme',
+    () => ({
+      hue: themeColorsHue.value,
+      hueDynamic: themeColorsHueDynamic.value,
+      chromaMultiplier: themeColorsChromaMultiplier.value,
+      dark: themeDark.value,
+    }),
+    (value) => {
+      themeColorsHue.value = value.hue
+      themeColorsHueDynamic.value = value.hueDynamic
+      themeColorsChromaMultiplier.value = value.chromaMultiplier
+      themeDark.value = value.dark
+    },
+  )
 
   return {
     themeColorsHue,
     themeColorsHueDynamic,
     themeColorsChromaMultiplier,
+    themeDark,
     setThemeColorsHue,
     setThemeColorsChromaMultiplier,
     applyPrimaryColorFrom,

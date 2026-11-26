@@ -62,6 +62,18 @@ class ChatComposerController extends ChangeNotifier {
   String? _error;
   bool _disposed = false;
 
+  // Read-only mirror of the daemon-owned selection. It is refreshed from
+  // `settings.get('chat-provider')` when context settings load and before
+  // each send; there is no local persistence in the client.
+  String _activeProvider = '';
+  String _activeModel = '';
+
+  /// Provider id selected on the daemon for chat sends (empty = automatic).
+  String get activeProvider => _activeProvider;
+
+  /// Model id selected on the daemon for chat sends (empty = provider default).
+  String get activeModel => _activeModel;
+
   /// A turn is in flight: the text field is locked and the button is Stop.
   bool get isComposing => _sending;
 
@@ -88,7 +100,8 @@ class ChatComposerController extends ChangeNotifier {
     _notify();
   }
 
-  /// Load context settings from the daemon. Ignores failures.
+  /// Load context settings and the daemon-owned active selection. Ignores
+  /// failures: an unreachable selection RPC leaves automatic selection intact.
   Future<void> loadContextSettings() async {
     try {
       _contextSettings = await _client.settingsGet('chat');
@@ -96,6 +109,19 @@ class ChatComposerController extends ChangeNotifier {
       _notify();
     } catch (_) {
       // ignore
+    }
+    await _refreshActiveSelection();
+  }
+
+  Future<void> _refreshActiveSelection() async {
+    try {
+      final settings = await _client.settingsGet('chat-provider');
+      if (_disposed) return;
+      _activeProvider = (settings['activeProvider'] ?? '').toString();
+      _activeModel = (settings['activeModel'] ?? '').toString();
+      _notify();
+    } catch (_) {
+      // The daemon still resolves selection on send; keep the last mirror.
     }
   }
 
@@ -136,16 +162,18 @@ class ChatComposerController extends ChangeNotifier {
     _error = null;
     _sending = true;
     _input.clear();
+    await _refreshActiveSelection();
     final sentAttachments = List<ChatComposerAttachment>.from(attachments);
     attachments.clear();
     onMessageCommitted?.call(text);
     _notify();
     try {
-      final reply = await _client.call('chat.send', payload: <String, dynamic>{
+      final payload = <String, dynamic>{
         'sessionId': _sessionId ?? '',
         'content': text,
         'genUi': true,
-      });
+      };
+      final reply = await _client.call('chat.send', payload: payload);
       if (reply.ok && reply.data is Map<String, dynamic>) {
         // ChatSendReply is serde camelCase on the wire (sessionId/messageId);
         // snake_case here left the session unset so Stop cancelled nothing.

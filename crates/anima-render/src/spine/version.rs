@@ -39,40 +39,30 @@ pub fn detect_version_binary(data: &[u8]) -> Option<String> {
         }
     }
 
-    // 3. Robust fallback: first `\d+\.\d+\.\d+` in the first 200 bytes.
-    let header = String::from_utf8_lossy(&data[..data.len().min(200)]);
-    find_version_token(&header)
+    // No heuristic scanning: only the two documented binary layouts are
+    // supported, so arbitrary bytes must not be interpreted as a version.
+    None
 }
 
-/// Parse `major.minor` out of a version token like `4.2.18`.
+/// Parse a known `major.minor` runtime bucket out of a version token like
+/// `4.2.18`. Only buckets with a matching runtime alias are accepted.
 pub fn parse_version_bucket(version: &str) -> Option<String> {
     let mut parts = version.trim().split('.');
     let major = parts.next()?;
     let minor = parts.next()?;
-    if !major.chars().all(|c| c.is_ascii_digit()) || !minor.chars().all(|c| c.is_ascii_digit()) {
+    if major.is_empty()
+        || minor.is_empty()
+        || !major.chars().all(|c| c.is_ascii_digit())
+        || !minor.chars().all(|c| c.is_ascii_digit())
+    {
         return None;
     }
-    Some(format!("{major}.{minor}"))
-}
-
-fn find_version_token(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index].is_ascii_digit() {
-            let start = index;
-            while index < bytes.len() && (bytes[index].is_ascii_digit() || bytes[index] == b'.') {
-                index += 1;
-            }
-            let token = &text[start..index];
-            if let Some(bucket) = parse_version_bucket(token) {
-                return Some(bucket);
-            }
-        } else {
-            index += 1;
+    match (major, minor) {
+        ("3", "8") | ("4", "0") | ("4", "1") | ("4", "2") => {
+            Some(format!("{major}.{minor}"))
         }
+        _ => None,
     }
-    None
 }
 
 /// Reads a Spine varint (7 bits per byte, high bit = continuation).
@@ -175,16 +165,34 @@ mod tests {
     }
 
     #[test]
+    fn hash_bytes_do_not_trigger_fallback() {
+        // 8-byte hash containing "3.8.0", followed by a non-version field.
+        let mut data = b"xx3.8.0y".to_vec();
+        let field = b"not-a-version";
+        data.push((field.len() as u8 + 1) & 0x7f);
+        data.extend_from_slice(field);
+        assert_eq!(detect_version_binary(&data), None);
+    }
+
+    #[test]
     fn garbage_returns_none() {
         assert_eq!(detect_version_binary(b""), None);
         assert_eq!(detect_version_binary(b"\x00\x01\x02\x03"), None);
+        assert_eq!(detect_version_binary(b"xx3.8.0y"), None);
+        assert_eq!(detect_version_binary(b"3.8.0????"), None);
     }
 
     #[test]
     fn bucket_parsing_strict() {
         assert_eq!(parse_version_bucket("4.2.18").as_deref(), Some("4.2"));
         assert_eq!(parse_version_bucket("4.1").as_deref(), Some("4.1"));
+        assert_eq!(parse_version_bucket("3.8.99").as_deref(), Some("3.8"));
         assert_eq!(parse_version_bucket("x.y.z"), None);
         assert_eq!(parse_version_bucket(""), None);
+        assert_eq!(parse_version_bucket("4."), None);
+        assert_eq!(parse_version_bucket(".2"), None);
+        assert_eq!(parse_version_bucket("4.3.0"), None);
+        assert_eq!(parse_version_bucket("5.0"), None);
+        assert_eq!(parse_version_bucket("3.7.99"), None);
     }
 }

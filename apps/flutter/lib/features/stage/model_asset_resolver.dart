@@ -8,6 +8,8 @@
 
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 import 'model_failure.dart';
 import '../../ui/model_stage.dart';
 
@@ -55,16 +57,51 @@ class ModelAssetException implements ModelFailure {
 /// a networking package.
 typedef ModelAssetDownloader = Future<List<int>> Function(Uri uri);
 
+/// Supplies the base directory for downloaded model bytes. Production uses
+/// path_provider's application cache directory; tests inject a temp directory.
+typedef ModelCacheDirectoryProvider = Future<Directory> Function();
+
+/// Application cache subdirectory for remote model bytes.
+///
+/// `Directory.systemTemp` is deliberately not used: the OS evicts temp files
+/// between runs, which breaks offline stage use and forces redownloads.
+/// The base provider is injectable; a failed lookup is a loud
+/// [ModelAssetException] with a stable `cache-directory` code.
+Future<Directory> modelCacheDirectory({
+  ModelCacheDirectoryProvider? base,
+}) async {
+  try {
+    final root = await (base ?? getApplicationCacheDirectory)();
+    return Directory('${root.path}${Platform.pathSeparator}model-cache');
+  } on Object catch (error) {
+    throw ModelAssetException(
+      'cache-directory',
+      'The model cache directory is unavailable: $error',
+    );
+  }
+}
+
 /// Resolves [DisplayModel] assets against a deterministic cache directory.
 class ModelAssetResolver {
   ModelAssetResolver({
-    required this._cacheDirectory,
-    this._downloader,
+    Directory? cacheDirectory,
+    ModelCacheDirectoryProvider? cacheDirectoryProvider,
+    ModelAssetDownloader? downloader,
     String Function(List<int> bytes)? fingerprint,
-  }) : _fingerprint = fingerprint ?? _defaultFingerprint;
+  })  : _cacheDirectory = cacheDirectory != null
+            ? _fixedDirectory(cacheDirectory)
+            : cacheDirectoryProvider ?? modelCacheDirectory,
+        _downloader = downloader,
+        _fingerprint = fingerprint ?? _defaultFingerprint {}
 
-  final Directory _cacheDirectory;
+  /// Resolved on demand so a failed path_provider lookup only affects a remote
+  /// asset that actually needs the cache.
+  final ModelCacheDirectoryProvider _cacheDirectory;
   final ModelAssetDownloader? _downloader;
+
+  static ModelCacheDirectoryProvider _fixedDirectory(Directory directory) =>
+      () async => directory;
+
   final String Function(List<int> bytes) _fingerprint;
 
   /// A stable, collision-resistant cache key without a crypto dependency:
@@ -120,10 +157,9 @@ class ModelAssetResolver {
         'Remote model assets need a downloader in this build.',
       );
     }
+    final cache = await _cacheDirectory();
     final key = _fingerprint(value.codeUnits);
-    final target = File(
-      '${_cacheDirectory.path}${Platform.pathSeparator}$key.bin',
-    );
+    final target = File('${cache.path}${Platform.pathSeparator}$key.bin');
     final List<int> bytes;
     try {
       bytes = await target.exists()
@@ -136,7 +172,7 @@ class ModelAssetResolver {
       );
     }
     if (!await target.exists()) {
-      await _cacheDirectory.create(recursive: true);
+      await cache.create(recursive: true);
       // Atomic rename: a partially written cache entry is never visible to
       // the renderer (port of anima-render's bundle cache, without the ZIP).
       final temp = File('${target.path}.tmp');
@@ -159,7 +195,7 @@ class ModelAssetResolver {
       path: target.absolute.path,
       source: 'url',
       originalValue: value,
-      fingerprint: key,
+      fingerprint: _fingerprint(bytes),
       byteLength: bytes.length,
     );
   }

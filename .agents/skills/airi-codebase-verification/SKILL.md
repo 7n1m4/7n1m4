@@ -40,6 +40,7 @@ Choose the smallest validation that gives useful confidence; validation is not a
 - Match the check to the change surface (none / inspect / `pnpm -F <workspace> typecheck` / affected-workspace build).
 - Discover script names from the target workspace's `package.json`; never guess.
 - After any modification, run `git status` and report open/unstaged files verbatim.
+- **Renderer/native-backend closeout.** When a renderer or native platform backend bead closes, verify `docs/feature-parity-checklist.md` reflects the capability that actually landed and the gaps that remain; if it does not, file a follow-up bead for that doc refresh.
 - Before any user-requested commit/push, inspect full `git status` and the complete intended diff, and confirm the required typecheck/build passed.
 - State which validation you ran and why broader validation was unnecessary.
 

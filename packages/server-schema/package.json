@@ -29,7 +29,8 @@
     "package.json"
   ],
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@proj-anima/unplugin-drizzle-orm-migrations": "^0.1.4"

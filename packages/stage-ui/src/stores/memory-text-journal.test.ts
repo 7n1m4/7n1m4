@@ -7,6 +7,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTextJournalStore } from './memory-text-journal'
 
+const mockHasDaemonMemory = vi.fn()
+const mockSearchDaemonJournal = vi.fn()
+const mockAppendDaemonJournalEntry = vi.fn()
+const mockDaemonRequest = vi.fn()
+
+vi.mock('../composables/daemon-rpc', () => ({
+  hasDaemon: () => mockHasDaemonMemory(),
+  daemonRequest: (...args: unknown[]) => mockDaemonRequest(...args),
+}))
+
+vi.mock('../composables/daemon-memory', async () => {
+  const actual = await vi.importActual<typeof import('../composables/daemon-memory')>('../composables/daemon-memory')
+  return {
+    ...actual,
+    hasDaemonMemory: () => mockHasDaemonMemory(),
+    searchDaemonJournal: (...args: unknown[]) => mockSearchDaemonJournal(...args),
+    appendDaemonJournalEntry: (...args: unknown[]) => mockAppendDaemonJournalEntry(...args),
+  }
+})
+
 // Mock the database repo so tests don't touch IndexedDB
 vi.mock('../database/repos/text-journal.repo', () => ({
   textJournalRepo: {
@@ -71,9 +91,33 @@ const { textJournalRepo } = await import('../database/repos/text-journal.repo')
 // Cast to avoid constructing the full AiriExtension required by the AiriCard type.
 const mockCard = { name: 'TestChar', version: '1' } as unknown as AiriCard
 
+function makeLocalEntry(id: string): TextJournalEntry {
+  return {
+    id,
+    userId: 'local',
+    characterId: 'card-1',
+    characterName: 'TestChar',
+    title: 'Local metadata',
+    content: 'needle',
+    source: 'tool',
+    stability: 0,
+    difficulty: 0,
+    elapsed_days: 0,
+    scheduled_days: 0,
+    last_review: 10,
+    createdAt: 10,
+    updatedAt: 10,
+  }
+}
+
 describe('useTextJournalStore', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHasDaemonMemory.mockReturnValue(false)
+    mockSearchDaemonJournal.mockResolvedValue([])
+    mockAppendDaemonJournalEntry.mockResolvedValue('daemon-entry')
+    mockDaemonRequest.mockReset()
+    mockDaemonRequest.mockResolvedValue({ deleted: true })
     ;(textJournalRepo.getAll as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(textJournalRepo.saveAll as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     // Reset reactive mock state before each test
@@ -83,6 +127,83 @@ describe('useTextJournalStore', () => {
 
     const pinia = createTestingPinia({ createSpy: vi.fn, stubActions: false })
     setActivePinia(pinia)
+  })
+
+  describe('daemon authority', () => {
+    it('appends through the daemon and returns the daemon id with local metadata', async () => {
+      mockHasDaemonMemory.mockReturnValue(true)
+      mockAppendDaemonJournalEntry.mockResolvedValueOnce('daemon-id')
+      const store = useTextJournalStore()
+      const entry = await store.createEntry({ title: 'Local title', content: 'Daemon body', characterId: 'card-1', universeId: 'universe-1', sessionId: 'session-1' })
+      expect(mockAppendDaemonJournalEntry).toHaveBeenCalledWith('Daemon body', 'note')
+      expect(entry).toMatchObject({ id: 'daemon-id', title: 'Local title', universeId: 'universe-1', sessionId: 'session-1' })
+      expect(textJournalRepo.saveAll).toHaveBeenCalledWith('local', [entry])
+    })
+
+    it('searches daemon rows through the daemon seam', async () => {
+      mockHasDaemonMemory.mockReturnValue(true)
+      ;(textJournalRepo.getAll as ReturnType<typeof vi.fn>).mockResolvedValue([makeLocalEntry('d1')])
+      const store = useTextJournalStore()
+      await store.load()
+      mockSearchDaemonJournal.mockResolvedValueOnce([
+        { id: 'd1', kind: 'note', content: 'needle', createdAt: 10, updatedAt: 10 },
+      ])
+      const results = await store.searchEntries({ query: 'needle', characterId: '' })
+      expect(mockSearchDaemonJournal).toHaveBeenCalledWith('needle', 10)
+      expect(results).toEqual([expect.objectContaining({ id: 'd1', content: 'needle', kind: 'ltmm', score: 1 })])
+    })
+
+    it('loads a bounded page of daemon rows through the daemon seam', async () => {
+      mockHasDaemonMemory.mockReturnValue(true)
+      mockSearchDaemonJournal.mockResolvedValueOnce([
+        { id: 'd1', kind: 'note', content: 'daemon content', createdAt: 10, updatedAt: 20 },
+      ])
+      const store = useTextJournalStore()
+      await store.load()
+      expect(mockSearchDaemonJournal).toHaveBeenCalledWith('', 500)
+    })
+
+    // ROOT CAUSE:
+    //
+    // The daemon branch deleted only the IndexedDB copy, so `journal.search`
+    // merged the row back on the next load. A durable delete must remove the
+    // daemon row and must never remove local data when the RPC fails.
+    it('deletes the daemon row before dropping the local entry', async () => {
+      mockHasDaemonMemory.mockReturnValue(true)
+      mockSearchDaemonJournal.mockResolvedValue([
+        { id: 'daemon-1', kind: 'note', content: 'forget me', createdAt: 10, updatedAt: 10 },
+      ])
+      ;(textJournalRepo.getAll as ReturnType<typeof vi.fn>).mockResolvedValue([makeLocalEntry('daemon-1')])
+      const store = useTextJournalStore()
+      await store.load()
+      expect(store.entries).toHaveLength(1)
+
+      await expect(store.deleteEntry('daemon-1')).resolves.toBe(true)
+      expect(mockDaemonRequest).toHaveBeenCalledWith('journal.delete', { id: 'daemon-1' })
+      expect(store.entries).toHaveLength(0)
+
+      // Fresh window: the daemon search no longer returns the deleted row.
+      mockSearchDaemonJournal.mockResolvedValue([])
+      vi.clearAllMocks()
+      const fresh = useTextJournalStore()
+      await fresh.load()
+      expect(fresh.entries).toHaveLength(0)
+    })
+
+    it('keeps the local entry when the daemon delete fails', async () => {
+      mockHasDaemonMemory.mockReturnValue(true)
+      mockSearchDaemonJournal.mockResolvedValue([
+        { id: 'daemon-2', kind: 'note', content: 'keep me', createdAt: 10, updatedAt: 10 },
+      ])
+      ;(textJournalRepo.getAll as ReturnType<typeof vi.fn>).mockResolvedValue([makeLocalEntry('daemon-2')])
+      mockDaemonRequest.mockRejectedValueOnce(new Error('daemon unreachable'))
+      const store = useTextJournalStore()
+      await store.load()
+
+      await expect(store.deleteEntry('daemon-2')).rejects.toThrow('failed to delete daemon entry: daemon unreachable')
+      expect(store.entries.map(e => e.id)).toEqual(['daemon-2'])
+      expect(textJournalRepo.saveAll).not.toHaveBeenCalled()
+    })
   })
 
   // ————————————————— load ————————————————————————————————————————————————————————————

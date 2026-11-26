@@ -53,6 +53,10 @@ class ModelStageRuntime {
   /// an unhandled future.
   Future<void> load(DisplayModel model) async {
     final generation = ++_generation;
+    _lastFrameSeq = null;
+    _lastCueSeq = null;
+    _lastAmbientPhase = null;
+    _smoother.reset();
     await _clearHandle();
     if (model.kind == ModelKind.none) {
       _publish(const ModelStageSnapshot(status: ModelStageStatus.none));

@@ -14,6 +14,10 @@ This file wins where it differs from `~/.config/opencode/beads/BRIDGE.md`. The g
 - Canonical dependency order: `bd dep add <blocked-id> <blocker-id>` (same as `bd dep add <id> --blocked-by <blocker>`). Verify edge direction with `bd show <id>` and `bd ready` after wiring.
 - Before parallel dispatch, the coordinator posts a checkpoint comment on the bead with: worker name, exact model ID (or `default`), exact owned paths (one writer per file), acceptance commands, and Beads/git authority (normally none). Cancel or redirect a superseded worker before transferring its files.
 
+## Stale advisories
+
+- Review/advisory claims about an already completed slice are unverified until checked against current files and current test/command output. Never delete or weaken a passing test solely because an advisory calls it broken; if the claim is stale, record the evidence and file a follow-up bead instead of mutating working code.
+
 ## Closure
 
 - Close only with the coordinator's actual verification command/output in the bead reason or a preceding comment; a worker's prose report is not acceptance.

@@ -52,6 +52,21 @@ its BYOS outbox/`sync-engine.ts` reconciliation (§1, §6), memory lanes, and th
 | :--- | :--- | :--- | :--- |
 | `card_metadata` (schema v6) | `card_id text primary key, liked int, bookmarked int, updated_at int` — one row per card; absent row = both flags false | `anima_store::CardMetadataRepo` (`crates/anima-store/src/lib.rs`) | none — daemon-owned local state; exposed to clients via `cards.metadata` / `cards.metadata.set` RPCs (`crates/anima-daemon/src/gateway.rs`) |
 | `cards` (schema v7) | `id text primary key, name text, document text, created_at int, updated_at int` — one row per card; `document` is the verbatim full-fidelity AiriCard JSON (opaque to the daemon), `name` a denormalized copy for listing | `anima_store::CardRepo` (`crates/anima-store/src/lib.rs`) | none — daemon-owned local state; CRUD via `cards.create`/`cards.get`/`cards.list`/`cards.update`/`cards.delete`/`cards.import` RPCs (`crates/anima-daemon/src/gateway.rs`) |
+
+`settings/stage-model` is daemon-owned (`StageModelSettings` in `crates/anima-core/src/settings.rs`) and stores `modelId` plus a `catalog` of `CatalogDescriptor` entries (`id`, `name`, `format`, `source`, `file`, `url`; formats `vrm`, `live2d-zip`, `live2d-directory`, `spine-zip`, `pmx-zip`, `pmx-directory`, `pmd`). Clients resolve an id through `display-model.resolve` (`crates/anima-daemon/src/gateway.rs`); there is no `local:*` mirror of this section.
+
+`settings/chat-provider` is daemon-owned (`ChatProviderSettings` in
+`crates/anima-core/src/settings.rs`, registered in
+`crates/anima-daemon/src/core.rs`) and stores `{ activeProvider: string,
+activeModel: string }` — the provider/model selection used by daemon
+`chat.send`. Flutter's chat composer reads this section through
+`settings.get('chat-provider')` and must not send the selection fields inside
+`chat.send`. There is no `local:*` mirror of this section.
+
+### Mobile release notice packaging (airi-kji9)
+
+Notices must travel inside the AAB/IPA. Authoritative source is repo-root `THIRD_PARTY_NOTICES.md` + `LICENSES/`. Byte-identical copies live at `apps/flutter/assets/notices/THIRD_PARTY_NOTICES.md` and `apps/flutter/assets/notices/LICENSES/*.txt`, declared as Flutter assets in `apps/flutter/pubspec.yaml`. In-app path: About tab → "Third-party notices" (Settings → About AIRI is the same `AboutScreen`), read via `rootBundle` from `apps/flutter/lib/features/about/third_party_notices.dart`. Regeneration = re-copy from repo root (`cp THIRD_PARTY_NOTICES.md apps/flutter/assets/notices/ && cp LICENSES/*.txt apps/flutter/assets/notices/LICENSES/`), verified with `cmp`. Live2D/Cubism notices deliberately absent. No daemon-owned state is involved — notices are static assets shipped in the bundle, not persisted by the daemon.
+
 ---
 
 
@@ -918,27 +933,58 @@ interface StoredCustomVrmAnimation {
 | :--- | :--- | :--- | :--- |
 | `settings/faculties/defaults` | `GlobalFacultyDefaultsState` | `FACTORY_SAFE_DEFAULTS` | `stores/faculty-defaults.ts` |
 
-### 4.3 Consciousness (LLM)
+### 4.2c Chat provider selection (daemon-owned)
 
 | Key | Type | Default | File |
 | :--- | :--- | :--- | :--- |
-| `settings/consciousness/active-provider` | `string` | `''` | `stores/modules/consciousness.ts` |
-| `settings/consciousness/active-model` | `string` | `''` | `stores/modules/consciousness.ts` |
-| `settings/consciousness/active-custom-model` | `string` | `''` | `stores/modules/consciousness.ts` |
+| `settings/chat-provider/activeProvider` | `string` | `''` | `ChatProviderSettings` in `crates/anima-core/src/settings.rs` — daemon section `settings/chat-provider`, field `activeProvider`; Flutter editor `apps/flutter/lib/features/providers/providers_screen.dart` |
+| `settings/chat-provider/activeModel` | `string` | `''` | `ChatProviderSettings` in `crates/anima-core/src/settings.rs` — daemon section `settings/chat-provider`, field `activeModel`; same Flutter editor |
+
+Read via `settings.get('chat-provider')` and written via the gated
+`settings.set` verb. Rationale (2026-11-26): daemon `chat.send` resolves the
+selection from this section; `activeProvider`/`activeModel` are no longer chat
+request fields.
+
+### 4.3 Consciousness (LLM)
+
+All three persisted keys below are now **daemon-backed** in one typed blob,
+`settings/consciousness` (`ConsciousnessSettings` in
+`crates/anima-core/src/settings.rs`; registered in
+`crates/anima-daemon/src/core.rs`; Flutter editor in
+`apps/flutter/lib/features/modules/modules_screen.dart`). No credentials are
+stored in this section.
+
+| Key | Type | Default | File |
+| :--- | :--- | :--- | :--- |
+| `settings/consciousness/active-provider` | `string` | `''` | `stores/modules/consciousness.ts` — daemon section `settings/consciousness`, field `activeProvider` |
+| `settings/consciousness/active-model` | `string` | `''` | `stores/modules/consciousness.ts` — daemon section `settings/consciousness`, field `activeModel` |
+| `settings/consciousness/active-custom-model` | `string` | `''` | `stores/modules/consciousness.ts` — daemon section `settings/consciousness`, field `activeCustomModel` |
+
+Skipped (client-runtime only, not daemon settings): `expandedDescriptions`
+and `modelSearchQuery` are plain refs that reset on reload.
 
 ### 4.4 Speech (TTS)
 
+The primary persisted keys below are now **daemon-backed** in one typed blob,
+`settings/speech` (`SpeechSettings`, fields in camelCase). `voice-profiles`
+is stored as opaque JSON objects so nested effects/UST details stay
+client-owned. Playground text (`settings/speech/playground-test-text`) and
+runtime voice metadata remain client-local; no credentials live in this
+section.
+
 | Key | Type | Default | File |
 | :--- | :--- | :--- | :--- |
-| `settings/speech/active-provider` | `string` | `'speech-noop'` | `stores/modules/speech.ts` |
-| `settings/speech/active-model` | `string` | `''` | `stores/modules/speech.ts` |
-| `settings/speech/voice` | `string` | `''` | `stores/modules/speech.ts` |
-| `settings/speech/pitch` | `number` | `0` | `stores/modules/speech.ts` |
-| `settings/speech/rate` | `number` | `1` | `stores/modules/speech.ts` |
-| `settings/speech/ssml-enabled` | `boolean` | `false` | `stores/modules/speech.ts` |
-| `settings/speech/language` | `string` | `'en-US'` | `stores/modules/speech.ts` |
-| `settings/speech/voice-profiles` | `VoiceProfile[]` | `[]` | `stores/modules/speech.ts` |
-| `settings/audio/output` | `string` | `''` | `stores/settings/audio-device.ts` |
+| `settings/speech/active-provider` | `string` | `'speech-noop'` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `activeProvider` |
+| `settings/speech/active-model` | `string` | `''` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `activeModel` |
+| `settings/speech/voice` | `string` | `''` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `voice` |
+| `settings/speech/output-volume` | `number` | `1.0` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `outputVolume` |
+| `settings/speech/enabled` | `boolean` | `true` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `enabled` |
+| `settings/speech/pitch` | `number` | `0` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `pitch` |
+| `settings/speech/rate` | `number` | `1` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `rate` |
+| `settings/speech/ssml-enabled` | `boolean` | `false` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `ssmlEnabled` |
+| `settings/speech/language` | `string` | `'en-US'` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `language` |
+| `settings/speech/voice-profiles` | `VoiceProfile[]` | `[]` | `stores/modules/speech.ts` — daemon section `settings/speech`, field `voiceProfiles` (opaque JSON objects) |
+| `settings/audio/output` | `string` | `''` | `stores/settings/audio-device.ts` — daemon section `settings/audio-device` |
 
 ```typescript
 // File: packages/stage-ui/src/stores/providers/types.ts
@@ -973,34 +1019,56 @@ interface VoiceProfile {
 
 ### 4.5 Hearing (STT)
 
+The primary persisted keys below are now **daemon-backed** in one typed blob,
+`settings/hearing` (`HearingSettings`, camelCase fields; enum literals `vad` /
+`manual` and `dictation` / `voice-message`). Provider device maps stay opaque
+JSON objects. Playground/runtime refs are not persisted.
+
 | Key | Type | Default | File |
 | :--- | :--- | :--- | :--- |
-| `settings/hearing/active-provider` | `string` | `''` | `stores/modules/hearing.ts` |
-| `settings/hearing/active-model` | `string` | `''` | `stores/modules/hearing.ts` |
-| `settings/hearing/active-custom-model` | `string` | `''` | `stores/modules/hearing.ts` |
-| `settings/hearing/auto-send-enabled` | `boolean` | `true` | `stores/modules/hearing.ts` |
-| `settings/hearing/auto-send-delay` | `number` | `2000` | `stores/modules/hearing.ts` |
-| `settings/hearing/detection-mode` | `'vad' \| 'manual'` | `'vad'` | `stores/modules/hearing.ts` |
-| `settings/hearing/vad-threshold` | `number` | `0.6` | `stores/modules/hearing.ts` |
-| `settings/hearing/speech-provider-settings` | `Record<string, { deviceId, sampleRate }>` | `{}` | `stores/modules/hearing.ts` |
-| `settings/hearing/transcription-provider-settings` | `Record<string, { deviceId, sampleRate }>` | `{}` | `stores/modules/hearing.ts` |
-| `settings/audio/input` | `string` | `''` | `stores/settings/audio-device.ts` |
-| `settings/audio/input/enabled` | `boolean` | `false` | `stores/settings/audio-device.ts` |
+| `settings/hearing/active-provider` | `string` | `''` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `activeProvider` |
+| `settings/hearing/active-model` | `string` | `''` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `activeModel` |
+| `settings/hearing/active-custom-model` | `string` | `''` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `activeCustomModel` |
+| `settings/hearing/auto-send-enabled` | `boolean` | `true` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `autoSendEnabled` |
+| `settings/hearing/auto-send-delay` | `number` | `2000` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `autoSendDelay` |
+| `settings/hearing/detection-mode` | `'vad' \| 'manual'` | `'vad'` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `detectionMode` |
+| `settings/hearing/tap-to-talk` | `boolean` | `true` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `tapToTalk` |
+| `settings/hearing/voice-input-mode` | `'dictation' \| 'voice-message'` | `'dictation'` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `voiceInputMode` |
+| `settings/hearing/vad-threshold` | `number` | `0.6` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `vadThreshold` |
+| `settings/hearing/speech-provider-settings` | `Record<string, { deviceId, sampleRate }>` | `{}` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `speechProviderSettings` (opaque JSON) |
+| `settings/hearing/transcription-provider-settings` | `Record<string, { deviceId, sampleRate }>` | `{}` | `stores/modules/hearing-store.ts` — daemon section `settings/hearing`, field `transcriptionProviderSettings` (opaque JSON) |
+| `settings/audio/input` | `string` | `''` | `stores/settings/audio-device.ts` — daemon section `settings/audio-device` |
+| `settings/audio/input/enabled` | `boolean` | `false` | `stores/settings/audio-device.ts` — daemon section `settings/audio-device` |
+
+Skipped as ephemeral/runtime state (no daemon field): `settings/audio/input/owner`
+(`micOwner`) is a live mic-capture ownership marker cleared at store setup;
+`pendingVoiceDraft`, `isTranscribing`, and the model list/search refs are
+in-memory only.
 
 ### 4.6 Vision (VLM)
 
+The persisted keys below are now **daemon-backed** in one typed blob,
+`settings/vision` (`VisionSettings`, camelCase fields; enum literals `direct` /
+`forward`). The long prompt defaults are reproduced verbatim from the Vue
+store. `active-advanced` stays an opaque JSON object.
+
 | Key | Type | Default | File |
 | :--- | :--- | :--- | :--- |
-| `settings/vision/strategy` | `'direct' \| 'forward'` | `'direct'` | `stores/modules/vision.ts` |
-| `settings/vision/active-provider` | `string` | `''` | `stores/modules/vision.ts` |
-| `settings/vision/active-model` | `string` | `''` | `stores/modules/vision.ts` |
-| `settings/vision/context-window` | `number` (images in context) | `1` | `stores/modules/vision.ts` |
-| `settings/vision/prompt-shim` | `string` | — | `stores/modules/vision.ts` |
-| `settings/vision/prompt-shim-forward` | `string` | — | `stores/modules/vision.ts` |
-| `settings/vision/witness-enabled` | `boolean` | `false` | `stores/modules/vision.ts` |
-| `settings/vision/witness-prompt` | `string` | — | `stores/modules/vision.ts` |
-| `settings/vision/respect-schedule` | `boolean` | `true` | `stores/modules/vision.ts` |
-| `settings/vision/last-heartbeat` | `number` | `0` | `stores/modules/vision.ts` |
+| `settings/vision/strategy` | `'direct' \| 'forward'` | `'direct'` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `strategy` |
+| `settings/vision/active-provider` | `string` | `''` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `activeProvider` |
+| `settings/vision/active-model` | `string` | `''` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `activeModel` |
+| `settings/vision/context-window` | `number` (images in context) | `1` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `contextWindow` |
+| `settings/vision/active-advanced` | `Record<string, unknown>` | `{}` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `activeAdvanced` (opaque JSON) |
+| `settings/vision/prompt-shim` | `string` | Vue `promptShimDirect` default | `stores/modules/vision.ts` — daemon section `settings/vision`, field `promptShim` |
+| `settings/vision/prompt-shim-forward` | `string` | Vue `promptShimForward` default | `stores/modules/vision.ts` — daemon section `settings/vision`, field `promptShimForward` |
+| `settings/vision/witness-enabled` | `boolean` | `false` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `witnessEnabled` |
+| `settings/vision/witness-prompt` | `string` | Vue `witnessPrompt` default | `stores/modules/vision.ts` — daemon section `settings/vision`, field `witnessPrompt` |
+| `settings/vision/respect-schedule` | `boolean` | `true` | `stores/modules/vision.ts` — daemon section `settings/vision`, field `respectSchedule` |
+| `settings/vision/last-heartbeat` | `number` | `0` | `stores/modules/vision.ts` — **skipped**: ephemeral cross-window capture throttle, no daemon field |
+
+Skipped as ephemeral/runtime state: `lastHeartbeat` (heartbeat cooldown),
+`status`, `lastWitnessTime`, `lastWitnessAnalysis` and cached display
+metadata are plain refs, not durable settings.
 
 ### 4.7 Discord
 

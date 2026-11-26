@@ -535,6 +535,13 @@ void main() {
     await run('retrieval.status', client.retrievalStatus, <String, dynamic>{
       'available': true,
     }, true);
+    await run('vault.status', client.vaultStatus, <String, dynamic>{
+      'available': true,
+      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
+    }, <String, dynamic>{
+      'available': true,
+      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
+    });
     await run(
       'sessions.export',
       () => client.sessionsExport('s1'),
@@ -812,6 +819,143 @@ void main() {
           (e) => e.kind,
           'kind',
           DaemonFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
+  // --- Vault archive and history media scrub verbs -------------------------
+
+  test('vaultArchiveCollect sends allowed domains and decodes the reply', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final pending = client.vaultArchiveCollect(<String>['chats', 'memory']);
+    final request = lastRequest(fake);
+    expect(request['action'], 'vault.archive.collect');
+    expect(request['payload'], <String, dynamic>{'domains': <String>['chats', 'memory']});
+    reply(fake, request, <String, dynamic>{
+      'archive': 'YWJj',
+      'bytes': 3,
+      'domains': <String>['chats', 'memory'],
+    });
+    final archive = await pending;
+    expect(archive.archive, 'YWJj');
+    expect(archive.bytes, 3);
+    expect(archive.domains, <String>['chats', 'memory']);
+
+    // Provider configuration carries credentials and must never cross the wire.
+    expect(
+      client.vaultArchiveCollect(<String>['providers']),
+      throwsA(isA<DaemonClientException>()),
+    );
+    expect(
+      fake.sent.map((f) => jsonDecode(f) as Map<String, dynamic>).where(
+        (f) => f['action'] == 'vault.archive.collect',
+      ).length,
+      1,
+      reason: 'no request reached the socket',
+    );
+  });
+
+  test('vaultArchiveInspect decodes metadata only and refuses failed replies', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final pending = client.vaultArchiveInspect('YWJj');
+    final request = lastRequest(fake);
+    expect(request['action'], 'vault.archive.inspect');
+    expect(request['payload'], <String, dynamic>{'archive': 'YWJj'});
+    reply(fake, request, <String, dynamic>{
+      'format': 'airi-vault',
+      'version': 1,
+      'createdAt': 1700000000000,
+      'includesSecrets': false,
+      'domains': <Map<String, dynamic>>[
+        <String, dynamic>{'domain': 'chats', 'sessions': 1},
+      ],
+      'sessionCount': 1,
+      'messageCount': 2,
+      'companionNames': <String>['no-name-should-be-rendered'],
+    });
+    final report = await pending;
+    expect(report.format, 'airi-vault');
+    expect(report.version, 1);
+    expect(report.createdAt, 1700000000000);
+    expect(report.includesSecrets, isFalse);
+    expect(report.sessionCount, 1);
+    expect(report.messageCount, 2);
+    expect(report.companionCount, 1);
+    expect(report.domains.single['domain'], 'chats');
+
+    final failing = client.vaultArchiveInspect('YWJj');
+    reply(fake, lastRequest(fake), null, ok: false);
+    await expectLater(
+      failing,
+      throwsA(
+        isA<DaemonClientException>().having(
+          (e) => e.kind,
+          'kind',
+          DaemonFailureKind.rpc,
+        ),
+      ),
+    );
+  });
+
+  test('vaultArchiveApply and sessionsMediaScrub decode gated replies', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final applying = client.vaultArchiveApply('YWJj');
+    final applyRequest = lastRequest(fake);
+    expect(applyRequest['action'], 'vault.archive.apply');
+    expect(applyRequest['payload'], <String, dynamic>{'archive': 'YWJj'});
+    reply(fake, applyRequest, <String, dynamic>{
+      'sessionsInserted': 1,
+      'sessionsSkipped': 2,
+      'messagesInserted': 3,
+      'messagesSkipped': 4,
+      'summariesInserted': 5,
+      'journalEntriesInserted': 6,
+      'applied': <String>['chats', 'memory'],
+      'notApplied': <String>['characters'],
+    });
+    final applied = await applying;
+    expect(applied.sessionsInserted, 1);
+    expect(applied.sessionsSkipped, 2);
+    expect(applied.messagesInserted, 3);
+    expect(applied.messagesSkipped, 4);
+    expect(applied.summariesInserted, 5);
+    expect(applied.journalEntriesInserted, 6);
+    expect(applied.applied, <String>['chats', 'memory']);
+    expect(applied.notApplied, <String>['characters']);
+
+    final scrubbing = client.sessionsMediaScrub(createBackup: true);
+    final scrubRequest = lastRequest(fake);
+    expect(scrubRequest['action'], 'sessions.media.scrub');
+    expect(scrubRequest['payload'], <String, dynamic>{'createBackup': true});
+    reply(fake, scrubRequest, <String, dynamic>{
+      'imagesFound': 2,
+      'bytesExtracted': 128,
+      'sessionsScanned': 1,
+      'backupPath': '/tmp/backup.zip',
+    });
+    final scrubbed = await scrubbing;
+    expect(scrubbed.imagesFound, 2);
+    expect(scrubbed.bytesExtracted, 128);
+    expect(scrubbed.sessionsScanned, 1);
+    expect(scrubbed.backupPath, '/tmp/backup.zip');
+
+    // A denial of a gated verb is an exception, never a successful zero report.
+    final denied = client.sessionsMediaScrub(createBackup: false);
+    reply(fake, lastRequest(fake), null, ok: false);
+    await expectLater(
+      denied,
+      throwsA(
+        isA<DaemonClientException>().having(
+          (e) => e.kind,
+          'kind',
+          DaemonFailureKind.rpc,
         ),
       ),
     );

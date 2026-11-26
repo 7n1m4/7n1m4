@@ -51,13 +51,9 @@
 //!   is irrelevant to AIRI (IK runs kinematically from PMX). It is measured and
 //!   reported as [`VmdMotion::trailing_bytes`], never interpreted.
 //!
-//! **Encoding caveat:** bone/morph names on the wire are **CP932-encoded** for
-//! Japanese names. This crate does not depend on `encoding_rs`; names are
-//! decoded ASCII-lossily (non-ASCII bytes become U+FFFD) and the raw 15 bytes
-//! are preserved in `name_raw`. ASCII names (the overwhelming majority of the
-//! 14 repo VMDs — e.g. `TailIK`, `HairIK`) decode exactly. Japanese names
-//! (e.g. `右足ＩＫ`) will appear as mojibake in `name`; use `name_raw` to
-//! recover the bytes. ASCII names containing no NULs parse trivially.
+//! **Encoding:** names and model names are decoded as CP932 (Shift-JIS),
+//! trimmed at the first NUL. The raw bytes remain available in `name_raw`
+//! and `model_name_raw`.
 //!
 //! Nothing is validated semantically: quaternion norms, frame monotonicity and
 //! bone-name resolution against a model are **not** checked (a VMD is
@@ -65,6 +61,8 @@
 //! read; `parse` never panics on untrusted input.
 
 use std::path::Path;
+
+use encoding_rs::SHIFT_JIS;
 
 use crate::cursor::Cursor;
 use crate::error::MmdError;
@@ -91,20 +89,19 @@ const CAMERA_RECORD_LEN_LEGACY: usize = 56; // 0000/0001, unverified
 const LIGHT_RECORD_LEN: usize = 4 + 12 + 4; // 20
 const SHADOW_RECORD_LEN: usize = 4 + 1 + 4; // 9
 
-/// Decode a NUL-padded fixed-width field as ASCII-lossy UTF-8, trimmed at the
-/// first NUL. Non-ASCII bytes become U+FFFD.
-fn decode_fixed_lossy(raw: &[u8]) -> String {
+/// Decode a NUL-padded fixed-width CP932 (Shift-JIS) field, trimmed at the
+/// first NUL.
+fn decode_fixed(raw: &[u8]) -> String {
     let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-    String::from_utf8_lossy(&raw[..end]).into_owned()
+    SHIFT_JIS.decode_without_bom_handling(&raw[..end]).0.into_owned()
 }
 
 /// A single bone keyframe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VmdBoneKey {
-    /// Bone name as stored (CP932 bytes, ASCII-lossy decode).
+    /// Bone name decoded from CP932 bytes.
     ///
-    /// Japanese names appear as mojibake (U+FFFD) — the raw CP932 bytes are
-    /// preserved in [`VmdBoneKey::name_raw`].
+    /// The raw CP932 bytes are preserved in [`VmdBoneKey::name_raw`].
     pub name: String,
     /// Raw 15-byte CP932 name field, exactly as stored (NUL-padded).
     pub name_raw: [u8; BONE_NAME_LEN],
@@ -122,8 +119,7 @@ pub struct VmdBoneKey {
 /// A single morph keyframe.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VmdMorphKey {
-    /// Morph name as stored (CP932 bytes, ASCII-lossy decode; see
-    /// [`VmdBoneKey::name`]).
+    /// Morph name decoded from CP932 bytes (see [`VmdBoneKey::name`]).
     pub name: String,
     /// Raw 15-byte CP932 name field, exactly as stored (NUL-padded).
     pub name_raw: [u8; BONE_NAME_LEN],
@@ -150,9 +146,9 @@ pub struct VmdMotion {
     /// `true` when the signature is not `0002` (parsed with the legacy
     /// 56-byte camera record size; unverified — no legacy file exists in-repo).
     pub legacy_signature: bool,
-    /// Model name as stored (CP932 bytes, ASCII-lossy decode; see
-    /// [`VmdBoneKey::name`]). This is informational only — the motion is not
-    /// bound to any model by this crate.
+    /// Model name decoded from CP932 bytes (see [`VmdBoneKey::name`]).
+    /// This is informational only — the motion is not bound to any model by
+    /// this crate.
     pub model_name: String,
     /// Raw 20-byte CP932 model-name field, exactly as stored (NUL-padded).
     pub model_name_raw: [u8; MODEL_NAME_LEN],
@@ -194,7 +190,7 @@ impl VmdMotion {
 
         cur.set_section("vmd-signature");
         let raw_sig = cur.take_bytes(SIGNATURE_LEN)?;
-        let signature = decode_fixed_lossy(raw_sig);
+        let signature = decode_fixed(raw_sig);
         let version =
             std::str::from_utf8(&raw_sig[21..25]).map_err(|_| MmdError::BadVmdSignature)?;
         if &raw_sig[..21] != SIGNATURE_PREFIX {
@@ -211,7 +207,7 @@ impl VmdMotion {
             .take_bytes(MODEL_NAME_LEN)?
             .try_into()
             .expect("take_bytes returns exactly MODEL_NAME_LEN bytes");
-        let model_name = decode_fixed_lossy(&raw_model);
+        let model_name = decode_fixed(&raw_model);
 
         cur.set_section("vmd-bone-keys");
         let bone_count = cur.u32()? as usize;
@@ -231,7 +227,7 @@ impl VmdMotion {
             let mut interpolation = [0_u8; 64];
             interpolation.copy_from_slice(raw_interp);
             bones.push(VmdBoneKey {
-                name: decode_fixed_lossy(&raw_name),
+                name: decode_fixed(&raw_name),
                 name_raw: raw_name,
                 frame,
                 position,
@@ -254,7 +250,7 @@ impl VmdMotion {
             let frame = cur.u32()?;
             let weight = cur.f32()?;
             morphs.push(VmdMorphKey {
-                name: decode_fixed_lossy(&raw_name),
+                name: decode_fixed(&raw_name),
                 name_raw: raw_name,
                 frame,
                 weight,

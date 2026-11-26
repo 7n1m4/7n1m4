@@ -111,6 +111,26 @@ fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
             load::<anima_core::settings::LocalLlmSettings>,
             save::<anima_core::settings::LocalLlmSettings>,
         ),
+        "consciousness" => (
+            load::<anima_core::settings::ConsciousnessSettings>,
+            save::<anima_core::settings::ConsciousnessSettings>,
+        ),
+        "chat-provider" => (
+            load::<anima_core::settings::ChatProviderSettings>,
+            save::<anima_core::settings::ChatProviderSettings>,
+        ),
+        "speech" => (
+            load::<anima_core::settings::SpeechSettings>,
+            save::<anima_core::settings::SpeechSettings>,
+        ),
+        "hearing" => (
+            load::<anima_core::settings::HearingSettings>,
+            save::<anima_core::settings::HearingSettings>,
+        ),
+        "vision" => (
+            load::<anima_core::settings::VisionSettings>,
+            save::<anima_core::settings::VisionSettings>,
+        ),
         _ => return None,
     })
 }
@@ -497,7 +517,30 @@ impl CoreService {
         Ok(anima_channel::wire::SettingsSetReply { ok: true })
     }
 
-    /// Get vault statistics.
+    /// Resolve a display model descriptor by id.
+    pub fn resolve_display_model(
+        &self,
+        id: &str,
+    ) -> Result<anima_channel::wire::CatalogDescriptor, String> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Err("missing display model id".to_string());
+        }
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = &guard.core;
+        let Some(core) = core else {
+            return Err("store unavailable".to_string());
+        };
+        let store = core.settings();
+        let settings: anima_core::settings::StageModelSettings =
+            store.load_section::<anima_core::settings::StageModelSettings>().map_err(|_| "load failed".to_string())?;
+        settings
+            .catalog
+            .into_iter()
+            .find(|e| e.id == id)
+            .ok_or_else(|| format!("unknown display model id: {id}"))
+    }
+
     pub fn vault_status(&self) -> Result<anima_channel::wire::VaultStatusReply, String> {
         let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
         let core = &guard.core;

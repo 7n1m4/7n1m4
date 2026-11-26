@@ -12,6 +12,9 @@ import { computed, ref, watch } from 'vue'
 
 import * as v from 'valibot'
 
+import type { DaemonJournalEntry } from '../composables/daemon-memory'
+import { appendDaemonJournalEntry, hasDaemonMemory, searchDaemonJournal, toTextJournalEntry } from '../composables/daemon-memory'
+import { daemonRequest } from '../composables/daemon-rpc'
 import { chatSessionsRepo } from '../database/repos/chat-sessions.repo'
 import { echoChipsRepo } from '../database/repos/echo-chips.repo'
 import { lifetimeMemoryRepo } from '../database/repos/lifetime-memory.repo'
@@ -83,6 +86,16 @@ const BACKGROUND_INDEX_CHECKPOINT_DOCS = 250
  * full pass.
  */
 const BACKGROUND_INDEX_HOT_SET_DOCS = 150
+/** Read ceiling for daemon journal rows (`RPC_MAX_LIMIT` in the gateway). */
+const DAEMON_JOURNAL_LIST_LIMIT = 500
+/** Per-call ceiling for daemon journal search results. */
+const DAEMON_JOURNAL_SEARCH_LIMIT = 500
+
+/** Remove one daemon-owned journal row (explicit user deletion only). */
+async function deleteDaemonJournalEntry(id: string): Promise<boolean> {
+  const reply = await daemonRequest<{ deleted?: unknown }>('journal.delete', { id })
+  return reply?.deleted === true
+}
 
 function* chunkArray<T>(items: T[], size: number): Generator<T[]> {
   for (let i = 0; i < items.length; i += size)
@@ -173,6 +186,7 @@ export const useTextJournalStore = defineStore('text-journal', () => {
   >({ name: 'airi-intrusion-staging' })
 
   const entries = ref<TextJournalEntry[]>([])
+  const derivedEntryMetadata = ref(new Map<string, Partial<TextJournalEntry>>())
   const loading = ref(false)
   const initializedForUserId = ref<string | null>(null)
   const lastSearchTriage = ref<any>(null)
@@ -196,6 +210,37 @@ export const useTextJournalStore = defineStore('text-journal', () => {
       .sort((a, b) => b.createdAt - a.createdAt || b.updatedAt - a.updatedAt)
   })
 
+  function cacheDerivedEntryMetadata(entry: TextJournalEntry): void {
+    const { id, content: _content, createdAt: _createdAt, updatedAt: _updatedAt, ...derived } = entry
+    derivedEntryMetadata.value.set(id, { ...derived })
+  }
+
+  function mergeDaemonEntries(rows: DaemonJournalEntry[], cachedEntries: TextJournalEntry[] = []): TextJournalEntry[] {
+    const byId = new Map(cachedEntries.map(entry => [entry.id, entry]))
+    for (const row of rows) {
+      const cached = derivedEntryMetadata.value.get(row.id)
+      const existing = byId.get(row.id)
+      // The daemon journal has no character/universe columns; keep the local
+      // metadata so a daemon row cannot leak across cards or storylines.
+      const overrides: Partial<TextJournalEntry> = existing
+        ? {
+            ...cached,
+            characterId: existing.characterId,
+            characterName: existing.characterName,
+            universeId: existing.universeId,
+            sessionId: existing.sessionId,
+            source: existing.source,
+            type: existing.type,
+            title: existing.title,
+          }
+        : (cached ?? {})
+      const entry = normalizeEntry(toTextJournalEntry(row, overrides))
+      cacheDerivedEntryMetadata(entry)
+      byId.set(entry.id, entry)
+    }
+    return [...byId.values()]
+  }
+
   async function load(force = false) {
     const currentUserId = getCurrentUserId()
     if ((!force && initializedForUserId.value === currentUserId) || loading.value)
@@ -203,7 +248,20 @@ export const useTextJournalStore = defineStore('text-journal', () => {
 
     loading.value = true
     try {
-      entries.value = normalizeEntries(await textJournalRepo.getAll(currentUserId) ?? [])
+      const cached = normalizeEntries(await textJournalRepo.getAll(currentUserId) ?? [])
+        .map(entry => normalizeEntry({ ...entry, ...derivedEntryMetadata.value.get(entry.id) }))
+      if (hasDaemonMemory()) {
+        try {
+          entries.value = mergeDaemonEntries(await searchDaemonJournal('', DAEMON_JOURNAL_LIST_LIMIT), cached)
+        }
+        catch (err) {
+          console.warn('text_journal: daemon load failed, using local cache:', err)
+          entries.value = cached
+        }
+      }
+      else {
+        entries.value = cached
+      }
 
       // Initialize layered memory index
       try {
@@ -1127,6 +1185,17 @@ export const useTextJournalStore = defineStore('text-journal', () => {
       return recentDuplicate
     }
 
+    if (hasDaemonMemory()) {
+      // The daemon owns id/kind/content/timestamps; title, character, universe/session and derived data stay local.
+      const kind = nextEntry.source === 'dream' ? 'dream' : nextEntry.source === 'seed' ? 'milestone' : 'note'
+      const id = await appendDaemonJournalEntry(nextEntry.content, kind)
+      if (!id)
+        throw new Error('daemon returned no journal entry id')
+      nextEntry.id = id
+      cacheDerivedEntryMetadata(nextEntry)
+      entries.value = [nextEntry, ...entries.value.filter(entry => entry.id !== nextEntry.id)]
+    }
+
     // Hook: If journal intrusion is enabled, stage the pending journal entry via BroadcastChannel + local call
     const injectJournalContext = targetCard.extensions?.airi?.textJournal?.injectJournalContext
     if (injectJournalContext) {
@@ -1138,6 +1207,28 @@ export const useTextJournalStore = defineStore('text-journal', () => {
       stageJournalIntrusion(stagingData)
       // Broadcast to all windows (works if createEntry runs in a different window, e.g. out-of-band journal moment)
       postIntrusionStaging({ type: 'journal' as const, data: stagingData })
+    }
+
+    if (hasDaemonMemory()) {
+      await textJournalRepo.saveAll(currentUserId, entries.value)
+      initializedForUserId.value = currentUserId
+      broadcastStreamEvent({ type: 'journal-refreshed', userId: currentUserId })
+
+      const eventLogStore = useEventLogStore()
+      void eventLogStore.appendEvent({
+        category: 'memory',
+        type: 'text_journal',
+        source: nextEntry.characterName || 'AIRI',
+        textSummary: `Saved text journal entry: "${nextEntry.title}"`,
+        payload: {
+          id: nextEntry.id,
+          title: nextEntry.title,
+          source: nextEntry.source,
+          characterId: nextEntry.characterId,
+        },
+        inspectable: true,
+      })
+      return nextEntry
     }
 
     const nextEntries = [nextEntry, ...entries.value]
@@ -1211,6 +1302,30 @@ export const useTextJournalStore = defineStore('text-journal', () => {
       }
       catch (err) {
         throw new Error(`text_journal: failed to load entries before searching: ${err instanceof Error ? err.message : String(err)}`)
+      }
+
+      input.signal?.throwIfAborted?.()
+      if (hasDaemonMemory()) {
+        const limit = Math.max(1, Math.min(input.limit ?? 10, DAEMON_JOURNAL_SEARCH_LIMIT))
+        try {
+          // The daemon applies query filtering and the limit server-side;
+          // scanning the whole local cache afterwards would only reintroduce
+          // rows the daemon deliberately left out.
+          const rows = await searchDaemonJournal(query, limit)
+          const byIdForDaemonSearch = new Map(entries.value.map(entry => [entry.id, entry]))
+          entries.value = mergeDaemonEntries(rows, entries.value)
+          const merged = rows
+            .map(row => byIdForDaemonSearch.get(row.id))
+            .filter((entry): entry is TextJournalEntry => !!entry)
+            .filter(entry => !targetCharacterId || entry.characterId === targetCharacterId)
+            .map(entry => ({ ...entry, kind: 'ltmm', score: 1 }))
+          return merged
+        }
+        catch (err) {
+          if ((err as Error)?.name === 'AbortError')
+            throw err
+          console.warn('[TextJournal:Search] daemon search failed, using loaded cache:', err)
+        }
       }
 
       let entityLedgerStore: ReturnType<typeof useEntityLedgerStore> | undefined
@@ -1579,6 +1694,22 @@ ${input.instructions ? `\nAdditional Instructions: ${input.instructions}\n` : ''
     const target = entries.value.find(e => e.id === entryId)
     if (!target)
       return false
+
+    // ROOT CAUSE:
+    //
+    // The daemon branch removed only the IndexedDB copy, so the next load
+    // re-merged the journal row from `journal.search` and resurrected it.
+    // Remove the daemon row first; a failure leaves local state untouched.
+    if (hasDaemonMemory()) {
+      try {
+        const deleted = await deleteDaemonJournalEntry(entryId)
+        if (!deleted)
+          console.warn('[TextJournal] Daemon entry was already absent', entryId)
+      }
+      catch (err) {
+        throw new Error(`text_journal: failed to delete daemon entry: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
 
     const nextEntries = entries.value.filter(e => e.id !== entryId)
     await persist(nextEntries)

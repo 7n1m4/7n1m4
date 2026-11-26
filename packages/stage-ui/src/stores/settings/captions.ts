@@ -1,8 +1,18 @@
 import { useLocalStorageManualReset } from '@proj-anima/stage-shared/composables'
 import { defineStore } from 'pinia'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
+
 export type CaptionDocking = 'top' | 'bottom' | 'head' | 'none'
 export type CaptionLayoutMode = 'single' | 'multi'
+
+/** `settings/captions` as the daemon (`CaptionsSettings`) carries it. */
+export interface DaemonCaptionsSettings {
+  enabled: boolean
+  fontSize: number
+  opacity: number
+  docking: string
+}
 
 export const useSettingsCaptions = defineStore('settings-captions', () => {
   const showCaptions = useLocalStorageManualReset<boolean>('settings/captions/enabled', true)
@@ -37,6 +47,25 @@ export const useSettingsCaptions = defineStore('settings-captions', () => {
   function triggerReset() {
     resetTrigger.value = Date.now()
   }
+
+  // Only the four fields `CaptionsSettings` defines are daemon-owned. The
+  // follow/layout/head-tether knobs are not in the daemon schema, so they stay
+  // local and are deliberately left out of both directions of the bridge.
+  bridgeDaemonSettings<DaemonCaptionsSettings>(
+    'captions',
+    () => ({
+      enabled: showCaptions.value,
+      fontSize: fontSize.value,
+      opacity: opacity.value,
+      docking: docking.value,
+    }),
+    (value) => {
+      showCaptions.value = value.enabled
+      fontSize.value = value.fontSize
+      opacity.value = value.opacity
+      docking.value = value.docking as CaptionDocking
+    },
+  )
 
   return {
     showCaptions,

@@ -57,16 +57,13 @@ void main() {
       settingsCatalogTopology.orderedChildren('hub').map((node) => node.id).toList(),
       <String>[
         'area-card',
-        'area-models',
-        'area-scene',
         'area-memory',
         'area-modules',
         'area-providers',
+        'area-sessions',
         'area-data',
         'area-system',
         'area-stage',
-        'area-docs',
-        'area-about',
       ],
     );
     expect(resolveSettingsPath(settingsCatalogTopology, 'missing'), <String>['hub']);
@@ -84,9 +81,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final visible = settingsCatalogTopology.orderedChildren('hub').where((n) => n.visible).toList();
-    expect(visible.map((n) => n.label), containsAll(<String>['AIRI Card Editor','System Preferences','About AIRI']));
+    expect(visible.map((n) => n.label), containsAll(<String>['AIRI Card Editor','System Preferences','Sessions']));
     for (final node in visible.take(7)) {
-      expect(find.byWidgetPredicate((w) => w is Text && w.data == node.label), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is Text && w.data == node.label, skipOffstage: false), findsOneWidget);
     }
     expect(find.text('Artistry (Deprecated)'), findsNothing);
   });

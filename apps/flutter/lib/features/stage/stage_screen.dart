@@ -11,7 +11,6 @@
 // ownership of cards, sessions and settings.
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -38,6 +37,7 @@ class StageScreen extends StatefulWidget {
     this.actorId,
     this.backends,
     this.resolver,
+    this.cacheDirectoryProvider,
     this.background,
     this.captionStyle,
     this.stripState,
@@ -59,6 +59,10 @@ class StageScreen extends StatefulWidget {
 
   /// Optional asset resolver override for embedding/tests
   final ModelAssetResolver? resolver;
+
+  /// Injectable model cache directory for tests; production uses the
+  /// application cache directory via `path_provider`.
+  final ModelCacheDirectoryProvider? cacheDirectoryProvider;
 
   /// Client-local backdrop; defaults to none.
   final StageBackground? background;
@@ -90,9 +94,8 @@ class _StageScreenState extends State<StageScreen> {
           create: (ModelRuntimeInfo info) =>
               MethodChannelModelBackend(info.kind, info.channelName),
         );
-    _resolver =
-        widget.resolver ??
-        ModelAssetResolver(cacheDirectory: Directory.systemTemp);
+    _resolver = widget.resolver ??
+        ModelAssetResolver(cacheDirectoryProvider: widget.cacheDirectoryProvider);
     _render = StageRenderState(
       background: widget.background ?? StageBackground.none,
       captions: widget.captionStyle ?? const StageCaptionStyle(),
@@ -164,6 +167,7 @@ class _StageScreenState extends State<StageScreen> {
         cardId: widget.cardId,
         backends: _backends,
         resolver: _resolver,
+        cacheDirectoryProvider: widget.cacheDirectoryProvider,
         frames: widget.frames,
         actorId: widget.actorId,
         render: _render,

@@ -13,7 +13,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use dirs::data_dir;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension};
+
+/// Re-exported for callers that write rows inside a shared transaction.
+pub use rusqlite::params;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Current database schema version (user_version).
@@ -1025,12 +1028,39 @@ impl SummaryRepo {
         Self { db }
     }
 
-    /// Insert a summary row.
+    /// Insert a summary row, failing on a duplicate `id`.
+    ///
+    /// Use [`SummaryRepo::upsert`] for idempotent re-sends.
     pub fn insert(&self, summary: &StoredSummary) -> Result<()> {
         let conn = self.db.conn.lock().expect("database mutex poisoned");
         conn.execute(
             "insert into summaries (id, day, content, source_session_ids, token_estimate, created_at)
              values (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                summary.id,
+                summary.day,
+                summary.content,
+                serde_json::to_string(&summary.source_session_ids)?,
+                summary.token_estimate,
+                summary.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert a summary row keyed by `id`.
+    ///
+    /// Mirrors [`MemoryEmbeddingRepo::upsert`]: a same-id block replaces the
+    /// stored row instead of failing on the primary-key conflict, so a thin
+    /// client can re-send a block without a read-modify-write.
+    pub fn upsert(&self, summary: &StoredSummary) -> Result<()> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "insert into summaries (id, day, content, source_session_ids, token_estimate, created_at)
+             values (?1, ?2, ?3, ?4, ?5, ?6)
+             on conflict(id) do update set day = excluded.day, content = excluded.content,
+             source_session_ids = excluded.source_session_ids,
+             token_estimate = excluded.token_estimate, created_at = excluded.created_at",
             params![
                 summary.id,
                 summary.day,
@@ -1092,6 +1122,17 @@ impl SummaryRepo {
         let conn = self.db.conn.lock().expect("database mutex poisoned");
         let n: i64 = conn.query_row("select count(*) from summaries", [], |row| row.get(0))?;
         Ok(u64::try_from(n).unwrap_or(0))
+    }
+
+    /// Delete one summary by id. Returns `true` when a row was removed.
+    ///
+    /// The user-initiated delete path needs a durable daemon-side remove:
+    /// re-upserting the surviving snapshot cannot distinguish an intentionally
+    /// deleted id from a row that simply was not sent.
+    pub fn delete(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let n = conn.execute("delete from summaries where id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// Delete summaries whose day falls outside the newest 365 distinct days.
@@ -1170,9 +1211,11 @@ pub struct StoredJournalEntry {
 
 /// Append-only text journal repository.
 ///
-/// Intentionally exposes **no** update or delete methods: entries are
-/// immutable once written. `updated_at` is stored equal to `created_at` at
-/// insert time for consumers that order by recency across both columns.
+/// Entries are immutable once written: no update method exists. The only
+/// delete is [`JournalRepo::delete`], reserved for an explicit user action —
+/// automated loops and assistant tools must stay append-only. `updated_at` is
+/// stored equal to `created_at` at insert time for consumers that order by
+/// recency across both columns.
 #[derive(Clone)]
 pub struct JournalRepo {
     db: Database,
@@ -1215,6 +1258,16 @@ impl JournalRepo {
             params![id, kind, content, embedding_json, ts, ts],
         )?;
         Ok(id)
+    }
+
+    /// Delete one journal entry by id. Returns `true` when a row was removed.
+    ///
+    /// User-initiated only: callers must not invoke this from assistant tools
+    /// or background workers (Sacred Journal Rule).
+    pub fn delete(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let n = conn.execute("delete from journal_entries where id = ?1", params![id])?;
+        Ok(n > 0)
     }
 
     /// List entries created within `[from_ms, to_ms]` (inclusive), oldest first.
@@ -1904,6 +1957,38 @@ mod tests {
     }
 
     #[test]
+    fn summary_repo_delete_removes_one_row_by_id() {
+        let db = test_db();
+        let repo = SummaryRepo::new(db);
+        for id in ["a", "b"] {
+            repo.upsert(&StoredSummary {
+                id: id.to_string(),
+                day: "2026-11-25".to_string(),
+                content: "x".to_string(),
+                source_session_ids: vec![],
+                token_estimate: 0,
+                created_at: 1,
+            })
+            .unwrap();
+        }
+        assert!(repo.delete("a").unwrap());
+        assert!(!repo.delete("a").unwrap());
+        assert_eq!(repo.count().unwrap(), 1);
+        assert_eq!(repo.list_recent(10).unwrap()[0].id, "b");
+    }
+
+    #[test]
+    fn journal_repo_delete_only_removes_the_named_entry() {
+        let db = test_db();
+        let repo = JournalRepo::new(db);
+        let gone = repo.append("note", "forget me", None).unwrap();
+        let kept = repo.append("note", "keep me", None).unwrap();
+        assert!(repo.delete(&gone).unwrap());
+        assert!(!repo.delete(&gone).unwrap());
+        assert_eq!(repo.count().unwrap(), 1);
+        assert_eq!(repo.list_recent(10).unwrap()[0].id, kept);
+    }
+
     fn summary_repo_prune_keeps_newest_365_distinct_days() {
         let db = test_db();
         let repo = SummaryRepo::new(db);
@@ -2151,6 +2236,40 @@ mod tests {
             .list_missing_sources()
             .expect("missing again")
             .is_empty());
+    }
+
+    // Contract: `SummaryRepo::upsert` replaces a same-id block in place, so a
+    // re-sent block never fails on the primary key and never duplicates.
+    #[test]
+    fn summary_repo_upsert_replaces_by_id() {
+        let db = test_db();
+        let repo = SummaryRepo::new(db);
+        repo.upsert(&StoredSummary {
+            id: "sum-1".to_string(),
+            day: "2026-11-10".to_string(),
+            content: "first".to_string(),
+            source_session_ids: vec!["s1".to_string()],
+            token_estimate: 4,
+            created_at: 10,
+        })
+        .expect("first upsert");
+        repo.upsert(&StoredSummary {
+            id: "sum-1".to_string(),
+            day: "2026-11-10".to_string(),
+            content: "second".to_string(),
+            source_session_ids: vec![],
+            token_estimate: 9,
+            created_at: 20,
+        })
+        .expect("same-id upsert replaces");
+
+        assert_eq!(repo.count().unwrap(), 1);
+        let rows = repo.list_by_day("2026-11-10").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].content, "second");
+        assert_eq!(rows[0].token_estimate, 9);
+        assert_eq!(rows[0].created_at, 20);
+        assert!(rows[0].source_session_ids.is_empty());
     }
 
     #[test]

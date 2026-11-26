@@ -52,6 +52,80 @@ class CardImportResult {
   final bool renamed;
 }
 
+
+/// Metadata of `vault.archive.collect`: a base64 ZIP and the domains the daemon
+/// actually included. Never contains provider credentials.
+class VaultArchive {
+  const VaultArchive({
+    required this.archive,
+    required this.bytes,
+    required this.domains,
+  });
+  final String archive;
+  final int bytes;
+  final List<String> domains;
+}
+
+/// Metadata-only report from `vault.archive.inspect`. No entry contents are
+/// decoded into this object.
+class VaultArchiveInspection {
+  const VaultArchiveInspection({
+    required this.format,
+    required this.version,
+    this.createdAt,
+    required this.includesSecrets,
+    required this.domains,
+    required this.sessionCount,
+    required this.messageCount,
+    required this.companionCount,
+  });
+  final String format;
+  final int version;
+  final int? createdAt;
+  final bool includesSecrets;
+  final List<Map<String, dynamic>> domains;
+  final int sessionCount;
+  final int messageCount;
+
+  /// Count only: companion names are user data and are not shown by the UI.
+  final int companionCount;
+}
+
+/// Counts returned by `vault.archive.apply`.
+class VaultArchiveApplyResult {
+  const VaultArchiveApplyResult({
+    required this.sessionsInserted,
+    required this.sessionsSkipped,
+    required this.messagesInserted,
+    required this.messagesSkipped,
+    required this.summariesInserted,
+    required this.journalEntriesInserted,
+    required this.applied,
+    required this.notApplied,
+  });
+  final int sessionsInserted;
+  final int sessionsSkipped;
+  final int messagesInserted;
+  final int messagesSkipped;
+  final int summariesInserted;
+  final int journalEntriesInserted;
+  final List<String> applied;
+  final List<String> notApplied;
+}
+
+/// Counts returned by `sessions.media.scrub`.
+class SessionMediaScrubResult {
+  const SessionMediaScrubResult({
+    required this.imagesFound,
+    required this.bytesExtracted,
+    required this.sessionsScanned,
+    this.backupPath,
+  });
+  final int imagesFound;
+  final int bytesExtracted;
+  final int sessionsScanned;
+  final String? backupPath;
+}
 enum DaemonConnectionState {
   disconnected,
   connecting,
@@ -605,6 +679,50 @@ class DaemonClient {
     return v;
   }
 
+  static int _requiredInt(RpcReply reply, String key) {
+    final v = _field(reply, key);
+    if (v is int || (v is num && v.isFinite && v.truncate() == v)) {
+      return (v as num).toInt();
+    }
+    throw DaemonClientException(
+      kind: DaemonFailureKind.protocol,
+      message: 'Invalid $key in ${reply.action} reply.',
+    );
+  }
+
+  static bool _requiredBool(RpcReply reply, String key) {
+    final v = _field(reply, key);
+    if (v is! bool) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid $key in ${reply.action} reply.',
+      );
+    }
+    return v;
+  }
+
+  static List<String> _strings(RpcReply reply, String key) {
+    final raw = _field(reply, key);
+    if (raw is! List || raw.any((item) => item is! String)) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid $key in ${reply.action} reply.',
+      );
+    }
+    return raw.cast<String>().toList(growable: false);
+  }
+
+  static List<Map<String, dynamic>> _requiredObjects(RpcReply reply, String key) {
+    final raw = _field(reply, key);
+    if (raw is! List || raw.any((item) => item is! Map<String, dynamic>)) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid $key in ${reply.action} reply.',
+      );
+    }
+    return raw.cast<Map<String, dynamic>>().toList(growable: false);
+  }
+
   /// Stop an in-flight chat turn (`chat.cancel`).
   Future<bool> cancelChat(String sessionId) async {
     final reply = await _callOk(
@@ -700,6 +818,39 @@ class DaemonClient {
     );
   }
 
+  /// List provider metadata (`providers.list`). The daemon never puts
+  /// credentials on the wire, so each row is allowlisted metadata only.
+  Future<List<Map<String, dynamic>>> providersList() async {
+    final reply = await _callOk('providers.list');
+    return _objects(reply, 'providers');
+  }
+
+  /// Create or update a provider (`providers.save`). Returns the daemon's
+  /// canonical provider id. The payload is forwarded unchanged so callers keep
+  /// full control over credential rotation (`apiKey` / `rotateSecrets`).
+  Future<String> providersSave(Map<String, dynamic> payload) async {
+    final reply = await _callOk('providers.save', payload: payload);
+    return _requiredString(reply, 'id');
+  }
+
+  /// Delete a provider (`providers.delete`). Returns whether a row was removed;
+  /// a missing id is `false`, not an error, so a stale row is an idempotent
+  /// delete.
+  Future<bool> providersDelete(String id) async {
+    final reply = await _callOk(
+      'providers.delete',
+      payload: <String, dynamic>{'id': id},
+    );
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['deleted'] is! bool) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid providers.delete reply.',
+      );
+    }
+    return data['deleted'] as bool;
+  }
+
   /// Recent short-term-memory summaries (`stmm.list`).
   Future<List<Map<String, dynamic>>> stmmList({int limit = 50}) async {
     final reply = await _callOk(
@@ -741,6 +892,131 @@ class DaemonClient {
     final reply = await _callOk('retrieval.status');
     final data = reply.data;
     return data is Map<String, dynamic> && data['available'] == true;
+  }
+
+  /// Typed `vault.status` payload (availability flag plus vault statistics), or
+  /// `null` when the daemon replies without an object payload. Mirrors
+  /// [`retrievalStatus`] as a thin wrapper over the raw verb.
+  Future<Map<String, dynamic>?> vaultStatus() async {
+    final reply = await _callOk('vault.status');
+    final data = reply.data;
+    return data is Map<String, dynamic> ? data : null;
+  }
+
+  /// Content domains the gateway accepts for a vault archive. `providers`
+  /// carries API credentials and must never be sent over this wire.
+  static const Set<String> vaultArchiveDomains = <String>{
+    'characters',
+    'chats',
+    'memory',
+    'backgrounds',
+  };
+
+  /// Collect a ZIP archive of the selected vault domains
+  /// (`vault.archive.collect`). The reply carries base64 bytes; the daemon
+  /// itself refuses unknown domains, and the client rejects them before the
+  /// request reaches the socket.
+  Future<VaultArchive> vaultArchiveCollect(List<String> domains) async {
+    if (domains.isEmpty || domains.any((d) => !vaultArchiveDomains.contains(d))) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Unsupported vault archive domains.',
+      );
+    }
+    final reply = await _callOk(
+      'vault.archive.collect',
+      payload: <String, dynamic>{'domains': domains},
+    );
+    final data = reply.data;
+    if (data is! Map<String, dynamic> || data['archive'] is! String) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid vault.archive.collect reply.',
+      );
+    }
+    return VaultArchive(
+      archive: data['archive'] as String,
+      bytes: _requiredInt(reply, 'bytes'),
+      domains: _strings(reply, 'domains'),
+    );
+  }
+
+  /// Inspect an archive without decoding its contents (`vault.archive.inspect`).
+  /// Companions are reduced to a count: names are user data and are never
+  /// rendered by the UI.
+  Future<VaultArchiveInspection> vaultArchiveInspect(String archive) async {
+    final reply = await _callOk(
+      'vault.archive.inspect',
+      payload: <String, dynamic>{'archive': archive},
+    );
+    final rawNames = _field(reply, 'companionNames');
+    if (rawNames is! List || rawNames.any((name) => name is! String)) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid companionNames in ${reply.action} reply.',
+      );
+    }
+    final createdAt = _field(reply, 'createdAt');
+    if (createdAt != null &&
+        !(createdAt is num && createdAt.isFinite && createdAt.truncate() == createdAt)) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid createdAt in ${reply.action} reply.',
+      );
+    }
+    return VaultArchiveInspection(
+      format: _requiredString(reply, 'format'),
+      version: _requiredInt(reply, 'version'),
+      createdAt: (createdAt as num?)?.toInt(),
+      includesSecrets: _requiredBool(reply, 'includesSecrets'),
+      domains: _requiredObjects(reply, 'domains'),
+      sessionCount: _requiredInt(reply, 'sessionCount'),
+      messageCount: _requiredInt(reply, 'messageCount'),
+      companionCount: rawNames.length,
+    );
+  }
+
+  /// Apply a verified, secret-free archive (`vault.archive.apply`). This verb
+  /// is action-gated on the daemon; a denial is promoted to an exception.
+  Future<VaultArchiveApplyResult> vaultArchiveApply(String archive) async {
+    final reply = await _callOk(
+      'vault.archive.apply',
+      payload: <String, dynamic>{'archive': archive},
+    );
+    return VaultArchiveApplyResult(
+      sessionsInserted: _requiredInt(reply, 'sessionsInserted'),
+      sessionsSkipped: _requiredInt(reply, 'sessionsSkipped'),
+      messagesInserted: _requiredInt(reply, 'messagesInserted'),
+      messagesSkipped: _requiredInt(reply, 'messagesSkipped'),
+      summariesInserted: _requiredInt(reply, 'summariesInserted'),
+      journalEntriesInserted: _requiredInt(reply, 'journalEntriesInserted'),
+      applied: _strings(reply, 'applied'),
+      notApplied: _strings(reply, 'notApplied'),
+    );
+  }
+
+  /// Extract inline media and scrub it from messages (`sessions.media.scrub`).
+  /// A pre-scrub backup is written only when [createBackup] is true.
+  Future<SessionMediaScrubResult> sessionsMediaScrub({
+    required bool createBackup,
+  }) async {
+    final reply = await _callOk(
+      'sessions.media.scrub',
+      payload: <String, dynamic>{'createBackup': createBackup},
+    );
+    final backupPath = _field(reply, 'backupPath');
+    if (backupPath != null && backupPath is! String) {
+      throw DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid backupPath in ${reply.action} reply.',
+      );
+    }
+    return SessionMediaScrubResult(
+      imagesFound: _requiredInt(reply, 'imagesFound'),
+      bytesExtracted: _requiredInt(reply, 'bytesExtracted'),
+      sessionsScanned: _requiredInt(reply, 'sessionsScanned'),
+      backupPath: backupPath as String?,
+    );
   }
 
   /// All character cards (`cards.list`).

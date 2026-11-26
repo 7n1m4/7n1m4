@@ -27,18 +27,18 @@
 //! - VMD motions (`.vmd`; signature, model name, bone keys with 64-byte
 //!   interpolation, morph keys; camera/light/shadow sections are skipped,
 //!   their counts stored; the trailing IK on/off section is never decoded)
+//! - CP932 decoding — VMD names are decoded from CP932 with `encoding_rs`;
+//!   PMX UTF-8 strings that are not valid UTF-8 fall back to CP932.
 //!
 //! What explicitly does **not** parse (a typed error is returned instead of
 //! a misparse, or the section is never interpreted):
 //!
-//! - **PMX 2.1** and **PMD** — rejected (version/magic) respectively.
+//! - **PMX 2.1** and **PMD** — rejected by version/magic respectively. PMD and
+//!   its CP932-only strings remain unsupported.
 //! - **Display frames, rigid bodies and joints** — bytes after the morphs
 //!   section are never read.
 //! - **Physics / IK evaluation** — IK data is decoded and stored, never run.
 //! - **QDEF** deform type — reported as [`MmdError::UnsupportedDeformType`].
-//! - **CP932 decoding** — VMD names are CP932 on the wire; this crate has no
-//!   encoding crate dependency and decodes ASCII-lossily, keeping raw bytes
-//!   in `name_raw` (see the VMD module docs).
 //!
 //! ## Rest-pose engine (P10 M1)
 //!

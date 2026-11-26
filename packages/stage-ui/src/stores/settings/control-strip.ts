@@ -4,6 +4,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
+import { bridgeDaemonSettings } from '../../composables/daemon-settings'
 import { CUSTOMIZER_CATALOG } from '../../constants/control-customizer'
 
 export interface ControlStripButton {
@@ -11,6 +12,23 @@ export interface ControlStripButton {
   enabled: boolean
   label: string
   icon: string
+}
+
+interface DaemonControlStripSettings {
+  orientation: 'vertical' | 'horizontal'
+  stageMode: 'positionMode' | 'dragMode' | 'tactileMode' | 'orbitMode'
+  advancedPositioningOpen: boolean
+  stageEnabled: boolean
+  chatOpen: boolean
+  captionOpen: boolean
+  backgroundTint: string
+  collapsed: boolean
+  selfieIncludeBg: boolean
+  dockedEdge: 'left' | 'right' | 'top' | 'bottom'
+  position: { x: number, y: number }
+  buttons: ControlStripButton[]
+  buttonsVersion: string
+  enabledButtons: Record<string, boolean>
 }
 
 // CRITICAL NOTICE: Bumping BUTTONS_CATALOG_VERSION will COMPLETELY WIPE every user's custom control strip button arrangement and force-reset them to defaults.
@@ -93,6 +111,13 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
   const stageDisabled = ref(false)
   const chatOpen = useLocalStorageManualReset<boolean>('settings/chat-open', !isStageTamagotchi())
   const captionOpen = useLocalStorageManualReset<boolean>('settings/caption-open', false)
+  const workspaceOpen = useLocalStorageManualReset<boolean>('settings/control-strip/workspace-open', false)
+  const backgroundTint = useLocalStorageManualReset<string>('settings/control-strip/background-tint', '#171717')
+  const collapsed = useLocalStorageManualReset<boolean>('settings/control-strip/collapsed', false)
+  const dockedEdge = useLocalStorageManualReset<'left' | 'right' | 'top' | 'bottom'>('settings/control-strip/docked-edge', 'right')
+  const selfieIncludeBg = useLocalStorageManualReset<boolean>('settings/control-strip/selfie-include-bg', true)
+  const position = useLocalStorageManualReset<{ x: number, y: number }>('settings/control-strip/position', { x: 20, y: 150 })
+  const enabledButtons = useLocalStorageManualReset<Record<string, boolean>>('settings/control-strip/enabled-buttons', { stage: true, caption: true })
 
   // Web default: chat is open by default on web/mobile stages.
   // Existing web sessions that had the legacy 'false' default are initialized to true once.
@@ -102,11 +127,6 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
       localStorage.setItem('settings/control-strip/web-chat-defaulted', 'true')
     }
   }
-  const workspaceOpen = useLocalStorageManualReset<boolean>('settings/control-strip/workspace-open', false)
-  const backgroundTint = useLocalStorageManualReset<string>('settings/control-strip/background-tint', '#171717')
-  const collapsed = useLocalStorageManualReset<boolean>('settings/control-strip/collapsed', false)
-  const dockedEdge = useLocalStorageManualReset<'left' | 'right' | 'top' | 'bottom'>('settings/control-strip/docked-edge', 'right')
-  const selfieIncludeBg = useLocalStorageManualReset<boolean>('settings/control-strip/selfie-include-bg', true)
 
   const defaultButtons = getDefaultControlStripButtons()
   const expectedVersion = isStageTamagotchi() ? BUTTONS_CATALOG_VERSION : `${BUTTONS_CATALOG_VERSION}-mobile`
@@ -117,17 +137,15 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
   // useLocalStorage owns its own serialization watcher and is the source of truth.
   const buttons = useLocalStorage<ControlStripButton[]>('settings/control-strip/buttons', defaultButtons)
 
-  // On first load, check if stored data is from a stale catalog version or different platform.
-  // Desktop preserves existing 'v4' and 'v5' configs without wiping user layouts.
-  const storedVersion = localStorage.getItem('settings/control-strip/buttons-version')
-  const isValidDesktopVersion = isStageTamagotchi() && (storedVersion === 'v4' || storedVersion === 'v5')
-  const isValidMobileVersion = !isStageTamagotchi() && (storedVersion === 'v4-mobile' || storedVersion === 'v5-mobile')
+  function mergeButtons(storedButtons: ControlStripButton[], storedVersion: string | null): ControlStripButton[] {
+    const isValidDesktopVersion = isStageTamagotchi() && (storedVersion === 'v4' || storedVersion === 'v5')
+    const isValidMobileVersion = !isStageTamagotchi() && (storedVersion === 'v4-mobile' || storedVersion === 'v5-mobile')
 
-  if (!isValidDesktopVersion && !isValidMobileVersion) {
-    buttons.value = [...defaultButtons]
-    localStorage.setItem('settings/control-strip/buttons-version', expectedVersion)
-  }
-  else if (Array.isArray(buttons.value)) {
+    if (!isValidDesktopVersion && !isValidMobileVersion) {
+      localStorage.setItem('settings/control-strip/buttons-version', expectedVersion)
+      return [...defaultButtons]
+    }
+
     // Version matches: merge carefully, preserving user's enabled states and custom order.
     // NOTICE: We validate against ALL_KNOWN_IDS (defaultButtons + full CUSTOMIZER_CATALOG)
     // because users can enable catalog items (like always-on-top) that aren't in defaultButtons.
@@ -138,7 +156,7 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
     ])
 
     let changed = false
-    const existing = [...buttons.value]
+    const existing = [...storedButtons]
 
     // On mobile/web, drop any legacy 'gemini-session' button slot. It used to
     // migrate into 'stage-atmosphere', but Stage Theme is deprecated on
@@ -198,9 +216,54 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
       }
     }
 
-    if (changed)
-      buttons.value = updated
+    return changed ? updated : storedButtons
   }
+
+  function readButtons(): ControlStripButton[] {
+    const storedVersion = localStorage.getItem('settings/control-strip/buttons-version')
+    const storedButtons = buttons.value
+    const merged = mergeButtons(Array.isArray(storedButtons) ? storedButtons : defaultButtons, storedVersion)
+    if (merged !== storedButtons)
+      buttons.value = merged
+    return merged
+  }
+
+  readButtons()
+
+  function daemonSettings(): DaemonControlStripSettings {
+    return {
+      orientation: orientation.value,
+      stageMode: stageMode.value,
+      advancedPositioningOpen: isAdvancedPositioningOpen.value,
+      stageEnabled: stageEnabled.value,
+      chatOpen: chatOpen.value,
+      captionOpen: captionOpen.value,
+      backgroundTint: backgroundTint.value,
+      collapsed: collapsed.value,
+      selfieIncludeBg: selfieIncludeBg.value,
+      dockedEdge: dockedEdge.value,
+      position: position.value,
+      buttons: readButtons(),
+      buttonsVersion: isStageTamagotchi() ? BUTTONS_CATALOG_VERSION : `${BUTTONS_CATALOG_VERSION}-mobile`,
+      enabledButtons: enabledButtons.value,
+    }
+  }
+
+  bridgeDaemonSettings<DaemonControlStripSettings>('control-strip', daemonSettings, (settings) => {
+    orientation.value = settings.orientation
+    stageMode.value = settings.stageMode
+    isAdvancedPositioningOpen.value = settings.advancedPositioningOpen
+    stageEnabled.value = settings.stageEnabled
+    chatOpen.value = settings.chatOpen
+    captionOpen.value = settings.captionOpen
+    backgroundTint.value = settings.backgroundTint
+    collapsed.value = settings.collapsed
+    selfieIncludeBg.value = settings.selfieIncludeBg
+    dockedEdge.value = settings.dockedEdge
+    position.value = settings.position
+    enabledButtons.value = settings.enabledButtons
+    buttons.value = mergeButtons(settings.buttons, settings.buttonsVersion)
+  })
 
   function toggleOrientation() {
     orientation.value = orientation.value === 'vertical' ? 'horizontal' : 'vertical'
@@ -222,9 +285,7 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
   }
 
   function resetButtons() {
-    const defaultButtons = getDefaultControlStripButtons()
-    buttons.value = [...defaultButtons]
-    const expectedVersion = isStageTamagotchi() ? BUTTONS_CATALOG_VERSION : `${BUTTONS_CATALOG_VERSION}-mobile`
+    buttons.value = [...getDefaultControlStripButtons()]
     localStorage.setItem('settings/control-strip/buttons-version', expectedVersion)
   }
 
@@ -240,6 +301,9 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
     backgroundTint.reset()
     collapsed.reset()
     selfieIncludeBg.reset()
+    dockedEdge.reset()
+    position.reset()
+    enabledButtons.reset()
   }
 
   return {
@@ -257,6 +321,8 @@ export const useSettingsControlStrip = defineStore('settings-control-strip', () 
     collapsed,
     dockedEdge,
     selfieIncludeBg,
+    position,
+    enabledButtons,
     toggleOrientation,
     cycleStageMode,
     cycleInteractionMode: cycleStageMode,

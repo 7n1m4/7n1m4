@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import 'app.dart';
 import 'daemon_client/daemon_client.dart';
+import 'navigation/navigation_shell.dart';
 import 'speech/piper_tts_engine.dart';
 import 'ui/lip_sync_controller.dart';
 import 'ui/lipsync_renderer.dart';
@@ -18,12 +19,16 @@ void main() {
   final client = DaemonClient();
   final controller = _localLipSync();
   if (controller != null) _speakCompletedTurns(client, controller);
-  runApp(AnimaApp(
-    client: client,
-    lipSync: controller == null
-        ? const SizedBox.shrink()
-        : LipSyncRenderer(frames: controller.frames),
-  ));
+  runApp(
+    AnimaApp(
+      client: client,
+      sceneStorageDirectoryProvider: defaultSceneStorageDirectory,
+      lipSyncFrames: controller?.frames,
+      lipSync: controller == null
+          ? const SizedBox.shrink()
+          : LipSyncRenderer(frames: controller.frames),
+    ),
+  );
 }
 
 /// Opt-in local TTS bridge. Without a user-supplied voice model no engine is

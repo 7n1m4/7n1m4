@@ -22,6 +22,8 @@ class RpcRequest {
   /// Any JSON value; the gateway echoes it verbatim in the reply.
   final Object? id;
 
+  /// Encodes the frame map, omitting `payload` and `id` when `null` to match
+  /// Rust `skip_serializing_if = "Option::is_none"`.
   Map<String, dynamic> toJson() {
     final frame = <String, dynamic>{'type': 'rpc', 'action': action};
     if (payload != null) frame['payload'] = payload;
@@ -29,6 +31,7 @@ class RpcRequest {
     return frame;
   }
 
+  /// Serializes the `rpc` request frame to JSON without `null` optional keys.
   String toWire() => jsonEncode(toJson());
 }
 

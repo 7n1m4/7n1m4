@@ -72,6 +72,7 @@ void main() {
       }));
       expect(model.kind, ModelKind.none);
       expect(model.problemCode, DisplayModel.unknownModelKindCode);
+      expect(model.displayModelId, 'live2d-test');
     });
 
     test('a non-http url source is an invalid asset', () {
@@ -210,4 +211,38 @@ void main() {
     expect(find.text('No display model'), findsOneWidget);
     expect(find.byIcon(Icons.error_outline), findsNothing);
   });
+
+  testWidgets('displayModelId resolves through daemon catalog', (tester) async {
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
+    client.onCall = (action, payload) {
+      if (action == 'cards.get') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'card': _card(<String, dynamic>{'displayModelId': 'live2d-test'}),
+          },
+        );
+      }
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'id': 'live2d-test',
+          'name': 'Live2D Test',
+          'format': 'live2d-zip',
+          'source': 'url',
+          'url': 'https://example.com/m.zip',
+          'file': '',
+        },
+      );
+    };
+
+    await _pump(tester, client, 'card-1');
+
+    expect(find.textContaining('LIVE2D'), findsOneWidget);
+    expect(find.text('No display model'), findsNothing);
+  });
+
 }

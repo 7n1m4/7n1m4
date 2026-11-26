@@ -75,9 +75,17 @@ const JOURNAL_SEARCH_MAX_SCAN_BYTES: u64 = 8 * 1024 * 1024;
 /// Default page size for list RPCs that take a client `limit`
 /// (`sessions.list` today), clamped by [`RPC_MAX_LIMIT`].
 const DEFAULT_LIST_LIMIT: usize = 50;
+/// Hard cap on the number of blocks a single `stmm.upsert` RPC may carry.
+const STMM_UPSERT_MAX_BLOCKS: usize = 100;
+/// Hard cap on the byte size of a single block's `content` field.
+const STMM_UPSERT_MAX_CONTENT_BYTES: usize = 64 * 1024;
+/// Hard cap on the byte size of a block's `id` field.
+const STMM_UPSERT_MAX_ID_BYTES: usize = 256;
+/// Hard cap on the number of source session ids a single block may carry.
+const STMM_UPSERT_MAX_SOURCE_SESSION_IDS: usize = 32;
 
 /// Prefix recognized by `anima-channel`'s RPC dispatch as `rpc_actions_disabled`.
-const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
+pub(crate) const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
 
 /// Hard cap on a single MCP tool call or short ACP RPC, independent of any
 /// client-supplied `timeout`. Keeps a hung tool server from holding an RPC
@@ -804,7 +812,13 @@ impl Gateway {
                         .get("section")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| "missing section".to_string())?;
-                    let reply = core.settings_get(section)?;
+                    let mut reply = core.settings_get(section)?;
+                    if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&reply.settings) {
+                        let normalized = normalize_settings_shape(section, settings);
+                        if let Ok(encoded) = serde_json::to_string(&normalized) {
+                            reply.settings = encoded;
+                        }
+                    }
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
@@ -825,10 +839,28 @@ impl Gateway {
                             .get("settings")
                             .cloned()
                             .ok_or_else(|| "missing settings".to_string())?;
+                        // Thin clients send partial sections. Opaque object fields
+                        // must arrive as `{}` (the Vue default), not as `null`,
+                        // which serde would persist for an omitted JSON `Value`.
+                        let settings = normalize_settings_shape(section, settings);
                         let reply = core.settings_set(section, settings)?;
                         Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                     },
                 ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "display-model.resolve".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let id = value
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| "missing id".to_string())?;
+                    let reply = core.resolve_display_model(id)?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
             );
         }
         {
@@ -839,6 +871,128 @@ impl Gateway {
                     let reply = core.vault_status()?;
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "vault.archive.collect".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::VaultArchiveCollectRequest =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
+                        let selection = vault_archive_selection(&req.domains)?;
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let bytes = anima_core::vault::collect_archive(&db, &[], selection)
+                            .map_err(|_| "archive collection failed".to_string())?;
+                        let reply = anima_channel::wire::VaultArchiveReply {
+                            archive: base64::Engine::encode(
+                                &base64::engine::general_purpose::STANDARD,
+                                &bytes,
+                            ),
+                            bytes: bytes.len() as u64,
+                            domains: req.domains,
+                        };
+                        vault_archive_reply(
+                            &serde_json::to_value(reply).map_err(|e| e.to_string())?,
+                        )
+                    },
+                ),
+            );
+        }
+        {
+            m.insert(
+                "vault.archive.inspect".to_string(),
+                handler(move |_method: &str, value: &serde_json::Value| {
+                    let req: anima_channel::wire::VaultArchiveRequest =
+                        serde_json::from_value(value.clone())
+                            .map_err(|_| "invalid request".to_string())?;
+                    let bytes = vault_archive_bytes(&req.archive)?;
+                    let report = anima_core::vault::inspect_archive(&bytes)
+                        .map_err(|_| "invalid vault archive".to_string())?;
+                    let reply = anima_channel::wire::VaultArchiveInspectReply {
+                        format: report.format,
+                        version: report.version,
+                        created_at: report.created_at,
+                        includes_secrets: report.includes_secrets,
+                        domains: report.domains,
+                        session_count: report.session_count,
+                        message_count: report.message_count,
+                        companion_names: report.companion_names,
+                    };
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "vault.archive.apply".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::VaultArchiveRequest =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
+                        let bytes = vault_archive_bytes(&req.archive)?;
+                        let inspection = anima_core::vault::inspect_archive(&bytes)
+                            .map_err(|_| "invalid vault archive".to_string())?;
+                        if inspection.includes_secrets {
+                            return Err("archive contains provider credentials".to_string());
+                        }
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let report = anima_core::vault::commit_archive(&db, &bytes)
+                            .map_err(|_| "archive apply failed".to_string())?;
+                        let reply = anima_channel::wire::VaultArchiveApplyReply {
+                            sessions_inserted: report.sessions_inserted,
+                            sessions_skipped: report.sessions_skipped,
+                            messages_inserted: report.messages_inserted,
+                            messages_skipped: report.messages_skipped,
+                            summaries_inserted: report.summaries_inserted,
+                            journal_entries_inserted: report.journal_entries_inserted,
+                            applied: report.applied,
+                            not_applied: report.not_applied,
+                        };
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "sessions.media.scrub".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let req: anima_channel::wire::SessionMediaScrubRequest =
+                            serde_json::from_value(value.clone())
+                                .map_err(|_| "invalid request".to_string())?;
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let Some(media_dir) = profile_media_dir(&db) else {
+                            return Err("core unavailable".to_string());
+                        };
+                        let report = anima_core::vault::scrub_session_media(
+                            &db,
+                            &media_dir,
+                            &[],
+                            req.create_backup,
+                        )
+                        .map_err(|_| "media scrub failed".to_string())?;
+                        let reply = anima_channel::wire::SessionMediaScrubReply {
+                            images_found: report.images_found,
+                            bytes_extracted: report.bytes_extracted,
+                            sessions_scanned: report.sessions_scanned,
+                            backup_path: report.backup_path,
+                        };
+                        Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                    },
+                ),
             );
         }
         {
@@ -887,15 +1041,31 @@ impl Gateway {
                         let assistant_message_id = anima_channel::uuid::uuid_v4();
                         let assistant_message_id_for_reply = assistant_message_id.clone();
                         let rows = core.provider_rows().unwrap_or_default();
+                        // The daemon owns selection: load the same section the
+                        // settings.get/set verbs expose, never trust a client
+                        // field on chat.send. An empty selection preserves the
+                        // env / first-enabled behavior.
+                        let selection = core
+                            .settings_get("chat-provider")
+                            .ok()
+                            .and_then(|reply| {
+                                serde_json::from_str::<anima_core::settings::ChatProviderSettings>(
+                                    &reply.settings,
+                                )
+                                .ok()
+                            })
+                            .unwrap_or_default();
                         let core_for_send = core.clone();
                         std::thread::spawn(move || {
                             // One process-wide Tokio runtime for every chat
                             // turn: `Runtime::new()` per turn built (and tore
                             // down) a whole multi-thread reactor per message.
                             chat_runtime().block_on(async move {
-                                let resolution = anima_core::providers::resolve_provider(
+                                let resolution = anima_core::providers::resolve_provider_selection(
                                     |k| std::env::var(k).ok(),
                                     &rows,
+                                    &selection.active_provider,
+                                    &selection.active_model,
                                 );
                                 let Some(resolution) = resolution else {
                                     // No provider configured: do not silently drop
@@ -1152,6 +1322,47 @@ impl Gateway {
         {
             let core = core.clone();
             m.insert(
+                "stmm.upsert".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let blocks = value
+                            .get("blocks")
+                            .and_then(|v| v.as_array())
+                            .ok_or_else(|| "missing blocks".to_string())?;
+                        if blocks.is_empty() {
+                            return Err("empty blocks".to_string());
+                        }
+                        if blocks.len() > STMM_UPSERT_MAX_BLOCKS {
+                            return Err(format!(
+                                "too many blocks: {} exceeds cap of {}",
+                                blocks.len(),
+                                STMM_UPSERT_MAX_BLOCKS
+                            ));
+                        }
+                        // Validate every block before opening a write transaction:
+                        // a late malformed block must not leave earlier rows committed.
+                        let summaries = blocks
+                            .iter()
+                            .enumerate()
+                            .map(|(index, block)| {
+                                stmm_upsert_block(block).map_err(|err| {
+                                    format!("invalid block {index}: {err}")
+                                })
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        with_summary_transaction(db, &summaries)
+                            .map_err(|_| "summary write failed".to_string())?;
+                        Ok(serde_json::json!({ "upserted": summaries.len() }))
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
                 "stmm.rebuild".to_string(),
                 gated(
                     config_path,
@@ -1291,6 +1502,57 @@ impl Gateway {
                         "truncated": truncated,
                     }))
                 }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "stmm.delete".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                        if id.is_empty() {
+                            return Err("missing id".to_string());
+                        }
+                        if id.len() > STMM_UPSERT_MAX_ID_BYTES {
+                            return Err(format!(
+                                "id exceeds cap of {} bytes",
+                                STMM_UPSERT_MAX_ID_BYTES
+                            ));
+                        }
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let deleted = anima_store::SummaryRepo::new(db)
+                            .delete(id)
+                            .map_err(|_| "summary delete failed".to_string())?;
+                        Ok(serde_json::json!({ "deleted": deleted }))
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "journal.delete".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let id = value.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                        if id.is_empty() {
+                            return Err("missing id".to_string());
+                        }
+                        if id.len() > 256 {
+                            return Err("id exceeds cap of 256 bytes".to_string());
+                        }
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        let deleted = anima_store::JournalRepo::new(db)
+                            .delete(id)
+                            .map_err(|_| "journal delete failed".to_string())?;
+                        Ok(serde_json::json!({ "deleted": deleted }))
+                    },
+                ),
             );
         }
         {
@@ -2224,6 +2486,156 @@ fn chat_runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
+fn stmm_clamp_i64(value: Option<&serde_json::Value>) -> i64 {
+    match value {
+        Some(v) => {
+            if let Some(n) = v.as_i64() {
+                n
+            } else if let Some(n) = v.as_u64() {
+                n.min(i64::MAX as u64) as i64
+            } else {
+                0
+            }
+        }
+        None => 0,
+    }
+}
+
+/// Opaque settings objects that Vue keeps as `{}` rather than `null`.
+/// Kept here so `settings.rs` stays owned by the provider-selection lane.
+const SETTINGS_OBJECT_FIELDS: &[&str] = &[
+    "speechProviderSettings",
+    "transcriptionProviderSettings",
+    "activeAdvanced",
+];
+
+/// Normalize JSON-object settings fields for partial writes and reads.
+///
+/// `serde_json::Value` deserializes an omitted field as `null`; the Vue stores
+/// default those opaque maps to `{}`. Normalizing at the gateway boundary keeps
+/// first reads, partial writes and post-write reads consistent without changing
+/// the shared core settings type.
+fn normalize_settings_shape(section: &str, mut settings: serde_json::Value) -> serde_json::Value {
+    if !matches!(section, "hearing" | "vision") {
+        return settings;
+    }
+    let Some(map) = settings.as_object_mut() else {
+        return settings;
+    };
+    for field in SETTINGS_OBJECT_FIELDS {
+        if map.get(*field).is_none_or(|v| v.is_null()) {
+            map.insert((*field).to_string(), serde_json::Value::Object(serde_json::Map::new()));
+        }
+    }
+    settings
+}
+
+/// Commit a validated batch in one SQLite transaction. A failure anywhere in
+/// the batch rolls back every row, so retrying a rejected upsert cannot leave
+/// a half-written day behind.
+fn with_summary_transaction(
+    db: anima_store::Database,
+    summaries: &[anima_store::StoredSummary],
+) -> Result<(), String> {
+    db.with_connection(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        for summary in summaries {
+            conn.execute(
+                "insert into summaries (id, day, content, source_session_ids, token_estimate, created_at)
+                 values (?1, ?2, ?3, ?4, ?5, ?6)
+                 on conflict(id) do update set day = excluded.day, content = excluded.content,
+                 source_session_ids = excluded.source_session_ids,
+                 token_estimate = excluded.token_estimate, created_at = excluded.created_at",
+                anima_store::params![
+                    summary.id,
+                    summary.day,
+                    summary.content,
+                    serde_json::to_string(&summary.source_session_ids)?,
+                    summary.token_estimate,
+                    summary.created_at,
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
+}
+
+fn stmm_upsert_block(value: &serde_json::Value) -> Result<anima_store::StoredSummary, String> {
+    let id = value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if id.is_empty() {
+        return Err("missing id".to_string());
+    }
+    if id.len() > STMM_UPSERT_MAX_ID_BYTES {
+        return Err(format!(
+            "id exceeds cap of {} bytes",
+            STMM_UPSERT_MAX_ID_BYTES
+        ));
+    }
+
+    let day = value
+        .get("day")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if day.len() != 10
+        || day.chars().nth(4) != Some('-')
+        || day.chars().nth(7) != Some('-')
+        || !day
+            .chars()
+            .enumerate()
+            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    {
+        return Err("invalid day format, expected YYYY-MM-DD".to_string());
+    }
+
+    let content = value
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if content.trim().is_empty() {
+        return Err("missing content".to_string());
+    }
+    if content.len() > STMM_UPSERT_MAX_CONTENT_BYTES {
+        return Err(format!(
+            "content exceeds cap of {} bytes",
+            STMM_UPSERT_MAX_CONTENT_BYTES
+        ));
+    }
+
+    let token_estimate = stmm_clamp_i64(value.get("tokenEstimate")).max(0);
+
+    let source_session_ids: Vec<String> = value
+        .get("sourceSessionIds")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(STMM_UPSERT_MAX_SOURCE_SESSION_IDS)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let created_at = stmm_clamp_i64(value.get("createdAt"));
+
+    Ok(anima_store::StoredSummary {
+        id,
+        day,
+        content,
+        token_estimate,
+        source_session_ids,
+        created_at,
+    })
+}
+
 fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
     value
         .get("limit")
@@ -2233,11 +2645,101 @@ fn rpc_limit(value: &serde_json::Value, default: usize) -> usize {
         .clamp(1, RPC_MAX_LIMIT)
 }
 
+/// Domains accepted from clients for a vault archive. `providers` is
+/// deliberately excluded: its rows carry API credentials that must not cross
+/// the gateway wire (the read-only `vault.status` only reports byte counts).
+const VAULT_ARCHIVE_DOMAINS: [&str; 4] = ["characters", "chats", "memory", "backgrounds"];
+/// Upper bound on a vault archive's base64 text, including the RPC envelope.
+/// Both directions share the channel's single-frame limit: a larger reply
+/// cannot be written to the socket, so the daemon must reject the request
+/// instead of building a reply that dies at the transport boundary.
+const VAULT_ARCHIVE_FRAME_LIMIT_BYTES: u64 = anima_channel::ws::MAX_WS_PAYLOAD_BYTES;
+/// Base64 expands by 4/3; leave room for the JSON envelope so the encoded
+/// archive plus its wrapper still fit in one WebSocket frame.
+const VAULT_ARCHIVE_ENVELOPE_BYTES: u64 = 8192;
+/// Upper bound on the decoded size of a client-supplied vault archive. Bounds
+/// both the base64 allocation and ZIP parsing done on the RPC thread, and
+/// matches the size of an archive that can be returned on this channel.
+const VAULT_ARCHIVE_MAX_BYTES: u64 =
+    ((VAULT_ARCHIVE_FRAME_LIMIT_BYTES - VAULT_ARCHIVE_ENVELOPE_BYTES) * 3) / 4;
+
+/// Validate and normalize a client domain list, rejecting unknown and
+/// credential-bearing domains rather than silently dropping them.
+fn vault_archive_selection(domains: &[String]) -> Result<anima_core::vault::VaultSelection, String> {
+    for domain in domains {
+        if !VAULT_ARCHIVE_DOMAINS.contains(&domain.as_str()) {
+            return Err(format!("unsupported vault archive domain: {domain}"));
+        }
+    }
+    if domains.is_empty() {
+        return Err("empty vault archive domains".to_string());
+    }
+    let refs: Vec<&str> = domains.iter().map(String::as_str).collect();
+    Ok(anima_core::vault::VaultSelection::parse(&refs))
+}
+
+/// Decode a base64 vault archive with a hard size cap; reject padding tricks
+/// and malformed input before handing bytes to ZIP parsing.
+fn vault_archive_bytes(archive: &str) -> Result<Vec<u8>, String> {
+    use base64::Engine as _;
+    let encoded = archive.trim();
+    if encoded.is_empty() {
+        return Err("missing archive".to_string());
+    }
+    // base64 expands by 4/3; cap before allocating the decoded buffer.
+    let max_encoded = VAULT_ARCHIVE_MAX_BYTES.saturating_mul(4) / 3 + 4;
+    if encoded.len() as u64 > max_encoded {
+        return Err(format!(
+            "archive exceeds the {} byte limit",
+            VAULT_ARCHIVE_MAX_BYTES
+        ));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| "invalid base64 archive".to_string())?;
+    if bytes.len() as u64 > VAULT_ARCHIVE_MAX_BYTES {
+        return Err(format!(
+            "archive exceeds the {} byte limit",
+            VAULT_ARCHIVE_MAX_BYTES
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Serialize a vault archive reply only when the whole RPC frame fits the
+/// channel limit. Returns a typed, user-safe error otherwise; callers must
+/// never hand an over-limit frame to the transport.
+fn vault_archive_reply(value: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let serialized = serde_json::to_string(value).map_err(|e| e.to_string())?;
+    if serialized.len() as u64 > VAULT_ARCHIVE_FRAME_LIMIT_BYTES {
+        return Err(format!(
+            "vault archive exceeds the {} byte transport limit; narrow the archive domains",
+            VAULT_ARCHIVE_FRAME_LIMIT_BYTES
+        ));
+    }
+    Ok(value.clone())
+}
+
+/// Per-profile media directory used by `scrub_session_media` for extracted
+/// assets and pre-scrub backups (mirrors the SQLite parent directory).
+fn profile_media_dir(db: &anima_store::Database) -> Option<PathBuf> {
+    db.with_connection(|conn| Ok(conn.path().map(PathBuf::from)))
+        .ok()
+        .flatten()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
 const DEFAULT_HOSTNAME_PLACEHOLDER: &str = "127.0.0.1";
 
 /// Copy `source` into the daemon-owned config path (atomic), preserving
 /// everything including `tlsConfig`. Returns the source path on success.
 fn adopt(source: &Path, dest: &Path) -> io::Result<PathBuf> {
+    adopt_with(source, dest, |_| {})
+}
+
+/// `before_rename` lets tests inspect the temp file while it still holds the
+/// token (production passes a no-op).
+fn adopt_with(source: &Path, dest: &Path, before_rename: impl FnOnce(&Path)) -> io::Result<PathBuf> {
     let raw = fs::read_to_string(source)?;
     // Basic validity check: it must parse as a JSON object. We deliberately
     // do not require a token here — load_or_heal decides freshness.
@@ -2253,13 +2755,26 @@ fn adopt(source: &Path, dest: &Path) -> io::Result<PathBuf> {
         fs::create_dir_all(parent)?;
     }
     let tmp = dest.with_extension("json.tmp");
-    fs::write(&tmp, raw)?;
-    // fs::write is umask-dependent; never let the renamed copy be 0644.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
+        use std::io::Write as _;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        // mode(0o600) only applies at creation; a pre-existing 0644 tmp
+        // would otherwise be written and renamed with world-readable data.
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        file.write_all(raw.as_bytes())?;
     }
+    #[cfg(not(unix))]
+    {
+        fs::write(&tmp, raw)?;
+    }
+    before_rename(&tmp);
     fs::rename(&tmp, dest)?;
     Ok(source.to_path_buf())
 }
@@ -3080,6 +3595,36 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn adoption_temp_is_0600_while_holding_token() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.json");
+        let token = "keep-me-123";
+        fs::write(&source, format!(r#"{{"authToken":"{token}"}}"#)).unwrap();
+        let dest = dir.path().join("daemon").join(CONFIG_FILE);
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        let tmp_path = dest.with_extension("json.tmp");
+        fs::write(&tmp_path, "stale").unwrap();
+        fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        adopt_with(&source, &dest, |tmp_path| {
+            let mode = fs::metadata(tmp_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "adoption tmp must be owner-only before rename");
+            let raw = fs::read_to_string(tmp_path).unwrap();
+            assert!(
+                raw.contains(token),
+                "adoption tmp must hold the token before rename"
+            );
+        })
+        .expect("adopt");
+
+        assert!(!tmp_path.exists(), "tmp must be renamed away");
+        let mode = fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "adopted config must be owner-only");
+    }
+
+    #[test]
     fn adoption_preserves_token_and_tls() {
         let tmp = tempfile::tempdir().unwrap();
         let source_dir = tmp.path().join("ai.moeru.airi.test");
@@ -3206,6 +3751,62 @@ mod tests {
         let settings: serde_json::Value = serde_json::from_str(settings_str).unwrap();
         assert_eq!(settings.get("sendMode").unwrap(), "enter");
         assert_eq!(settings.get("suggestMode").unwrap(), "ctrl-enter");
+    }
+
+    #[test]
+    fn chat_send_uses_stored_provider_and_model() {
+        use std::sync::{mpsc, Arc};
+
+        struct SelectionCapture {
+            seen: mpsc::Sender<(String, String)>,
+        }
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for SelectionCapture {
+            fn id(&self) -> &str {
+                "chosen"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                let _ = self.seen.send((self.id().to_string(), req.model.clone()));
+                Ok(Box::pin(futures_util::stream::iter(vec![Ok(
+                    anima_llm::ChatChunk::finish("stop"),
+                )])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let (tx, rx) = mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "chosen".to_string(),
+            Arc::new(SelectionCapture { seen: tx }),
+        );
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "chosen".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "stored-model" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        handlers.get("chat.send").unwrap()(
+            "chat.send",
+            &serde_json::json!({ "sessionId": "selection-session", "content": "hello" }),
+        )
+        .expect("chat.send Ok");
+        let (provider_id, model) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(provider_id, "chosen");
+        assert_eq!(model, "stored-model");
     }
 
     #[test]
@@ -4257,7 +4858,10 @@ mod tests {
         for method in [
             "settings.set",
             "journal.append",
+            "journal.delete",
             "stmm.rebuild",
+            "stmm.upsert",
+            "stmm.delete",
             "chat.send",
         ] {
             let h = handlers

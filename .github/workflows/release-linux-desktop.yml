@@ -7,8 +7,10 @@ permissions:
 # stage-tamagotchi is built by Hutch/Electrobun. `pnpm run build` runs
 # `hutch run build`, which prepares the devkit, builds the Vite renderer and
 # produces the platform tarball plus its `*-update.json` sidecars under
-# `apps/stage-tamagotchi/artifacts/`. The old packaging/binary-download steps
-# are gone: Electrobun bundles its own CEF runtime.
+# `apps/stage-tamagotchi/artifacts/`. The daemon and supervisor are separate
+# Rust crates: they are built here and uploaded as release assets so the
+# installer can place them in ~/.local/bin, where the systemd unit and the
+# D-Bus activation file expect them.
 on:
   release:
     types:
@@ -41,9 +43,11 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: linux-x64
+            target: x86_64-unknown-linux-gnu
 
           - os: ubuntu-24.04-arm
             artifact: linux-arm64
+            target: aarch64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -59,6 +63,10 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.artifact }}
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
@@ -74,6 +82,20 @@ jobs:
       - name: Build (Linux, Electrobun/Hutch)
         run: pnpm -F @proj-anima/stage-tamagotchi run build
 
+      - name: Build Rust daemon and supervisor
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }} -p anima-daemon -p anima-supervisor
+          mkdir -p dist-daemon
+          cp "target/${{ matrix.target }}/release/anima-daemon" "dist-daemon/airi-${{ github.ref_name }}-${{ matrix.artifact }}-anima-daemon"
+          cp "target/${{ matrix.target }}/release/anima-supervisor" "dist-daemon/airi-${{ github.ref_name }}-${{ matrix.artifact }}-anima-supervisor"
+
+      - name: Verify daemon and supervisor binaries
+        run: |
+          ls -l dist-daemon
+          for binary in dist-daemon/*; do
+            file "$binary"
+          done
+
       # ---------
       # Nightly (schedule) builds only
       # ---------
@@ -83,7 +105,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: airi-${{ matrix.artifact }}
-          path: apps/stage-tamagotchi/artifacts/*
+          path: |
+            apps/stage-tamagotchi/artifacts/*
+            dist-daemon/*
           if-no-files-found: error
 
       # ---------
@@ -95,7 +119,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: airi-${{ matrix.artifact }}
-          path: apps/stage-tamagotchi/artifacts/*
+          path: |
+            apps/stage-tamagotchi/artifacts/*
+            dist-daemon/*
           if-no-files-found: error
 
       - name: Resolve version (Manual, release)
@@ -105,13 +131,27 @@ jobs:
           VERSION=$(node -p "require('./apps/stage-tamagotchi/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve release tag
+        if: ${{ github.event_name != 'schedule' }}
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ inputs.tag || format('v{0}', steps.version.outputs.version) }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # NOTICE: asset names must end in `-${{ matrix.artifact }}-anima-daemon`
+      # and `-${{ matrix.artifact }}-anima-supervisor` for release verification.
       - name: Upload To GitHub Releases (Manual, release)
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.build_only && !inputs.artifacts_only }}
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/stage-tamagotchi/artifacts/*
+          files: |
+            apps/stage-tamagotchi/artifacts/*
+            dist-daemon/*
           append_body: true
-          tag_name: ${{ inputs.tag || format('v{0}', steps.version.outputs.version) }}
+          tag_name: ${{ steps.tag.outputs.value }}
 
       # ---------
       # Version push
@@ -121,5 +161,8 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/stage-tamagotchi/artifacts/*
+          files: |
+            apps/stage-tamagotchi/artifacts/*
+            dist-daemon/*
           append_body: true
+          tag_name: ${{ steps.tag.outputs.value }}

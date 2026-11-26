@@ -87,7 +87,12 @@ pub fn w_str(buf: &mut Vec<u8>, enc: u8, s: &str) {
 /// Write a raw fixed-width name field (VMD-style), NUL-padded, truncated to
 /// `width` bytes if the encoded name is longer.
 pub fn w_fixed(buf: &mut Vec<u8>, s: &str, width: usize) {
-    let raw = s.as_bytes();
+    let raw = if s.is_ascii() {
+        s.as_bytes().to_vec()
+    } else {
+        encoding_rs::SHIFT_JIS.encode(s).0.into_owned()
+    };
+    let raw = raw.as_slice();
     let mut field = vec![0_u8; width];
     let n = raw.len().min(width);
     field[..n].copy_from_slice(&raw[..n]);

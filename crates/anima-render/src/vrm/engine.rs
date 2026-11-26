@@ -541,6 +541,37 @@ impl Engine {
         self.primitives.len()
     }
 
+    /// MToon parameters for every material (index-aligned with glTF).
+    pub fn material_params(&self) -> &[MtoonParams] {
+        &self.mtoon
+    }
+
+    /// Number of materials with MToon data.
+    pub fn material_count(&self) -> usize {
+        self.mtoon.len()
+    }
+
+    /// The document-spelled mouth (lip-sync) presets, in document order.
+    pub fn lip_raw(&self) -> &[String] {
+        &self.lip_raw
+    }
+
+    /// The document-spelled blink presets, in document order.
+    pub fn blink_raw(&self) -> &[String] {
+        &self.blink_raw
+    }
+
+    /// The weight the expression engine currently applies to `preset`
+    /// (0.0 when the preset is not driven).
+    pub fn expression_weight(&self, preset: &str) -> f32 {
+        self.expressions.weight(preset)
+    }
+
+    /// Number of spring-bone chains being simulated.
+    pub fn spring_bone_chain_count(&self) -> usize {
+        self.chains.len()
+    }
+
     /// Current interleaved vertex bytes of primitive `index` (pos/normal are
     /// rewritten every tick; uv/joints/weights keep the rest values).
     pub fn vertex_bytes(&self, index: usize) -> Option<Vec<u8>> {

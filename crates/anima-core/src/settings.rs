@@ -575,15 +575,17 @@ impl SettingsSection for CardsSettings {
 /// Stage model settings (`settings/stage-model`).
 ///
 /// Lane ① (stage scene) consumes the same section. [`Self::model_id`] is
-/// either an absolute filesystem path to a `.vrm` file, or the empty string
-/// meaning "no model selected". No catalog is implied — consumers resolve
-/// the path themselves.
+/// a stable catalog id (empty = none) resolved by the daemon catalog, and
+/// [`Self::catalog`] carries known descriptors.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageModelSettings {
-    /// Absolute path to the selected `.vrm`, or empty for "none".
+    /// Stable catalog id of the selected model, or empty for "none".
     #[serde(default)]
     pub model_id: String,
+    /// Known model descriptors.
+    #[serde(default)]
+    pub catalog: Vec<anima_channel::wire::CatalogDescriptor>,
 }
 
 impl SettingsSection for StageModelSettings {
@@ -1029,6 +1031,359 @@ impl SettingsSection for LocalLlmSettings {
     const KEY: &'static str = "settings/local-llm";
 }
 
+
+// ============================================================================
+// Companion module sections (Vue module stores)
+// ============================================================================
+
+fn default_speech_rate() -> f64 {
+    1.0
+}
+
+fn default_output_volume() -> f64 {
+    1.0
+}
+
+fn default_speech_enabled() -> bool {
+    true
+}
+
+fn default_speech_language() -> String {
+    "en-US".to_string()
+}
+
+fn default_speech_noop_provider() -> String {
+    "speech-noop".to_string()
+}
+
+fn default_auto_send_delay_ms() -> u64 {
+    2000
+}
+
+fn default_vad_threshold() -> f64 {
+    0.6
+}
+
+fn default_tap_to_talk() -> bool {
+    true
+}
+
+fn default_context_window() -> u32 {
+    1
+}
+
+fn default_prompt_shim_direct() -> String {
+    "You are currently acting as a vision-capable stand-in for the main character. Keep your responses natural, in-character, and avoid any meta-commentary about \"analyzing\" or \"describing\" the image for the user. Just react to what you see as the character would.".to_string()
+}
+
+fn default_prompt_shim_forward() -> String {
+    "You are an objective image analysis model. Analyze the provided image in the context of the conversation and the user's latest message. Describe the key visual details, subjects, actions, colors, text, or any specific elements mentioned or asked about by the user, so that the primary chat LLM can respond appropriately. Keep your analysis descriptive and objective, and avoid any conversational filler.".to_string()
+}
+
+fn default_witness_prompt() -> String {
+    "Carefully observe the user's screen and describe any interesting or relevant details you see, focusing on things that might spark a conversation or help you understand the user's current context better. Stay in character.".to_string()
+}
+
+fn default_respect_schedule() -> bool {
+    true
+}
+
+/// Provider/model selection for daemon chat sends (`settings/chat-provider`).
+///
+/// The daemon owns this section: clients mirror it read-only via
+/// `settings.get('chat-provider')` and must never send selection fields in
+/// `chat.send` (those fields are not part of the wire request).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatProviderSettings {
+    /// Active provider id; empty means env/first-enabled resolution.
+    #[serde(default)]
+    pub active_provider: String,
+    /// Active model id; empty means the selected provider's stored model.
+    #[serde(default)]
+    pub active_model: String,
+}
+
+impl SettingsSection for ChatProviderSettings {
+    const KEY: &'static str = "settings/chat-provider";
+}
+
+/// Deserialize an opaque settings object with `{}` when the field is absent.
+///
+/// A partial `settings.set` from a thin client omits fields entirely; `Value`
+/// would otherwise deserialize a missing key into `Null`, and the next save
+/// would persist `null` instead of the client's original object shape.
+fn default_object() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
+fn deserialize_object<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.is_null() {
+        Ok(default_object())
+    } else {
+        Ok(value)
+    }
+}
+
+/// Provider/model selection for the consciousness (LLM) module
+/// (`settings/consciousness`).
+///
+/// Mirrors the persisted keys `settings/consciousness/active-provider`,
+/// `.../active-model`, and `.../active-custom-model`. Runtime-only store
+/// state (model search query, expanded descriptions) stays client-local.
+/// Credentials belong to the provider registry, never to this section.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsciousnessSettings {
+    /// Active provider id; empty means no provider selected.
+    #[serde(default)]
+    pub active_provider: String,
+    /// Active model id within the provider; empty means no model selected.
+    #[serde(default)]
+    pub active_model: String,
+    /// Name of a custom model not present in the provider catalog.
+    #[serde(default)]
+    pub active_custom_model: String,
+}
+
+impl SettingsSection for ConsciousnessSettings {
+    const KEY: &'static str = "settings/consciousness";
+}
+
+/// Speech (TTS) module settings (`settings/speech`).
+///
+/// Mirrors the primary persisted keys of `stores/modules/speech.ts`:
+/// `active-provider`, `active-model`, `voice`, `output-volume`, `enabled`,
+/// `pitch`, `rate`, `ssml-enabled`, `language`, and `voice-profiles`.
+/// Voice profiles are kept as opaque JSON objects: their nested UST/effects
+/// shape belongs to the client, and the daemon must not reinterpret it.
+/// Playground text and runtime voice metadata/errors are not persisted here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechSettings {
+    /// Active speech provider id (`speech-noop` by default).
+    #[serde(default = "default_speech_noop_provider")]
+    pub active_provider: String,
+    /// Active speech model id; empty means the provider default.
+    #[serde(default)]
+    pub active_model: String,
+    /// Active voice id; empty means the provider default.
+    #[serde(default)]
+    pub voice: String,
+    /// Speech output volume (0.0–1.0 in the Vue UI).
+    #[serde(default = "default_output_volume")]
+    pub output_volume: f64,
+    /// Master speech enable flag.
+    #[serde(default = "default_speech_enabled")]
+    pub enabled: bool,
+    /// Voice pitch adjustment.
+    #[serde(default)]
+    pub pitch: f64,
+    /// Voice rate adjustment.
+    #[serde(default = "default_speech_rate")]
+    pub rate: f64,
+    /// Allow SSML markup in spoken text.
+    #[serde(default)]
+    pub ssml_enabled: bool,
+    /// BCP-47 language tag used for speech synthesis.
+    #[serde(default = "default_speech_language")]
+    pub language: String,
+    /// Virtual voice profiles, stored verbatim as JSON objects.
+    #[serde(default)]
+    pub voice_profiles: Vec<serde_json::Value>,
+}
+
+impl Default for SpeechSettings {
+    fn default() -> Self {
+        Self {
+            active_provider: default_speech_noop_provider(),
+            active_model: String::new(),
+            voice: String::new(),
+            output_volume: default_output_volume(),
+            enabled: true,
+            pitch: 0.0,
+            rate: default_speech_rate(),
+            ssml_enabled: false,
+            language: default_speech_language(),
+            voice_profiles: Vec::new(),
+        }
+    }
+}
+
+impl SettingsSection for SpeechSettings {
+    const KEY: &'static str = "settings/speech";
+}
+
+/// Hearing (STT) module settings (`settings/hearing`).
+///
+/// Mirrors the persisted keys of `stores/modules/hearing-store.ts`:
+/// `active-provider`, `active-model`, `active-custom-model`,
+/// `auto-send-enabled`, `auto-send-delay`, `detection-mode`, `tap-to-talk`,
+/// `voice-input-mode`, and `vad-threshold`. Provider-specific device settings
+/// are opaque JSON objects. Skipped: `settings/audio/input/owner` is a
+/// runtime mic-capture ownership marker (stale owners are cleared at store
+/// setup), and transcription drafts/in-flight flags are plain refs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HearingSettings {
+    /// Active transcription provider id; empty means no provider selected.
+    #[serde(default)]
+    pub active_provider: String,
+    /// Active transcription model id; empty means the provider default.
+    #[serde(default)]
+    pub active_model: String,
+    /// Name of a custom model not present in the provider catalog.
+    #[serde(default)]
+    pub active_custom_model: String,
+    /// Automatically send recognized speech as a chat message.
+    #[serde(default = "default_true")]
+    pub auto_send_enabled: bool,
+    /// Delay before auto-sending recognized speech, in milliseconds.
+    #[serde(default = "default_auto_send_delay_ms")]
+    pub auto_send_delay: u64,
+    /// Speech-endpoint detection mode (`vad` or `manual`).
+    #[serde(default)]
+    pub detection_mode: HearingDetectionMode,
+    /// Tap-to-talk (one utterance) vs open-line capture.
+    #[serde(default = "default_tap_to_talk")]
+    pub tap_to_talk: bool,
+    /// Voice input presentation (`dictation` or `voice-message`).
+    #[serde(default)]
+    pub voice_input_mode: VoiceInputMode,
+    /// VAD sensitivity threshold.
+    #[serde(default = "default_vad_threshold")]
+    pub vad_threshold: f64,
+    /// Per-provider speech capture settings, stored verbatim.
+    #[serde(default = "default_object", deserialize_with = "deserialize_object")]
+    pub speech_provider_settings: serde_json::Value,
+    /// Per-provider transcription settings, stored verbatim.
+    #[serde(default = "default_object", deserialize_with = "deserialize_object")]
+    pub transcription_provider_settings: serde_json::Value,
+}
+
+/// Hearing endpoint detection mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HearingDetectionMode {
+    /// Voice-activity detection segments speech automatically.
+    #[default]
+    Vad,
+    /// The user starts and stops capture manually.
+    Manual,
+}
+
+/// How recognized speech enters the composer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VoiceInputMode {
+    /// Insert recognized text directly into the composer.
+    #[default]
+    Dictation,
+    /// Present recognized text as a voice message.
+    VoiceMessage,
+}
+
+impl Default for HearingSettings {
+    fn default() -> Self {
+        Self {
+            active_provider: String::new(),
+            active_model: String::new(),
+            active_custom_model: String::new(),
+            auto_send_enabled: true,
+            auto_send_delay: default_auto_send_delay_ms(),
+            detection_mode: HearingDetectionMode::Vad,
+            tap_to_talk: true,
+            voice_input_mode: VoiceInputMode::Dictation,
+            vad_threshold: default_vad_threshold(),
+            speech_provider_settings: serde_json::Value::Object(serde_json::Map::new()),
+            transcription_provider_settings: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+}
+
+impl SettingsSection for HearingSettings {
+    const KEY: &'static str = "settings/hearing";
+}
+
+/// Vision (VLM) module settings (`settings/vision`).
+///
+/// Mirrors the persisted keys of `stores/modules/vision.ts`: `strategy`,
+/// `active-provider`, `active-model`, `context-window`, `prompt-shim`,
+/// `prompt-shim-forward`, `witness-enabled`, `witness-prompt`, and
+/// `respect-schedule`. `active-advanced` is an opaque provider-options map.
+/// Skipped: `settings/vision/last-heartbeat` is an ephemeral cross-window
+/// capture throttle, and capture status/drafts are plain refs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisionSettings {
+    /// Vision pipeline: direct image response or forward to the chat LLM.
+    #[serde(default)]
+    pub strategy: VisionStrategy,
+    /// Active vision provider id; empty means no provider selected.
+    #[serde(default)]
+    pub active_provider: String,
+    /// Active vision model id; empty means the provider default.
+    #[serde(default)]
+    pub active_model: String,
+    /// Number of images included in the context.
+    #[serde(default = "default_context_window")]
+    pub context_window: u32,
+    /// Provider-specific vision options, stored verbatim.
+    #[serde(default = "default_object", deserialize_with = "deserialize_object")]
+    pub active_advanced: serde_json::Value,
+    /// System prompt for the direct vision strategy.
+    #[serde(default = "default_prompt_shim_direct")]
+    pub prompt_shim: String,
+    /// System prompt for the forward-to-LLM strategy.
+    #[serde(default = "default_prompt_shim_forward")]
+    pub prompt_shim_forward: String,
+    /// Allow the proactivity heartbeat to trigger ambient captures.
+    #[serde(default)]
+    pub witness_enabled: bool,
+    /// Prompt used for proactive ambient vision captures.
+    #[serde(default = "default_witness_prompt")]
+    pub witness_prompt: String,
+    /// Respect the active card's heartbeat schedule for ambient captures.
+    #[serde(default = "default_respect_schedule")]
+    pub respect_schedule: bool,
+}
+
+/// Vision pipeline strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VisionStrategy {
+    /// The vision model answers directly.
+    #[default]
+    Direct,
+    /// The vision model describes the image for the chat LLM.
+    Forward,
+}
+
+impl Default for VisionSettings {
+    fn default() -> Self {
+        Self {
+            strategy: VisionStrategy::Direct,
+            active_provider: String::new(),
+            active_model: String::new(),
+            context_window: default_context_window(),
+            active_advanced: serde_json::Value::Object(serde_json::Map::new()),
+            prompt_shim: default_prompt_shim_direct(),
+            prompt_shim_forward: default_prompt_shim_forward(),
+            witness_enabled: false,
+            witness_prompt: default_witness_prompt(),
+            respect_schedule: true,
+        }
+    }
+}
+
+impl SettingsSection for VisionSettings {
+    const KEY: &'static str = "settings/vision";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1417,5 +1772,283 @@ mod tests {
                 scale: 1.0
             }
         );
+    }
+    #[test]
+    fn module_sections_defaults_and_keys_match_vue() {
+        assert_eq!(ConsciousnessSettings::KEY, "settings/consciousness");
+        assert_eq!(SpeechSettings::KEY, "settings/speech");
+        assert_eq!(HearingSettings::KEY, "settings/hearing");
+        assert_eq!(VisionSettings::KEY, "settings/vision");
+
+        let consciousness = ConsciousnessSettings::default();
+        assert!(consciousness.active_provider.is_empty());
+        assert!(consciousness.active_model.is_empty());
+        assert!(consciousness.active_custom_model.is_empty());
+
+        let speech = SpeechSettings::default();
+        assert_eq!(speech.active_provider, "speech-noop");
+        assert_eq!(speech.output_volume, 1.0);
+        assert!(speech.enabled);
+        assert_eq!(speech.pitch, 0.0);
+        assert_eq!(speech.rate, 1.0);
+        assert!(!speech.ssml_enabled);
+        assert_eq!(speech.language, "en-US");
+        assert!(speech.voice_profiles.is_empty());
+
+        let hearing = HearingSettings::default();
+        assert!(hearing.auto_send_enabled);
+        assert_eq!(hearing.auto_send_delay, 2000);
+        assert_eq!(hearing.detection_mode, HearingDetectionMode::Vad);
+        assert!(hearing.tap_to_talk);
+        assert_eq!(hearing.voice_input_mode, VoiceInputMode::Dictation);
+        assert_eq!(hearing.vad_threshold, 0.6);
+
+        let vision = VisionSettings::default();
+        assert_eq!(vision.strategy, VisionStrategy::Direct);
+        assert_eq!(vision.context_window, 1);
+        assert!(!vision.witness_enabled);
+        assert!(vision.respect_schedule);
+        assert!(vision.prompt_shim.contains("vision-capable stand-in"));
+        assert!(vision.prompt_shim_forward.contains("objective image analysis model"));
+        assert!(vision.witness_prompt.contains("Carefully observe"));
+
+        // Wire keys stay camelCase; enum literals match the Vue store values.
+        let speech_json = serde_json::to_value(&speech).unwrap();
+        assert_eq!(speech_json["activeProvider"], "speech-noop");
+        assert_eq!(speech_json["outputVolume"], 1.0);
+        assert_eq!(speech_json["ssmlEnabled"], false);
+        assert_eq!(speech_json["voiceProfiles"], serde_json::json!([]));
+        let hearing_json = serde_json::to_value(&hearing).unwrap();
+        assert_eq!(hearing_json["detectionMode"], "vad");
+        assert_eq!(hearing_json["voiceInputMode"], "dictation");
+        assert_eq!(hearing_json["autoSendDelay"], 2000);
+        let vision_json = serde_json::to_value(&vision).unwrap();
+        assert_eq!(vision_json["strategy"], "direct");
+        assert_eq!(vision_json["contextWindow"], 1);
+        // No credentials are part of any module section.
+        for value in [speech_json, hearing_json, vision_json] {
+            let raw = value.to_string();
+            assert!(!raw.contains("apiKey"));
+            assert!(!raw.contains("token"));
+        }
+    }
+
+    /// airi-vfea: the chat provider selection has its own daemon-owned
+    /// section; the legacy `consciousness` section must not affect sends.
+    #[test]
+    fn chat_provider_section_round_trip_and_partial_defaults() {
+        let dir = tempdir().unwrap();
+        let store_and_rx = store_and_rx(open_db(&dir));
+        let (store, _rx) = store_and_rx;
+        assert_eq!(ChatProviderSettings::KEY, "settings/chat-provider");
+
+        let selected = ChatProviderSettings {
+            active_provider: "chosen".to_string(),
+            active_model: "picked-model".to_string(),
+        };
+        store.save_section(&selected).unwrap();
+        assert_eq!(store.load_section::<ChatProviderSettings>().unwrap(), selected);
+
+        store
+            .save(
+                ChatProviderSettings::KEY,
+                &serde_json::json!({ "activeProvider": "other" }),
+            )
+            .unwrap();
+        let partial = store.load_section::<ChatProviderSettings>().unwrap();
+        assert_eq!(partial.active_provider, "other");
+        assert!(partial.active_model.is_empty());
+    }
+
+    /// airi-d8z8: a partial `settings.set` (e.g. only `activeModel`) must not
+    /// turn opaque provider objects into `null`, on first read or after a
+    /// subsequent write round trip.
+    #[test]
+    fn partial_writes_preserve_opaque_object_shape() {
+        let dir = tempdir().unwrap();
+        let (store, _rx) = store_and_rx(open_db(&dir));
+
+        let first: HearingSettings = serde_json::from_value(serde_json::json!({
+            "activeProvider": "whisper-local"
+        }))
+        .unwrap();
+        assert_eq!(first.speech_provider_settings, serde_json::json!({}));
+        assert_eq!(first.transcription_provider_settings, serde_json::json!({}));
+        let first_vision: VisionSettings = serde_json::from_value(serde_json::json!({
+            "activeProvider": "openai-compatible"
+        }))
+        .unwrap();
+        assert_eq!(first_vision.active_advanced, serde_json::json!({}));
+
+        store
+            .save(
+                HearingSettings::KEY,
+                &serde_json::json!({ "activeProvider": "whisper-local" }),
+            )
+            .unwrap();
+        let hearing = store.load_section::<HearingSettings>().unwrap();
+        assert_eq!(hearing.speech_provider_settings, serde_json::json!({}));
+        assert_eq!(hearing.transcription_provider_settings, serde_json::json!({}));
+
+        store
+            .save(
+                VisionSettings::KEY,
+                &serde_json::json!({
+                    "activeAdvanced": { "detail": "high" }
+                }),
+            )
+            .unwrap();
+        let vision = store.load_section::<VisionSettings>().unwrap();
+        assert_eq!(vision.active_advanced, serde_json::json!({ "detail": "high" }));
+
+        // A null in an older blob is normalized too; anything else is opaque.
+        let nulls: HearingSettings = serde_json::from_value(serde_json::json!({
+            "speechProviderSettings": null,
+            "transcriptionProviderSettings": null
+        }))
+        .unwrap();
+        assert_eq!(nulls.speech_provider_settings, serde_json::json!({}));
+        assert_eq!(nulls.transcription_provider_settings, serde_json::json!({}));
+    }
+
+    #[test]
+    fn module_sections_round_trip_and_partial_defaults() {
+        let dir = tempdir().unwrap();
+        let db = open_db(&dir);
+        let (store, _rx) = store_and_rx(db);
+
+        let consciousness = ConsciousnessSettings {
+            active_provider: "openai".to_string(),
+            active_model: "gpt-4o".to_string(),
+            active_custom_model: "local-model".to_string(),
+        };
+        store.save_section(&consciousness).unwrap();
+        assert_eq!(
+            store.load_section::<ConsciousnessSettings>().unwrap(),
+            consciousness
+        );
+
+        let speech = SpeechSettings {
+            active_provider: "piper".to_string(),
+            active_model: "voice-model".to_string(),
+            voice: "aria".to_string(),
+            output_volume: 0.5,
+            enabled: false,
+            pitch: -2.0,
+            rate: 1.25,
+            ssml_enabled: true,
+            language: "ja-JP".to_string(),
+            voice_profiles: vec![serde_json::json!({
+                "id": "v1",
+                "effects": { "pitch": 1.0 },
+                "ust": { "enabled": true }
+            })],
+        };
+        store.save_section(&speech).unwrap();
+        assert_eq!(store.load_section::<SpeechSettings>().unwrap(), speech);
+
+        let hearing = HearingSettings {
+            active_provider: "whisper-local".to_string(),
+            active_model: "base".to_string(),
+            active_custom_model: "custom-stt".to_string(),
+            auto_send_enabled: false,
+            auto_send_delay: 500,
+            detection_mode: HearingDetectionMode::Manual,
+            tap_to_talk: false,
+            voice_input_mode: VoiceInputMode::VoiceMessage,
+            vad_threshold: 0.8,
+            speech_provider_settings: serde_json::json!({
+                "app-local-audio-speech": { "deviceId": "default", "sampleRate": 16000 }
+            }),
+            transcription_provider_settings: serde_json::json!({
+                "whisper-local": { "deviceId": "default", "sampleRate": 16000 }
+            }),
+        };
+        store.save_section(&hearing).unwrap();
+        assert_eq!(store.load_section::<HearingSettings>().unwrap(), hearing);
+
+        let vision = VisionSettings {
+            strategy: VisionStrategy::Forward,
+            active_provider: "openai-compatible".to_string(),
+            active_model: "vlm".to_string(),
+            context_window: 4,
+            active_advanced: serde_json::json!({ "detail": "high" }),
+            prompt_shim: "direct".to_string(),
+            prompt_shim_forward: "forward".to_string(),
+            witness_enabled: true,
+            witness_prompt: "describe".to_string(),
+            respect_schedule: false,
+        };
+        store.save_section(&vision).unwrap();
+        assert_eq!(store.load_section::<VisionSettings>().unwrap(), vision);
+
+        // Partial blobs from older clients fill every omitted field from Vue defaults.
+        store
+            .save(
+                ConsciousnessSettings::KEY,
+                &serde_json::json!({ "activeProvider": "anthropic" }),
+            )
+            .unwrap();
+        let partial = store.load_section::<ConsciousnessSettings>().unwrap();
+        assert_eq!(partial.active_provider, "anthropic");
+        assert!(partial.active_model.is_empty());
+
+        store
+            .save(
+                HearingSettings::KEY,
+                &serde_json::json!({ "detectionMode": "manual" }),
+            )
+            .unwrap();
+        let partial = store.load_section::<HearingSettings>().unwrap();
+        assert_eq!(partial.detection_mode, HearingDetectionMode::Manual);
+        assert!(partial.auto_send_enabled);
+        assert_eq!(partial.vad_threshold, 0.6);
+
+        store
+            .save(
+                VisionSettings::KEY,
+                &serde_json::json!({ "contextWindow": 3 }),
+            )
+            .unwrap();
+        let partial = store.load_section::<VisionSettings>().unwrap();
+        assert_eq!(partial.context_window, 3);
+        assert_eq!(partial.strategy, VisionStrategy::Direct);
+        assert!(partial.respect_schedule);
+    }
+
+    #[test]
+    fn module_sections_reject_invalid_numbers_and_enums() {
+        // serde rejects non-numeric values rather than coercing them to 0.
+        let bad_rate = serde_json::json!({ "rate": "fast" });
+        assert!(serde_json::from_value::<SpeechSettings>(bad_rate).is_err());
+        let bad_threshold = serde_json::json!({ "vadThreshold": "high" });
+        assert!(serde_json::from_value::<HearingSettings>(bad_threshold).is_err());
+        let bad_window = serde_json::json!({ "contextWindow": "several" });
+        assert!(serde_json::from_value::<VisionSettings>(bad_window).is_err());
+
+        // Unknown enum literals are likewise not silently normalized.
+        assert!(serde_json::from_value::<HearingSettings>(
+            serde_json::json!({ "detectionMode": "auto" })
+        )
+        .is_err());
+        assert!(serde_json::from_value::<VisionSettings>(
+            serde_json::json!({ "strategy": "sideways" })
+        )
+        .is_err());
+
+        // Ephemeral/runtime keys have no field and are ignored at the typed
+        // boundary; they are never written back by a section save.
+        let vision: VisionSettings =
+            serde_json::from_value(serde_json::json!({ "lastHeartbeat": 1234 })).unwrap();
+        assert_eq!(vision.strategy, VisionSettings::default().strategy);
+        assert!(vision.active_provider.is_empty());
+        assert!(serde_json::to_value(&vision).unwrap().get("lastHeartbeat").is_none());
+        let hearing: HearingSettings =
+            serde_json::from_value(serde_json::json!({ "micOwner": "composer" })).unwrap();
+        assert_eq!(hearing.detection_mode, HearingSettings::default().detection_mode);
+        assert!(hearing.active_provider.is_empty());
+        assert!(serde_json::to_value(&hearing).unwrap().get("micOwner").is_none());
+        let saved = serde_json::to_value(&vision).unwrap();
+        assert!(saved.get("lastHeartbeat").is_none());
     }
 }

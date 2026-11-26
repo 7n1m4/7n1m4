@@ -1,0 +1,27 @@
+name: flutter_anima_render
+description: >-
+  Native model rendering plugin for AIRI. Registers one GPU texture per loaded
+  model and pumps frames on the platform thread; Dart holds only the opaque
+  texture id. The render/texture contract is frozen (see
+  crates/anima-render/cpp/render_contract.h).
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        pluginClass: FlutterAnimaRenderPlugin

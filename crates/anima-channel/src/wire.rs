@@ -290,6 +290,129 @@ pub struct VaultStatusReply {
     pub stats: Option<VaultStatsData>,
 }
 
+/// Request payload for `vault.archive.collect`.
+///
+/// `domains` accepts `characters`, `chats`, `memory` and `backgrounds`.
+/// `providers` is rejected: provider configuration contains API credentials
+/// and must never cross the gateway wire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchiveCollectRequest {
+    /// Data domains to include in the archive.
+    pub domains: Vec<String>,
+}
+
+/// Reply payload for `vault.archive.collect`.
+///
+/// The archive is a base64-encoded ZIP. The daemon refuses to include the
+/// providers domain, so no credentials are present in `archive`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchiveReply {
+    /// Base64-encoded stored ZIP archive.
+    pub archive: String,
+    /// Decoded archive byte size.
+    #[specta(type = specta_typescript::Number)]
+    pub bytes: u64,
+    /// Data domains actually included (`characters|chats|memory|backgrounds`).
+    pub domains: Vec<String>,
+}
+
+/// Request payload for `vault.archive.inspect` and `vault.archive.apply`.
+///
+/// The archive is a base64-encoded ZIP previously returned by
+/// `vault.archive.collect`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchiveRequest {
+    /// Base64-encoded vault archive.
+    pub archive: String,
+}
+
+/// Reply payload for `vault.archive.inspect` (metadata only, never contents).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchiveInspectReply {
+    /// Format marker (`airi-vault`).
+    pub format: String,
+    /// Format version.
+    pub version: u8,
+    /// Archive creation time in epoch milliseconds, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(type = specta_typescript::Number)]
+    pub created_at: Option<i64>,
+    /// Whether the archive advertises provider credentials.
+    ///
+    /// Such archives are rejected by `vault.archive.apply`; the flag exists so
+    /// callers can explain the rejection without receiving the credentials.
+    pub includes_secrets: bool,
+    /// Per-domain counts and byte sizes (no payload bytes).
+    #[specta(type = Vec<specta_typescript::Unknown>)]
+    pub domains: Vec<Value>,
+    /// Session count inside the archive.
+    #[specta(type = specta_typescript::Number)]
+    pub session_count: u64,
+    /// Message count inside the archive.
+    #[specta(type = specta_typescript::Number)]
+    pub message_count: u64,
+    /// Companion names found in the archive.
+    pub companion_names: Vec<String>,
+}
+
+/// Reply payload for `vault.archive.apply`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchiveApplyReply {
+    /// Sessions inserted.
+    #[specta(type = specta_typescript::Number)]
+    pub sessions_inserted: u64,
+    /// Sessions skipped because the id already exists.
+    #[specta(type = specta_typescript::Number)]
+    pub sessions_skipped: u64,
+    /// Messages inserted.
+    #[specta(type = specta_typescript::Number)]
+    pub messages_inserted: u64,
+    /// Messages skipped because the id already exists.
+    #[specta(type = specta_typescript::Number)]
+    pub messages_skipped: u64,
+    /// Summaries inserted.
+    #[specta(type = specta_typescript::Number)]
+    pub summaries_inserted: u64,
+    /// Journal entries inserted.
+    #[specta(type = specta_typescript::Number)]
+    pub journal_entries_inserted: u64,
+    /// Domains applied (`chats`, `memory`).
+    pub applied: Vec<String>,
+    /// Domains present but intentionally not applied.
+    pub not_applied: Vec<String>,
+}
+
+/// Request payload for `sessions.media.scrub`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMediaScrubRequest {
+    /// Write a pre-scrub vault archive before rewriting messages.
+    pub create_backup: bool,
+}
+
+/// Reply payload for `sessions.media.scrub`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMediaScrubReply {
+    /// Inline images found and extracted.
+    #[specta(type = specta_typescript::Number)]
+    pub images_found: u64,
+    /// Total decoded bytes written to the local backgrounds store.
+    #[specta(type = specta_typescript::Number)]
+    pub bytes_extracted: u64,
+    /// Sessions that contained at least one extracted image.
+    #[specta(type = specta_typescript::Number)]
+    pub sessions_scanned: u64,
+    /// Local path of the pre-scrub backup, when one was requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_path: Option<String>,
+}
+
 /// Request payload for `chat.send`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -528,6 +651,44 @@ pub struct CardDeleteRequest {
 pub struct CardDeleteReply {
     /// Whether the deletion succeeded.
     pub deleted: bool,
+}
+
+/// Format of a catalog asset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum CatalogFormat {
+    /// VRM model.
+    Vrm,
+    /// Live2D zip archive.
+    Live2dZip,
+    /// Live2D directory.
+    Live2dDirectory,
+    /// Spine zip archive.
+    SpineZip,
+    /// PMX zip archive.
+    PmxZip,
+    /// PMX directory.
+    PmxDirectory,
+    /// PMD model.
+    Pmd,
+}
+
+/// Descriptor of a catalog entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogDescriptor {
+    /// Stable catalog identifier.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Format of the catalog entry.
+    pub format: CatalogFormat,
+    /// Source of the entry.
+    pub source: String,
+    /// File path.
+    pub file: String,
+    /// URL.
+    pub url: String,
 }
 
 /// Reply of `cards.metadata` and `cards.metadata.set`.
@@ -1151,6 +1312,13 @@ pub fn type_collection() -> specta::Types {
         .register::<SettingsGetReply>()
         .register::<SettingsSetReply>()
         .register::<VaultStatusReply>()
+        .register::<VaultArchiveCollectRequest>()
+        .register::<VaultArchiveReply>()
+        .register::<VaultArchiveRequest>()
+        .register::<VaultArchiveInspectReply>()
+        .register::<VaultArchiveApplyReply>()
+        .register::<SessionMediaScrubRequest>()
+        .register::<SessionMediaScrubReply>()
         .register::<ChatMessage>()
         .register::<StmmSummary>()
         .register::<JournalEntry>()
@@ -1166,6 +1334,8 @@ pub fn type_collection() -> specta::Types {
         .register::<CardUpdateReply>()
         .register::<CardDeleteRequest>()
         .register::<CardDeleteReply>()
+        .register::<CatalogFormat>()
+        .register::<CatalogDescriptor>()
         .register::<CardMetadataReply>()
         .register::<CardMetadataSetRequest>()
         .register::<SessionExportReply>()

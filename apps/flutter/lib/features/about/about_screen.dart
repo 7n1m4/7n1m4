@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
+import 'third_party_notices.dart';
 
 /// Static about page. No telemetry, no update checks (window chrome does not
 /// move into the daemon per design-flutter-godot-pivot.md §4.1).
@@ -13,10 +15,10 @@ class AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: <Widget>[
+      children: const <Widget>[
         Card(
           color: AppTheme.surface,
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,15 +36,98 @@ class AboutScreen extends StatelessWidget {
             ),
           ),
         ),
-        const ListTile(
+        ListTile(
           title: Text('Gateway protocol'),
           subtitle: Text('airi-channel/1 · JSON text frames · WS /ws :6121'),
         ),
-        const ListTile(
+        ListTile(
           title: Text('Design reference'),
           subtitle: Text('docs/design-flutter-godot-pivot.md'),
         ),
+        ListTile(
+          title: Text('License'),
+          subtitle: Text('$projectLicenseSummary · texts bundled with this build'),
+        ),
+        _NoticesTile(),
       ],
     );
   }
+}
+
+/// Opens the bundled notice set. The assets are declared in
+/// `apps/flutter/pubspec.yaml`, so this resolves inside an AAB/IPA with no
+/// network and no repository checkout.
+class _NoticesTile extends StatelessWidget {
+  const _NoticesTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.description_outlined),
+      title: const Text('Third-party notices'),
+      subtitle: const Text('Bundled license texts and distribution notices'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const ThirdPartyNoticesScreen(),
+        ),
+      ),
+    );
+  }
+}
+
+/// In-app access path for the bundled notice set and license texts.
+class ThirdPartyNoticesScreen extends StatelessWidget {
+  const ThirdPartyNoticesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Third-party notices')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          const Text(
+            'The distribution notice set ships inside this build as '
+            '$thirdPartyNoticesAssetPath. Verbatim license texts ship beside it '
+            'under $licenseTextsAssetDirectory.',
+          ),
+          const SizedBox(height: 12),
+          for (final String fact in distributionNoticeFacts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(fact),
+            ),
+          const Divider(),
+          for (final BundledLicenseNotice notice in bundledLicenseNotices)
+            ListTile(
+              leading: const Icon(Icons.article_outlined),
+              title: Text(notice.fileName),
+              subtitle: Text(notice.covers),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openText(context, notice),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _openText(
+  BuildContext context,
+  BundledLicenseNotice notice,
+) async {
+  final String text = await rootBundle.loadString(notice.assetPath);
+  if (!context.mounted) return;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (BuildContext context) => Scaffold(
+        appBar: AppBar(title: Text(notice.fileName)),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: SelectableText(text),
+        ),
+      ),
+    ),
+  );
 }

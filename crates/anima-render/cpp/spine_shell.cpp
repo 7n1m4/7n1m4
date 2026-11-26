@@ -48,6 +48,8 @@ struct airi_spine_session {
     std::string lastError;
     std::string version;
     float boundsX = 0, boundsY = 0, boundsW = 0, boundsH = 0;
+    std::string mouthSlotName;
+    float lipSync = 0.0f;
 };
 
 // Tiny RTTI helper local to the shell for spine-cpp's custom RTTI.
@@ -69,7 +71,8 @@ struct AttachmentPaint {
     int32_t blendMode;
 };
 
-bool resolvePaint(spine::Skeleton &skeleton, spine::Slot &slot, spine::Attachment *attachment, AttachmentPaint *out) {
+bool resolvePaint(spine::Skeleton &skeleton, spine::Slot &slot, spine::Attachment *attachment, AttachmentPaint *out, const std::string &mouthSlotName, float lipSync) {
+
     float alpha = skeleton.getColor().a * slot.getColor().a;
     if (rttiIsExact(attachment, spine::RegionAttachment::rtti)) {
         auto *regionAttachment = static_cast<spine::RegionAttachment *>(attachment);
@@ -85,6 +88,7 @@ bool resolvePaint(spine::Skeleton &skeleton, spine::Slot &slot, spine::Attachmen
     if (!out->textureRegion || alpha <= 0.0f) return false;
     out->alpha = alpha;
     out->blendMode = (int32_t) slot.getData().getBlendMode();
+    if (lipSync > 0.0f && !mouthSlotName.empty() && slot.getData().getName() == spine::String(mouthSlotName.c_str())) { out->alpha *= lipSync; }
     return true;
 }
 
@@ -127,7 +131,7 @@ void buildSessionDraws(airi_spine_session *session, SessionDraw *out) {
         if (!slot->getBone().isActive()) continue;
 
         AttachmentPaint paint{};
-        if (!resolvePaint(skeleton, *slot, attachment, &paint)) continue;
+        if (!resolvePaint(skeleton, *slot, attachment, &paint, session->mouthSlotName, session->lipSync)) continue;
 
         const uint32_t baseVertex = (uint32_t) out->vertices.size();
         const uint32_t baseIndex = (uint32_t) out->indices.size();
@@ -272,6 +276,29 @@ extern "C" int32_t airi_spine_load(airi_spine_session *session,
     session->stateData = new spine::AnimationStateData(skeletonData);
     session->stateData->setDefaultMix(0.2f);
     session->state = new spine::AnimationState(session->stateData);
+
+    // Lip-sync modulates a slot's alpha, but the frozen render contract has
+    // no mouth-slot argument. Resolve it from the skeleton once at load, so
+    // `airi_spine_set_lip_sync` actually reaches an attachment. Candidate
+    // names follow the stage-ui-spine Model.vue convention; a skeleton with
+    // no mouth slot simply keeps lip-sync inert (never a faked mouth).
+    static const char *kMouthSlots[] = {
+        "mouth", "mouth_open", "mouthOpen", "Mouth", "MOUTH", "jaw", "あ",
+    };
+    auto &slots = skeletonData->getSlots();
+    for (const char *candidate : kMouthSlots) {
+        bool found = false;
+        for (size_t i = 0; i < slots.size(); ++i) {
+            if (slots[i] && slots[i]->getName() == spine::String(candidate)) {
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            session->mouthSlotName = candidate;
+            break;
+        }
+    }
     return 1;
 }
 
@@ -345,6 +372,22 @@ extern "C" void airi_spine_set_default_mix(airi_spine_session *session, float se
     session->stateData->setDefaultMix(seconds);
 }
 
+extern "C" void airi_spine_set_lip_sync(airi_spine_session *session, float weight) {
+    if (!session) return;
+    if (weight < 0.0f) weight = 0.0f;
+    if (weight > 1.0f) weight = 1.0f;
+    session->lipSync = weight;
+}
+
+extern "C" void airi_spine_set_mouth_slot(airi_spine_session *session, const char *name) {
+    if (!session) return;
+    session->mouthSlotName = name ? name : "";
+}
+
+extern "C" float airi_spine_get_lip_sync(airi_spine_session *session) {
+    return session ? session->lipSync : 0.0f;
+}
+
 extern "C" void airi_spine_update(airi_spine_session *session, float delta_seconds) {
     if (!session || !session->state || !session->skeleton) return;
     session->state->update(delta_seconds);
@@ -373,6 +416,15 @@ extern "C" int32_t airi_spine_page_pma(airi_spine_session *session, size_t index
     auto &pages = session->atlas->getPages();
     if (index >= pages.size()) return 0;
     return pages[index]->pma ? 1 : 0;
+}
+extern "C" void airi_spine_page_size(airi_spine_session *session, size_t index, uint32_t *out_width, uint32_t *out_height) {
+    if (out_width) *out_width = 0;
+    if (out_height) *out_height = 0;
+    if (!session || !session->atlas) return;
+    auto &pages = session->atlas->getPages();
+    if (index >= pages.size()) return;
+    if (out_width) *out_width = (uint32_t) pages[index]->width;
+    if (out_height) *out_height = (uint32_t) pages[index]->height;
 }
 
 extern "C" void airi_spine_draw_counts(airi_spine_session *session,

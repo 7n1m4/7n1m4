@@ -158,9 +158,24 @@ impl<'a> Cursor<'a> {
 }
 
 /// Decode a PMX string payload.
+///
+/// UTF-8-flagged strings are validated first and decoded as-is when valid.
+/// Invalid UTF-8 is retried as CP932 via `encoding_rs::SHIFT_JIS` for Japanese
+/// exports that mislabel Shift-JIS text as UTF-8.
 fn decode_string(raw: &[u8], encoding: crate::model::PmxEncoding) -> String {
     match encoding {
-        crate::model::PmxEncoding::Utf8 => String::from_utf8_lossy(raw).into_owned(),
+        crate::model::PmxEncoding::Utf8 => match std::str::from_utf8(raw) {
+            Ok(text) => text.to_owned(),
+            Err(_) => match encoding_rs::SHIFT_JIS
+                .decode_without_bom_handling_and_without_replacement(raw)
+            {
+                Some(text) => text.into_owned(),
+                None => encoding_rs::SHIFT_JIS
+                    .decode_without_bom_handling(raw)
+                    .0
+                    .into_owned(),
+            },
+        },
         crate::model::PmxEncoding::Utf16Le => {
             let (chunks, remainder) = raw.as_chunks::<2>();
             let mut units =
@@ -172,5 +187,34 @@ fn decode_string(raw: &[u8], encoding: crate::model::PmxEncoding) -> String {
             }
             units
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_string;
+    use crate::model::PmxEncoding;
+
+    #[test]
+    fn cp932_japanese_name_decodes_before_matching() {
+        assert_eq!(decode_string(&[0x82, 0xa0], PmxEncoding::Utf8), "あ");
+        assert_eq!(
+            decode_string(&[0x82, 0xdc, 0x82, 0xce, 0x82, 0xbd, 0x82, 0xab], PmxEncoding::Utf8),
+            "まばたき"
+        );
+    }
+
+    #[test]
+    fn decodes_utf8_cp932_fallback_and_broken_utf16() {
+        let utf8 = "あいうえお";
+        assert_eq!(decode_string(utf8.as_bytes(), PmxEncoding::Utf8), utf8);
+
+        // `あ` in CP932/Shift-JIS, often mislabeled as UTF-8 by JP exports.
+        assert_eq!(decode_string(&[0x82, 0xA0], PmxEncoding::Utf8), "あ");
+
+        assert_eq!(
+            decode_string(&[0x42, 0x00, 0x30], PmxEncoding::Utf16Le),
+            "B\u{FFFD}"
+        );
     }
 }

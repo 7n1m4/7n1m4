@@ -42,7 +42,7 @@ const stageModelSettings = useSettingsStageModel()
 console.info('[ControlStrip.vue] Setup loaded with Selfie feature support')
 const colorMode = useColorMode()
 const controlStripStore = useSettingsControlStrip()
-const { orientation, buttons, stageEnabled, chatOpen, captionOpen, backgroundTint, stageMode, collapsed, dockedEdge, selfieIncludeBg } = storeToRefs(controlStripStore)
+const { orientation, buttons, stageEnabled, chatOpen, captionOpen, backgroundTint, stageMode, collapsed, dockedEdge, selfieIncludeBg, position } = storeToRefs(controlStripStore)
 const isHoveredHandle = ref(false)
 const displayModelsStore = useDisplayModelsStore()
 const datingSimStore = useDatingSimStore()
@@ -225,7 +225,7 @@ const activeButtons = computed(() => {
 })
 
 // Persistent dragging position, defaults to top-right layout bounds
-const position = useLocalStorageManualReset<{ x: number, y: number }>('settings/control-strip/position', { x: 20, y: 150 })
+// position now comes from controlStripStore
 
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { enabled: micEnabled } = storeToRefs(settingsAudioDeviceStore)

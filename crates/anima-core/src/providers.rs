@@ -147,6 +147,49 @@ pub fn resolve_provider(
     env: impl Fn(&str) -> Option<String>,
     rows: &[StoredProvider],
 ) -> Option<ProviderResolution> {
+    resolve_provider_selection(env, rows, "", "")
+}
+
+/// Resolve a provider from the daemon-owned active selection.
+///
+/// An active id (when non-empty) must name an enabled stored row; it takes
+/// precedence over the env override and over row order. An active model
+/// overrides the model stored in that row (credentials and base URL stay
+/// with the row). Empty id/model defer to [`resolve_provider`] semantics.
+/// A stale selection resolves to `None` — never silently to another provider.
+pub fn resolve_provider_selection(
+    env: impl Fn(&str) -> Option<String>,
+    rows: &[StoredProvider],
+    active_provider: &str,
+    active_model: &str,
+) -> Option<ProviderResolution> {
+    let active_provider = active_provider.trim();
+    if !active_provider.is_empty() {
+        let provider = rows
+            .iter()
+            .find(|p| p.enabled && p.id == active_provider)?;
+        let config: ProviderConfig = match serde_json::from_value(provider.config.clone()) {
+            Ok(c) => c,
+            Err(err) => {
+                tracing::warn!(
+                    provider_id = %provider.id,
+                    error = %err,
+                    "stored provider config failed to deserialize; using empty config"
+                );
+                ProviderConfig::default()
+            }
+        };
+        let model = if active_model.trim().is_empty() {
+            config.model.clone().unwrap_or_default()
+        } else {
+            active_model.trim().to_string()
+        };
+        return Some(ProviderResolution {
+            id: provider.id.clone(),
+            config,
+            model,
+        });
+    }
     if let Some(id) = env(ENV_PROVIDER) {
         let id = id.trim().to_string();
         if !id.is_empty() {
@@ -276,6 +319,44 @@ mod tests {
     #[test]
     fn nothing_configured_resolves_to_none() {
         assert!(resolve_provider(empty_env, &[]).is_none());
+    }
+
+    #[test]
+    fn active_selection_overrides_env_and_row_order() {
+        let env = env_fn(&[
+            (ENV_PROVIDER, "anthropic"),
+            (ENV_API_KEY, "sk-env"),
+            (ENV_MODEL, "env-model"),
+        ]);
+        let rows = [
+            row("first", true, serde_json::json!({ "model": "first-model" })),
+            row("chosen", true, serde_json::json!({ "model": "stored-model", "api_key": "sk-stored" })),
+        ];
+        let r = resolve_provider_selection(env, &rows, "chosen", "picked-model").unwrap();
+        assert_eq!(r.id, "chosen");
+        assert_eq!(r.model, "picked-model");
+        assert_eq!(r.config.api_key.as_deref(), Some("sk-stored"));
+    }
+
+    #[test]
+    fn active_selection_without_model_uses_stored_model() {
+        let rows = [
+            row("first", true, serde_json::json!({ "model": "first-model" })),
+            row("chosen", true, serde_json::json!({ "model": "stored-model" })),
+        ];
+        let r = resolve_provider_selection(empty_env, &rows, " chosen ", "  ").unwrap();
+        assert_eq!(r.id, "chosen");
+        assert_eq!(r.model, "stored-model");
+    }
+
+    #[test]
+    fn stale_or_disabled_active_selection_fails_closed() {
+        let rows = [
+            row("chosen", false, serde_json::json!({ "model": "m" })),
+            row("fallback", true, serde_json::json!({ "model": "m" })),
+        ];
+        assert!(resolve_provider_selection(empty_env, &rows, "chosen", "m").is_none());
+        assert!(resolve_provider_selection(empty_env, &rows, "gone", "m").is_none());
     }
 
     #[test]

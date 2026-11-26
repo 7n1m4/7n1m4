@@ -1,14 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
 
+/// A file selected for import. This small value object decouples the native
+/// file picker from tests, which can provide bytes directly.
+class CardFileSelection {
+  const CardFileSelection({required this.name, required this.bytes});
+
+  final String name;
+  final Uint8List bytes;
+}
+
 class CardsScreen extends StatefulWidget {
-  const CardsScreen({super.key, required this.client});
+  const CardsScreen({super.key, required this.client, this.pickCardFile});
   final DaemonClient client;
+  final Future<CardFileSelection?> Function()? pickCardFile;
 
   @override
   State<CardsScreen> createState() => _CardsScreenState();
@@ -121,11 +133,67 @@ class _CardsScreenState extends State<CardsScreen> {
       return null;
     }
     if (decoded is! Map<String, dynamic>) return null;
+    return _decodeImportObject(decoded);
+  }
+
+  /// Shared handling for a decoded import object, whether it came from the
+  /// text field or a `.json` file.
+  ({Map<String, dynamic>? card, String? pngBase64}) _decodeImportObject(
+    Map<String, dynamic> decoded,
+  ) {
     final png = decoded['pngBase64'];
     if (png is String) return (card: null, pngBase64: png);
     final nested = decoded['card'];
     final card = nested is Map<String, dynamic> ? nested : decoded;
     return (card: card, pngBase64: null);
+  }
+
+  Future<CardFileSelection?> _pickCardFile() async {
+    final file = await FilePicker.pickFile(
+      dialogTitle: 'Import a card (.png or .json)',
+      type: FileType.custom,
+      allowedExtensions: const <String>['json', 'png'],
+    );
+    if (file == null) return null;
+    return CardFileSelection(name: file.name, bytes: await file.readAsBytes());
+  }
+
+  Future<void> _importFile() async {
+    final CardFileSelection? selection;
+    try {
+      selection = await (widget.pickCardFile ?? _pickCardFile).call();
+    } on Object catch (e) {
+      if (mounted) setState(() => _error = 'Could not read the card file: $e');
+      return;
+    }
+    if (selection == null || !mounted) return;
+    final ({Map<String, dynamic>? card, String? pngBase64}) parsed;
+    if (selection.name.toLowerCase().endsWith('.png')) {
+      parsed = (
+        card: null,
+        pngBase64: base64Encode(selection.bytes),
+      );
+    } else {
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(selection.bytes));
+      } on FormatException {
+        if (mounted) {
+          setState(() => _error = 'The selected file is not valid JSON.');
+        }
+        return;
+      }
+      if (decoded is! Map<String, dynamic>) {
+        if (mounted) {
+          setState(
+            () => _error = 'The selected file must contain a JSON object.',
+          );
+        }
+        return;
+      }
+      parsed = _decodeImportObject(decoded);
+    }
+    await _runImport(parsed);
   }
 
   Future<void> _import() async {
@@ -134,6 +202,12 @@ class _CardsScreenState extends State<CardsScreen> {
       setState(() => _error = 'Paste a JSON card object to import.');
       return;
     }
+    await _runImport(parsed);
+  }
+
+  Future<void> _runImport(
+    ({Map<String, dynamic>? card, String? pngBase64}) parsed,
+  ) async {
     _setBusy(true);
     setState(() {
       _error = null;
@@ -358,12 +432,20 @@ class _CardsScreenState extends State<CardsScreen> {
                           maxLines: 3,
                         ),
                         const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton(
-                            onPressed: _busy ? null : _import,
-                            child: const Text('Import'),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: <Widget>[
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : _importFile,
+                              icon: const Icon(Icons.upload_file),
+                              label: const Text('Import file'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              onPressed: _busy ? null : _import,
+                              child: const Text('Import'),
+                            ),
+                          ],
                         ),
                       ],
                     ),

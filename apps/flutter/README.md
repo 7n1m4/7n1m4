@@ -73,13 +73,23 @@ flutter test
 **Verified toolchain:** the scaffold was validated with Flutter 3.38.5 / Dart
 3.10.4 (fvm at `~/fvm/versions/3.38.5/bin`). `flutter analyze` reports 0 errors
 (a handful of info-level lint hints remain), and `flutter test` passes all 52
-tests. `pubspec.lock` is present; platform runner directories are still absent
-— generate them with the SDK present, e.g.
+tests. `pubspec.lock` is present, and the desktop hosts `linux/`,
+`macos/` and `windows/` now exist (generated with
+`flutter create --platforms=linux,macos,windows .` and checked in). They are
+build scaffolding only, not a release: no desktop release pipeline exists,
+and CI does not run `flutter build linux/macos/windows` because the
+platform-native plugin implementations are not landed. To regenerate a host
+with the SDK present, run
+`flutter create --platforms=linux,macos,windows,android,ios .` then
+`flutter pub get`.
 
-```sh
-flutter create --platforms=linux,macos,windows,android,ios .
-flutter pub get
-```
+### Desktop hosts in CI
+
+Job `flutter-desktop-hosts` in `.github/workflows/ci.yml` runs on
+`ubuntu-latest`: it asserts the generated host files exist, then runs
+`flutter config --enable-linux-desktop`, `flutter pub get`, `flutter analyze`
+and `flutter test` in `apps/flutter`. It is not release validation, and no
+macOS or Windows runner is involved.
 
 ## Intentionally deferred (with reasons)
 
