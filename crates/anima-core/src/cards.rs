@@ -1648,6 +1648,64 @@ pub struct AiriActiveState {
     pub active_expressions: Option<BTreeMap<String, f64>>,
 }
 
+/// Pure expression transition for applying an outfit, ported from
+/// `applyOutfit` in `packages/stage-ui/src/stores/modules/airi-card.ts`.
+///
+/// Takes the card's outfits (`extensions.airi.outfits`) and its active state,
+/// returning the next active state. All other state fields and expression keys
+/// not owned by an outfit are preserved. An unknown `outfit_id` is a no-op.
+pub fn apply_outfit(
+    outfits: &[AiriOutfit],
+    active: &AiriActiveState,
+    outfit_id: &str,
+) -> AiriActiveState {
+    let Some(outfit) = outfits.iter().find(|o| o.id == outfit_id) else {
+        return active.clone();
+    };
+
+    let empty = BTreeMap::new();
+    let expressions = outfit.expressions.as_ref().unwrap_or(&empty);
+    let mut next = active.active_expressions.clone().unwrap_or_default();
+
+    // An already-active overlay toggles off: zero only its own expressions.
+    // The epsilon matches the TS `Math.abs(current - weight) < 0.05` check.
+    if outfit.outfit_type == Some(AiriOutfitType::Overlay)
+        && expressions
+            .iter()
+            .all(|(name, weight)| (next.get(name).copied().unwrap_or(0.0) - weight).abs() < 0.05)
+    {
+        for name in expressions.keys() {
+            next.insert(name.clone(), 0.0);
+        }
+        let mut result = active.clone();
+        result.active_expressions = Some(next);
+        return result;
+    }
+
+    // A base outfit clears expressions owned by every other base outfit.
+    if outfit.outfit_type == Some(AiriOutfitType::Base) {
+        for other in outfits
+            .iter()
+            .filter(|o| o.id != outfit_id && o.outfit_type == Some(AiriOutfitType::Base))
+        {
+            if let Some(other_expressions) = &other.expressions {
+                for name in other_expressions.keys() {
+                    next.insert(name.clone(), 0.0);
+                }
+            }
+        }
+    }
+
+    // Apply the target outfit's weights last so they win over the clears above.
+    for (name, weight) in expressions {
+        next.insert(name.clone(), *weight);
+    }
+
+    let mut result = active.clone();
+    result.active_expressions = Some(next);
+    result
+}
+
 /// RWKV model configuration (`extensions.airi.rwkv`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2672,6 +2730,147 @@ mod tests {
             "data": { "name": "Nope" }
         });
         assert!(parse_card_json(&serde_json::to_vec(&doc).unwrap()).is_err());
+    }
+
+    fn outfit(id: &str, kind: Option<AiriOutfitType>, exprs: &[(&str, f64)]) -> AiriOutfit {
+        let mut result = AiriOutfit {
+            id: id.to_string(),
+            name: id.to_string(),
+            outfit_type: kind,
+            ..AiriOutfit::default()
+        };
+        if !exprs.is_empty() {
+            result.expressions = Some(
+                exprs
+                    .iter()
+                    .map(|(name, weight)| ((*name).to_string(), *weight))
+                    .collect(),
+            );
+        }
+        result
+    }
+
+    fn active_with(exprs: &[(&str, f64)]) -> AiriActiveState {
+        AiriActiveState {
+            display_model_id: Some("model".to_string()),
+            active_background_id: Some("bg".to_string()),
+            active_expressions: Some(
+                exprs
+                    .iter()
+                    .map(|(name, weight)| ((*name).to_string(), *weight))
+                    .collect(),
+            ),
+        }
+    }
+
+    #[test]
+    fn apply_outfit_unknown_id_is_a_noop() {
+        let outfits = vec![outfit(
+            "casual",
+            Some(AiriOutfitType::Base),
+            &[("smile", 1.0)],
+        )];
+        let active = active_with(&[("smile", 0.2), ("unrelated", 0.7)]);
+
+        let next = apply_outfit(&outfits, &active, "missing");
+
+        assert_eq!(next, active);
+        assert_eq!(next.active_expressions.as_ref().unwrap()["smile"], 0.2);
+        assert_eq!(next.active_expressions.as_ref().unwrap()["unrelated"], 0.7);
+    }
+
+    #[test]
+    fn apply_outfit_applies_target_weights_and_preserves_unrelated_keys() {
+        let outfits = vec![outfit(
+            "casual",
+            Some(AiriOutfitType::Base),
+            &[("smile", 1.0)],
+        )];
+        let active = active_with(&[("smile", 0.2), ("unrelated", 0.7)]);
+
+        let next = apply_outfit(&outfits, &active, "casual");
+        let exprs = next.active_expressions.as_ref().unwrap();
+
+        assert_eq!(exprs["smile"], 1.0);
+        assert_eq!(exprs["unrelated"], 0.7);
+        assert_eq!(next.display_model_id, active.display_model_id);
+        assert_eq!(next.active_background_id, active.active_background_id);
+    }
+
+    #[test]
+    fn apply_outfit_overlay_toggles_off_when_already_active() {
+        let outfits = vec![outfit(
+            "glasses",
+            Some(AiriOutfitType::Overlay),
+            &[("smile", 0.8), ("blush", 0.3)],
+        )];
+        let active = active_with(&[("smile", 0.81), ("blush", 0.3), ("unrelated", 0.5)]);
+
+        let next = apply_outfit(&outfits, &active, "glasses");
+        let exprs = next.active_expressions.as_ref().unwrap();
+
+        assert_eq!(exprs["smile"], 0.0);
+        assert_eq!(exprs["blush"], 0.0);
+        assert_eq!(exprs["unrelated"], 0.5);
+    }
+
+    #[test]
+    fn apply_outfit_overlay_epsilon_boundary() {
+        // Weight 0.05 keeps `0.0 - 0.05 == -0.05` exactly representable, so the
+        // strict `< 0.05` comparison is exercised at its precise boundary.
+        let outfits = vec![outfit(
+            "glasses",
+            Some(AiriOutfitType::Overlay),
+            &[("smile", 0.05)],
+        )];
+
+        // Just inside the epsilon: toggles off.
+        let inside = active_with(&[("smile", 0.01)]);
+        let next = apply_outfit(&outfits, &inside, "glasses");
+        assert_eq!(next.active_expressions.as_ref().unwrap()["smile"], 0.0);
+
+        // Exactly 0.05 away: the strict `< 0.05` check fails, so the weight is
+        // applied instead of toggling off.
+        let boundary = active_with(&[("smile", 0.0)]);
+        let next = apply_outfit(&outfits, &boundary, "glasses");
+        assert_eq!(next.active_expressions.as_ref().unwrap()["smile"], 0.05);
+
+        // Outside the epsilon: also applies rather than toggling off.
+        let outside = active_with(&[("smile", 0.2)]);
+        let next = apply_outfit(&outfits, &outside, "glasses");
+        assert_eq!(next.active_expressions.as_ref().unwrap()["smile"], 0.05);
+    }
+
+    #[test]
+    fn apply_outfit_overlay_when_inactive_applies_without_clearing() {
+        let outfits = vec![
+            outfit("casual", Some(AiriOutfitType::Base), &[("smile", 1.0)]),
+            outfit("glasses", Some(AiriOutfitType::Overlay), &[("blush", 0.6)]),
+        ];
+        let active = active_with(&[("smile", 1.0), ("unrelated", 0.2)]);
+
+        let next = apply_outfit(&outfits, &active, "glasses");
+        let exprs = next.active_expressions.as_ref().unwrap();
+
+        assert_eq!(exprs["blush"], 0.6);
+        assert_eq!(exprs["smile"], 1.0);
+        assert_eq!(exprs["unrelated"], 0.2);
+    }
+
+    #[test]
+    fn apply_outfit_base_zeroes_other_bases_but_keeps_unrelated() {
+        let outfits = vec![
+            outfit("casual", Some(AiriOutfitType::Base), &[("smile", 1.0)]),
+            outfit("formal", Some(AiriOutfitType::Base), &[("serious", 0.9)]),
+        ];
+        let active = active_with(&[("smile", 1.0), ("serious", 0.0), ("unrelated", 0.4)]);
+
+        let next = apply_outfit(&outfits, &active, "formal");
+        let exprs = next.active_expressions.as_ref().unwrap();
+
+        assert_eq!(exprs["smile"], 0.0);
+        assert_eq!(exprs["serious"], 0.9);
+        assert_eq!(exprs["unrelated"], 0.4);
     }
 }
 
