@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+
 import { readFileSync } from 'node:fs'
 
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
@@ -64,9 +65,11 @@ function globToRegExp(glob) {
 const entries = Object.entries(config).map(([pattern, command]) => ({ pattern, command }))
 const matchesFor = path => entries.filter(({ pattern }) => globToRegExp(pattern).test(path))
 const patternsFor = path => matchesFor(path).map(entry => entry.pattern)
-const commandsFor = path => [
-  ...new Set(matchesFor(path).flatMap(entry => Array.isArray(entry.command) ? entry.command : [entry.command])),
-]
+function commandsFor(path) {
+  return [
+    ...new Set(matchesFor(path).flatMap(entry => Array.isArray(entry.command) ? entry.command : [entry.command])),
+  ]
+}
 
 // Markdown, JSON and YAML have no formatter configured and must stay untouched.
 for (const path of ['AGENTS.md', 'docs/README.md', 'package.json', 'pnpm-workspace.yaml']) {
@@ -86,4 +89,4 @@ for (const [path, pattern, command] of ownership) {
   assert.deepEqual(commandsFor(path), [command], `${path} must run only: ${command}`)
 }
 
-console.log('nano-staged scope OK: rustfmt for .rs, dart format for .dart, eslint for JS-family; docs/JSON/YAML untouched')
+console.info('nano-staged scope OK: rustfmt for .rs, dart format for .dart, eslint for JS-family; docs/JSON/YAML untouched')
