@@ -67,7 +67,7 @@ activeModel: string }` — the provider/model selection used by daemon
 payloads (not persisted keys and no `local:*` mirror): `PresenceChangedData`
 `{ subject, state, seq, ts_ms }` and secret-free `StatusChangedData`
 `{ core_available, store_available, store_health, seq, ts_ms }` in
-`crates/anima-channel/src/wire.rs:1041,1060`. Flutter decodes them in
+`crates/anima-channel/src/wire.rs:1085,1104`. Flutter decodes them in
 `apps/flutter/lib/daemon_client/protocol.dart:110,144`, registers typed hooks at
 `daemon_client.dart:274,283`, and renders them through
 `apps/flutter/lib/features/stage/presence_event_state.dart` + `presence_status_chip.dart`
@@ -76,12 +76,12 @@ client may fabricate these values when a frame is missing.
 
 Keyset list cursors are also daemon-owned wire values, not persisted state:
 `cards.list`/`sessions.list` return `{ updatedAt, rowId }` and `chat.history`
-returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1343,1720,1932`,
-`list_cursor` at `gateway.rs:2983`). `ListPage.nextCursor` in
+returns `{ createdAt, rowId }` (`crates/anima-daemon/src/gateway.rs:1877,2100,1500`,
+`list_cursor` at `gateway.rs:3265`). `ListPage.nextCursor` in
 `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,732-745` forwards them
 verbatim; only older daemons without a cursor fall back to a numeric offset
 (`airi-dib9`). `stmm.upsert` writes short-term summary rows via the gated
-`gateway.rs:1467-1503`; Flutter's typed wrapper is at `daemon_client.dart:1003-1065`
+`gateway.rs:1624-1661`; Flutter's typed wrapper is at `daemon_client.dart:1003-1065`
 (`airi-bmt5`), while the TS `local:memory/short-term/*` lane (§1.7) remains a
 migration reference, not a daemon mirror.
 
@@ -1223,6 +1223,17 @@ metadata are plain refs, not durable settings.
 | `airi:chat:rp-media-collapsed` | `boolean` | — | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
 | `airi:chat:rp-memories-collapsed` | `boolean` | — | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
 
+#### Flutter client-local composer drafts
+
+`apps/flutter/lib/features/chat/composer_draft_store.dart` persists unsent
+composer text in the application-support file
+`<getApplicationSupportDirectory()>/composer_drafts.json`, shaped
+`{ "version": 1, "drafts": { "<sessionId>": "<text>", "": "<pre-session draft>" } }`.
+Writes are debounced (200 ms) and atomic (`.tmp` sibling + rename); empty text
+removes the entry, including on a committed send. This is **client-local only**:
+no daemon verb, no IndexedDB/`local:*` mirror and no cross-window channel; a
+missing platform channel degrades to an in-memory store.
+
 ### 4.11 Control Strip
 
 | Key | Type | Default | File |
@@ -1351,7 +1362,7 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `onboarding/v2-state` | `{ stepId, path }` | `'welcome'` / `'new'` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-skipped` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
 | `onboarding/v2-completed` | `boolean` | `false` | `dialogs/onboarding/v2/onboarding-v2.vue` |
-| `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` (TS reference); daemon-backed via `settings.get/set('onboarding')`, storage key `settings/onboarding`, `OnboardingSettings::draft` (`crates/anima-core/src/settings.rs:2133`) — opaque JSON so wizard-owned fields round-trip; known credential fields are scrubbed in both directions (`airi-vcxy.2`) |
+| `onboarding/v3-draft` | `OnboardingV3DraftState` | store defaults | `components/scenarios/dialogs/onboarding/v3/stores/useOnboardingV3Draft.ts:227` (TS reference); daemon-backed via `settings.get/set('onboarding')`, storage key `settings/onboarding`, `OnboardingSettings::draft` (`crates/anima-core/src/settings.rs:2304`) — opaque JSON so wizard-owned fields round-trip; known credential fields are scrubbed in both directions (`airi-vcxy.2`) |
 | `onboarding/v3-completed` | `boolean` | `false` | `stores/onboarding.ts:22` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::completed` (`crates/anima-core/src/settings.rs:2143`) |
 | `onboarding/v3-skipped` | `boolean` | `false` | `stores/onboarding.ts:23` (TS reference); daemon-backed via `settings.get/set('onboarding')`, `OnboardingSettings::skipped` (`crates/anima-core/src/settings.rs:2146`) |
 | `airi:onboarding:magic-wand-seen` | `boolean` | `false` | `apps/stage-tamagotchi/.../InteractiveArea.vue` |
@@ -1756,7 +1767,7 @@ When implementing MOSS-TTS-Nano voice cloning, the voice profile store should fo
 | File | Role |
 | :--- | :--- |
 | `crates/anima-channel/src/wire.rs:1039-1073` | Presence/health payloads (`PresenceChangedData`, `StatusChangedData`); `CueKind` at `:942-949` |
-| `crates/anima-daemon/src/gateway.rs:1424,1791,2009` | Keyset cursors for chat history, cards, sessions; `stmm.upsert` handler at `:1467-1503` |
+| `crates/anima-daemon/src/gateway.rs:1500,1877,2100` | Keyset cursors for chat history, cards, sessions; `stmm.upsert` handler at `:1624-1661` |
 | `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,267-288,732-745` | `ListPage.nextCursor` verbatim cursor forwarding, typed presence/status hooks, `stmmUpsert` at `:1003-1065` |
 | `apps/flutter/lib/features/stage/presence_event_state.dart:65-173` | Seq-deduped presence/health snapshot and typed hook binding |
 | `apps/flutter/lib/features/stage/presence_status_chip.dart:17-120` | Stage consumer of daemon-published presence/health |
