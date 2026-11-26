@@ -289,6 +289,20 @@ export type CueKind =
 /**  Visual effect cue — not a facial morph. */
 "vfx";
 
+/**
+ *  `data` payload of a `discord.status` reply.
+ *
+ *  Lifecycle state plus a readiness bit only. No bot token or config echo:
+ *  the `MT...` credential is not matched by the audit redactor, so it must
+ *  never appear on this wire at all.
+ */
+export type DiscordStatusReply = {
+	/**  Whether the daemon-local Discord lifecycle is started. */
+	running: boolean,
+	/**  Whether a non-empty bot token is stored, without revealing its value. */
+	hasToken: boolean,
+};
+
 /**  Chat domain statistics. */
 export type DomainStatsData = {
 	/**  Number of sessions. */

@@ -411,6 +411,9 @@ struct CoreInner {
     reason: Option<String>,
     session_count: u64,
     message_count: u64,
+    /// Daemon-local Discord lifecycle flag. No client or network connection is
+    /// owned here; start/stop only flip this bit.
+    discord_running: bool,
 }
 
 /// Shared id normalization for card metadata reads and writes: both paths must
@@ -452,6 +455,7 @@ impl CoreService {
                         reason: None,
                         session_count: sessions,
                         message_count: messages,
+                        discord_running: false,
                     })),
                 }
             }
@@ -467,6 +471,7 @@ impl CoreService {
                 reason: Some(reason),
                 session_count: 0,
                 message_count: 0,
+                discord_running: false,
             })),
         }
     }
@@ -825,6 +830,36 @@ impl CoreService {
             .as_ref()
             .ok_or_else(|| "store unavailable".to_string())?;
         discord_view(&core.settings())
+    }
+
+    /// Secret-free lifecycle read for `discord.status`.
+    ///
+    /// The token bit comes from [`discord_view`], the same projection used by
+    /// `settings.get`: only a boolean crosses this boundary, never the stored
+    /// credential.
+    pub fn discord_status(&self) -> Result<anima_channel::wire::DiscordStatusReply, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
+        let view = discord_view(&core.settings())?;
+        let has_token = view
+            .get("hasToken")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        Ok(anima_channel::wire::DiscordStatusReply {
+            running: guard.discord_running,
+            has_token,
+        })
+    }
+
+    /// Flip the daemon-local Discord lifecycle flag. This is deliberately not
+    /// a network login: no token is read and no gateway client is created.
+    pub fn discord_set_running(&self, running: bool) -> Result<(), String> {
+        let mut guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        guard.discord_running = running;
+        Ok(())
     }
 
     /// Secret-free view of the daemon-owned MCP config for `mcp.config.get`.

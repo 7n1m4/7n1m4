@@ -2556,6 +2556,48 @@ impl Gateway {
                 }),
             );
         }
+        // Discord lifecycle is daemon-local: start/stop flip a flag owned by
+        // `CoreService` (handlers are rebuilt per bind, so closures cannot hold
+        // state). No token argument, no login and no config echo; the status
+        // read reuses the token-free projection and stays ungated.
+        {
+            let core = core.clone();
+            m.insert(
+                "discord.status".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    let reply = core.discord_status().map_err(|e| e.to_string())?;
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "discord.start".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, _value: &serde_json::Value| {
+                        core.discord_set_running(true).map_err(|e| e.to_string())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "discord.stop".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, _value: &serde_json::Value| {
+                        core.discord_set_running(false).map_err(|e| e.to_string())?;
+                        Ok(serde_json::json!({ "ok": true }))
+                    },
+                ),
+            );
+        }
         {
             m.insert(
                 "mcp.test".to_string(),
@@ -5633,6 +5675,8 @@ mod tests {
             "mcp.call_tool",
             "mcp.config.set",
             "mcp.test",
+            "discord.start",
+            "discord.stop",
             "acp.run",
             "acp.prompt",
             "acp.list_sessions",
@@ -7334,6 +7378,8 @@ mod tests {
             "stmm.upsert",
             "stmm.delete",
             "chat.send",
+            "discord.start",
+            "discord.stop",
         ] {
             let h = handlers
                 .get(method)

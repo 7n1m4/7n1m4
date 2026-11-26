@@ -19,13 +19,14 @@ use anima_channel::wire::{
     CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
     CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
     CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, CharacterStatsData,
-    ChatSendRequest, CoreStatusReply, DomainStatsData, EmotionTagData, EventPayload,
-    EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
-    GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData, MemoryStatsData,
-    ProviderInfo, ProviderModelInfo, ProviderStatsData, ProvidersListReply, ProvidersModelsReply,
-    RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest,
-    SessionImportReply, SessionImportStatus, SettingsChangedData, SettingsGetReply,
-    SettingsSetReply, StatusChangedData, TokenDeltaData, VaultStatsData, VaultStatusReply,
+    ChatSendRequest, CoreStatusReply, DiscordStatusReply, DomainStatsData, EmotionTagData,
+    EventPayload, EventSubscriptionReply, EventTopic, GatewayAuthReply, GatewayConfigReply,
+    GatewayEvent, GatewayServerFrame, HeartbeatData, HeartbeatKind, LipSyncRmsData,
+    MemoryStatsData, ProviderInfo, ProviderModelInfo, ProviderStatsData, ProvidersListReply,
+    ProvidersModelsReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply,
+    SessionDeleteRequest, SessionImportReply, SessionImportStatus, SettingsChangedData,
+    SettingsGetReply, SettingsSetReply, StatusChangedData, TokenDeltaData, VaultStatsData,
+    VaultStatusReply,
 };
 
 fn fixtures_dir() -> PathBuf {
@@ -434,6 +435,13 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "sessions.delete.reply",
             serde_json::to_value(SessionDeleteReply { deleted: true })?,
+        ),
+        (
+            "discord_status.reply",
+            serde_json::to_value(DiscordStatusReply {
+                running: true,
+                has_token: true,
+            })?,
         ),
         (
             "sessions.import.reply",

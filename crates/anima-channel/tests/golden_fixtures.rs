@@ -18,11 +18,11 @@ mod golden_fixtures {
         CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest, CardGetReply,
         CardImportReply, CardImportRequest, CardInfo, CardListReply, CardMetadataReply,
         CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest,
-        CoreStatusReply, EmotionTagData, EventPayload, EventSubscriptionReply, GatewayAuthReply,
-        GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData, ProvidersListReply,
-        ProvidersModelsReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
-        SessionDeleteReply, SessionDeleteRequest, SessionImportReply, SettingsGetReply,
-        SettingsSetReply, VaultStatusReply,
+        CoreStatusReply, DiscordStatusReply, EmotionTagData, EventPayload, EventSubscriptionReply,
+        GatewayAuthReply, GatewayConfigReply, GatewayEvent, GatewayServerFrame, HeartbeatData,
+        ProvidersListReply, ProvidersModelsReply, RpcErrorObject, RuntimePingReply,
+        RuntimeStatusReply, SessionDeleteReply, SessionDeleteRequest, SessionImportReply,
+        SettingsGetReply, SettingsSetReply, VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -160,6 +160,17 @@ mod golden_fixtures {
     fn settings_set_reply_fixture() {
         let value = load_json("settings_set.reply");
         round_trip::<SettingsSetReply>("settings_set.reply", &value);
+    }
+
+    #[test]
+    fn discord_status_reply_fixture_is_token_free() {
+        let value = load_json("discord_status.reply");
+        round_trip::<DiscordStatusReply>("discord_status.reply", &value);
+        assert!(
+            value.get("token").is_none(),
+            "discord.status must have no token key"
+        );
+        assert!(value["hasToken"].is_boolean());
     }
 
     #[test]

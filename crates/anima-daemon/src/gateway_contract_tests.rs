@@ -159,6 +159,28 @@ mod tests {
         )
     }
 
+    /// Like `verbs`, but with an explicit effective hostname for LAN gate
+    /// tests. Does not consult the gateway's bound state.
+    fn handlers_with_hostname(fixture: &Fixture, hostname: &str) -> RendererHandlers {
+        Gateway::renderer_handlers(
+            &fixture.core,
+            &fixture.gateway.publisher(),
+            &fixture.config_path,
+            hostname,
+        )
+    }
+
+    fn set_allow_remote_actions(fixture: &Fixture, value: serde_json::Value) {
+        let mut config: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&fixture.config_path).unwrap()).unwrap();
+        config["allowRemoteActions"] = value;
+        fs::write(
+            &fixture.config_path,
+            serde_json::to_string_pretty(&config).unwrap(),
+        )
+        .unwrap();
+    }
+
     fn dispatch(
         fixture: &Fixture,
         method: &str,
@@ -1213,6 +1235,148 @@ mod tests {
             serde_json::from_str(after["settings"].as_str().unwrap()).unwrap();
         assert_eq!(after_settings["enabled"], false);
         assert_eq!(after_settings["hasToken"], true);
+    }
+
+    #[test]
+    fn discord_lifecycle_verbs_are_gated_and_status_is_token_free() {
+        const TOKEN: &str = "MT12345678901234567890AbCdEfGhIjKlMnOpQrStUvWxYz";
+        const TOKEN_FRAGMENT: &str = "12345678901234567890AbCdEf";
+
+        fn assert_no_token(value: &serde_json::Value) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    for (key, child) in map {
+                        if key.to_ascii_lowercase().contains("token") {
+                            // The only sanctioned token-shaped key is the
+                            // boolean readiness bit; every other alias is a leak.
+                            assert_eq!(
+                                key, "hasToken",
+                                "reply must have no token-shaped key at any depth: {key}"
+                            );
+                            assert!(
+                                child.is_boolean(),
+                                "hasToken must stay a boolean bit, not a credential"
+                            );
+                        }
+                        assert_no_token(child);
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for child in items {
+                        assert_no_token(child);
+                    }
+                }
+                serde_json::Value::String(text) => {
+                    // A distinctive slice of the bot token catches re-encoded
+                    // or partially transformed values, not just exact echoes.
+                    assert!(
+                        !text.contains(TOKEN_FRAGMENT),
+                        "reply must never carry the Discord bot token"
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        let fixture = isolated_gateway();
+
+        // Lifecycle mutations stay registered but fail closed without opt-in.
+        for verb in ["discord.start", "discord.stop"] {
+            let err = dispatch(&fixture, verb, &serde_json::json!({}))
+                .expect_err(&format!("{verb} must be denied without allowActions"));
+            assert_eq!(err.code(), "rpc_actions_disabled", "{verb}: {err:?}");
+        }
+
+        // The status read is callable without opt-in and is token-free from
+        // the very first call (before any credential is stored).
+        let status = call(&fixture, "discord.status", serde_json::json!({}));
+        assert_no_token(&status);
+        assert!(status["hasToken"].is_boolean());
+        assert_eq!(status["hasToken"], false);
+        assert_eq!(status["running"], false);
+
+        enable_actions(&fixture);
+        call(
+            &fixture,
+            "settings.set",
+            serde_json::json!({
+                "section": "discord",
+                "settings": { "enabled": true, "token": TOKEN }
+            }),
+        );
+
+        // After a credential is stored, status reports readiness only: no
+        // token value, no token key at any depth.
+        let status = call(&fixture, "discord.status", serde_json::json!({}));
+        assert_no_token(&status);
+        assert_eq!(status["hasToken"], true);
+        assert_eq!(status["running"], false);
+
+        // start/stop flip daemon-local lifecycle state; no network login.
+        let started = call(&fixture, "discord.start", serde_json::json!({}));
+        assert_eq!(started["ok"], true);
+        assert_no_token(&started);
+        let status = call(&fixture, "discord.status", serde_json::json!({}));
+        assert_eq!(status["running"], true);
+        assert_no_token(&status);
+
+        let stopped = call(&fixture, "discord.stop", serde_json::json!({}));
+        assert_eq!(stopped["ok"], true);
+        assert_no_token(&stopped);
+        let status = call(&fixture, "discord.status", serde_json::json!({}));
+        assert_eq!(status["running"], false);
+        assert_no_token(&status);
+    }
+
+    #[test]
+    fn discord_lifecycle_verbs_require_remote_actions_opt_in_on_non_loopback() {
+        const LAN: &str = "192.168.1.10";
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+
+        // allowActions alone is not enough on a LAN bind: an absent (or false)
+        // allowRemoteActions opt-in must deny both lifecycle verbs.
+        for remote in [None, Some(serde_json::json!(false))] {
+            if let Some(remote) = remote {
+                set_allow_remote_actions(&fixture, remote);
+            }
+            let handlers: Arc<_> = Arc::new(handlers_with_hostname(&fixture, LAN));
+            for verb in ["discord.start", "discord.stop"] {
+                let err = RpcRegistry::dispatch(
+                    &RpcContext::new(LAN, 6121),
+                    verb,
+                    &serde_json::json!({}),
+                    &handlers,
+                )
+                .expect_err(&format!("{verb} must deny on a LAN bind"));
+                assert_eq!(err.code(), "rpc_actions_disabled", "{verb}: {err:?}");
+            }
+        }
+
+        // The token-free status read stays callable without the remote opt-in.
+        let handlers: Arc<_> = Arc::new(handlers_with_hostname(&fixture, LAN));
+        let status = RpcRegistry::dispatch(
+            &RpcContext::new(LAN, 6121),
+            "discord.status",
+            &serde_json::json!({}),
+            &handlers,
+        )
+        .expect("status is an ungated read");
+        assert_eq!(status["hasToken"], false);
+
+        // Both verbs work once the operator explicitly allows remote actions.
+        set_allow_remote_actions(&fixture, serde_json::json!(true));
+        let handlers: Arc<_> = Arc::new(handlers_with_hostname(&fixture, LAN));
+        for verb in ["discord.start", "discord.stop"] {
+            let reply = RpcRegistry::dispatch(
+                &RpcContext::new(LAN, 6121),
+                verb,
+                &serde_json::json!({}),
+                &handlers,
+            )
+            .unwrap_or_else(|e| panic!("{verb} failed after remote opt-in: {e}"));
+            assert_eq!(reply["ok"], true);
+        }
     }
 
     #[test]

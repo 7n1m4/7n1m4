@@ -46,6 +46,7 @@ pub mod cards;
 pub mod chat;
 pub mod compaction;
 pub mod crashlog;
+pub mod dating_sim;
 pub mod grounding;
 pub mod memory;
 pub mod onboarding_rules;

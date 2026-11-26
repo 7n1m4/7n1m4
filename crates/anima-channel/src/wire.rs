@@ -278,6 +278,20 @@ pub struct SettingsSetReply {
     pub ok: bool,
 }
 
+/// `data` payload of a `discord.status` reply.
+///
+/// Lifecycle state plus a readiness bit only. No bot token or config echo:
+/// the `MT...` credential is not matched by the audit redactor, so it must
+/// never appear on this wire at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordStatusReply {
+    /// Whether the daemon-local Discord lifecycle is started.
+    pub running: bool,
+    /// Whether a non-empty bot token is stored, without revealing its value.
+    pub has_token: bool,
+}
+
 /// `data` payload of a `vault.status` reply.
 ///
 /// Vault statistics (counts and byte sizes only, no secret material).
@@ -1388,6 +1402,7 @@ pub fn type_collection() -> specta::Types {
         .register::<ProvidersModelsReply>()
         .register::<SettingsGetReply>()
         .register::<SettingsSetReply>()
+        .register::<DiscordStatusReply>()
         .register::<VaultStatusReply>()
         .register::<VaultArchiveCollectRequest>()
         .register::<VaultArchiveReply>()
