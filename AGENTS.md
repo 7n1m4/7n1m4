@@ -131,6 +131,7 @@ Anima is no longer "a desktop pet app". It is pivoting to the **agent-runtime co
 - Default to async for independent work: parallel subagents, async bash/eval jobs, and background verification. Run synchronously only when the next step genuinely depends on the result or the user explicitly asks.
 - Make bounded slices with disjoint file ownership. A terminal pane is not isolation; do not let parallel workers touch overlapping files.
 - One coordinator owns Beads status, integration, verification, and closure. Helpers report back; they do not advance shared state on their own.
+- **Hillclimb:** for a port/parity wave, including a `unified-port-hillclimb` firing, follow [docs/agents/hillclimb-cycle.md](./docs/agents/hillclimb-cycle.md); it owns the wave protocol.
 - Use wait only when blocked, and consume results as they arrive rather than holding everything for a single batch.
 - Keep read-only research and write tasks explicitly separated. Do not mix investigation and mutation in the same worker.
 - Do not wait idly for workers, and do not serialize independent reads or checks. Fan out independent work and keep moving.
