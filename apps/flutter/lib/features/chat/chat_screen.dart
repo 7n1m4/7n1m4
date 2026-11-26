@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+// ignore: deprecated_member_use — material_ui replacement is not a project dependency.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -113,14 +114,18 @@ class ChatScreenState extends State<ChatScreen> {
     _unsubscribeEvent = widget.client.onEvent(_onEvent);
     _wasConnected = widget.client.snapshot.isConnected;
     if (_wasConnected) _requestEmotionEvents();
-    // A reconnect drops the stuck Stop state, but the open turn and its
-    // assistant bubble survive because the daemon keeps streaming the same
-    // message_id; only a real disconnect -> connected transition counts.
+    // Only a real disconnect -> connected transition counts. The open turn
+    // survives a reconnect (same message_id), so it is reconciled against
+    // daemon history rather than reset: the terminal frame may have been lost
+    // while offline even though the daemon completed the turn.
     _statusSub = widget.client.statusStream.listen((status) {
       final connected = status.state == DaemonConnectionState.connected;
       final regainedConnection = connected && !_wasConnected;
       _wasConnected = connected;
-      if (regainedConnection) _requestEmotionEvents();
+      if (regainedConnection) {
+        _requestEmotionEvents();
+        unawaited(_reconcileReconnectedTurn());
+      }
     });
     final initial = widget.initialSessionId;
     if (initial != null && initial.isNotEmpty) {
@@ -195,8 +200,9 @@ class ChatScreenState extends State<ChatScreen> {
     }
     // The chat.send ack can arrive after the first delta; remember the session
     // from the stream so a Stop press cancels the right turn.
-    if (_composer.sessionId == null && sid.isNotEmpty)
+    if (_composer.sessionId == null && sid.isNotEmpty) {
       _composer.sessionId = sid;
+    }
     final mid = data['message_id'] as String? ?? '';
     final delta = data['delta'] as String? ?? '';
     final isFinal = data['final'] == true;
@@ -215,10 +221,10 @@ class ChatScreenState extends State<ChatScreen> {
 
     // A reconnect can replay a whole turn. Drop stale/duplicate frames so a
     // delta never doubles visible text and a replayed final cannot close a
-    // newer turn. Frames without seq/index (older daemons/fakes) bypass dedup.
-    if (terminal && mid.isNotEmpty && _finalizedMessageIds.contains(mid)) {
-      return;
-    }
+    // newer turn. A turn closed by history reconciliation is finalized too: a
+    // late delta for it must not open a second bubble with partial text.
+    // Frames without seq/index (older daemons/fakes) bypass dedup.
+    if (mid.isNotEmpty && _finalizedMessageIds.contains(mid)) return;
     final lastSeq = _lastTokenSeq[mid];
     final lastIndex = _lastTokenIndex[mid];
     if (seq != null && lastSeq != null && seq <= lastSeq) return;
@@ -229,16 +235,7 @@ class ChatScreenState extends State<ChatScreen> {
     }
     if (seq != null) _lastTokenSeq[mid] = seq;
     if (index != null) _lastTokenIndex[mid] = index;
-    if (terminal && mid.isNotEmpty) {
-      _finalizedMessageIds.add(mid);
-      _finalizedMessageOrder.add(mid);
-      if (_finalizedMessageOrder.length > 200) {
-        final oldest = _finalizedMessageOrder.removeAt(0);
-        _finalizedMessageIds.remove(oldest);
-        _lastTokenSeq.remove(oldest);
-        _lastTokenIndex.remove(oldest);
-      }
-    }
+    if (terminal && mid.isNotEmpty) _rememberFinalizedMessage(mid);
 
     setState(() {
       // The delta always lands on the open bubble: a genuinely new turn
@@ -307,6 +304,150 @@ class ChatScreenState extends State<ChatScreen> {
       return;
     }
     await Future.wait<void>(<Future<void>>[_loadContext(), _loadHistory()]);
+  }
+
+  /// A lost terminal frame leaves Stop latched and a partial assistant bubble
+  /// open although the daemon already persisted the completed turn. Re-read
+  /// history once on reconnect and close the turn only when the page confirms
+  /// the just-sent user turn now has a full assistant reply. This repairs view
+  /// state only: message ids and the streaming contract stay daemon-owned.
+  Future<void> _reconcileReconnectedTurn() async {
+    final sid = _composer.sessionId;
+    if (sid == null || sid.isEmpty) return;
+    final startedStreaming = _assistantStreaming;
+    final startedMid = _activeMessageId;
+    final startedComposing = _composer.isComposing;
+    final startedCount = _messages.length;
+    if (!startedStreaming && !startedComposing) return;
+    final sentText = _lastUserText();
+    if (sentText == null || sentText.trim().isEmpty) return;
+
+    final generation = ++_historyReadGeneration;
+    ListPage<Map<String, dynamic>> page;
+    try {
+      page = await widget.client.chatHistoryPage(sid);
+    } on Object {
+      return; // An unreadable history says nothing about a live turn.
+    }
+    final unchanged = _transcriptUnchanged(
+      generation: generation,
+      sid: sid,
+      streaming: startedStreaming,
+      mid: startedMid,
+      composing: startedComposing,
+      messageCount: startedCount,
+    );
+    final turns = page.items;
+    // Pair by row order, not content: an older identical user turn must not
+    // answer the current one. Rows are oldest-first within the newest page.
+    final userIndex = _lastHistoryUserIndex(turns);
+    if (userIndex < 0 || turns[userIndex]['content'] != sentText) return;
+    final persisted = _assistantAfter(turns, userIndex);
+    final content = persisted?['content'];
+    if (content is! String || content.trim().isEmpty) return;
+    final historyId = persisted!['id'];
+    final hasHistoryId = historyId is String && historyId.isNotEmpty;
+
+    // A replayed terminal can land mid-read: its empty delta either opens a
+    // blank bubble or leaves an existing partial one open. Fill that bubble
+    // with the persisted reply instead of appending a second one.
+    final openIndex = _lastAssistantIndex() ?? -1;
+    if (!unchanged) {
+      final isLastAssistant =
+          openIndex >= 0 && openIndex == _messages.length - 1;
+      final blankReplay =
+          _messages.length == startedCount + 1 &&
+          isLastAssistant &&
+          _messages[openIndex].text.isEmpty;
+      // Partial text was already on screen: the terminal adds no bubble.
+      final partialReplay =
+          _messages.length == startedCount &&
+          isLastAssistant &&
+          hasHistoryId &&
+          historyId == startedMid &&
+          _finalizedMessageIds.contains(historyId) &&
+          _messages[openIndex].text.trim().isNotEmpty;
+      final replayIsThisTurn =
+          !hasHistoryId || _finalizedMessageIds.contains(historyId);
+      if (!_readStillCurrent(generation, sid) ||
+          _assistantStreaming ||
+          _composer.isComposing ||
+          !(blankReplay || partialReplay) ||
+          !replayIsThisTurn) {
+        return;
+      }
+    }
+
+    final mid = _activeMessageId;
+    if (mid != null && mid.isNotEmpty && !_finalizedMessageIds.contains(mid)) {
+      _rememberFinalizedMessage(mid);
+    }
+    // The history row carries the same id as token.delta, so a late replay of
+    // this turn is dropped by the finalized-id check before it opens a bubble.
+    if (hasHistoryId && !_finalizedMessageIds.contains(historyId)) {
+      _rememberFinalizedMessage(historyId);
+    }
+    setState(() {
+      if (!unchanged || (startedStreaming && openIndex >= 0)) {
+        // Replace the partial (or replay-opened blank) bubble in place.
+        _messages[openIndex] = _messages[openIndex].copyWith(text: content);
+      } else {
+        _messages.add(_ChatMessage.assistant(content));
+      }
+      _assistantStreaming = false;
+      _activeMessageId = null;
+      _deltaBuffer.clear();
+    });
+    _composer.finishTurn();
+    // GenUI rehydration is the same background parse a live final uses.
+    unawaited(_finishGenUiTurn());
+  }
+
+  /// Last user bubble: the text the in-flight turn was sent with.
+  String? _lastUserText() {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].isUser) return _messages[i].text;
+    }
+    return null;
+  }
+
+  /// Newest user row in a history page (rows are oldest-first).
+  int _lastHistoryUserIndex(List<Map<String, dynamic>> turns) {
+    for (var i = turns.length - 1; i >= 0; i--) {
+      if (turns[i]['role'] == 'user') return i;
+    }
+    return -1;
+  }
+
+  /// Assistant row strictly after [userIndex]: only that can answer the turn.
+  Map<String, dynamic>? _assistantAfter(
+    List<Map<String, dynamic>> turns,
+    int userIndex,
+  ) {
+    Map<String, dynamic>? newest;
+    int newestAt = -1;
+    for (var i = userIndex + 1; i < turns.length; i++) {
+      final turn = turns[i];
+      if (turn['role'] != 'assistant') continue;
+      final raw = turn['createdAt'];
+      final at = raw is int ? raw : -1;
+      if (at >= newestAt) {
+        newest = turn;
+        newestAt = at;
+      }
+    }
+    return newest;
+  }
+
+  void _rememberFinalizedMessage(String mid) {
+    _finalizedMessageIds.add(mid);
+    _finalizedMessageOrder.add(mid);
+    if (_finalizedMessageOrder.length > 200) {
+      final oldest = _finalizedMessageOrder.removeAt(0);
+      _finalizedMessageIds.remove(oldest);
+      _lastTokenSeq.remove(oldest);
+      _lastTokenIndex.remove(oldest);
+    }
   }
 
   /// Parse the fully accumulated turn once: GenUI handles split JSON tokens.
@@ -397,7 +538,8 @@ class ChatScreenState extends State<ChatScreen> {
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.arrowUp) return _composer.recallPrevious();
     if (key == LogicalKeyboardKey.arrowDown) return _composer.recallNext();
-    if (key != LogicalKeyboardKey.enter && key != LogicalKeyboardKey.numpadEnter) {
+    if (key != LogicalKeyboardKey.enter &&
+        key != LogicalKeyboardKey.numpadEnter) {
       return false;
     }
     // A held Enter must not re-enter onSubmit: the first send makes the
@@ -414,7 +556,8 @@ class ChatScreenState extends State<ChatScreen> {
     final keyboard = HardwareKeyboard.instance;
     if (keyboard.isShiftPressed) return false;
 
-    final hasPrimaryModifier = keyboard.isControlPressed || keyboard.isMetaPressed;
+    final hasPrimaryModifier =
+        keyboard.isControlPressed || keyboard.isMetaPressed;
     final isPlainEnter = !hasPrimaryModifier;
     final mode = _composer.sendMode;
     final now = widget.now().millisecondsSinceEpoch;
@@ -447,10 +590,22 @@ class ChatScreenState extends State<ChatScreen> {
     // Only bump once there is a read to guard: a sessionless reload must not
     // invalidate an in-flight GenUI parse for the still-empty transcript.
     final generation = ++_historyReadGeneration;
+    final startedStreaming = _assistantStreaming;
+    final startedMid = _activeMessageId;
+    final startedComposing = _composer.isComposing;
+    final startedCount = _messages.length;
+    bool stillCurrent() => _transcriptUnchanged(
+      generation: generation,
+      sid: sid,
+      streaming: startedStreaming,
+      mid: startedMid,
+      composing: startedComposing,
+      messageCount: startedCount,
+    );
     try {
       final page = await widget.client.chatHistoryPage(sid);
       final messages = await Future.wait(page.items.map(_messageFromHistory));
-      if (!_readStillCurrent(generation, sid)) return;
+      if (!stillCurrent()) return;
       setState(() {
         _messages
           ..clear()
@@ -459,7 +614,7 @@ class ChatScreenState extends State<ChatScreen> {
         _historyUnavailable = false;
       });
     } on DaemonClientException {
-      if (!_readStillCurrent(generation, sid)) return;
+      if (!stillCurrent()) return;
       setState(() => _historyUnavailable = true);
     }
   }
@@ -471,6 +626,22 @@ class ChatScreenState extends State<ChatScreen> {
       mounted &&
       generation == _historyReadGeneration &&
       _composer.sessionId == sid;
+
+  /// Also refuse a late read result when a send or stream mutated the
+  /// transcript while its RPC and GenUI parses were in flight.
+  bool _transcriptUnchanged({
+    required int generation,
+    required String? sid,
+    required bool streaming,
+    required String? mid,
+    required bool composing,
+    required int messageCount,
+  }) =>
+      _readStillCurrent(generation, sid) &&
+      _assistantStreaming == streaming &&
+      _activeMessageId == mid &&
+      _composer.isComposing == composing &&
+      _messages.length == messageCount;
 
   /// Append the next (older) history page ahead of the loaded transcript.
   Future<void> _loadOlderHistory() async {
@@ -682,9 +853,8 @@ class ChatScreenState extends State<ChatScreen> {
     // DateTime throws on out-of-range epochs; malformed history must not
     // break the build. Daemon stamps positive ms, so bound to that range.
     const maxEpochMs = 8640000000000000;
-    final createdAt = rawCreatedAt is int &&
-            rawCreatedAt > 0 &&
-            rawCreatedAt <= maxEpochMs
+    final createdAt =
+        rawCreatedAt is int && rawCreatedAt > 0 && rawCreatedAt <= maxEpochMs
         ? rawCreatedAt
         : null;
     if (turn['role'] == 'user') {
@@ -872,9 +1042,9 @@ class ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                       ListTile(
-                        key: Key('chat-manage-sessions'),
-                        leading: Icon(Icons.settings_outlined),
-                        title: Text('Manage sessions'),
+                        key: const Key('chat-manage-sessions'),
+                        leading: const Icon(Icons.settings_outlined),
+                        title: const Text('Manage sessions'),
                         onTap: _manageSessions,
                       ),
                     ],
@@ -921,7 +1091,9 @@ class ChatScreenState extends State<ChatScreen> {
                       key: const Key('chat-load-older-history'),
                       onPressed: _historyLoading ? null : _loadOlderHistory,
                       child: Text(
-                        _historyLoading ? 'Loading older…' : 'Load older messages',
+                        _historyLoading
+                            ? 'Loading older…'
+                            : 'Load older messages',
                       ),
                     ),
                   );
@@ -938,7 +1110,7 @@ class ChatScreenState extends State<ChatScreen> {
                       : Alignment.centerLeft,
                   child: Card(
                     color: m.isUser
-                        ? AppTheme.subtle.withOpacity(0.2)
+                        ? AppTheme.subtle.withValues(alpha: 0.2)
                         : AppTheme.surface,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
@@ -961,8 +1133,11 @@ class ChatScreenState extends State<ChatScreen> {
                                 // The app declares only Locale('en'); intl has
                                 // no bare 'en' date data, so use the format the
                                 // Vue reference uses for en-US.
-                                DateFormat.jm('en_US')
-                                    .format(DateTime.fromMillisecondsSinceEpoch(m.createdAt!)),
+                                DateFormat.jm('en_US').format(
+                                  DateTime.fromMillisecondsSinceEpoch(
+                                    m.createdAt!,
+                                  ),
+                                ),
                                 key: Key('chat-timestamp-$messageIndex'),
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
@@ -971,7 +1146,10 @@ class ChatScreenState extends State<ChatScreen> {
                             alignment: Alignment.centerRight,
                             child: IconButton(
                               key: Key('chat-copy-$messageIndex'),
-                              icon: const Icon(Icons.copy_all_outlined, size: 18),
+                              icon: const Icon(
+                                Icons.copy_all_outlined,
+                                size: 18,
+                              ),
                               tooltip: 'Copy source',
                               onPressed: () => Clipboard.setData(
                                 ClipboardData(text: displayed),
@@ -1065,7 +1243,8 @@ class ChatScreenState extends State<ChatScreen> {
                     // wrapper can still compose around it.
                     child: Focus(
                       onKeyEvent: (node, event) {
-                        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+                        if (event is! KeyDownEvent &&
+                            event is! KeyRepeatEvent) {
                           return KeyEventResult.ignored;
                         }
                         return _handleComposerKey(event)
