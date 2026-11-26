@@ -348,6 +348,7 @@ impl ChatService {
             assistant_message_id,
             cancel,
             false,
+            &[],
         )
         .await
     }
@@ -373,6 +374,39 @@ impl ChatService {
             assistant_message_id,
             cancel,
             true,
+            &[],
+        )
+        .await
+    }
+
+    /// Like [`Self::send_message_with_assistant_id`], but persists bounded
+    /// attachment descriptors in the user message's `attachments` metadata.
+    /// `a2ui` opts into the same GenUI system instruction as
+    /// [`Self::send_message_with_a2ui`]. Attachments are stored, not forwarded
+    /// to the model — the VLM hop is a separate decision.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_message_with_attachments(
+        &self,
+        session_id: Option<&str>,
+        provider_id: &str,
+        config: ProviderConfig,
+        model: &str,
+        text: &str,
+        assistant_message_id: Option<&str>,
+        cancel: Arc<AtomicBool>,
+        a2ui: bool,
+        attachments: &[anima_channel::wire::AttachmentDescriptor],
+    ) -> Result<StreamOutcome> {
+        self.send_message_inner(
+            session_id,
+            provider_id,
+            config,
+            model,
+            text,
+            assistant_message_id,
+            cancel,
+            a2ui,
+            attachments,
         )
         .await
     }
@@ -387,6 +421,7 @@ impl ChatService {
         assistant_message_id: Option<&str>,
         cancel: Arc<AtomicBool>,
         a2ui: bool,
+        attachments: &[anima_channel::wire::AttachmentDescriptor],
     ) -> Result<StreamOutcome> {
         let session_id = self.ensure_session(session_id.unwrap_or(""), text)?;
         self.register_cancel(&session_id, &cancel);
@@ -396,7 +431,11 @@ impl ChatService {
             role: "user".to_string(),
             content: text.to_string(),
             created_at: now_ms(),
-            metadata: serde_json::json!({}),
+            metadata: if attachments.is_empty() {
+                serde_json::json!({})
+            } else {
+                serde_json::json!({ "attachments": attachments })
+            },
         };
         self.messages.insert(&user_message)?;
 
@@ -2473,6 +2512,54 @@ mod tests {
             "cancelled turn must not persist an assistant message"
         );
         assert_eq!(messages[0].role, "user");
+    }
+
+    #[tokio::test]
+    async fn attachments_are_persisted_in_user_metadata_only() {
+        let (_dir, db) = test_db();
+        let verify_db = db.clone();
+        let service = ChatService::new(db);
+        service.register_client("mock", Arc::new(MockChatClient::scripted(&["ok"])));
+        let attachments = vec![anima_channel::wire::AttachmentDescriptor {
+            mime_type: "image/png".into(),
+            data: "aGVsbG8=".into(),
+            file_name: Some("shot.png".into()),
+            url: None,
+        }];
+
+        let outcome = service
+            .send_message_with_attachments(
+                None,
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "look",
+                None,
+                Arc::new(AtomicBool::new(false)),
+                false,
+                &attachments,
+            )
+            .await
+            .unwrap();
+
+        let messages = anima_store::MessageRepo::new(verify_db)
+            .list(&outcome.session_id)
+            .unwrap();
+        let user = messages.iter().find(|m| m.role == "user").unwrap();
+        assert_eq!(
+            user.content, "look",
+            "attachment data must not leak into text"
+        );
+        assert_eq!(user.metadata["attachments"][0]["mimeType"], "image/png");
+        assert_eq!(user.metadata["attachments"][0]["data"], "aGVsbG8=");
+        assert_eq!(user.metadata["attachments"][0]["fileName"], "shot.png");
+        assert!(user.metadata["attachments"][0].get("url").is_none());
+
+        let assistant = messages.iter().find(|m| m.role == "assistant").unwrap();
+        assert!(
+            assistant.metadata.get("attachments").is_none(),
+            "attachments belong to the user turn only"
+        );
     }
 
     #[tokio::test]

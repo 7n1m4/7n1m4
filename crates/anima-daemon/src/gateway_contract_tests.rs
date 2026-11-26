@@ -194,6 +194,7 @@ mod tests {
             session_id: session_id.to_string(),
             content: content.to_string(),
             gen_ui: false,
+            attachments: Vec::new(),
         };
         let ack = call(
             fixture,
@@ -515,6 +516,7 @@ mod tests {
             session_id: "ack-session".to_string(),
             content: "hello over RPC".to_string(),
             gen_ui: false,
+            attachments: Vec::new(),
         };
         let ack = call(
             &fixture,
@@ -692,6 +694,7 @@ mod tests {
                 session_id: "empty-content".to_string(),
                 content: content.to_string(),
                 gen_ui: false,
+                attachments: Vec::new(),
             };
             let err = dispatch(
                 &fixture,

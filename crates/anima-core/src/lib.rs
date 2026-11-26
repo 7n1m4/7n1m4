@@ -49,6 +49,7 @@ pub mod crashlog;
 pub mod grounding;
 pub mod memory;
 pub mod onboarding_rules;
+pub mod pacing;
 pub mod providers;
 pub mod recent_topics;
 pub mod sessions;
@@ -183,6 +184,31 @@ impl AppCore {
         session_id: &str,
         content: &str,
     ) -> Result<StoredMessage> {
+        self.append_user_turn(session_id, content, serde_json::json!({}))
+    }
+
+    /// Like [`Self::append_user_turn_with_session`], but records the validated
+    /// attachment descriptors in the user turn's metadata so an acknowledged
+    /// attachment is never silently dropped when no provider is configured.
+    pub fn append_user_turn_with_attachments(
+        &self,
+        session_id: &str,
+        content: &str,
+        attachments: &[anima_channel::wire::AttachmentDescriptor],
+    ) -> Result<StoredMessage> {
+        self.append_user_turn(
+            session_id,
+            content,
+            serde_json::json!({ "attachments": attachments }),
+        )
+    }
+
+    fn append_user_turn(
+        &self,
+        session_id: &str,
+        content: &str,
+        metadata: serde_json::Value,
+    ) -> Result<StoredMessage> {
         let id = new_id();
         let m = StoredMessage {
             id,
@@ -190,7 +216,7 @@ impl AppCore {
             role: "user".to_string(),
             content: content.to_string(),
             created_at: now_ms(),
-            metadata: serde_json::json!({}),
+            metadata,
         };
         self.messages.insert_with_session(session_id, &m)?;
         let _ = self.bus.send(CoreEvent::MessageAppended {
@@ -280,6 +306,38 @@ mod tests {
             events.try_recv(),
             Ok(CoreEvent::MessageAppended { .. })
         ));
+    }
+
+    #[test]
+    fn append_user_turn_with_attachments_stores_descriptors_in_metadata() {
+        use anima_channel::wire::AttachmentDescriptor;
+
+        let dir = tempdir().unwrap();
+        let db = anima_store::Database::open(&dir.path().join("test.sqlite")).unwrap();
+        let core = AppCore::new(db.clone());
+        let attachments = vec![AttachmentDescriptor {
+            mime_type: "image/png".into(),
+            data: "aGVsbG8=".into(),
+            file_name: Some("shot.png".into()),
+            url: Some("file:///shot.png".into()),
+        }];
+        let msg = core
+            .append_user_turn_with_attachments("s1", "look", &attachments)
+            .unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.metadata["attachments"][0]["mimeType"], "image/png");
+        assert_eq!(msg.metadata["attachments"][0]["data"], "aGVsbG8=");
+        assert_eq!(msg.metadata["attachments"][0]["fileName"], "shot.png");
+        assert_eq!(msg.metadata["attachments"][0]["url"], "file:///shot.png");
+        // Only the user turn is written, and its session is created atomically.
+        assert_eq!(
+            anima_store::MessageRepo::new(db.clone())
+                .list("s1")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(anima_store::SessionRepo::new(db).list().unwrap().len(), 1);
     }
 
     #[test]

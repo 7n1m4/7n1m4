@@ -413,6 +413,35 @@ pub struct SessionMediaScrubReply {
     pub backup_path: Option<String>,
 }
 
+/// A bounded media attachment carried by a `chat.send` request.
+///
+/// The payload is base64 so it fits the JSON wire frame. The daemon validates
+/// the MIME type and decoded byte size before persisting the descriptor in the
+/// user message metadata; this slice stores it but does not forward it to an
+/// inference provider.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentDescriptor {
+    /// MIME type of the decoded payload (allowlisted by the daemon).
+    pub mime_type: String,
+    /// Base64-encoded payload bytes.
+    pub data: String,
+    /// Original file name, when the client has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    /// Source URL, when the client captured the attachment from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// Deserialize `attachments`, treating an explicit `null` the same as omission.
+fn deserialize_attachments<'de, D>(deserializer: D) -> Result<Vec<AttachmentDescriptor>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<Vec<AttachmentDescriptor>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Request payload for `chat.send`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -426,6 +455,17 @@ pub struct ChatSendRequest {
     /// Defaults to `false` so older clients keep plain-text turns.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gen_ui: bool,
+    /// Bounded media attachments persisted with the user turn.
+    ///
+    /// Defaults to empty and is omitted when empty so the legacy text-only
+    /// request stays byte-identical on the wire.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_attachments",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    #[specta(type = Vec<AttachmentDescriptor>)]
+    pub attachments: Vec<AttachmentDescriptor>,
 }
 
 /// Reply payload for `chat.send` (initial ack; deltas stream as events).
@@ -1356,6 +1396,8 @@ pub fn type_collection() -> specta::Types {
         .register::<VaultArchiveApplyReply>()
         .register::<SessionMediaScrubRequest>()
         .register::<SessionMediaScrubReply>()
+        .register::<ChatSendRequest>()
+        .register::<AttachmentDescriptor>()
         .register::<ChatMessage>()
         .register::<StmmSummary>()
         .register::<JournalEntry>()
@@ -1973,5 +2015,63 @@ mod tests {
         // Unknown statuses are rejected at the wire boundary; no catch-all.
         let unknown = json!({ "status": "unknown", "revision": 1 });
         assert!(serde_json::from_value::<SessionImportReply>(unknown).is_err());
+    }
+
+    #[test]
+    fn chat_send_legacy_request_defaults_to_no_attachments() {
+        let decoded: ChatSendRequest =
+            serde_json::from_value(json!({ "sessionId": "s1", "content": "hi" })).unwrap();
+        assert_eq!(decoded.session_id, "s1");
+        assert_eq!(decoded.content, "hi");
+        assert!(!decoded.gen_ui);
+        assert!(decoded.attachments.is_empty());
+        // Legacy text-only requests stay byte-identical on the wire.
+        assert!(serde_json::to_value(&decoded)
+            .unwrap()
+            .get("attachments")
+            .is_none());
+    }
+
+    #[test]
+    fn chat_send_explicit_null_attachments_default_to_empty() {
+        let decoded: ChatSendRequest = serde_json::from_value(json!({
+            "sessionId": "s1",
+            "content": "hi",
+            "attachments": null,
+        }))
+        .unwrap();
+        assert!(decoded.attachments.is_empty());
+        // Both omission and explicit null serialize without the key.
+        assert!(serde_json::to_value(&decoded)
+            .unwrap()
+            .get("attachments")
+            .is_none());
+    }
+
+    #[test]
+    fn chat_send_attachment_descriptors_use_camel_case_keys() {
+        let request = ChatSendRequest {
+            session_id: "s1".into(),
+            content: "look".into(),
+            gen_ui: false,
+            attachments: vec![AttachmentDescriptor {
+                mime_type: "image/png".into(),
+                data: "aGVsbG8=".into(),
+                file_name: Some("shot.png".into()),
+                url: Some("file:///shot.png".into()),
+            }],
+        };
+        let value = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            value["attachments"][0],
+            json!({
+                "mimeType": "image/png",
+                "data": "aGVsbG8=",
+                "fileName": "shot.png",
+                "url": "file:///shot.png",
+            })
+        );
+        let decoded: ChatSendRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, request);
     }
 }

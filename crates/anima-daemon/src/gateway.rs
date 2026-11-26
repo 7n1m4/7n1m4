@@ -84,6 +84,82 @@ const STMM_UPSERT_MAX_CONTENT_BYTES: usize = 64 * 1024;
 const STMM_UPSERT_MAX_ID_BYTES: usize = 256;
 /// Hard cap on the number of source session ids a single block may carry.
 const STMM_UPSERT_MAX_SOURCE_SESSION_IDS: usize = 32;
+/// Bounded `chat.send` attachments. At most 3 × 128 KiB decoded (384 KiB
+/// total), whose base64 wire form is ~512 KiB — comfortably under the 1 MiB
+/// [`anima_channel::ws::MAX_WS_PAYLOAD_BYTES`] frame cap with room for the
+/// prompt text and JSON framing.
+const CHAT_ATTACHMENT_MAX_COUNT: usize = 4;
+const CHAT_ATTACHMENT_MAX_BYTES: usize = 128 * 1024;
+const CHAT_ATTACHMENT_MAX_TOTAL_BYTES: usize = 3 * CHAT_ATTACHMENT_MAX_BYTES;
+const CHAT_ATTACHMENT_MAX_FILE_NAME_BYTES: usize = 256;
+const CHAT_ATTACHMENT_MAX_URL_BYTES: usize = 2048;
+/// Image MIME types accepted by the ingest-only attachment slice.
+const CHAT_ATTACHMENT_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+/// Validate client-supplied attachments before a turn starts. Returned errors
+/// are short fixed strings, safe to echo through the RPC error channel.
+fn validate_chat_attachments(
+    attachments: &[anima_channel::wire::AttachmentDescriptor],
+) -> Result<(), &'static str> {
+    if attachments.len() > CHAT_ATTACHMENT_MAX_COUNT {
+        return Err("too many attachments");
+    }
+    let mut total = 0usize;
+    for attachment in attachments {
+        // RFC MIME types are case-insensitive; normalise before allowlisting.
+        let mime_type = attachment.mime_type.to_ascii_lowercase();
+        if !CHAT_ATTACHMENT_MIME_TYPES.contains(&mime_type.as_str()) {
+            return Err("unsupported attachment MIME type");
+        }
+        if attachment
+            .file_name
+            .as_ref()
+            .is_some_and(|name| name.len() > CHAT_ATTACHMENT_MAX_FILE_NAME_BYTES)
+        {
+            return Err("attachment file name too long");
+        }
+        if attachment
+            .url
+            .as_ref()
+            .is_some_and(|url| url.len() > CHAT_ATTACHMENT_MAX_URL_BYTES)
+        {
+            return Err("attachment URL too long");
+        }
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &attachment.data)
+                .map_err(|_| "invalid attachment data")?;
+        if bytes.len() > CHAT_ATTACHMENT_MAX_BYTES {
+            return Err("attachment too large");
+        }
+        total = total
+            .checked_add(bytes.len())
+            .ok_or("attachments too large")?;
+        if total > CHAT_ATTACHMENT_MAX_TOTAL_BYTES {
+            return Err("attachments too large");
+        }
+    }
+    Ok(())
+}
+
+/// Strip inline base64 payloads from message metadata before it goes out on
+/// the wire. `chat.history` returns whole turns; two capped attachments make
+/// the reply exceed the 1 MiB WS frame cap and break the Rust client decoder.
+/// Only `attachments[].data` is removed — mime type, file name, URL and every
+/// sibling metadata field are preserved. Stored messages are untouched.
+fn history_metadata_without_attachment_data(metadata: &serde_json::Value) -> serde_json::Value {
+    let mut metadata = metadata.clone();
+    if let Some(attachments) = metadata
+        .get_mut("attachments")
+        .and_then(|attachments| attachments.as_array_mut())
+    {
+        for attachment in attachments {
+            if let Some(attachment) = attachment.as_object_mut() {
+                attachment.remove("data");
+            }
+        }
+    }
+    metadata
+}
 
 /// Prefix recognized by `anima-channel`'s RPC dispatch as `rpc_actions_disabled`.
 pub(crate) const ACTIONS_DISABLED_PREFIX: &str = "actions-disabled";
@@ -1127,6 +1203,7 @@ impl Gateway {
                     move |_method: &str, value: &serde_json::Value| {
                         let req: anima_channel::wire::ChatSendRequest =
                             serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+                        validate_chat_attachments(&req.attachments).map_err(str::to_string)?;
                         if req.content.trim().is_empty() {
                             return Err("empty content".to_string());
                         }
@@ -1137,6 +1214,7 @@ impl Gateway {
                         };
                         let content = req.content.clone();
                         let gen_ui = req.gen_ui;
+                        let attachments = req.attachments;
                         let svc = core.chat_service();
                         let Some(svc) = svc else {
                             return Err("core unavailable".to_string());
@@ -1201,7 +1279,19 @@ impl Gateway {
                                     // assistant message id from the ack: an empty
                                     // id makes clients key the bubble on a
                                     // stream-active flag instead of the turn.
-                                    let _ = core_for_send.chat_send(&sid, &content_clone);
+                                    // The ack already validated the attachments;
+                                    // persist them with the turn instead of
+                                    // writing metadata `{}` and losing them.
+                                    if let Some(db) = core_for_send.db() {
+                                        let app_core = anima_core::AppCore::new(db);
+                                        let _ = app_core.append_user_turn_with_attachments(
+                                            &sid,
+                                            &content_clone,
+                                            &attachments,
+                                        );
+                                    } else {
+                                        let _ = core_for_send.chat_send(&sid, &content_clone);
+                                    }
                                     let _ = pub_clone.token_delta(
                                         sid.clone(),
                                         assistant_message_id.clone(),
@@ -1290,8 +1380,8 @@ impl Gateway {
                                         }
                                     }
                                 });
-                                let result = if gen_ui {
-                                    svc.send_message_with_a2ui(
+                                let result = svc
+                                    .send_message_with_attachments(
                                         Some(&sid),
                                         &resolution.id,
                                         resolution.config,
@@ -1299,20 +1389,10 @@ impl Gateway {
                                         &content_clone,
                                         Some(&assistant_message_id),
                                         cancel_flag,
+                                        gen_ui,
+                                        &attachments,
                                     )
-                                    .await
-                                } else {
-                                    svc.send_message_with_assistant_id(
-                                        Some(&sid),
-                                        &resolution.id,
-                                        resolution.config,
-                                        &resolution.model,
-                                        &content_clone,
-                                        Some(&assistant_message_id),
-                                        cancel_flag,
-                                    )
-                                    .await
-                                };
+                                    .await;
                                 match result {
                                     Ok(outcome) => {
                                         // A persisted reply emits MessageDone
@@ -1500,7 +1580,7 @@ impl Gateway {
                                 "content": m.content,
                                 "createdAt": m.created_at,
                                 "rowId": rowid,
-                                "metadata": m.metadata,
+                                "metadata": history_metadata_without_attachment_data(&m.metadata),
                             })
                         })
                         .collect();
@@ -4298,6 +4378,49 @@ mod tests {
     }
 
     #[test]
+    fn chat_send_without_provider_persists_attachments() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let reply = send(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "no-provider-attachments",
+                "content": "look",
+                "attachments": [{
+                    "mimeType": "image/png",
+                    "data": "aGVsbG8=",
+                    "fileName": "shot.png",
+                    "url": "file:///shot.png"
+                }],
+            }),
+        )
+        .unwrap();
+        assert_eq!(reply["accepted"], true);
+
+        let mut persisted = None;
+        for _ in 0..100 {
+            let msg = gateway
+                .core
+                .chat_stream("no-provider-attachments")
+                .unwrap()
+                .into_iter()
+                .find(|m| m.role == "user" && m.content == "look");
+            if msg.is_some() {
+                persisted = msg;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let msg = persisted.expect("no provider must not discard attachments");
+        assert_eq!(msg.metadata["attachments"][0]["mimeType"], "image/png");
+        assert_eq!(msg.metadata["attachments"][0]["data"], "aGVsbG8=");
+        assert_eq!(msg.metadata["attachments"][0]["fileName"], "shot.png");
+        assert_eq!(msg.metadata["attachments"][0]["url"], "file:///shot.png");
+    }
+
+    #[test]
     fn chat_send_over_ws_returns_deltas() {
         let (gateway, _tmp) = fresh_gateway();
         let handlers = handlers(&gateway);
@@ -4323,6 +4446,168 @@ mod tests {
         )
         .expect_err("empty content must fail");
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn chat_attachment_validation_accepts_legacy_and_bounded_input() {
+        use anima_channel::wire::AttachmentDescriptor;
+
+        // Pre-attachment clients send no field at all; serde defaults it.
+        assert!(validate_chat_attachments(&[]).is_ok());
+        let valid = AttachmentDescriptor {
+            mime_type: "image/png".into(),
+            data: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                vec![7u8; CHAT_ATTACHMENT_MAX_BYTES],
+            ),
+            file_name: Some("shot.png".into()),
+            url: None,
+        };
+        assert!(validate_chat_attachments(&[valid.clone()]).is_ok());
+        let at_total_limit: Vec<_> = (0..CHAT_ATTACHMENT_MAX_TOTAL_BYTES
+            / CHAT_ATTACHMENT_MAX_BYTES)
+            .map(|_| valid.clone())
+            .collect();
+        assert!(validate_chat_attachments(&at_total_limit).is_ok());
+    }
+
+    #[test]
+    fn chat_attachment_validation_rejects_count_mime_and_byte_limits() {
+        use anima_channel::wire::AttachmentDescriptor;
+
+        let descriptor = |mime: &str, bytes: usize| AttachmentDescriptor {
+            mime_type: mime.into(),
+            data: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                vec![0u8; bytes],
+            ),
+            file_name: None,
+            url: None,
+        };
+        let too_many: Vec<_> = (0..CHAT_ATTACHMENT_MAX_COUNT + 1)
+            .map(|_| descriptor("image/png", 1))
+            .collect();
+        assert_eq!(
+            validate_chat_attachments(&too_many),
+            Err("too many attachments")
+        );
+        assert_eq!(
+            validate_chat_attachments(&[descriptor("application/pdf", 1)]),
+            Err("unsupported attachment MIME type")
+        );
+        assert_eq!(
+            validate_chat_attachments(&[descriptor("image/png", CHAT_ATTACHMENT_MAX_BYTES + 1)]),
+            Err("attachment too large")
+        );
+        // Under the count and per-item caps, but over the summed budget.
+        let over_total: Vec<_> = (0..CHAT_ATTACHMENT_MAX_COUNT)
+            .map(|_| descriptor("image/webp", CHAT_ATTACHMENT_MAX_BYTES))
+            .collect();
+        assert_eq!(
+            validate_chat_attachments(&over_total),
+            Err("attachments too large")
+        );
+        assert_eq!(
+            validate_chat_attachments(&[AttachmentDescriptor {
+                mime_type: "image/png".into(),
+                data: "!!!not-base64".into(),
+                file_name: None,
+                url: None,
+            }]),
+            Err("invalid attachment data")
+        );
+    }
+
+    #[test]
+    fn chat_attachment_validation_normalizes_mime_and_bounds_text_fields() {
+        use anima_channel::wire::AttachmentDescriptor;
+
+        let descriptor = || AttachmentDescriptor {
+            mime_type: "image/png".into(),
+            data: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, vec![1u8; 1]),
+            file_name: None,
+            url: None,
+        };
+
+        // RFC MIME types are case-insensitive.
+        let mut uppercase = descriptor();
+        uppercase.mime_type = "IMAGE/PNG".into();
+        assert_eq!(validate_chat_attachments(&[uppercase]), Ok(()));
+
+        let mut long_name = descriptor();
+        long_name.file_name = Some("x".repeat(CHAT_ATTACHMENT_MAX_FILE_NAME_BYTES + 1));
+        assert_eq!(
+            validate_chat_attachments(&[long_name]),
+            Err("attachment file name too long")
+        );
+
+        let mut long_url = descriptor();
+        long_url.url = Some("x".repeat(CHAT_ATTACHMENT_MAX_URL_BYTES + 1));
+        assert_eq!(
+            validate_chat_attachments(&[long_url]),
+            Err("attachment URL too long")
+        );
+
+        // At the limits (not over) stays valid.
+        let mut at_limits = descriptor();
+        at_limits.file_name = Some("x".repeat(CHAT_ATTACHMENT_MAX_FILE_NAME_BYTES));
+        at_limits.url = Some("x".repeat(CHAT_ATTACHMENT_MAX_URL_BYTES));
+        assert_eq!(validate_chat_attachments(&[at_limits]), Ok(()));
+    }
+
+    #[test]
+    fn chat_send_validates_attachments_before_acking() {
+        let (gateway, _tmp) = fresh_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let h = handlers.get("chat.send").expect("chat.send registered");
+
+        let legacy = h(
+            "chat.send",
+            &serde_json::json!({"sessionId": "legacy", "content": "hi"}),
+        )
+        .expect("legacy request must still ack");
+        assert_eq!(legacy["accepted"], true);
+
+        let bounded = h(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "bounded",
+                "content": "hi",
+                "attachments": [{
+                    "mimeType": "image/png",
+                    "data": "aGVsbG8=",
+                    "fileName": "shot.png"
+                }],
+            }),
+        )
+        .expect("bounded request must ack");
+        assert_eq!(bounded["accepted"], true);
+
+        let bad_mime = h(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "bad-mime",
+                "content": "hi",
+                "attachments": [{"mimeType": "application/pdf", "data": "aGVsbG8="}],
+            }),
+        )
+        .expect_err("disallowed MIME must be rejected");
+        assert_eq!(bad_mime, "unsupported attachment MIME type");
+
+        let many: Vec<_> = (0..CHAT_ATTACHMENT_MAX_COUNT + 1)
+            .map(|_| serde_json::json!({"mimeType": "image/png", "data": "aGVsbG8="}))
+            .collect();
+        let too_many = h(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "too-many",
+                "content": "hi",
+                "attachments": many,
+            }),
+        )
+        .expect_err("oversize count must be rejected");
+        assert_eq!(too_many, "too many attachments");
     }
 
     #[test]
@@ -5642,6 +5927,64 @@ mod tests {
         assert_eq!(messages[0]["sessionId"], "h1");
         h("chat.history", &serde_json::json!({ "session_id": "" }))
             .expect_err("missing session_id must fail");
+    }
+
+    #[test]
+    fn chat_history_strips_inline_attachment_payloads() {
+        let (gateway, _tmp) = isolated_gateway();
+        let db = gateway.core.db().expect("isolated core has a db");
+        let app = anima_core::AppCore::new(db);
+        // Two turns with a ~600 KiB base64 payload each: the unprojected reply
+        // would exceed the 1 MiB outgoing WS frame cap.
+        let big_data = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            vec![7u8; 600 * 1024],
+        );
+        let attachments = vec![anima_channel::wire::AttachmentDescriptor {
+            mime_type: "image/png".into(),
+            data: big_data.clone(),
+            file_name: Some("big.png".into()),
+            url: Some("file:///big.png".into()),
+        }];
+        for _ in 0..2 {
+            app.append_user_turn_with_attachments("history-b64", "look", &attachments)
+                .unwrap();
+        }
+        // The projection is reply-only: stored messages keep their payload.
+        let stored = gateway.core.chat_stream("history-b64").unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].metadata["attachments"][0]["data"], big_data);
+
+        let handlers = handlers(&gateway);
+        let h = handlers
+            .get("chat.history")
+            .expect("chat.history registered");
+        let reply = h(
+            "chat.history",
+            &serde_json::json!({ "session_id": "history-b64" }),
+        )
+        .unwrap();
+        let wire = serde_json::to_vec(&reply).unwrap();
+        assert!(
+            (wire.len() as u64) < anima_channel::ws::MAX_WS_PAYLOAD_BYTES,
+            "history reply must fit a WS frame"
+        );
+        let messages = reply["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        for message in messages {
+            let attachment = &message["metadata"]["attachments"][0];
+            assert_eq!(attachment["mimeType"], "image/png");
+            assert_eq!(attachment["fileName"], "big.png");
+            assert_eq!(attachment["url"], "file:///big.png");
+            assert!(
+                attachment.get("data").is_none(),
+                "history must not echo base64 payloads"
+            );
+        }
+        assert!(
+            !String::from_utf8(wire).unwrap().contains(&big_data),
+            "reply still contains the stored base64 payload"
+        );
     }
 
     // Contract: chat.history returns a composite cursor so a truncated newest

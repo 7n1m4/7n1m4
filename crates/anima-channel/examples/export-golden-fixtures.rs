@@ -422,6 +422,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 session_id: "sess-abc".into(),
                 content: "Hello, Anima!".into(),
                 gen_ui: false,
+                attachments: Vec::new(),
             })?,
         ),
         (
