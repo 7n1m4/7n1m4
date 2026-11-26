@@ -25,6 +25,7 @@ class _RecordingCardsClient extends FakeChatClient {
 
   bool deleteFails = false;
   bool updateLies = false;
+  bool truncatedList = false;
 
 
   @override
@@ -48,7 +49,24 @@ class _RecordingCardsClient extends FakeChatClient {
   Map<String, dynamic>? _replyData(String action, Map<String, dynamic>? p) {
     switch (action) {
       case 'cards.list':
-        return <String, dynamic>{'cards': cards, 'truncated': false};
+        if (!truncatedList) {
+          return <String, dynamic>{'cards': cards, 'truncated': false};
+        }
+        final cursor = p?['cursor'] as int?;
+        if (cursor != null) {
+          return <String, dynamic>{
+            'cards': <Map<String, dynamic>>[
+              <String, dynamic>{'id': 'card-2', 'name': 'Card Two'},
+            ],
+            'truncated': false,
+          };
+        }
+        return <String, dynamic>{
+          'cards': <Map<String, dynamic>>[
+            <String, dynamic>{'id': 'card-1', 'name': 'Card One'},
+          ],
+          'truncated': true,
+        };
       case 'cards.get':
         final id = (p?['id'] as String?) ?? '';
         final found = cards.where((c) => c['id'] == id);
@@ -528,5 +546,30 @@ void main() {
     final decoded = jsonDecode(field.controller!.text) as Map<String, dynamic>;
     expect(decoded['id'], 'card-9');
     expect(Map<String, dynamic>.from(decoded)..remove('id'), document);
+  });
+  testWidgets('truncated cards list offers a load-more page', (tester) async {
+    final client = _RecordingCardsClient()..truncatedList = true;
+    addTearDown(client.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final more = find.byKey(const Key('cards-load-more'));
+    expect(more, findsOneWidget);
+
+    tester.widget<TextButton>(more).onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    expect(client.payloadsFor('cards.list').last?['cursor'], 1);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pump();
+    expect(find.widgetWithText(ListTile, 'Card Two'), findsOneWidget);
+    expect(more, findsNothing);
   });
 }

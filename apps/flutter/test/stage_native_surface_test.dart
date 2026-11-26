@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/stage/model_asset_resolver.dart';
 import 'package:anima_control/features/stage/model_backend.dart';
+import 'package:anima_control/features/stage/stage_overlay_state.dart';
 import 'package:anima_control/features/stage/stage_screen.dart';
 import 'package:anima_control/speech/lip_sync_rms_data.dart';
 import 'package:anima_control/ui/model_stage.dart';
@@ -201,4 +202,43 @@ void main() {
     expect(find.textContaining('StateError'), findsOneWidget);
     expect(find.textContaining('secret platform text'), findsNothing);
   });
+  testWidgets('an ambient ticker stays idle while the stage is paused', (
+    tester,
+  ) async {
+    final paused = StageRenderState(paused: true);
+    client.onCall = (action, payload) => RpcReply(
+      action: action,
+      ok: true,
+      data: <String, dynamic>{
+        'card': _cardWith(<String, dynamic>{
+          'vrm': <String, dynamic>{'source': 'file', 'file': asset.path},
+        }),
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StageScreen(
+            backends: ModelBackendRegistry(<ModelKind, ModelBackend>{
+              ModelKind.vrm: backend,
+            }),
+            resolver: InMemoryResolver(asset),
+            client: client,
+            cardId: 'card-1',
+            render: paused,
+          ),
+        ),
+      ),
+    );
+    expect(paused.paused, isTrue);
+    expect(paused.idlePhase, 0);
+    for (var i = 0; i < 4; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(backend.ambientPhases, isEmpty);
+  });
+
 }

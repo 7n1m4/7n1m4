@@ -4,7 +4,6 @@ import process from 'node:process'
 
 import { execSync } from 'node:child_process'
 
-const REPO = 'dasilva333/airi'
 const args = process.argv.slice(2)
 const isWatch = args.includes('--watch') || args.includes('-w')
 const isRelease = args.includes('--release') || args.includes('-r')
@@ -12,6 +11,27 @@ const isLogError = args.includes('--log-error') || args.includes('-e')
 const isSelfTest = args.includes('--self-test')
 const isAdvisory = args.includes('--advisory')
 const tagArg = args.find(a => a.startsWith('--tag='))?.split('=')[1]
+
+// This fork's CI lives on its own origin; checking an upstream repo can make a
+// missing local release look healthy. Follow origin by default, with explicit
+// overrides for upstream comparisons.
+const FALLBACK_REPO = '7n1m4/AnimA'
+function repoFromOrigin() {
+  try {
+    const url = execSync('git remote get-url origin', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+    const match = url.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/)
+    return match ? match[1] : null
+  }
+  catch {
+    return null
+  }
+}
+const repoOverride = args.find(a => a.startsWith('--repo='))?.slice('--repo='.length) || process.env.CI_REPO
+const REPO = repoOverride || repoFromOrigin() || FALLBACK_REPO
+if (!/^[\w.-]+\/[\w.-]+$/.test(REPO)) {
+  console.error(`❌ Invalid repository slug: ${REPO}`)
+  process.exit(1)
+}
 
 // A release is only complete when every platform artifact is attached. Names
 // match by stable fragments because versions and artifact prefixes change

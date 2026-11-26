@@ -130,6 +130,14 @@ void main() {
       expect(data['delta'], ' world');
       expect(data['index'], 1);
       expect(data['final'], isTrue);
+      expect(data['reason'], 'complete');
+    });
+
+    test('token_delta.partial has no terminal reason', () {
+      final frame = ServerFrame.parse(_loadFixture('event.token_delta.partial'));
+      final data = frame.event!.data;
+      expect(data['final'], isFalse);
+      expect(data.containsKey('reason'), isFalse);
     });
 
     test('status_changed.healthy has camelCase fields', () {

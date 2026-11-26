@@ -645,7 +645,7 @@ fn default_captions_font_size() -> f64 {
 }
 
 fn default_captions_opacity() -> f64 {
-    70.0
+    20.0
 }
 
 fn default_captions_docking() -> String {

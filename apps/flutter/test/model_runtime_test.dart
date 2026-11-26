@@ -4,6 +4,7 @@
 // policy: the kind stays loud and unavailable, and no other kind is blocked by
 // licensing. No GPU, no daemon, no Cubism Core on disk.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/features/stage/model_asset_resolver.dart';
 import 'package:anima_control/features/stage/model_backend.dart';
@@ -44,6 +45,49 @@ void main() {
       (backend as UnavailableModelBackend).blocker,
       ModelRuntimeBlocker.cubismLicense,
     );
+  });
+
+  test('the production registry hides kinds with no backend on this host', () {
+    final registry = ModelBackendRegistry.fromRuntimes(
+      supportedKinds: supportedModelKinds(defaultTargetPlatform).toSet(),
+      create: (info) => RecordingModelBackend(info.kind),
+    );
+    for (final kind in supportedModelKinds(defaultTargetPlatform)) {
+      expect(registry.backendFor(kind), isA<RecordingModelBackend>());
+    }
+    for (final kind in <ModelKind>[
+      ModelKind.live2d,
+      ModelKind.mmd,
+      ModelKind.spine,
+    ]) {
+      expect(
+        registry.backendFor(kind),
+        isA<UnavailableModelBackend>(),
+        reason: '${kind.name} has no renderer on this host',
+      );
+    }
+  });
+
+  test('a platform filter keeps only renderers registered on that host', () {
+    final registry = ModelBackendRegistry.fromRuntimes(
+      supportedKinds: const <ModelKind>{ModelKind.vrm},
+      create: (info) => RecordingModelBackend(info.kind),
+    );
+    expect(
+      registry.backendFor(ModelKind.vrm),
+      isA<RecordingModelBackend>(),
+    );
+    for (final kind in <ModelKind>[
+      ModelKind.live2d,
+      ModelKind.mmd,
+      ModelKind.spine,
+    ]) {
+      expect(
+        registry.backendFor(kind),
+        isA<UnavailableModelBackend>(),
+        reason: '${kind.name} has no renderer on this host',
+      );
+    }
   });
 
   test('a Live2D load fails loudly and never yields a handle', () async {

@@ -76,6 +76,70 @@ class _MemoryScreenState extends State<MemoryScreen> {
     }
   }
 
+  Future<void> _deleteSummary(Map<String, dynamic> summary) async {
+    final day = summary['day']?.toString() ?? '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Delete summary?'),
+        content: Text('Delete the summary for $day? This cannot be undone.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final deleted = await widget.client.stmmDelete(day);
+      if (!mounted) return;
+      setState(() {
+        _status = deleted ? 'Deleted summary for $day' : 'Summary for $day was already gone';
+      });
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
+  Future<void> _deleteEntry(Map<String, dynamic> entry) async {
+    final id = entry['id']?.toString() ?? '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Delete journal entry?'),
+        content: Text('Delete journal entry $id? This cannot be undone.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final deleted = await widget.client.journalDelete(id);
+      if (!mounted) return;
+      setState(() {
+        _status = deleted ? 'Deleted journal entry $id' : 'Journal entry $id was already gone';
+      });
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    }
+  }
+
   Future<void> _rebuild() async {
     setState(() {
       _busy = true;
@@ -190,6 +254,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         title: Text((s['content'] as String?) ?? ''),
                         subtitle: Text('day ${s['day'] ?? ''}'),
                         dense: true,
+                        trailing: IconButton(
+                          key: const Key('memory-summary-delete'),
+                          icon: const Icon(Icons.delete),
+                          tooltip: 'Delete summary',
+                          onPressed: () => _deleteSummary(s),
+                        ),
                       ),
                   TextField(
                     key: const Key('memory-search'),
@@ -227,6 +297,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
                         title: Text((e['content'] as String?) ?? ''),
                         subtitle: Text((e['kind'] as String?) ?? 'note'),
                         dense: true,
+                        trailing: IconButton(
+                          key: const Key('memory-entry-delete'),
+                          icon: const Icon(Icons.delete),
+                          tooltip: 'Delete journal entry',
+                          onPressed: () => _deleteEntry(e),
+                        ),
                       ),
                   const SizedBox(height: 8),
                   TextField(

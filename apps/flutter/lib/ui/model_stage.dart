@@ -7,12 +7,14 @@
 // fabricated model. Once the descriptor is valid, [NativeModelSurface] drives
 // the native backend through a client-local [ModelStageRuntime].
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../daemon_client/daemon_client.dart';
 import '../features/stage/method_channel_backend.dart';
 import '../features/stage/model_asset_resolver.dart';
 import '../features/stage/model_backend.dart';
+import '../features/stage/model_runtime.dart';
 import '../features/stage/native_model_surface.dart';
 import '../features/stage/stage_overlay_state.dart';
 import '../speech/lip_sync_rms_data.dart';
@@ -82,10 +84,10 @@ class DisplayModel {
   /// Extracts the display model from a `cards.get` result.
   ///
   /// Recognizes the inline `extensions.airi.vrm` / `.live2d` / `.mmd` /
-  /// `.spine` descriptors of the card document. A card that only carries
-  /// `extensions.airi.displayModelId` is intentionally unresolved here — the
-  /// display-model store that maps ids to assets is a later bead — and surfaces
-  /// as a loud `unknown-model-kind` rather than a silent fallback.
+  /// `.spine` descriptors of the card document. A card that only names a
+  /// display-model id is unresolved here by design: [resolveDisplayModel] asks
+  /// the daemon catalog for its asset, and an id the catalog does not know
+  /// fails loudly instead of falling back to a fabricated model.
   static DisplayModel fromCard(Map<String, dynamic>? card) {
     if (card == null) return none;
     final airi = _airiExtension(card);
@@ -104,7 +106,14 @@ class DisplayModel {
         );
       }
     }
-    final displayModelId = airi['displayModelId'];
+    // Vue's model-assignment modal writes `modules.displayModelId`; older
+    // cards and hand-authored fixtures use the top-level key. Prefer the
+    // nested one, the canonical AiriCard location.
+    final modules = airi['modules'];
+    final nested = modules is Map ? modules['displayModelId'] : null;
+    final displayModelId = nested is String && nested.trim().isNotEmpty
+        ? nested
+        : airi['displayModelId'];
     if (displayModelId is String && displayModelId.trim().isNotEmpty) {
       return DisplayModel(
         kind: ModelKind.none,
@@ -315,6 +324,7 @@ class _ModelStageState extends State<ModelStage> {
     _backends =
         widget.backends ??
         ModelBackendRegistry.fromRuntimes(
+          supportedKinds: supportedModelKinds(defaultTargetPlatform).toSet(),
           create: (info) =>
               MethodChannelModelBackend(info.kind, info.channelName),
         );

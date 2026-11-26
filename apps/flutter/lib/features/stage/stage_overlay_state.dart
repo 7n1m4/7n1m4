@@ -157,34 +157,36 @@ class StageCaptionController extends ChangeNotifier {
 }
 
 /// Where the caption bar docks (Vue `settingsStore.captionDocking`).
-enum StageCaptionDocking { none, top, bottom, head }
+enum StageCaptionDocking { none, top, bottom }
 
 /// Caption appearance, derived from the daemon's `captions` settings section
 /// (`crates/anima-core/src/settings.rs` `CaptionsSettings`). Percentages are
 /// stored 50–200 (font) and 0–100 (opacity).
 class StageCaptionStyle {
   const StageCaptionStyle({
+    this.enabled = true,
     this.docking = StageCaptionDocking.bottom,
     this.fontSize = 100,
-    this.opacity = 70,
+    this.opacity = 20,
   });
 
+  /// The daemon's `captions.enabled` switch, independent of docking.
+  final bool enabled;
   final StageCaptionDocking docking;
   final double fontSize;
   final double opacity;
 
-  bool get isVisible => docking != StageCaptionDocking.none;
+  bool get isVisible => enabled && docking != StageCaptionDocking.none;
 
-  /// `head` is a bottom alias: the head-tethered plank needs a renderer this
-  /// client does not have yet.
   bool get isTop => docking == StageCaptionDocking.top;
 
   double get scale => fontSize.clamp(50, 200) / 100;
   double get alpha => opacity.clamp(0, 100) / 100;
 
+  /// A stored `head` value reads as bottom until a head-tethered renderer
+  /// exists; advertising an unimplemented edge would be a silent lie.
   static StageCaptionDocking dockingFrom(Object? value) => switch (value) {
     'top' => StageCaptionDocking.top,
-    'head' => StageCaptionDocking.head,
     'none' => StageCaptionDocking.none,
     _ => StageCaptionDocking.bottom,
   };
@@ -193,10 +195,12 @@ class StageCaptionStyle {
     if (settings == null) return const StageCaptionStyle();
     final size = settings['fontSize'] ?? settings['font_size'];
     final alpha = settings['opacity'];
+    final enabled = settings['enabled'];
     return StageCaptionStyle(
+      enabled: enabled is! bool || enabled,
       docking: dockingFrom(settings['docking']),
       fontSize: size is num && size.isFinite ? size.toDouble() : 100,
-      opacity: alpha is num && alpha.isFinite ? alpha.toDouble() : 70,
+      opacity: alpha is num && alpha.isFinite ? alpha.toDouble() : 20,
     );
   }
 }

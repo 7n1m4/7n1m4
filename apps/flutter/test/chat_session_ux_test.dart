@@ -17,7 +17,9 @@ import 'support/fakes.dart';
 class _ChatContextClient extends FakeChatClient {
   final List<String> actions = <String>[];
   final List<String> openedSessions = <String>[];
+  final List<Map<String, dynamic>?> historyPayloads = <Map<String, dynamic>?>[];
   bool contextFails = false;
+  bool singlePageHistory = false;
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     actions.add(action);
@@ -61,12 +63,41 @@ class _ChatContextClient extends FakeChatClient {
     }
     if (action == 'chat.history') {
       openedSessions.add((payload?['session_id'] as String?) ?? '');
+      historyPayloads.add(payload);
+      final cursor = payload?['cursor'] as int?;
+      if (singlePageHistory) {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'messages': <Map<String, dynamic>>[
+              <String, dynamic>{'role': 'user', 'content': 'old message', 'createdAt': 20},
+            ],
+            'truncated': false,
+          },
+        );
+      }
+      if (cursor != null) {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'messages': <Map<String, dynamic>>[
+              <String, dynamic>{'role': 'user', 'content': 'older message', 'createdAt': 10},
+            ],
+            'truncated': false,
+          },
+        );
+      }
       return RpcReply(
         action: action,
         ok: true,
-        data: <Map<String, dynamic>>[
-          <String, dynamic>{'role': 'user', 'content': 'old message'},
-        ],
+        data: <String, dynamic>{
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'old message', 'createdAt': 20},
+          ],
+          'truncated': true,
+        },
       );
     }
     return RpcReply(action: action, ok: true, data: <String, dynamic>{});
@@ -155,5 +186,38 @@ void main() {
     await tester.tap(find.byKey(const Key('chat-sessions-button')));
     await tester.pump();
     expect(find.byKey(const Key('chat-new-session')), findsOneWidget);
+  });
+  testWidgets('older history is loaded on demand with a cursor', (
+    tester,
+  ) async {
+    final client = await _pump(tester, initialSessionId: 's1');
+    await tester.pump();
+
+    expect(find.byKey(const Key('chat-load-older-history')), findsOneWidget);
+    tester
+        .widget<TextButton>(find.byKey(const Key('chat-load-older-history')))
+        .onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    expect(client.historyPayloads.last?['cursor'], 20);
+    expect(find.text('older message'), findsOneWidget);
+    expect(find.byKey(const Key('chat-load-older-history')), findsNothing);
+  });
+
+  testWidgets('load-older is hidden when history is complete', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    client.singlePageHistory = true;
+    await tester.tap(find.byKey(const Key('chat-sessions-button')));
+    await tester.pump();
+    await tester.ensureVisible(find.widgetWithText(ListTile, 'First session'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ListTile, 'First session'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const Key('chat-load-older-history')), findsNothing);
   });
 }

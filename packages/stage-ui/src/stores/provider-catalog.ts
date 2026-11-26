@@ -38,11 +38,14 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
           const existing = newConfigs[info.id]
           newConfigs[info.id] = {
             id: info.id,
-            definitionId: existing?.definitionId ?? info.id,
+            // A daemon row created by another client may not have a local
+            // definition: `info.id` is a row id, not a registry definition id.
+            definitionId: existing?.definitionId ?? '',
             name: existing?.name ?? info.id,
             config: existing?.config ?? {},
             validated: existing?.validated ?? false,
             validationBypassed: existing?.validationBypassed ?? false,
+            enabled: info.enabled,
           }
           if (info.model) {
             newConfigs[info.id].config = { ...newConfigs[info.id].config, model: info.model }
@@ -74,6 +77,7 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
       config: initialConfig,
       validated: false,
       validationBypassed: false,
+      enabled: true,
     }
 
     configs.value[id] = provider
@@ -84,6 +88,7 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
         await saveDaemonProvider({
           id,
           kind: toDaemonProviderKind(definitionId),
+          definitionId,
           enabled: true,
           model: String(initialConfig.model ?? ''),
           baseUrl: String(initialConfig.baseUrl ?? ''),
@@ -131,7 +136,8 @@ export const useProviderCatalogStore = defineStore('provider-catalog', () => {
         const payload: Record<string, any> = {
           id: providerId,
           kind: toDaemonProviderKind(provider.definitionId),
-          enabled: true,
+          ...(provider.definitionId ? { definitionId: provider.definitionId } : {}),
+          enabled: provider.enabled ?? true,
           model: String(newConfig.model ?? ''),
           baseUrl: String(newConfig.baseUrl ?? ''),
         }

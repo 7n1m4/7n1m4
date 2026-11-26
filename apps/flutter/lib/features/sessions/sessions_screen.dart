@@ -19,6 +19,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Map<String, dynamic>? _core;
   Map<String, dynamic>? _vault;
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
+  int? _sessionCursor;
+  bool _sessionsTruncated = false;
+  bool _loadingMore = false;
   bool _busy = false;
   String? _error;
   String? _status;
@@ -48,18 +51,43 @@ class _SessionsScreenState extends State<SessionsScreen> {
         return;
       }
       final vaultReply = await widget.client.call('vault.status');
-      final sessions = await widget.client.sessionsList();
+      final page = await widget.client.sessionsListPage();
       setState(() {
         _core = (coreReply.data is Map<String, dynamic>) ? coreReply.data as Map<String, dynamic> : null;
         _vault = (vaultReply.ok && vaultReply.data is Map<String, dynamic>)
             ? vaultReply.data as Map<String, dynamic>
             : null;
-        _sessions = sessions;
+        _sessions = page.items.toList();
+        _sessionsTruncated = page.truncated;
+        _sessionCursor = page.nextCursor;
       });
     } on DaemonClientException catch (e) {
       setState(() => _error = e.message);
     } finally {
       setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _sessionCursor;
+    if (cursor == null || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await widget.client.sessionsListPage(cursor: cursor);
+      if (!mounted) return;
+      setState(() {
+        _sessionsTruncated = page.truncated;
+        _sessionCursor = page.nextCursor;
+        final existing = _sessions.toList();
+        _sessions
+          ..clear()
+          ..addAll(page.items)
+          ..addAll(existing);
+      });
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -216,6 +244,14 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     child: const Text('Import'),
                   ),
                   const ListTile(title: Text('Sessions'), dense: true),
+                  if (_sessionsTruncated)
+                    TextButton(
+                      key: const Key('sessions-load-more'),
+                      onPressed: _loadingMore ? null : _loadMore,
+                      child: Text(
+                        _loadingMore ? 'Loading more…' : 'Load more sessions',
+                      ),
+                    ),
                   if (_visibleSessions.isEmpty)
                     ListTile(title: Text(_sessions.isEmpty ? 'No sessions' : 'No sessions match the filter'), dense: true)
                   else

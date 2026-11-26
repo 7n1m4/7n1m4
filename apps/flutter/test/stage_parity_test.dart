@@ -8,12 +8,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/stage/model_asset_resolver.dart';
 import 'package:anima_control/features/stage/model_backend.dart';
 import 'package:anima_control/features/stage/model_expression.dart';
+import 'package:anima_control/features/stage/model_runtime.dart';
 import 'package:anima_control/features/stage/stage_background.dart';
 import 'package:anima_control/features/stage/stage_caption_overlay.dart';
 import 'package:anima_control/features/stage/stage_control_strip.dart';
@@ -185,6 +187,25 @@ void main() {
     });
   });
 
+  group('display model resolution', () {
+    test('the nested modules.displayModelId wins over a stale top-level id', () {
+      final model = DisplayModel.fromCard(_cardWith(<String, dynamic>{
+        'displayModelId': 'stale-id',
+        'modules': <String, dynamic>{'displayModelId': 'nested-id'},
+      }));
+      expect(model.kind, ModelKind.none);
+      expect(model.displayModelId, 'nested-id');
+    });
+
+    test('a top-level id is still read when modules has no value', () {
+      final model = DisplayModel.fromCard(_cardWith(<String, dynamic>{
+        'displayModelId': 'legacy-id',
+        'modules': <String, dynamic>{},
+      }));
+      expect(model.displayModelId, 'legacy-id');
+    });
+  });
+
   group('StageCaptionStyle', () {
     test('reads the daemon captions section shape', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{
@@ -198,13 +219,39 @@ void main() {
       expect(style.alpha, 0.4);
     });
 
-    test('`none` and `head` docking follow the Vue aliases', () {
+    test('only implemented docking edges are recognized', () {
       expect(StageCaptionStyle.dockingFrom('none'), StageCaptionDocking.none);
-      expect(StageCaptionStyle.dockingFrom('head'), StageCaptionDocking.head);
+      expect(StageCaptionStyle.dockingFrom('top'), StageCaptionDocking.top);
+      expect(StageCaptionStyle.dockingFrom('head'), StageCaptionDocking.bottom);
       expect(
         const StageCaptionStyle(docking: StageCaptionDocking.none).isVisible,
         isFalse,
       );
+    });
+  });
+
+  group('platform model choices', () {
+    test('unsupported kinds have no usable runtime on this platform', () {
+      final supported = supportedModelKinds(
+        defaultTargetPlatform,
+        registeredKinds: <ModelKind>{ModelKind.vrm},
+      );
+      expect(supported, <ModelKind>[ModelKind.vrm]);
+      for (final kind in <ModelKind>[
+        ModelKind.live2d,
+        ModelKind.mmd,
+        ModelKind.spine,
+      ]) {
+        expect(supported, isNot(contains(kind)));
+        expect(
+          modelKindSupported(
+            defaultTargetPlatform,
+            kind,
+            registeredKinds: <ModelKind>{ModelKind.vrm},
+          ),
+          isFalse,
+        );
+      }
     });
   });
 
@@ -251,9 +298,9 @@ void main() {
     test('defaults to the daemon enabled buttons and catalog order', () {
       final state = StageControlStripState();
       expect(state.activeButtons, <String>['stage', 'caption']);
-      state.toggle('chat');
-      expect(state.activeButtons, <String>['chat', 'stage', 'caption']);
-      state.toggle('chat');
+      state.toggle('stage');
+      expect(state.activeButtons, <String>['caption']);
+      state.toggle('stage');
       expect(state.activeButtons, <String>['stage', 'caption']);
     });
 

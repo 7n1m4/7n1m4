@@ -122,6 +122,7 @@ pub use wire::{
     GatewayAuthReply, GatewayClientFrame, GatewayConfigReply, GatewayEvent, GatewayServerFrame,
     HeartbeatData, HeartbeatKind, JournalEntry, LipSyncRmsData, ModuleAuthData,
     PresenceChangedData, RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionExportReply,
+    SettingsChangedData,
     SessionImportReply, SessionInfo, StatusChangedData, StmmSummary, TokenDeltaData,
     CANONICAL_EMOTION_KEYS,
 };

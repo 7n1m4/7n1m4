@@ -32,6 +32,9 @@ class _CardsScreenState extends State<CardsScreen> {
   final TextEditingController _documentController = TextEditingController();
 
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
+  int? _cardCursor;
+  bool _cardsTruncated = false;
+  bool _loadingMore = false;
   Map<String, dynamic>? _detail;
   ({String id, bool liked, bool bookmarked})? _metadata;
   bool _metadataBusy = false;
@@ -61,12 +64,39 @@ class _CardsScreenState extends State<CardsScreen> {
     _setBusy(true);
     setState(() => _error = null);
     try {
-      final cards = await widget.client.cardsList();
-      if (mounted) setState(() => _cards = cards);
+      final page = await widget.client.cardsListPage();
+      if (mounted) setState(() {
+        _cards = page.items.toList();
+        _cardsTruncated = page.truncated;
+        _cardCursor = page.nextCursor;
+      });
     } on DaemonClientException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final cursor = _cardCursor;
+    if (cursor == null || _loadingMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await widget.client.cardsListPage(cursor: cursor);
+      if (!mounted) return;
+      setState(() {
+        _cardsTruncated = page.truncated;
+        _cardCursor = page.nextCursor;
+        final existing = _cards.toList();
+        _cards
+          ..clear()
+          ..addAll(page.items)
+          ..addAll(existing);
+      });
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -487,6 +517,14 @@ class _CardsScreenState extends State<CardsScreen> {
                   ),
                 ),
                 const ListTile(title: Text('Cards'), dense: true),
+                if (_cardsTruncated)
+                  TextButton(
+                    key: const Key('cards-load-more'),
+                    onPressed: _busy || _loadingMore ? null : _loadMore,
+                    child: Text(
+                      _loadingMore ? 'Loading more…' : 'Load more cards',
+                    ),
+                  ),
                 if (_cards.isEmpty)
                   const ListTile(title: Text('No cards available'), dense: true)
                 else

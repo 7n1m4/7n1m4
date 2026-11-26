@@ -799,6 +799,6 @@ mod tests {
         assert!(outcome.replies.is_empty());
         assert_eq!(outcome.events.len(), 1);
         assert!(outcome.close.is_none());
-        assert_eq!(EventTopic::ALL.len(), 5);
+        assert_eq!(EventTopic::ALL.len(), 6);
     }
 }

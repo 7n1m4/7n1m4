@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Composer parity: chat context settings load through the typed settings.get
-// wrapper, and attachments are restored on a failed send / cleared on a
-// committed send. Attachments stay local to the composer until the daemon's
-// chat.send wire contract gains an attachments field.
+// wrapper, and sends with attachments are refused with a visible warning
+// until the daemon's chat.send wire contract gains an attachments field.
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,29 +21,52 @@ void main() {
     expect(controller.contextSettings['sendMode'], 'ctrl-enter');
   });
 
-  test('attachments are restored on failed send and cleared on success',
+  test('sending with an attachment warns and keeps the draft intact',
       () async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
-    var sendFails = true;
+    final sends = <Map<String, dynamic>?>[];
+    client.onCall = (action, payload) {
+      if (action == 'chat.send') sends.add(payload);
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: action == 'chat.send'
+            ? <String, dynamic>{'sessionId': 's1', 'messageId': 'm-1'}
+            : <String, dynamic>{},
+      );
+    };
+    client.emitStatus(DaemonConnectionState.connected);
+    final controller = ChatComposerController(client: client);
+    var committed = false;
+    controller.onMessageCommitted = (_) => committed = true;
+    controller.addAttachment('image', 'asset://x');
+    controller.input.text = 'hi';
+
+    expect(await controller.handleSend(), isNull);
+    expect(controller.error, isNotNull);
+    expect(controller.error, contains('attachment'));
+    expect(controller.attachments.map((a) => a.url), ['asset://x']);
+    expect(controller.input.text, 'hi');
+    expect(controller.isComposing, isFalse);
+    expect(sends, isEmpty);
+    expect(committed, isFalse);
+  });
+
+  test('sending with no attachments still commits the draft', () async {
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
     client.onCall = (action, payload) => RpcReply(
           action: action,
-          ok: action != 'chat.send' || !sendFails,
-          error: action == 'chat.send' && sendFails
-              ? const RpcError(code: 'internal', message: 'boom')
-              : null,
-          data: action == 'chat.send' && !sendFails
+          ok: true,
+          data: action == 'chat.send'
               ? <String, dynamic>{'sessionId': 's1', 'messageId': 'm-1'}
               : <String, dynamic>{},
         );
     client.emitStatus(DaemonConnectionState.connected);
     final controller = ChatComposerController(client: client);
-    controller.addAttachment('image', 'asset://x');
     controller.input.text = 'hi';
-    expect(await controller.handleSend(), isNull);
-    expect(controller.attachments, hasLength(1));
-    expect(controller.input.text, 'hi');
-    sendFails = false;
+
     expect(await controller.handleSend(), 'm-1');
     expect(controller.attachments, isEmpty);
     expect(controller.input.text, isEmpty);

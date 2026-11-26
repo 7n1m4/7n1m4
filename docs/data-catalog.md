@@ -394,6 +394,8 @@ interface ShortTermMemoryBlock {
 
 ### 1.8 Lifetime Memory Artifacts
 
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
+
 | Attribute | Value |
 | :--- | :--- |
 | **Key** | `local:memory/lifetime/{characterId}` |
@@ -454,6 +456,8 @@ interface DistilledPack {
 
 ### 1.9 Provisioning Sessions (Lifetime Memory Build State)
 
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
+
 | Attribute | Value |
 | :--- | :--- |
 | **Key** | `local:memory/provisioning-session/{characterId}` |
@@ -480,6 +484,8 @@ interface ProvisioningSession {
 }
 ```
 
+> **Disposition (sync lease):** ARCHIVE as client-runtime bookkeeping (no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
+
 | Attribute | Value |
 | :--- | :--- |
 | **Key** | `settings/sync/lease-{kind}-{holder}` — `kind` ∈ `reconcile` \| `outbox` |
@@ -489,6 +495,8 @@ interface ProvisioningSession {
 | **Sync** | **Never synced** (`settings/sync/` is excluded from the localStorage bridge) |
 
 ### 1.10 Echo Chips
+
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -514,6 +522,8 @@ interface EchoChip {
 ```
 
 ### 1.11 Director Notes
+
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -543,6 +553,8 @@ interface DirectorNote {
 ```
 
 ### 1.12 Event Log (System Event Ledger)
+
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -579,7 +591,11 @@ The event log is the read-mostly audit trail for chat-related state events. Entr
 
 ### 1.13b Sync Metadata — Tombstones
 
+> **Disposition:** ARCHIVE as client-runtime bookkeeping (no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
+
 ### 1.13c Sync Lease — cross-window election
+
+> **Disposition:** ARCHIVE as client-runtime bookkeeping (no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -641,6 +657,8 @@ interface SyncConflict {
 | **Sync** | Full LWW |
 
 ### 1.18 Peers Roster
+
+> **Disposition:** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -741,6 +759,8 @@ There is also a second background store in `packages/stage-layouts/src/stores/ba
 
 ### 3.1.2 Custom Voice Profiles (MOSS TTS Nano Local)
 
+> **Disposition:** blobs stay client-local; metadata already daemon-backed — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
+
 | Attribute | Value |
 | :--- | :--- |
 | **Store** | `packages/stage-ui/src/stores/providers.ts` |
@@ -751,6 +771,8 @@ There is also a second background store in `packages/stage-layouts/src/stores/ba
 | **Size** | Medium (reference audio blobs, ~800 KB each) |
 
 ### 3.1.3 Custom Voice Profiles (Pocket TTS Local)
+
+> **Disposition:** blobs stay client-local; metadata already daemon-backed — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Attribute | Value |
 | :--- | :--- |
@@ -1297,6 +1319,8 @@ Persisted Three.js scene state — camera rig, model transform, lighting, and sk
 | `airi:dating-sim:scenery-route` | `'background' \| 'widget' \| 'bg_widget' \| 'inherit'` | `'inherit'` | `stores/dating-sim.ts` |
 
 ### 4.21 Other localStorage Keys
+
+> **Disposition (device keypair):** ARCHIVE (TS-reference-only, no daemon port) — see [`decision-indexeddb-memory-disposition.md`](./decision-indexeddb-memory-disposition.md).
 
 | Key | Type | File |
 | :--- | :--- | :--- |

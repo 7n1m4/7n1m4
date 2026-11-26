@@ -18,10 +18,20 @@ class _RecordingMemoryClient extends FakeChatClient {
       <({String action, Map<String, dynamic>? payload})>[];
   bool remoteSync = false;
   bool searchFails = false;
+  final List<({String action, Map<String, dynamic>? payload})> deletes =
+      <({String action, Map<String, dynamic>? payload})>[];
 
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     calls.add((action: action, payload: payload));
+    if (action == 'stmm.delete' || action == 'journal.delete') {
+      deletes.add((action: action, payload: payload));
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{'deleted': true},
+      );
+    }
     if (action == 'vault.status') {
       return RpcReply(
         action: action,
@@ -180,5 +190,37 @@ void main() {
         'Display model manifest is not available from the daemon.',
       ),
     );
+  });
+  testWidgets('memory rows offer delete actions that call the daemon', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+
+    final summaryDelete = find.byKey(const Key('memory-summary-delete'));
+    expect(summaryDelete, findsOneWidget);
+    tester.widget<IconButton>(summaryDelete).onPressed!();
+    await tester.pump();
+    await tester.pump();
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete')).onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    final entryDelete = find.byKey(const Key('memory-entry-delete'));
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
+    tester.widget<IconButton>(entryDelete.first).onPressed!();
+    await tester.pump();
+    await tester.pump();
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete')).onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    expect(client.deletes.map((d) => d.action), <String>[
+      'stmm.delete',
+      'journal.delete',
+    ]);
+    expect(client.deletes.first.payload, <String, dynamic>{'id': '2026-11-25'});
+    expect(client.deletes.last.payload, <String, dynamic>{'id': 'e1'});
   });
 }

@@ -15,16 +15,11 @@ enum StageStripEdge { left, right, top, bottom }
 
 /// Control-strip button ids this build surfaces, in catalog order.
 ///
-/// Ids match `default_control_strip_buttons()` in
-/// `crates/anima-core/src/settings.rs` so a stored arrangement round-trips.
-const List<String> kStageStripCatalog = <String>[
-  'chat',
-  'actor-characters',
-  'mic',
-  'stage',
-  'stage-atmosphere',
-  'caption',
-];
+/// Only ids with a real stage effect are advertised. Chat, actor, mic and
+/// atmosphere buttons had no panel or daemon dispatch behind them; they stay
+/// out until the dispatch exists instead of advertising dead controls. The
+/// daemon's stored arrangement is still round-tripped by the settings screen.
+const List<String> kStageStripCatalog = <String>['stage', 'caption'];
 
 /// Default enabled ids (Rust `default_enabled_buttons`).
 const Set<String> kDefaultStageStripButtons = <String>{'stage', 'caption'};

@@ -10,6 +10,8 @@
 // (`docs/design-live2d-legal-gate.md`); nothing here downloads, bundles or
 // commits a Cubism Core.
 
+import 'package:flutter/foundation.dart';
+
 import '../../ui/model_stage.dart';
 
 /// Why a backend cannot be used on this client, or null when it can.
@@ -97,3 +99,37 @@ const String kLive2DLegalGateNote =
 /// executable form of the legal gate; see `docs/design-live2d-legal-gate.md`.
 ModelRuntimeInfo runtimeFor(ModelKind kind) =>
     kModelRuntimes.firstWhere((info) => info.kind == kind);
+
+/// Model kinds whose native renderer is actually registered on [platform].
+///
+/// The in-tree plugin currently ships only the frozen VRM channel on Linux,
+/// and no native renderer at all on the other targets. A kind absent here is
+/// hidden from the stage's model choices instead of offering a card that can
+/// only fail with `runtime-unavailable`.
+///
+/// Override [registeredKinds] in tests or embedding hosts that ship more
+/// renderers; production derives it from the platform's plugin registrations.
+List<ModelKind> supportedModelKinds(
+  TargetPlatform platform, {
+  Set<ModelKind>? registeredKinds,
+}) {
+  final registered = registeredKinds ??
+      switch (platform) {
+        TargetPlatform.linux => const <ModelKind>{ModelKind.vrm},
+        _ => const <ModelKind>{},
+      };
+  return kModelRuntimes
+      .where((info) => info.isAvailable && registered.contains(info.kind))
+      .map((info) => info.kind)
+      .toList(growable: false);
+}
+
+/// Whether [kind] can render on [platform] in this build.
+bool modelKindSupported(
+  TargetPlatform platform,
+  ModelKind kind, {
+  Set<ModelKind>? registeredKinds,
+}) => supportedModelKinds(
+  platform,
+  registeredKinds: registeredKinds,
+).contains(kind);

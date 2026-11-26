@@ -43,7 +43,34 @@ void main() {
 
     await expectLater(
       transport.connect(server.uri),
-      throwsA(isA<GatewayCaException>()),
+      throwsA(
+        isA<GatewayCaException>().having(
+          (e) => e.message,
+          'message',
+          contains('No CA certificate is configured for wss'),
+        ),
+      ),
+    );
+    expect(transport.isConnected, isFalse);
+  });
+
+  test('wss without a CA refuses before any socket is opened', () async {
+    // The old code fell back to WebSocketChannel.connect (platform roots)
+    // when the CA was missing. A plain handshake failure looks identical to
+    // a rejected cert, so pin the CA-specific refusal: the old path could
+    // only produce the generic 'TLS certificate was not trusted' message.
+    final transport = DirectWebSocketTransport(caCertPath: '  ');
+    addTearDown(transport.dispose);
+
+    await expectLater(
+      transport.connect(server.uri),
+      throwsA(
+        isA<GatewayCaException>().having(
+          (e) => e.message,
+          'message',
+          contains('No CA certificate is configured for wss'),
+        ),
+      ),
     );
     expect(transport.isConnected, isFalse);
   });
@@ -78,6 +105,32 @@ void main() {
       ),
     );
     expect(transport.isConnected, isFalse);
+  });
+
+  test('the trust context never includes platform roots', () {
+    // SecurityContext has no public getter for its trust roots. A handshake
+    // cannot prove a negative (that unrelated host CAs are absent) without
+    // installing a rogue root on the machine, so pin the constructor flag.
+    final source =
+        File('lib/daemon_client/direct_websocket_transport.dart')
+            .readAsStringSync();
+    expect(source, contains('SecurityContext(withTrustedRoots: false)'));
+  });
+
+  test('gatewaySecurityContext builds no context without a CA path', () {
+    expect(gatewaySecurityContext(null), isNull);
+    expect(gatewaySecurityContext('  '), isNull);
+  });
+
+  test('gatewaySecurityContext rejects a missing CA file', () {
+    expect(
+      () => gatewaySecurityContext('${ca.dir.path}/does-not-exist.pem'),
+      throwsA(isA<GatewayCaException>()),
+    );
+  });
+
+  test('gatewaySecurityContext builds a context from the configured CA', () {
+    expect(gatewaySecurityContext(ca.caFile.path), isNotNull);
   });
 
   test('plain ws on loopback still connects with no CA', () async {
@@ -159,8 +212,9 @@ class TlsStandInServer {
     server.listen((request) async {
       final socket = await WebSocketTransformer.upgrade(request);
       socket.listen((event) {
-        if (event is String && !firstFrame.isCompleted)
+        if (event is String && !firstFrame.isCompleted) {
           firstFrame.complete(event);
+        }
       });
     });
     return TlsStandInServer(server, firstFrame);

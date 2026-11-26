@@ -17,7 +17,8 @@ class ChatComposerAttachment {
 
 /// Draft, send/stop state and error restore for the chat composer.
 ///
-/// Attachments are local-only until the daemon wire contract supports them.
+/// Attachments are local-only and refused on send until the daemon wire
+/// contract supports them.
 ///
 /// Mirrors `useChatComposer` (packages/stage-ui/src/composables/use-chat-composer.ts)
 /// and `WhisperComposerBar.onSubmit`: the draft is cleared only once a send is
@@ -149,12 +150,23 @@ class ChatComposerController extends ChangeNotifier {
   /// Commit the draft as a `chat.send` turn.
   ///
   /// Returns the acked message id, or null when no turn was started (empty
-  /// draft, already composing, disconnected, or the RPC failed). The ack is
-  /// early: the turn is still streaming, so [isComposing] stays true until a
-  /// final delta, a cancel ack or an error.
+  /// draft, attachments, already composing, disconnected, or the RPC failed).
+  /// The ack is early: the turn is still streaming, so [isComposing] stays
+  /// true until a final delta, a cancel ack or an error.
   Future<String?> handleSend() async {
+    if (_sending) return null;
+    if (attachments.isNotEmpty) {
+      // chat.send carries text only. Silently dropping the attachment would
+      // lose the user's image/audio, so refuse the send and leave the draft
+      // (including attachments) untouched; the screen renders [error].
+      _fail(
+        'Attachments are not supported by the daemon yet. Remove the '
+        'attachment to send this message.',
+      );
+      return null;
+    }
     final text = _input.text.trim();
-    if (text.isEmpty || _sending) return null;
+    if (text.isEmpty) return null;
     if (!_client.snapshot.isConnected) {
       _fail('Not connected to the daemon.');
       return null;
@@ -163,8 +175,6 @@ class ChatComposerController extends ChangeNotifier {
     _sending = true;
     _input.clear();
     await _refreshActiveSelection();
-    final sentAttachments = List<ChatComposerAttachment>.from(attachments);
-    attachments.clear();
     onMessageCommitted?.call(text);
     _notify();
     try {
@@ -185,7 +195,7 @@ class ChatComposerController extends ChangeNotifier {
         return mid;
       }
       if (!reply.ok) {
-        _fail(reply.error?.message ?? 'chat.send failed', draft: text, attachments: sentAttachments);
+        _fail(reply.error?.message ?? 'chat.send failed', draft: text);
         return null;
       }
       return null;
@@ -193,7 +203,6 @@ class ChatComposerController extends ChangeNotifier {
       _fail(
         e is DaemonClientException ? e.message : 'Could not send message: $e',
         draft: text,
-        attachments: sentAttachments,
       );
       return null;
     }
@@ -221,14 +230,10 @@ class ChatComposerController extends ChangeNotifier {
     }
   }
 
-  void _fail(String message, {String? draft, List<ChatComposerAttachment>? attachments}) {
+  void _fail(String message, {String? draft}) {
     _error = message;
     _sending = false;
     if (draft != null) _input.text = draft;
-    if (attachments != null) {
-      this.attachments.clear();
-      this.attachments.addAll(attachments);
-    }
     _notify();
   }
 

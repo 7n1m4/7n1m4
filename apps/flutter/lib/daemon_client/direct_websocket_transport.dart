@@ -64,8 +64,6 @@ class DirectWebSocketTransport implements DaemonTransport {
   @override
   Future<void> connect(Uri endpoint) async {
     await close();
-    // Plain `ws://` (loopback) needs no CA; `wss://` always builds one, and an
-    // empty context trusts nothing — verification is never disabled.
     // Plain `ws://` (loopback) needs no CA. A remote `wss://` endpoint MUST
     // have the daemon-minted CA: without it a fallback to the default
     // platform-trusted channel could leak the auth token to an impostor.
@@ -178,7 +176,9 @@ SecurityContext? gatewaySecurityContext(String? pemPath) {
       '(GetGatewayConfig.caCertPath) and retry.',
     );
   }
-  final SecurityContext context = SecurityContext(withTrustedRoots: true);
+  // Trust only the daemon-minted PEM: platform roots must not be able to
+  // vouch for a remote `wss://` gateway.
+  final SecurityContext context = SecurityContext(withTrustedRoots: false);
   try {
     context.setTrustedCertificatesBytes(file.readAsBytesSync());
   } on Object catch (e) {

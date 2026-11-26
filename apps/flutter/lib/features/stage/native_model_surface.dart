@@ -98,7 +98,9 @@ class _NativeModelSurfaceState extends State<NativeModelSurface>
   }
 
   void _syncAmbientTicker() {
-    if (_snapshot.status == ModelStageStatus.ready && !_render.paused) {
+    if (_snapshot.status == ModelStageStatus.ready &&
+        !_render.paused &&
+        TickerMode.of(context)) {
       _ambientTicker ??= createTicker(_onAmbientTick);
       if (!_ambientTicker!.isActive) _ambientTicker!.start();
     } else {

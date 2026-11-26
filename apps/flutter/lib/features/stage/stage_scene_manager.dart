@@ -88,6 +88,11 @@ class StageSceneStore {
   final Directory storageDirectory;
   final List<StageSceneEntry> _entries = <StageSceneEntry>[];
   String? _activeId;
+
+  /// Per-card scene selection (Vue `activeBackgroundId` lives on the card).
+  /// An empty key means the card has no scene of its own and falls back to the
+  /// library-wide selection.
+  final Map<String, String> _activeByCard = <String, String>{};
   int _sequence = 0;
 
   File get _libraryFile =>
@@ -95,8 +100,16 @@ class StageSceneStore {
 
   List<StageSceneEntry> get entries => List<StageSceneEntry>.unmodifiable(_entries);
   String? get activeId => _activeId;
-  StageBackground get activeBackground {
-    final id = _activeId;
+  StageBackground get activeBackground => activeBackgroundFor(null);
+
+  /// The scene id currently selected for [cardId], or null when none.
+  String? activeFor(String? cardId) =>
+      (cardId == null ? _activeId : _activeByCard[cardId]) ?? _activeId;
+
+  /// The backdrop for [cardId]: its own scene when set, otherwise the library
+  /// default. One card's choice never overwrites another's.
+  StageBackground activeBackgroundFor(String? cardId) {
+    final id = (cardId == null ? null : _activeByCard[cardId]) ?? _activeId;
     if (id == null) return StageBackground.none;
     for (final entry in _entries) {
       if (entry.id == id) return entry.background;
@@ -128,6 +141,19 @@ class StageSceneStore {
               _entries.any((entry) => entry.id == active)
           ? active
           : null;
+      _activeByCard.clear();
+      final byCard = decoded['activeByCard'];
+      if (byCard is Map) {
+        for (final entry in byCard.entries) {
+          final cardId = entry.key;
+          final sceneId = entry.value;
+          if (cardId is String &&
+              sceneId is String &&
+              _entries.any((scene) => scene.id == sceneId)) {
+            _activeByCard[cardId] = sceneId;
+          }
+        }
+      }
     } on Object catch (error) {
       throw StageSceneException(
         'load-failed',
@@ -161,20 +187,28 @@ class StageSceneStore {
     return entry;
   }
 
-  Future<bool> activate(String id) async {
+  Future<bool> activate(String id, {String? cardId}) async {
     if (!_entries.any((entry) => entry.id == id)) {
       throw const StageSceneException(
         'unknown-scene',
         'That scene is no longer in the library.',
       );
     }
-    _activeId = id;
+    if (cardId == null) {
+      _activeId = id;
+    } else {
+      _activeByCard[cardId] = id;
+    }
     await _persist();
     return true;
   }
 
-  Future<void> deactivate() async {
-    _activeId = null;
+  Future<void> deactivate({String? cardId}) async {
+    if (cardId == null) {
+      _activeId = null;
+    } else {
+      _activeByCard.remove(cardId);
+    }
     await _persist();
   }
 
@@ -183,6 +217,7 @@ class StageSceneStore {
     _entries.removeWhere((entry) => entry.id == id);
     if (_entries.length == before) return false;
     if (_activeId == id) _activeId = null;
+    _activeByCard.removeWhere((_, sceneId) => sceneId == id);
     await _persist();
     return true;
   }
@@ -194,6 +229,7 @@ class StageSceneStore {
         for (final entry in _entries) entry.toJson(),
       ],
       'activeId': _activeId,
+      'activeByCard': _activeByCard,
     });
     final target = _libraryFile;
     final temp = File('${target.path}.tmp');

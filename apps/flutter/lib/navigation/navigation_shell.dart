@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:anima_control/speech/lip_sync_rms_data.dart';
+import 'package:anima_control/features/stage/stage_overlay_state.dart';
 
 import '../daemon_client/daemon_client.dart';
 import '../l10n/app_localizations.dart';
@@ -15,6 +16,7 @@ import '../features/chat/chat_screen.dart';
 import '../features/connections/connections_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/settings/settings_screen.dart';
+import '../features/stage/stage_background.dart';
 import '../features/stage/stage_scene_manager.dart';
 import '../features/stage/stage_scenes_screen.dart';
 import '../features/stage/stage_screen.dart';
@@ -72,12 +74,22 @@ class _NavigationShellState extends State<NavigationShell> {
   bool _noCardExplicitlySelected = false;
   String? _cardError;
   String? _sceneError;
+  StageCaptionStyle _captionStyle = const StageCaptionStyle();
+  final _stageRender = StageRenderState();
+  bool _stageVisible = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(_prepareScenes());
     unawaited(_loadCards());
+    unawaited(_loadCaptionSettings());
+  }
+
+  @override
+  void dispose() {
+    _stageRender.dispose();
+    super.dispose();
   }
 
   @override
@@ -157,9 +169,28 @@ class _NavigationShellState extends State<NavigationShell> {
     }
   }
 
+  /// Captions are daemon-owned settings; the stage only renders the snapshot.
+  /// A read failure keeps the client defaults and shows no invented state.
+  Future<void> _loadCaptionSettings() async {
+    try {
+      final settings = await widget.client.settingsGet('captions');
+      if (!mounted) return;
+      setState(() => _captionStyle = StageCaptionStyle.fromSettings(settings));
+    } on Object {
+      // An unreachable daemon leaves the defaults in place.
+    }
+  }
+
   void _selectStageDestination(int index) {
-    setState(() => _index = index);
-    if (index == 5) unawaited(_loadCards());
+    setState(() {
+      _index = index;
+      _stageVisible = index == 5;
+      _stageRender.setPaused(!_stageVisible);
+    });
+    if (index == 5) {
+      unawaited(_loadCards());
+      unawaited(_loadCaptionSettings());
+    }
   }
 
   @override
@@ -173,7 +204,7 @@ class _NavigationShellState extends State<NavigationShell> {
       ),
       ConnectionsScreen(client: widget.client),
       const AboutScreen(),
-      _buildStage(),
+      TickerMode(enabled: _stageVisible, child: _buildStage()),
     ];
 
     return Scaffold(
@@ -289,6 +320,7 @@ class _NavigationShellState extends State<NavigationShell> {
                         MaterialPageRoute<void>(
                           builder: (context) => StageScenesScreen(
                             store: store,
+                            cardId: _selectedCardId,
                             onChanged: () => setState(() {}),
                           ),
                         ),
@@ -302,7 +334,11 @@ class _NavigationShellState extends State<NavigationShell> {
             client: widget.client,
             frames: widget.lipSyncFrames,
             cardId: _selectedCardId,
-            background: store?.activeBackground,
+            background: store?.activeBackgroundFor(_selectedCardId) ??
+                StageBackground.none,
+            captionStyle: _captionStyle,
+            render: _stageRender,
+            paused: !_stageVisible,
           ),
         ),
       ],

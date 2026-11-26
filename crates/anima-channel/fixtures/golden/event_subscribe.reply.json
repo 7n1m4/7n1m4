@@ -4,6 +4,7 @@
     "emotion.tag",
     "token.delta",
     "presence.changed",
-    "status.changed"
+    "status.changed",
+    "settings.changed"
   ]
 }

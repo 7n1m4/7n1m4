@@ -7,8 +7,11 @@
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::fs;
-    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::time::Duration;
 
     use anima_channel::dispatch::{RendererHandlers, RpcContext, RpcError, RpcRegistry};
     use anima_channel::wire::{
@@ -27,7 +30,29 @@ mod tests {
         core: CoreService,
         config_path: std::path::PathBuf,
         _tmp: tempfile::TempDir,
+        // Drop order is declaration order: release the liveness token before
+        // `ENV_LOCK` so a waiting test cannot observe a stale live fixture.
+        _live_guard: LiveFixtureGuard,
         _env_guard: EnvGuard,
+    }
+
+    /// `ENV_LOCK` is non-reentrant: a second fixture on a thread already
+    /// owning one would self-deadlock. `LIVE_FIXTURES` records the serialized
+    /// fixture's liveness; the thread flag makes the same-thread case fail
+    /// before we ever try to acquire `ENV_LOCK`. Other test threads may still
+    /// wait on `ENV_LOCK` for their own fixture.
+    static LIVE_FIXTURES: AtomicUsize = AtomicUsize::new(0);
+    thread_local! {
+        static THREAD_HAS_FIXTURE: Cell<bool> = const { Cell::new(false) };
+    }
+
+    struct LiveFixtureGuard;
+
+    impl Drop for LiveFixtureGuard {
+        fn drop(&mut self) {
+            LIVE_FIXTURES.fetch_sub(1, Ordering::AcqRel);
+            THREAD_HAS_FIXTURE.with(|flag| flag.set(false));
+        }
     }
 
     /// `AIRI_SERVER_CHANNEL_CONFIG` is process-global; serialize fixtures that
@@ -35,6 +60,9 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     type EnvGuard = std::sync::MutexGuard<'static, ()>;
+
+    const SECOND_FIXTURE_PANIC: &str =
+        "isolated_gateway() called twice on one test thread; reuse the existing fixture";
 
     /// Restore process-global provider env vars even when a test panics.
     /// Other gateway tests read the same variables through provider resolution.
@@ -70,7 +98,17 @@ mod tests {
     }
 
     fn isolated_gateway() -> Fixture {
-        let guard: EnvGuard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if THREAD_HAS_FIXTURE.with(Cell::get) {
+            panic!("{SECOND_FIXTURE_PANIC}");
+        }
+        let guard: EnvGuard = match ENV_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Preserve the historical poison recovery: the mutex state is
+                // irrelevant to fixture setup, so resume with the inner guard.
+                poisoned.into_inner()
+            }
+        };
         let tmp = tempdir().unwrap();
         let dir = tmp.path().join("server-channel");
         fs::create_dir_all(&dir).unwrap();
@@ -84,11 +122,18 @@ mod tests {
         // above via AIRI_SERVER_CHANNEL_CONFIG; no real network port is used.
         let core = CoreService::open(Some(tmp.path().to_path_buf()));
         let gateway = Gateway::start_with_core(Some(0), None, core.clone());
+        assert_eq!(
+            LIVE_FIXTURES.fetch_add(1, Ordering::AcqRel),
+            0,
+            "ENV_LOCK must serialize live fixtures"
+        );
+        THREAD_HAS_FIXTURE.with(|flag| flag.set(true));
         Fixture {
             gateway,
             core,
             config_path,
             _tmp: tmp,
+            _live_guard: LiveFixtureGuard,
             _env_guard: guard,
         }
     }
@@ -1262,4 +1307,42 @@ mod tests {
             assert!(err.message().contains("invalid settings shape"));
         }
     }
+
+    // ROOT CAUSE:
+    //
+    // `AIRI_SERVER_CHANNEL_CONFIG` is process-global and `ENV_LOCK` is a
+    // non-reentrant `Mutex`. A second `isolated_gateway()` while the first
+    // fixture is alive blocks forever trying to lock the same mutex from the
+    // same test thread. The guard must reject that request before locking.
+    #[test]
+    fn second_isolated_gateway_fails_fast_on_one_test_thread() {
+        let (tx, rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let first = isolated_gateway();
+            let outcome = std::panic::catch_unwind(|| isolated_gateway());
+            let message = match outcome {
+                Ok(_) => "second fixture was created".to_string(),
+                Err(panic) => panic
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| panic.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                    .unwrap_or_default(),
+            };
+            // Report only after the first fixture is fully dropped so the
+            // caller sees a released thread-local token and lock guard.
+            drop(first);
+            let token_released = !THREAD_HAS_FIXTURE.with(Cell::get);
+            let _ = tx.send((message, token_released));
+        });
+        let (message, token_released) = rx.recv_timeout(Duration::from_secs(10))
+            .expect("second isolated_gateway() must fail fast instead of deadlocking");
+        worker.join().expect("fixture worker must not panic outside catch_unwind");
+        assert_eq!(message, SECOND_FIXTURE_PANIC);
+        assert!(token_released, "first fixture must drop cleanly");
+        assert!(
+            !ENV_LOCK.is_poisoned(),
+            "a rejected second fixture must not poison ENV_LOCK"
+        );
+    }
+
 }

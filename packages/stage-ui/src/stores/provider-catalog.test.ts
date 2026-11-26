@@ -56,6 +56,7 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     expect(mockSaveDaemonProvider).toHaveBeenCalledWith({
       id: provider.id,
       kind: 'open-ai-compatible',
+      definitionId: providerOpenAICompatible.id,
       enabled: true,
       model: 'gpt-test',
       baseUrl: 'http://local',
@@ -84,6 +85,7 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
       id: provider.id,
       kind: 'open-ai-compatible',
+      definitionId: providerOpenAICompatible.id,
       enabled: true,
       model: 'gpt-test',
       baseUrl: 'http://local',
@@ -97,9 +99,36 @@ describe('store provider-catalog (local-first + daemon RPC)', () => {
     const store = useProviderCatalogStore()
     const provider = await store.addProvider(providerOpenAICompatible.id)
     vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ [provider.id]: provider })
-    mockListDaemonProviders.mockResolvedValueOnce({ providers: [{ id: provider.id, model: 'daemon-model' }] })
+    mockListDaemonProviders.mockResolvedValueOnce({
+      providers: [{ id: provider.id, model: 'daemon-model', baseUrl: '', enabled: true, updatedAt: 1 }],
+    })
     await store.fetchList()
     expect(store.configs[provider.id].config.model).toBe('daemon-model')
+    expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
+  })
+
+  it('commitProviderConfig preserves the enabled flag and definition id', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    await store.commitProviderConfig(provider.id, { model: 'gpt-test' }, { validated: true, validationBypassed: false })
+    expect(mockSaveDaemonProvider).toHaveBeenLastCalledWith({
+      id: provider.id,
+      kind: 'open-ai-compatible',
+      enabled: true,
+      definitionId: providerOpenAICompatible.id,
+      model: 'gpt-test',
+      baseUrl: '',
+    })
+  })
+
+  it('fetchList keeps the daemon enabled flag for existing local configs', async () => {
+    mockHasDaemon.mockReturnValue(true)
+    const store = useProviderCatalogStore()
+    const provider = await store.addProvider(providerOpenAICompatible.id)
+    vi.mocked(providersRepo.getAll).mockResolvedValueOnce({ [provider.id]: provider })
+    await store.fetchList()
+    expect(mockSaveDaemonProvider).not.toHaveBeenCalledWith(expect.objectContaining({ enabled: false }))
     expect(store.configs[provider.id].definitionId).toBe(providerOpenAICompatible.id)
   })
 

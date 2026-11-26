@@ -75,6 +75,31 @@ void main() {
       expect(model.displayModelId, 'live2d-test');
     });
 
+    test('the Vue modules.displayModelId assignment resolves', () {
+      final model = DisplayModel.fromCard(_card(<String, dynamic>{
+        'modules': <String, dynamic>{'displayModelId': 'model-in-modules'},
+      }));
+      expect(model.kind, ModelKind.none);
+      expect(model.displayModelId, 'model-in-modules');
+      expect(model.problemCode, DisplayModel.unknownModelKindCode);
+    });
+
+    test('a top-level displayModelId still resolves when modules is empty', () {
+      final model = DisplayModel.fromCard(_card(<String, dynamic>{
+        'displayModelId': 'top-level-model',
+        'modules': <String, dynamic>{},
+      }));
+      expect(model.displayModelId, 'top-level-model');
+    });
+
+    test('a non-string nested id never masks a valid top-level id', () {
+      final model = DisplayModel.fromCard(_card(<String, dynamic>{
+        'displayModelId': 'top-level-model',
+        'modules': <String, dynamic>{'displayModelId': 42},
+      }));
+      expect(model.displayModelId, 'top-level-model');
+    });
+
     test('a non-http url source is an invalid asset', () {
       final model = DisplayModel.fromCard(_card(<String, dynamic>{
         'live2d': <String, dynamic>{

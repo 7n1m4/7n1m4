@@ -112,7 +112,24 @@ fn token_delta_fixtures_round_trip() {
         assert_eq!(data.final_, source["final"].as_bool().unwrap());
         assert_eq!(data.seq, source["seq"].as_u64().unwrap());
         assert_eq!(data.ts_ms, source["ts_ms"].as_u64().unwrap());
+        if name.ends_with(".final") {
+            assert_eq!(data.reason.as_deref(), Some("complete"));
+            assert_eq!(source["reason"].as_str(), Some("complete"));
+        } else {
+            assert_eq!(data.reason, None);
+            assert!(source.get("reason").is_none());
+        }
     }
+    // A final frame from an older daemon has no reason field: it must decode
+    // as complete rather than fail, so legacy clients keep working.
+    let mut legacy = event_data("event.token_delta.final");
+    legacy.as_object_mut().unwrap().remove("reason");
+    let payload = serde_json::from_value::<EventPayload>(legacy).unwrap();
+    let EventPayload::TokenDelta(data) = payload else {
+        panic!("legacy final frame decoded to wrong variant");
+    };
+    assert_eq!(data.reason, None);
+    assert!(data.final_);
 }
 
 #[test]

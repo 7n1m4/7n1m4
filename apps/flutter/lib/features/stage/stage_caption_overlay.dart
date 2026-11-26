@@ -4,8 +4,8 @@
 // Vue reference (`packages/stage-ui/src/components/scenes/CaptionPanel.vue`):
 // speaker nameplate, sentence-sync segments with an active accent, a
 // top/bottom docking edge, opacity and font-scale from the daemon's
-// `captions` settings section. `head` docking is a bottom alias (the
-// head-tethered plank needs a renderer this client does not have yet).
+// `captions` settings section. Only top and bottom docking are implemented;
+// a stored `head` value is read as bottom by [StageCaptionStyle.dockingFrom].
 //
 // The widget is pure: it renders a [StageCaptionSnapshot] and never reads or
 // writes daemon state.

@@ -23,28 +23,27 @@ type SettingsLoadFn = fn(&anima_core::settings::SettingsStore) -> Result<serde_j
 type SettingsSaveFn =
     fn(&anima_core::settings::SettingsStore, serde_json::Value) -> Result<(), String>;
 
-/// Resolve a settings-section name to its typed load/save operations.
+/// Build the settings registry from `(wire key, section type)` pairs.
 ///
-/// Single source of truth for the supported sections: `settings_get` and
-/// `settings_set` both route through here, so registering a section is one edit.
-fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
-    fn load<S: anima_core::settings::SettingsSection>(
-        store: &anima_core::settings::SettingsStore,
-    ) -> Result<serde_json::Value, String> {
-        serde_json::to_value(
-            store
-                .load_section::<S>()
-                .map_err(|_| "load failed".to_string())?,
-        )
-        .map_err(|_| "serialize failed".to_string())
-    }
+/// Every type is constrained by `SettingsSection` at compile time, so adding a
+/// stale section (e.g. `ActiveProviderSettings`) fails to compile instead of
+/// silently drifting from the types `anima-core` actually registers.
+macro_rules! settings_sections {
+    ($(($key:literal, $type:ty)),+ $(,)?) => {
+        const SETTINGS_SECTIONS: &[(&str, SettingsLoadFn, SettingsSaveFn)] = &[
+            $((
+                $key,
+                load_section::<$type>,
+                save_section::<$type>,
+            )),+
+        ];
+    };
+}
 
-    fn save<S: anima_core::settings::SettingsSection>(
-        store: &anima_core::settings::SettingsStore,
-        value: serde_json::Value,
-    ) -> Result<(), String> {
-        let parsed: S =
-            serde_json::from_value(value).map_err(|_| "invalid settings shape".to_string())?;
+fn load_section<S: anima_core::settings::SettingsSection>(
+    store: &anima_core::settings::SettingsStore,
+) -> Result<serde_json::Value, String> {
+    serde_json::to_value(
         store
             .load_section::<S>()
             .map_err(|_| "load failed".to_string())?,
@@ -92,89 +91,39 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
 }
 
 
-    Some(match section {
-        "general" => (
-            load::<anima_core::settings::GeneralSettings>,
-            save::<anima_core::settings::GeneralSettings>,
-        ),
-        "chat" => (
-            load::<anima_core::settings::ChatSettings>,
-            save::<anima_core::settings::ChatSettings>,
-        ),
-        "theme" => (
-            load::<anima_core::settings::ThemeSettings>,
-            save::<anima_core::settings::ThemeSettings>,
-        ),
-        "control-strip" => (
-            load::<anima_core::settings::ControlStripSettings>,
-            save::<anima_core::settings::ControlStripSettings>,
-        ),
-        "cards" => (
-            load::<anima_core::settings::CardsSettings>,
-            save::<anima_core::settings::CardsSettings>,
-        ),
-        "stage-model" => (
-            load::<anima_core::settings::StageModelSettings>,
-            save::<anima_core::settings::StageModelSettings>,
-        ),
-        "captions" => (
-            load::<anima_core::settings::CaptionsSettings>,
-            save::<anima_core::settings::CaptionsSettings>,
-        ),
-        "stage-window" => (
-            load::<anima_core::settings::StageWindowSettings>,
-            save::<anima_core::settings::StageWindowSettings>,
-        ),
-        "positioning" => (
-            load::<anima_core::settings::PositioningSettings>,
-            save::<anima_core::settings::PositioningSettings>,
-        ),
-        "spine" => (
-            load::<anima_core::settings::SpineSettings>,
-            save::<anima_core::settings::SpineSettings>,
-        ),
-        "mmd" => (
-            load::<anima_core::settings::MmdSettings>,
-            save::<anima_core::settings::MmdSettings>,
-        ),
-        "live2d" => (
-            load::<anima_core::settings::Live2dSettings>,
-            save::<anima_core::settings::Live2dSettings>,
-        ),
-        "audio-device" => (
-            load::<anima_core::settings::AudioDeviceSettings>,
-            save::<anima_core::settings::AudioDeviceSettings>,
-        ),
-        "user-profile" => (
-            load::<anima_core::settings::UserProfileSettings>,
-            save::<anima_core::settings::UserProfileSettings>,
-        ),
-        "local-llm" => (
-            load::<anima_core::settings::LocalLlmSettings>,
-            save::<anima_core::settings::LocalLlmSettings>,
-        ),
-        "consciousness" => (
-            load::<anima_core::settings::ConsciousnessSettings>,
-            save::<anima_core::settings::ConsciousnessSettings>,
-        ),
-        "chat-provider" => (
-            load::<anima_core::settings::ChatProviderSettings>,
-            save::<anima_core::settings::ChatProviderSettings>,
-        ),
-        "speech" => (
-            load::<anima_core::settings::SpeechSettings>,
-            save::<anima_core::settings::SpeechSettings>,
-        ),
-        "hearing" => (
-            load::<anima_core::settings::HearingSettings>,
-            save::<anima_core::settings::HearingSettings>,
-        ),
-        "vision" => (
-            load::<anima_core::settings::VisionSettings>,
-            save::<anima_core::settings::VisionSettings>,
-        ),
-        _ => return None,
-    })
+settings_sections!(
+    ("general", anima_core::settings::GeneralSettings),
+    ("chat", anima_core::settings::ChatSettings),
+    ("theme", anima_core::settings::ThemeSettings),
+    ("control-strip", anima_core::settings::ControlStripSettings),
+    ("cards", anima_core::settings::CardsSettings),
+    ("stage-model", anima_core::settings::StageModelSettings),
+    ("captions", anima_core::settings::CaptionsSettings),
+    ("stage-window", anima_core::settings::StageWindowSettings),
+    ("positioning", anima_core::settings::PositioningSettings),
+    ("spine", anima_core::settings::SpineSettings),
+    ("mmd", anima_core::settings::MmdSettings),
+    ("live2d", anima_core::settings::Live2dSettings),
+    ("audio-device", anima_core::settings::AudioDeviceSettings),
+    ("user-profile", anima_core::settings::UserProfileSettings),
+    ("local-llm", anima_core::settings::LocalLlmSettings),
+    ("consciousness", anima_core::settings::ConsciousnessSettings),
+    ("chat-provider", anima_core::settings::ChatProviderSettings),
+    ("speech", anima_core::settings::SpeechSettings),
+    ("hearing", anima_core::settings::HearingSettings),
+    ("vision", anima_core::settings::VisionSettings),
+);
+
+/// Resolve a settings-section name to its typed load/save operations.
+///
+/// Single source of truth for the supported sections: `settings_get` and
+/// `settings_set` both route through here, so registering a section is one edit
+/// in [`settings_sections!`].
+fn settings_section(section: &str) -> Option<(SettingsLoadFn, SettingsSaveFn)> {
+    SETTINGS_SECTIONS
+        .iter()
+        .find(|(key, _, _)| *key == section)
+        .map(|(_, load, save)| (*load, *save))
 }
 
 /// Merge a primary PATCH and its mirror selection, then commit both in one
@@ -451,6 +400,30 @@ impl CoreService {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "missing id".to_string())?;
+        if let Some(definition_id) = payload
+            .get("definitionId")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let registry = anima_llm::ProviderRegistry::new();
+            let def = registry
+                .get(definition_id)
+                .ok_or_else(|| format!("unknown provider definition: {definition_id}"))?;
+            let kind_text = payload.get("kind").and_then(|v| v.as_str());
+            if let Some(kind_text) = kind_text {
+                let requested: anima_store::ProviderKind =
+                    serde_json::from_value(serde_json::Value::String(kind_text.to_string()))
+                        .map_err(|_| format!("unknown provider kind: {kind_text}"))?;
+                if serde_json::to_string(&requested).ok().as_deref()
+                    != Some(&serde_json::to_string(&def.kind).unwrap_or_default())
+                {
+                    return Err(format!(
+                        "provider kind {kind_text} does not match definition {definition_id}"
+                    ));
+                }
+            }
+        }
         let existing = repo
             .get(id)
             .map_err(|_| "provider query failed".to_string())?;
@@ -535,6 +508,13 @@ impl CoreService {
         core.provider_repo()
             .delete(id)
             .map_err(|_| "provider delete failed".to_string())
+    }
+
+    /// Subscribe to the core's internal event bus (used to bridge settings
+    /// changes to gateway clients).
+    pub fn subscribe_core_events(&self) -> Option<tokio::sync::broadcast::Receiver<anima_core::CoreEvent>> {
+        let guard = self.inner.lock().ok()?;
+        guard.core.as_ref().map(|core| core.subscribe())
     }
 
     /// Get a typed settings section.
@@ -1236,6 +1216,41 @@ fn chat_runtime() -> &'static tokio::runtime::Runtime {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn settings_registry_rejects_stale_section_names() {
+        let expected_keys = [
+            "general",
+            "chat",
+            "theme",
+            "control-strip",
+            "cards",
+            "stage-model",
+            "captions",
+            "stage-window",
+            "positioning",
+            "spine",
+            "mmd",
+            "live2d",
+            "audio-device",
+            "user-profile",
+            "local-llm",
+            "consciousness",
+            "chat-provider",
+            "speech",
+            "hearing",
+            "vision",
+        ];
+        assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
+        for ((key, _, _), expected) in SETTINGS_SECTIONS.iter().zip(expected_keys) {
+            assert_eq!(*key, expected, "registry key must not drift or be reordered");
+            assert!(settings_section(key).is_some(), "registered key {key} must resolve");
+        }
+        assert!(settings_section("chat-provider").is_some());
+        for stale in ["active-provider", "active-chat", "activeProvider"] {
+            assert!(settings_section(stale).is_none(), "stale key {stale} must not resolve");
+        }
+    }
 
     #[test]
     fn healthy_open_is_available() {

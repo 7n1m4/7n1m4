@@ -868,6 +868,9 @@ pub enum EventTopic {
     /// Coarse, secret-free core health change.
     #[serde(rename = "status.changed")]
     StatusChanged,
+    /// A settings section changed (client should reload that section).
+    #[serde(rename = "settings.changed")]
+    SettingsChanged,
 }
 
 impl EventTopic {
@@ -878,6 +881,7 @@ impl EventTopic {
         EventTopic::TokenDelta,
         EventTopic::PresenceChanged,
         EventTopic::StatusChanged,
+        EventTopic::SettingsChanged,
     ];
 
     /// Stable dotted wire name.
@@ -888,6 +892,7 @@ impl EventTopic {
             EventTopic::TokenDelta => "token.delta",
             EventTopic::PresenceChanged => "presence.changed",
             EventTopic::StatusChanged => "status.changed",
+            EventTopic::SettingsChanged => "settings.changed",
         }
     }
 
@@ -919,6 +924,7 @@ impl std::str::FromStr for EventTopic {
             "token.delta" => Ok(EventTopic::TokenDelta),
             "presence.changed" => Ok(EventTopic::PresenceChanged),
             "status.changed" => Ok(EventTopic::StatusChanged),
+            "settings.changed" => Ok(EventTopic::SettingsChanged),
             _ => Err(()),
         }
     }
@@ -1023,6 +1029,11 @@ pub struct TokenDeltaData {
     /// Producer timestamp, unix epoch milliseconds (stamped by the bus).
     #[specta(type = specta_typescript::Number)]
     pub ts_ms: u64,
+    /// Terminal reason of the turn: `complete`, `cancelled` or `error`.
+    /// Absent on non-final deltas; absent on a final frame from an old daemon
+    /// means `complete`. Clients must not speak `cancelled`/`error` turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Payload of a `presence.changed` event: a connectivity/availability change.
@@ -1061,6 +1072,22 @@ pub struct StatusChangedData {
     pub ts_ms: u64,
 }
 
+/// Payload of a `settings.changed` event: the section whose blob changed.
+///
+/// Carries no values — a client must re-read the section through
+/// `settings.get` so it cannot cache a stale snapshot from the event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SettingsChangedData {
+    /// Settings section name accepted by `settings.get`/`settings.set`.
+    pub section: String,
+    /// Monotonic publication sequence (stamped by the bus).
+    #[specta(type = specta_typescript::Number)]
+    pub seq: u64,
+    /// Producer timestamp, unix epoch milliseconds (stamped by the bus).
+    #[specta(type = specta_typescript::Number)]
+    pub ts_ms: u64,
+}
+
 /// Typed payload of a `event` frame. Variants are `serde(untagged)` so the
 /// payload serializes as a flat JSON object; each payload struct has at least
 /// one unique required field, making deserialization unambiguous by shape.
@@ -1077,6 +1104,8 @@ pub enum EventPayload {
     PresenceChanged(PresenceChangedData),
     /// A `status.changed` health update.
     StatusChanged(StatusChangedData),
+    /// A `settings.changed` section update.
+    SettingsChanged(SettingsChangedData),
 }
 
 impl EventPayload {
@@ -1088,6 +1117,7 @@ impl EventPayload {
             EventPayload::TokenDelta(_) => EventTopic::TokenDelta,
             EventPayload::PresenceChanged(_) => EventTopic::PresenceChanged,
             EventPayload::StatusChanged(_) => EventTopic::StatusChanged,
+            EventPayload::SettingsChanged(_) => EventTopic::SettingsChanged,
         }
     }
 
@@ -1099,6 +1129,7 @@ impl EventPayload {
             EventPayload::TokenDelta(d) => d.seq = seq,
             EventPayload::PresenceChanged(d) => d.seq = seq,
             EventPayload::StatusChanged(d) => d.seq = seq,
+            EventPayload::SettingsChanged(d) => d.seq = seq,
         }
     }
 
@@ -1110,6 +1141,7 @@ impl EventPayload {
             EventPayload::TokenDelta(d) => d.ts_ms = ts_ms,
             EventPayload::PresenceChanged(d) => d.ts_ms = ts_ms,
             EventPayload::StatusChanged(d) => d.ts_ms = ts_ms,
+            EventPayload::SettingsChanged(d) => d.ts_ms = ts_ms,
         }
     }
 }
@@ -1299,6 +1331,7 @@ pub fn type_collection() -> specta::Types {
         .register::<TokenDeltaData>()
         .register::<PresenceChangedData>()
         .register::<StatusChangedData>()
+    .register::<SettingsChangedData>()
         .register::<RuntimePingReply>()
         .register::<RuntimeStatusReply>()
         .register::<CoreStatusReply>()
@@ -1585,6 +1618,7 @@ mod tests {
                     final_: false,
                     seq: 3,
                     ts_ms: 300,
+                    reason: None,
                 }),
             ),
             GatewayEvent::new(
@@ -1697,6 +1731,21 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn settings_changed_topic_carries_section_name() {
+        let topic: EventTopic = "settings.changed".parse().unwrap();
+        assert_eq!(topic.as_str(), "settings.changed");
+        let payload = EventPayload::SettingsChanged(SettingsChangedData {
+            section: "captions".to_string(),
+            seq: 9,
+            ts_ms: 10,
+        });
+        assert_eq!(payload.topic(), topic);
+        let value = serde_json::to_value(&payload).unwrap();
+        assert_eq!(value["section"], "captions");
+        assert!(value.get("settings").is_none());
+    }
+
     fn status_changed_payload_has_no_secret_bearing_fields() {
         let payload = EventPayload::StatusChanged(StatusChangedData {
             core_available: true,

@@ -168,24 +168,29 @@ where
     }
 }
 
-/// Clamp a client-supplied timeout to the server deadline.
-fn rpc_deadline(value: &serde_json::Value) -> Duration {
+/// Keep each client-side timeout strictly inside the worker's remaining budget,
+/// so a blocked RPC unwinds and drops its client before the observer times out.
+fn bounded_client_timeout(
+    value: &serde_json::Value,
+    deadline: &McpAcpDeadline,
+    margin: Duration,
+) -> Duration {
     value
         .get("timeout")
         .and_then(|v| v.as_u64())
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(5))
-        .min(MCP_ACP_DEADLINE)
+        .min(deadline.remaining(margin))
 }
 
-/// Client-supplied ACP prompt timeout, bounded by the server deadline.
-fn acp_prompt_deadline(value: &serde_json::Value) -> Duration {
+/// Client-supplied ACP prompt timeout, bounded by the worker's remaining budget.
+fn acp_prompt_deadline(value: &serde_json::Value, deadline: &McpAcpDeadline) -> Duration {
     value
         .get("prompt_timeout")
         .and_then(|v| v.as_u64())
         .map(Duration::from_secs)
         .unwrap_or(anima_acp::DEFAULT_PROMPT_TIMEOUT)
-        .min(ACP_PROMPT_DEADLINE)
+        .min(deadline.remaining(Duration::from_secs(10)))
 }
 
 /// Per-call check for mutating-verb opt-ins in `config.json`.
@@ -1136,6 +1141,7 @@ impl Gateway {
                                         String::new(),
                                         0,
                                         true,
+                                        Some("error".into()),
                                         None,
                                     );
                                     return;
@@ -1187,7 +1193,7 @@ impl Gateway {
                                                 let index = *slot;
                                                 *slot += 1;
                                                 pub_clone.token_delta(
-                                                    session, message, delta, index, false, None,
+                                                    session, message, delta, index, false, None, None,
                                                 );
                                             }
                                             anima_core::chat::ChatEvent::MessageDone {
@@ -1203,6 +1209,7 @@ impl Gateway {
                                                     String::new(),
                                                     index,
                                                     true,
+                                                    Some("complete".into()),
                                                     None,
                                                 );
                                                 // This turn's own terminal event ends the pump;
@@ -1264,6 +1271,7 @@ impl Gateway {
                                             String::new(),
                                             0,
                                             true,
+                                            Some("error".into()),
                                             None,
                                         );
                                     }
@@ -1317,6 +1325,7 @@ impl Gateway {
                                 String::new(),
                                 0,
                                 true,
+                                Some("cancelled".into()),
                                 None,
                             );
                         }
@@ -1339,37 +1348,49 @@ impl Gateway {
                         return Err("missing session_id".to_string());
                     }
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
-                    // The client sends the `createdAt` of the last message it
-                    // already holds; `rowid = i64::MAX` includes every row at
-                    // that timestamp.
-                    let cursor = value
-                        .get("cursor")
-                        .and_then(|v| v.as_i64())
-                        .map(|created_at| (created_at, i64::MAX));
+                    // The client sends the createdAt of the oldest message in
+                    // the previous (newer) page. Walk forward from there and
+                    // keep the tail of the session up to that point, so older
+                    // pages never repeat the turns already shown.
+                    let before = value.get("cursor").and_then(|v| v.as_i64());
                     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
                     let repo = anima_store::MessageRepo::new(db);
-                    // `list_page` only walks forward, so the newest page is reached by
-                    // paging from the cursor (or the start of the session) and keeping the
-                    // tail. The walk stops as soon as `limit + 1` rows are held, so the
-                    // read is bounded by the page size rather than by the session length.
-                    let mut rows: Vec<(anima_store::StoredMessage, i64)> = Vec::new();
-                    let mut page_cursor = cursor;
-                    loop {
+                    let mut rows: Vec<anima_store::StoredMessage> = Vec::new();
+                    let mut page_cursor: Option<(i64, i64)> = None;
+                    // Bound the walk: a crafted cursor with many rows sharing
+                    // its createdAt must not keep the handler iterating. Each
+                    // step fetches at most `limit + 1` rows.
+                    const MAX_HISTORY_PAGE_ITERATIONS: usize = 10;
+                    let mut iterations = 0;
+                    let mut hit_cap = false;
+                    while iterations < MAX_HISTORY_PAGE_ITERATIONS {
+                        iterations += 1;
                         let page = repo
                             .list_page(session_id, limit + 1, page_cursor)
                             .map_err(|e| e.to_string())?;
                         let short = page.len() < limit + 1;
                         page_cursor = page.last().map(|(m, rowid)| (m.created_at, *rowid));
-                        rows.extend(page);
-                        if short || rows.len() >= limit + 1 {
+                        let reached_cursor = page_cursor.is_some_and(|(t, _)| {
+                            before.is_some_and(|cutoff| t >= cutoff)
+                        });
+                        for (m, _) in page {
+                            if before.is_some_and(|cutoff| m.created_at >= cutoff) {
+                                continue;
+                            }
+                            rows.push(m);
+                        }
+                        if short || reached_cursor {
                             break;
                         }
+                        if iterations == MAX_HISTORY_PAGE_ITERATIONS {
+                            hit_cap = true;
+                        }
                     }
-                    let truncated = rows.len() > limit;
-                    // Keep the newest `limit` rows, then restore the oldest-first order
-                    // the reply has always used.
-                    let mut rows: Vec<anima_store::StoredMessage> =
-                        rows.into_iter().rev().take(limit).map(|(m, _)| m).collect();
+                    let truncated = hit_cap || rows.len() > limit;
+                    // Keep the newest `limit` rows, then restore the oldest-first
+                    // order the reply has always used.
+                    rows.reverse();
+                    rows.truncate(limit);
                     rows.reverse();
                     let messages: Vec<serde_json::Value> = rows
                         .into_iter()
@@ -1658,9 +1679,19 @@ impl Gateway {
                 "cards.list".to_string(),
                 handler(move |_method: &str, value: &serde_json::Value| {
                     let limit = rpc_limit(value, DEFAULT_LIST_LIMIT);
-                    let listed = core.card_list(limit + 1)?;
-                    let truncated = listed.len() > limit;
-                    let cards: Vec<_> = listed.into_iter().take(limit).collect();
+                    let offset = value
+                        .get("cursor")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| usize::try_from(v).ok())
+                        .unwrap_or(0);
+                    let skip = offset.checked_add(limit + 1).unwrap_or(usize::MAX);
+                    let listed = core.card_list(skip)?;
+                    let truncated = listed.len() > offset.saturating_add(limit);
+                    let cards: Vec<_> = listed
+                        .into_iter()
+                        .skip(offset)
+                        .take(limit)
+                        .collect();
                     let reply = anima_channel::wire::CardListReply { cards, truncated };
                     Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
@@ -1809,9 +1840,24 @@ impl Gateway {
                     let repo = anima_store::SessionRepo::new(db);
                     // The store applies `limit + 1` in SQL, so the extra row
                     // is the only way to know whether more exist.
-                    let listed = repo.list_recent(limit + 1).map_err(|e| e.to_string())?;
-                    let truncated = listed.len() > limit;
-                    let sessions: Vec<_> = listed.into_iter().take(limit).collect();
+                    let offset = value
+                        .get("cursor")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|v| usize::try_from(v).ok())
+                        .unwrap_or(0);
+                    let skip = offset.checked_add(limit + 1).unwrap_or(usize::MAX);
+                    // Read one window past the offset+limit window: the first
+                    // `offset` rows are discarded, the next `limit` are the
+                    // page, and any remainder proves more rows exist.
+                    let listed = repo
+                        .list_recent(skip)
+                        .map_err(|e| e.to_string())?;
+                    let truncated = listed.len() > offset.saturating_add(limit);
+                    let sessions: Vec<_> = listed
+                        .into_iter()
+                        .skip(offset)
+                        .take(limit)
+                        .collect();
                     Ok(serde_json::json!({
                         "sessions": sessions,
                         "truncated": truncated,
@@ -2078,8 +2124,12 @@ impl Gateway {
                             )
                             .map_err(|e| e.to_string())?;
                             let mut client = client;
-                            client.set_timeout(rpc_deadline(value));
-                            client.set_prompt_timeout(acp_prompt_deadline(value));
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
                             client.set_permission_policy(policy);
                             let init = deadline.check(
                                 client.initialize().map_err(|e| e.to_string()),
@@ -2179,8 +2229,12 @@ impl Gateway {
                             )
                             .map_err(|e| e.to_string())?;
                             let mut client = client;
-                            client.set_timeout(rpc_deadline(value));
-                            client.set_prompt_timeout(acp_prompt_deadline(value));
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(10),
+                            ));
+                            client.set_prompt_timeout(acp_prompt_deadline(value, &deadline));
                             client.set_permission_policy(policy);
                             let init = deadline.check(
                                 client.initialize().map_err(|e| e.to_string()),
@@ -4592,6 +4646,52 @@ mod tests {
         assert_eq!(got["card"]["data"]["x_unknown"], 42);
     }
 
+    // Contract: cards.list honours an offset cursor so a truncated page can
+    // be continued without repeating cards.
+    #[test]
+    fn cards_list_cursor_returns_the_next_page() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let handlers = handlers(&gateway);
+        let create = handlers.get("cards.create").unwrap();
+        for i in 0..3 {
+            create(
+                "cards.create",
+                &serde_json::json!({
+                    "name": format!("Card {i}"),
+                    "document": serde_json::json!({ "name": format!("Card {i}") }),
+                }),
+            )
+            .unwrap();
+        }
+        let list = handlers.get("cards.list").unwrap();
+        let first = list("cards.list", &serde_json::json!({ "limit": 2 })).unwrap();
+        assert_eq!(first["cards"].as_array().unwrap().len(), 2);
+        assert_eq!(first["truncated"], true);
+        let second = list(
+            "cards.list",
+            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+        )
+        .unwrap();
+        assert_eq!(second["cards"].as_array().unwrap().len(), 1);
+        assert_eq!(second["truncated"], false);
+        let first_ids: Vec<_> = first["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        let second_ids: Vec<_> = second["cards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(first_ids.len(), 2);
+        assert_eq!(second_ids.len(), 1);
+        assert!(!first_ids.contains(&second_ids[0]));
+    }
+
     #[test]
     fn cards_import_renames_on_collision() {
         let (gateway, _tmp) = isolated_gateway();
@@ -4681,6 +4781,75 @@ mod tests {
         assert_eq!(messages[0]["sessionId"], "h1");
         h("chat.history", &serde_json::json!({ "session_id": "" }))
             .expect_err("missing session_id must fail");
+    }
+
+    // Contract: chat.history uses the oldest returned createdAt as a cursor
+    // so a truncated newest page can be continued backwards in time.
+    #[test]
+    fn chat_history_cursor_returns_older_turns() {
+        let (gateway, _tmp) = isolated_gateway();
+        for content in ["first", "second", "third"] {
+            gateway.core.chat_send("hc", content).unwrap();
+        }
+        let handlers = handlers(&gateway);
+        let h = handlers.get("chat.history").unwrap();
+        let first = h("chat.history", &serde_json::json!({ "session_id": "hc", "limit": 2 })).unwrap();
+        assert_eq!(first["truncated"], true);
+        let messages = first["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[1]["content"], "third");
+        let cursor = messages[0]["createdAt"].as_i64().unwrap();
+        let second = h(
+            "chat.history",
+            &serde_json::json!({ "session_id": "hc", "limit": 2, "cursor": cursor }),
+        )
+        .unwrap();
+        let older = second["messages"].as_array().unwrap();
+        assert_eq!(older.len(), 1);
+        assert_eq!(older[0]["content"], "first");
+        assert_eq!(second["truncated"], false);
+    }
+
+    // A crafted cursor that matches many rows must not pin chat.history in
+    // its paging loop; the iteration cap reports truncation instead.
+    #[test]
+    fn chat_history_bounds_paging_when_a_cursor_repeats_created_at() {
+        let (gateway, _tmp) = isolated_gateway();
+        let db = gateway.core.db().unwrap();
+        // chat_send creates the session row (satisfying the FK) and gives us a
+        // real timestamp to repeat across the crafted rows.
+        let seed = gateway.core.chat_send("pinned", "seed").unwrap();
+        let shared_ts = seed.created_at;
+        let repo = anima_store::MessageRepo::new(db);
+        for i in 0..40 {
+            repo.insert(&anima_store::StoredMessage {
+                id: format!("pin-{i:02}"),
+                session_id: "pinned".to_string(),
+                role: "user".to_string(),
+                content: format!("turn-{i:02}"),
+                created_at: shared_ts,
+                metadata: serde_json::Value::Null,
+            })
+            .unwrap();
+        }
+        let handlers = handlers(&gateway);
+        let h = handlers.get("chat.history").unwrap();
+        let reply = h(
+            "chat.history",
+            &serde_json::json!({
+                "session_id": "pinned",
+                "limit": 2,
+                "cursor": shared_ts + 1,
+            }),
+        )
+        .unwrap();
+        assert_eq!(reply["truncated"], true);
+        let messages = reply["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 2);
+        // 10 iterations x (limit + 1) rows = 30 read: the seed plus
+        // turn-00..turn-28. Without the cap all 41 rows would be walked and
+        // the newest would instead be turn-39/turn-38.
+        assert_eq!(messages.last().unwrap()["content"], "turn-28");
     }
 
     #[test]
@@ -5195,6 +5364,44 @@ mod tests {
             "a huge limit clamps to RPC_MAX_LIMIT, above the row count here"
         );
         assert_eq!(clamped["truncated"], false);
+    }
+
+    // Contract: sessions.list honours an offset cursor so a truncated page can
+    // be continued without repeating rows.
+    #[test]
+    fn sessions_list_cursor_returns_the_next_page() {
+        let (gateway, _tmp) = isolated_gateway();
+        let repo = anima_store::SessionRepo::new(gateway.core.db().unwrap());
+        for i in 0..3 {
+            repo.create(&format!("s{i}"), "title").unwrap();
+        }
+        let handlers = handlers(&gateway);
+        let list = handlers.get("sessions.list").unwrap();
+        let first = list("sessions.list", &serde_json::json!({ "limit": 2 })).unwrap();
+        assert_eq!(first["sessions"].as_array().unwrap().len(), 2);
+        assert_eq!(first["truncated"], true);
+        let second = list(
+            "sessions.list",
+            &serde_json::json!({ "limit": 2, "cursor": 2 }),
+        )
+        .unwrap();
+        assert_eq!(second["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(second["truncated"], false);
+        let first_ids: Vec<_> = first["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap())
+            .collect();
+        let second_ids: Vec<_> = second["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(first_ids.len(), 2);
+        assert_eq!(second_ids.len(), 1);
+        assert!(!first_ids.contains(&second_ids[0]));
     }
 
     // Contract: `sessions.delete` removes the session and its messages through

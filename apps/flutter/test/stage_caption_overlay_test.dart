@@ -114,7 +114,46 @@ void main() {
       );
     });
 
-    test('malformed settings fall back to defaults; head aliases bottom', () {
+    test('the captions enabled switch hides the overlay independently', () {
+      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+        'enabled': false,
+        'docking': 'top',
+      });
+      expect(style.enabled, isFalse);
+      expect(style.isVisible, isFalse);
+      expect(
+        StageCaptionStyle.fromSettings(<String, dynamic>{'enabled': true})
+            .isVisible,
+        isTrue,
+      );
+      expect(
+        StageCaptionStyle.fromSettings(<String, dynamic>{'enabled': 'false'})
+            .enabled,
+        isTrue,
+        reason: 'a malformed switch must not hide captions',
+      );
+    });
+
+    test('the daemon enabled flag hides captions even when docking is set', () {
+      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+        'enabled': false,
+        'docking': 'bottom',
+        'opacity': 50,
+      });
+      expect(style.enabled, isFalse);
+      expect(style.isVisible, isFalse);
+      expect(style.alpha, 0.5);
+    });
+
+    test('a missing enabled flag leaves captions on', () {
+      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+        'docking': 'bottom',
+      });
+      expect(style.enabled, isTrue);
+      expect(style.isVisible, isTrue);
+    });
+
+    test('malformed and unimplemented docking values fall back to bottom', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{
         'docking': 'nonsense',
         'font_size': 'big',
@@ -123,12 +162,14 @@ void main() {
       });
       expect(style.docking, StageCaptionDocking.bottom);
       expect(style.scale, 1.0);
-      expect(style.alpha, 0.7);
-      expect(StageCaptionStyle.dockingFrom('head'), StageCaptionDocking.head);
-      expect(
-        const StageCaptionStyle(docking: StageCaptionDocking.head).isTop,
-        isFalse,
-      );
+      expect(style.alpha, 0.2, reason: 'the shared caption opacity default');
+      for (final value in <String>['head', 'nonsense']) {
+        expect(
+          StageCaptionStyle.dockingFrom(value),
+          StageCaptionDocking.bottom,
+          reason: '$value has no renderer in this client',
+        );
+      }
       expect(
         const StageCaptionStyle(docking: StageCaptionDocking.none).isVisible,
         isFalse,

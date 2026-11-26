@@ -267,4 +267,39 @@ void main() {
       expect(client.lastSettingsWritten, isNotNull);
     });
   });
+
+  testWidgets('settings.changed reloads the section from the daemon', (tester) async {
+    final client = FakeChatClient()
+      ..settingsToLoad = <String, dynamic>{
+        'language': 'en',
+        'disableTransitions': true,
+      };
+    addTearDown(client.dispose);
+    await tester.pumpWidget(screen(client));
+    await tester.pumpAndSettle();
+    expect(client.settingsLoads, 3);
+
+    // Another client changed `general`; the event carries no values, so the
+    // screen must re-read the authoritative blob.
+    client.settingsToLoad = <String, dynamic>{
+      'language': 'ja',
+      'disableTransitions': false,
+      'remoteSyncEnabled': true,
+    };
+    client.emitEvent(GatewayEventFrame(
+      topic: EventTopic.settingsChanged,
+      rawTopic: 'settings.changed',
+      data: <String, dynamic>{'section': 'general'},
+    ));
+    await tester.pumpAndSettle();
+    expect(client.settingsLoads, greaterThan(3));
+
+    await reveal(tester, 'Save general');
+    saveButton(tester, 'Save general').onPressed!();
+    await tester.pumpAndSettle();
+    final written = client.lastSettingsWritten;
+    expect(written, isNotNull);
+    expect(written!['language'], 'ja');
+    expect(written['remoteSyncEnabled'], true);
+  });
 }

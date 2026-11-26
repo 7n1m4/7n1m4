@@ -178,4 +178,60 @@ void main() {
     expect(store.entries, isEmpty);
     expect(find.text('No scenes yet'), findsOneWidget);
   });
+  testWidgets('tint stays available when the image picker is unavailable', (
+    tester,
+  ) async {
+    final store = StageSceneStore(storageDirectory: temp);
+    await tester.runAsync(store.load);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StageScenesScreen(
+          store: store,
+          imagePickerAvailable: false,
+          imagePicker: () async => throw StateError('no plugin'),
+        ),
+      ),
+    );
+    await _flush(tester);
+
+    expect(find.text('Add tint'), findsOneWidget);
+    expect(find.text('Add image'), findsNothing);
+
+    await tester.tap(find.text('Add tint'));
+    await _flush(tester);
+    expect(store.entries, hasLength(1));
+  });
+
+  test('each card keeps its own active scene across reloads', () async {
+    final store = StageSceneStore(storageDirectory: temp);
+    final first = await store.add(tint: '#111111');
+    final second = await store.add(tint: '#222222');
+
+    await store.activate(first.id, cardId: 'card-1');
+    await store.activate(second.id, cardId: 'card-2');
+
+    expect(store.activeId, isNull, reason: 'no global active scene');
+    expect(store.activeBackgroundFor('card-1').tint, 0xFF111111);
+    expect(store.activeBackgroundFor('card-2').tint, 0xFF222222);
+    expect(store.activeBackgroundFor('card-3'), StageBackground.none);
+    expect(store.activeBackground, StageBackground.none);
+
+    final reloaded = StageSceneStore(storageDirectory: temp);
+    await reloaded.load();
+    expect(reloaded.activeBackgroundFor('card-1').tint, 0xFF111111);
+    expect(reloaded.activeBackgroundFor('card-2').tint, 0xFF222222);
+
+    await reloaded.deactivate(cardId: 'card-1');
+    expect(reloaded.activeBackgroundFor('card-1'), StageBackground.none);
+    expect(reloaded.activeBackgroundFor('card-2').tint, 0xFF222222);
+  });
+
+  test('removing a scene clears the per-card selection that used it', () async {
+    final store = StageSceneStore(storageDirectory: temp);
+    final entry = await store.add(tint: '#ABCDEF');
+    await store.activate(entry.id, cardId: 'card-1');
+    expect(await store.remove(entry.id), isTrue);
+    expect(store.activeBackgroundFor('card-1'), StageBackground.none);
+  });
+
 }

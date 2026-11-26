@@ -54,6 +54,7 @@ enum EventTopic {
   tokenDelta('token.delta'),
   presenceChanged('presence.changed'),
   statusChanged('status.changed'),
+  settingsChanged('settings.changed'),
   unknown('');
 
   const EventTopic(this.wireName);

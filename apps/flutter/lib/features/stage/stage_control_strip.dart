@@ -37,11 +37,7 @@ class StageControlStrip extends StatelessWidget {
   final IconData Function(String id) iconFor;
 
   static IconData _defaultIcon(String id) => switch (id) {
-    'chat' => Icons.chat_bubble_outline,
-    'actor-characters' => Icons.people_outline,
-    'mic' => Icons.mic_none,
     'stage' => Icons.theater_comedy_outlined,
-    'stage-atmosphere' => Icons.image_outlined,
     'caption' => Icons.closed_caption_outlined,
     _ => Icons.circle_outlined,
   };

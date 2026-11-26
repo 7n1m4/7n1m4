@@ -7,6 +7,8 @@ export interface ProviderCatalogProvider {
   config: Record<string, any>
   validated: boolean
   validationBypassed: boolean
+  /** Last known daemon enabled flag; local-only rows default to enabled. */
+  enabled?: boolean
 }
 
 export const providersRepo = {

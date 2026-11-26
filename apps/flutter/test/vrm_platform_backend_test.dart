@@ -35,6 +35,8 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_anima_render/flutter_anima_render.dart';
+import 'package:anima_control/features/stage/model_runtime.dart';
+import 'package:anima_control/ui/model_stage.dart';
 
 /// Repository root: this file lives in `apps/flutter/test`. Under `flutter test`
 /// the cwd is the app root (`apps/flutter`), so the repo root is two levels up.
@@ -91,17 +93,28 @@ void main() {
     expect(pubspec, contains('linux:\n        pluginClass: $pluginClass'));
   });
 
-  test('the Windows and macOS hosts declare the same plugin class', () {
+  test('hosts without the plugin are not advertised as model renderers', () {
     final declared = _declaredPluginClasses();
-    expect(declared.keys.toSet(), <String>{'linux', 'windows', 'macos'});
-    expect(declared['windows'], declared['linux']);
-    expect(declared['macos'], declared['linux']);
+    expect(declared.keys.toSet(), <String>{'linux'});
 
     final windowsPlugin = _read('apps/flutter/windows/flutter/generated_plugins.cmake');
-    expect(windowsPlugin, contains('flutter_anima_render'));
+    expect(windowsPlugin, isNot(contains('flutter_anima_render')));
 
     final macosRegistrant = _read('apps/flutter/macos/Flutter/GeneratedPluginRegistrant.swift');
-    expect(macosRegistrant, contains('FlutterAnimaRenderPlugin'));
+    expect(macosRegistrant, isNot(contains('FlutterAnimaRenderPlugin')));
+
+    for (final kind in <ModelKind>[
+      ModelKind.vrm,
+      ModelKind.live2d,
+      ModelKind.mmd,
+      ModelKind.spine,
+    ]) {
+      expect(
+        modelKindSupported(TargetPlatform.macOS, kind),
+        isFalse,
+        reason: 'macOS has no registered renderer for ${kind.name}',
+      );
+    }
   });
 
   test('a kind whose platform never registered fails loudly, never fakes a texture', () async {
@@ -147,6 +160,30 @@ void main() {
     // The output page is pumped into the platform texture on a timer.
     expect(source, contains('mark_texture_frame_available'));
     expect(source, contains('g_timeout_add'));
+  });
+
+  test('only kinds with a registered platform backend are advertised', () {
+    const linuxChannels = <String>{
+      'org.moeru.airi/anima/model/vrm',
+    };
+    final advertised = supportedModelKinds(TargetPlatform.linux);
+    expect(advertised, <ModelKind>[ModelKind.vrm]);
+
+    for (final kind in advertised) {
+      expect(linuxChannels, contains(runtimeFor(kind).channelName));
+      expect(runtimeFor(kind).isAvailable, isTrue);
+    }
+    for (final kind in <ModelKind>[
+      ModelKind.live2d,
+      ModelKind.mmd,
+      ModelKind.spine,
+    ]) {
+      expect(
+        advertised,
+        isNot(contains(kind)),
+        reason: '${kind.name} has no Linux renderer',
+      );
+    }
   });
 
   test('a platform that mints the output id draws the real frame', () async {

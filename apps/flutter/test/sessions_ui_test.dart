@@ -15,11 +15,28 @@ import 'support/fakes.dart';
 
 class _SessionsUiClient extends FakeChatClient {
   final List<String> actions = <String>[];
+  final List<Map<String, dynamic>?> listPayloads = <Map<String, dynamic>?>[];
+  int listCalls = 0;
 
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     actions.add(action);
     if (action == 'sessions.list') {
+      listPayloads.add(payload);
+      listCalls++;
+      final cursor = payload?['cursor'] as int?;
+      if (cursor != null) {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'sessions': <Map<String, dynamic>>[
+              <String, dynamic>{'id': 'gamma', 'title': 'Gamma session'},
+            ],
+            'truncated': false,
+          },
+        );
+      }
       return RpcReply(
         action: action,
         ok: true,
@@ -28,6 +45,7 @@ class _SessionsUiClient extends FakeChatClient {
             <String, dynamic>{'id': 'alpha', 'title': 'Alpha session'},
             <String, dynamic>{'id': 'beta', 'title': 'Beta session'},
           ],
+          'truncated': true,
         },
       );
     }
@@ -79,5 +97,24 @@ void main() {
 
     expect(find.byType(ChatScreen), findsOneWidget);
     expect(client.actions, isNot(contains('sessions.delete')));
+  });
+  testWidgets('truncated sessions list offers a load-more page', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    final more = find.byKey(const Key('sessions-load-more'));
+    expect(more, findsOneWidget);
+
+    tester.widget<TextButton>(more).onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    expect(client.listPayloads.last?['cursor'], 2);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ListTile, 'Gamma session'), findsOneWidget);
+    expect(more, findsNothing);
   });
 }

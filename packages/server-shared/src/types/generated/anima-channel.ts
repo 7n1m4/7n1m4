@@ -298,7 +298,9 @@ TokenDeltaData |
 /**  A `presence.changed` transition. */
 PresenceChangedData |
 /**  A `status.changed` health update. */
-StatusChangedData;
+StatusChangedData |
+/**  A `settings.changed` section update. */
+SettingsChangedData;
 
 /**  Reply of `event.subscribe` / `event.unsubscribe`: the resulting topic set. */
 export type EventSubscriptionReply = {
@@ -322,7 +324,9 @@ export type EventTopic =
 /**  A presence/connectivity transition. */
 "presence.changed" |
 /**  Coarse, secret-free core health change. */
-"status.changed";
+"status.changed" |
+/**  A settings section changed (client should reload that section). */
+"settings.changed";
 
 /**  `data` payload of a `gateway.auth` reply. */
 export type GatewayAuthReply = {
@@ -746,6 +750,21 @@ export type SessionMediaScrubRequest = {
 	createBackup: boolean,
 };
 
+/**
+ *  Payload of a `settings.changed` event: the section whose blob changed.
+ *
+ *  Carries no values — a client must re-read the section through
+ *  `settings.get` so it cannot cache a stale snapshot from the event.
+ */
+export type SettingsChangedData = {
+	/**  Settings section name accepted by `settings.get`/`settings.set`. */
+	section: string,
+	/**  Monotonic publication sequence (stamped by the bus). */
+	seq: number,
+	/**  Producer timestamp, unix epoch milliseconds (stamped by the bus). */
+	ts_ms: number,
+};
+
 /**  `data` payload of a `settings.get` reply. */
 export type SettingsGetReply = {
 	/**  Settings section name. */
@@ -815,6 +834,12 @@ export type TokenDeltaData = {
 	seq: number,
 	/**  Producer timestamp, unix epoch milliseconds (stamped by the bus). */
 	ts_ms: number,
+	/**
+	 *  Terminal reason of the turn: `complete`, `cancelled` or `error`.
+	 *  Absent on non-final deltas; absent on a final frame from an old daemon
+	 *  means `complete`. Clients must not speak `cancelled`/`error` turns.
+	 */
+	reason?: string | null,
 };
 
 /**  Reply payload for `vault.archive.apply`. */

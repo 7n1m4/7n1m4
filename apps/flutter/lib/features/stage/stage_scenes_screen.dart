@@ -7,9 +7,11 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'model_failure.dart';
+import 'stage_background.dart';
 import 'stage_scene_manager.dart';
 
 /// Returns a chosen image path, or null when the user cancels. Injected so
@@ -20,12 +22,27 @@ class StageScenesScreen extends StatefulWidget {
   const StageScenesScreen({
     super.key,
     required this.store,
+    this.cardId,
     this.imagePicker = _pickImage,
+    this.imagePickerAvailable,
     this.onChanged,
   });
 
   final StageSceneStore store;
+
+  /// Card whose scene is being edited; null edits the library-wide default.
+  /// One card's choice never overwrites another's.
+  final String? cardId;
   final StageImagePicker imagePicker;
+
+  /// Whether the host registers a native file picker plugin. Linux and
+  /// Windows builds do not; tint scenes remain available there.
+  final bool? imagePickerAvailable;
+
+  bool get _canPickImage =>
+      imagePickerAvailable ??
+      const <TargetPlatform>{TargetPlatform.macOS, TargetPlatform.android, TargetPlatform.iOS}
+          .contains(defaultTargetPlatform);
 
   /// Notified after every successful library mutation so a hosting stage can
   /// re-read the active background.
@@ -115,23 +132,36 @@ class _StageScenesScreenState extends State<StageScenesScreen> {
                         label: const Text('Add tint'),
                       ),
                       const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => unawaited(_mutate(() async {
-                                  final path = await widget.imagePicker();
-                                  if (path == null || path.isEmpty) return null;
-                                  return widget.store.add(imagePath: path);
-                                })),
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
-                        label: const Text('Add image'),
-                      ),
+                      if (widget._canPickImage)
+                        FilledButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => unawaited(_mutate(() async {
+                                    final path = await widget.imagePicker();
+                                    if (path == null || path.isEmpty) {
+                                      return null;
+                                    }
+                                    return widget.store.add(imagePath: path);
+                                  })),
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                          label: const Text('Add image'),
+                        ),
                       const SizedBox(width: 8),
                       TextButton(
-                        onPressed: _busy || widget.store.activeId == null
+                        onPressed: _busy ||
+                                (widget.cardId == null
+                                    ? widget.store.activeId == null
+                                    : widget.store.activeBackgroundFor(
+                                              widget.cardId,
+                                            ) ==
+                                        StageBackground.none)
                             ? null
                             : () => unawaited(
-                                  _mutate(widget.store.deactivate),
+                                  _mutate(
+                                    () => widget.store.deactivate(
+                                      cardId: widget.cardId,
+                                    ),
+                                  ),
                                 ),
                         child: const Text('Clear active'),
                       ),
@@ -155,7 +185,10 @@ class _StageScenesScreenState extends State<StageScenesScreen> {
                             itemCount: widget.store.entries.length,
                             itemBuilder: (context, index) {
                               final entry = widget.store.entries[index];
-                              final active = widget.store.activeId == entry.id;
+                              final active = (widget.cardId == null
+                                      ? widget.store.activeId
+                                      : widget.store.activeFor(widget.cardId)) ==
+                                  entry.id;
                               return ListTile(
                                 key: ValueKey<String>(entry.id),
                                 leading: Icon(
@@ -176,7 +209,7 @@ class _StageScenesScreenState extends State<StageScenesScreen> {
                                             ? null
                                             : () => unawaited(_mutate(
                                                   () => widget.store
-                                                      .activate(entry.id),
+                                                      .activate(entry.id, cardId: widget.cardId),
                                                 )),
                                         child: const Text('Activate'),
                                       ),

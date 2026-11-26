@@ -282,6 +282,24 @@ fn run(gateway_enabled: bool) {
     // One clone of the gateway-owned publisher for the awareness loop. It
     // shares the bus and dedupe state with every bind and D-Bus handler.
     let publisher = gateway.publisher();
+    // Settings are written by several clients; publish a section-only notice
+    // so an open settings screen can reload instead of saving stale fields.
+    {
+        if let Some(mut core_events) = core_service.subscribe_core_events() {
+            let event_publisher = publisher.clone();
+            std::thread::spawn(move || {
+                while let Ok(event) = core_events.blocking_recv() {
+                    if let anima_core::CoreEvent::SettingsChanged { key } = event {
+                        let section = key
+                            .strip_prefix("settings/")
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or(&key);
+                        event_publisher.settings_changed(section);
+                    }
+                }
+            });
+        }
+    }
 
     let mut debounce: HashMap<(String, String), u64> = HashMap::new();
     let mut rate_limited_drops: u64 = 0;

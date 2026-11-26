@@ -44,13 +44,22 @@ LipSyncController? _localLipSync() {
 
 /// Speak completed assistant turns from the daemon event lane. No frames are
 /// produced until a real turn arrives and Piper yields real PCM.
-void _speakCompletedTurns(DaemonClient client, LipSyncController controller) {
+void _speakCompletedTurns(DaemonClient client, LipSyncController controller) =>
+    speakCompletedTurns(client, controller);
+
+/// Testable seam for the token.delta -> local TTS bridge. A terminal frame
+/// carries `reason: complete|cancelled|error`. Only a successful turn is
+/// spoken: cancelled and failed replies must never become audio. An absent
+/// reason is treated as complete so an older daemon without the field keeps
+/// working; intermediate deltas are buffered until `final: true`.
+void speakCompletedTurns(DaemonClient client, LipSyncController controller) {
   final buffer = StringBuffer();
   client.onEvent((event) {
     if (event.topic != EventTopic.tokenDelta) return;
     final delta = event.data['delta'];
     if (delta is String && delta.isNotEmpty) buffer.write(delta);
     if (event.data['final'] != true) return;
+    final reason = event.data['reason'];
     final text = buffer.toString().trim();
     buffer.clear();
     if (reason != null && reason != 'complete') return;

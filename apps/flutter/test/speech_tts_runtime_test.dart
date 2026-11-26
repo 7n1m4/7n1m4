@@ -12,7 +12,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/main.dart' show speakCompletedTurns;
 import 'package:anima_control/speech/speech.dart';
+import 'package:anima_control/ui/lip_sync_controller.dart';
+
+import 'support/fakes.dart';
 
 /// Builds a valid 16-bit PCM WAVE file — the exact artifact the real piper CLI
 /// writes to `--output_file`. Only file bytes are synthesized; the samples are
@@ -268,6 +273,54 @@ void main() {
     });
   });
 
+  group('token.delta terminal reason gates local TTS', () {
+    for (final entry in <String, bool>{
+      'complete': true,
+      'cancelled': false,
+      'error': false,
+    }.entries) {
+      test('reason=${entry.key} speaks=${entry.value}', () async {
+        final client = FakeChatClient();
+        final engine = _RecordingEngine();
+        final controller = LipSyncController(actorId: 'pet', engine: engine);
+        speakCompletedTurns(client, controller);
+        client.emitEvent(tokenDelta(delta: 'hello'));
+        client.emitEvent(tokenDelta(
+          delta: '',
+          isFinal: true,
+          reason: entry.key,
+        ));
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.spoken, entry.value ? <String>['hello'] : isEmpty);
+        controller.dispose();
+      });
+    }
+
+    test('unknown terminal reason is never spoken', () async {
+      final client = FakeChatClient();
+      final engine = _RecordingEngine();
+      final controller = LipSyncController(actorId: 'pet', engine: engine);
+      speakCompletedTurns(client, controller);
+      client.emitEvent(tokenDelta(delta: 'hello'));
+      client.emitEvent(tokenDelta(delta: '', isFinal: true, reason: 'mystery'));
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.spoken, isEmpty);
+      controller.dispose();
+    });
+
+    test('legacy terminal frame without reason is still spoken', () async {
+      final client = FakeChatClient();
+      final engine = _RecordingEngine();
+      final controller = LipSyncController(actorId: 'pet', engine: engine);
+      speakCompletedTurns(client, controller);
+      client.emitEvent(tokenDelta(delta: 'hello'));
+      client.emitEvent(tokenDelta(delta: '', isFinal: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.spoken, <String>['hello']);
+      controller.dispose();
+    });
+  });
+
   group('Option B RMS correctness (negative controls)', () {
     test('correct levels differ from a wrong 100ms window and from raw means',
         () async {
@@ -387,6 +440,27 @@ class _RateAfterSynthesisEngine extends TtsEngine {
       ...List<double>.filled(5, 0.5),
       ...List<double>.filled(3, 0.25),
     ]);
+  }
+
+  @override
+  void dispose() {}
+}
+
+/// Recording engine: only the text passed to the public [TtsEngine] boundary
+/// is observed; samples are real, deterministic PCM from the test fixture.
+class _RecordingEngine extends TtsEngine {
+  final List<String> spoken = <String>[];
+
+  @override
+  String get id => 'recording-test';
+
+  @override
+  int get sampleRate => 100;
+
+  @override
+  Future<Float32List> synthesize(String text) async {
+    spoken.add(text);
+    return Float32List.fromList(<double>[0.5, 0.5]);
   }
 
   @override

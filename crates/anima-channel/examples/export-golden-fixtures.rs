@@ -112,6 +112,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 final_: false,
                 seq: 5,
                 ts_ms: 1_700_000_000_900,
+                reason: None,
             }),
         ),
         (
@@ -124,6 +125,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                 final_: true,
                 seq: 6,
                 ts_ms: 1_700_000_001_000,
+                reason: Some("complete".into()),
             }),
         ),
         (

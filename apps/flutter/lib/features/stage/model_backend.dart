@@ -107,10 +107,14 @@ class ModelBackendRegistry {
   /// so a blocked kind fails loudly instead of throwing a missing-key error.
   factory ModelBackendRegistry.fromRuntimes({
     ModelBackend Function(ModelRuntimeInfo info)? create,
+    Set<ModelKind>? supportedKinds,
   }) {
     final backends = <ModelKind, ModelBackend>{};
     for (final info in kModelRuntimes) {
-      final blocker = info.blocker;
+      final blocker = info.blocker ??
+          (supportedKinds != null && !supportedKinds.contains(info.kind)
+              ? ModelRuntimeBlocker.missingRuntime
+              : null);
       backends[info.kind] = blocker == null
           ? create?.call(info) ??
                 UnavailableModelBackend(

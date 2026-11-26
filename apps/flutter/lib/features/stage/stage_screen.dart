@@ -12,6 +12,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';
@@ -41,6 +42,8 @@ class StageScreen extends StatefulWidget {
     this.background,
     this.captionStyle,
     this.stripState,
+    this.render,
+    this.paused,
   });
 
   final DaemonClient client;
@@ -73,6 +76,13 @@ class StageScreen extends StatefulWidget {
   /// Control-strip host state; defaults to the platform defaults.
   final StageControlStripState? stripState;
 
+  /// Client-local render state shared with the native surface. The shell owns
+  /// it so hidden stages can be paused without rebuilding the widget.
+  final StageRenderState? render;
+
+  /// Stop the ambient ticker while this stage is hidden in an IndexedStack.
+  final bool? paused;
+
   @override
   State<StageScreen> createState() => _StageScreenState();
 }
@@ -91,16 +101,19 @@ class _StageScreenState extends State<StageScreen> {
     _backends =
         widget.backends ??
         ModelBackendRegistry.fromRuntimes(
+          supportedKinds: supportedModelKinds(defaultTargetPlatform).toSet(),
           create: (ModelRuntimeInfo info) =>
               MethodChannelModelBackend(info.kind, info.channelName),
         );
     _resolver = widget.resolver ??
         ModelAssetResolver(cacheDirectoryProvider: widget.cacheDirectoryProvider);
-    _render = StageRenderState(
-      background: widget.background ?? StageBackground.none,
-      captions: widget.captionStyle ?? const StageCaptionStyle(),
-      actorId: widget.actorId,
-    );
+    _render = widget.render ??
+        StageRenderState(
+          background: widget.background ?? StageBackground.none,
+          captions: widget.captionStyle ?? const StageCaptionStyle(),
+          actorId: widget.actorId,
+          paused: widget.paused ?? false,
+        );
     _strip = widget.stripState ?? StageControlStripState();
     _render.addListener(_onRenderChanged);
     _binding = StageRenderStateBinding(client: widget.client, state: _render);
@@ -117,6 +130,12 @@ class _StageScreenState extends State<StageScreen> {
     }
 
     if (oldWidget.actorId != widget.actorId) _render.setActorId(widget.actorId);
+    if (widget.paused != null && oldWidget.paused != widget.paused) {
+      _render.setPaused(widget.paused!);
+    }
+    if (!identical(oldWidget.render, widget.render) && widget.render != null) {
+      _render = widget.render!;
+    }
     if (oldWidget.background != widget.background) {
       _render.setBackground(widget.background ?? StageBackground.none);
     }
@@ -135,7 +154,7 @@ class _StageScreenState extends State<StageScreen> {
   @override
   void dispose() {
     _render.removeListener(_onRenderChanged);
-    _render.dispose();
+    if (widget.render == null) _render.dispose();
     _frameSubscription?.cancel();
     _binding?.dispose();
     super.dispose();
@@ -146,15 +165,12 @@ class _StageScreenState extends State<StageScreen> {
   }
 
   void _onStripAction(StageStripAction action) {
-    // The strip reports intent; the daemon owns the state behind it. Only the
-    // transient host state is mutated locally.
-    switch (action.buttonId) {
-      case '__expand':
-        _strip.setCollapsed(false);
-      default:
-        _strip.togglePanel(action.buttonId);
+    // Only the expand notch has a local effect; the rest is reported intent
+    // for a future daemon-owned panel dispatch.
+    if (action.buttonId == '__expand') {
+      _strip.setCollapsed(false);
+      setState(() {});
     }
-    setState(() {});
   }
 
   @override
@@ -165,12 +181,12 @@ class _StageScreenState extends State<StageScreen> {
       model: ModelStage(
         client: widget.client,
         cardId: widget.cardId,
+        render: _render,
         backends: _backends,
         resolver: _resolver,
         cacheDirectoryProvider: widget.cacheDirectoryProvider,
         frames: widget.frames,
         actorId: widget.actorId,
-        render: _render,
       ),
     );
   }

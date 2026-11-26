@@ -156,15 +156,18 @@ GatewayEventFrame tokenDelta({
   String messageId = '',
   required String delta,
   bool isFinal = false,
+  String? reason,
 }) {
+  final data = <String, dynamic>{
+    'session_id': sessionId,
+    'message_id': messageId,
+    'delta': delta,
+    'final': isFinal,
+  };
+  if (reason != null) data['reason'] = reason;
   return GatewayEventFrame(
     topic: EventTopic.tokenDelta,
     rawTopic: 'token.delta',
-    data: <String, dynamic>{
-      'session_id': sessionId,
-      'message_id': messageId,
-      'delta': delta,
-      'final': isFinal,
-    },
+    data: data,
   );
 }

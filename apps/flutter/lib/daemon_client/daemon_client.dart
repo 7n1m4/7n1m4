@@ -415,19 +415,22 @@ class DaemonClient {
     }
 
     // Subscriptions are per-socket: a reconnect lands on a fresh peer with no
-    // topics, so re-opt in to token.delta on every authenticated connection.
-    unawaited(_subscribeTokenDeltas());
+    // topics, so re-opt in to every topic this client consumes.
+    unawaited(_subscribeEvents());
   }
 
   /// Best-effort re-subscription after auth (initial connect or reconnect).
   /// A daemon without event support degrades to an error on the status stream;
   /// chat itself remains usable.
-  Future<void> _subscribeTokenDeltas() async {
+  Future<void> _subscribeEvents() async {
     try {
       final reply = await call(
         'event.subscribe',
         payload: <String, dynamic>{
-          'topics': <String>['token.delta'],
+          'topics': <String>[
+            'token.delta',
+            EventTopic.settingsChanged.wireName,
+          ],
         },
       );
       if (!reply.ok && _wantsConnection) {

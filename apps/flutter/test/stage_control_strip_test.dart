@@ -13,9 +13,9 @@ void main() {
     test('active buttons follow the daemon catalog order', () {
       final state = StageControlStripState();
       expect(state.activeButtons, <String>['stage', 'caption']);
-      state.toggle('chat');
-      expect(state.activeButtons, <String>['chat', 'stage', 'caption']);
-      state.toggle('chat');
+      state.toggle('stage');
+      expect(state.activeButtons, <String>['caption']);
+      state.toggle('stage');
       expect(state.activeButtons, <String>['stage', 'caption']);
     });
 
@@ -77,6 +77,11 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  test('the catalog only contains controls the stage can actually perform', () {
+    expect(kStageStripCatalog, <String>['stage', 'caption']);
+    expect(kDefaultStageStripButtons, <String>{'stage', 'caption'});
   });
 
   group('StageControlStrip widget', () {

@@ -14,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/stage/stage_background.dart';
+import 'package:anima_control/features/stage/stage_caption_overlay.dart';
+import 'package:anima_control/features/stage/stage_overlay_state.dart';
 import 'package:anima_control/features/stage/stage_scene_manager.dart';
 import 'package:anima_control/features/stage/stage_screen.dart';
 import 'package:anima_control/l10n/app_localizations.dart';
@@ -218,6 +220,123 @@ void main() {
     final stage = tester.widget<StageScreen>(find.byType(StageScreen));
     expect(stage.cardId, isNull);
     expect(find.text('No display model'), findsOneWidget);
+  });
+
+  testWidgets('the stage pauses its ticker when the tab is hidden', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[]);
+    addTearDown(client.dispose);
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).paused,
+      isFalse,
+    );
+    await _leaveStage(tester);
+    final stageContext = tester.element(
+      find.byType(StageScreen, skipOffstage: false),
+    );
+    expect(TickerMode.of(stageContext), isFalse);
+  });
+
+  testWidgets('the stage uses the active scene for the selected card', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[_card('card-1')]);
+    addTearDown(client.dispose);
+    final store = StageSceneStore(storageDirectory: temp);
+    final entry = await tester.runAsync(() => store.add(tint: '#123456'));
+    await tester.runAsync(() => store.activate(entry!.id, cardId: 'card-1'));
+
+    final loaded = Completer<void>();
+    await _pumpShell(
+      tester,
+      client,
+      sceneStorageDirectory: temp,
+      sceneLibraryLoader: (store) async {
+        await tester.runAsync(store.load);
+        loaded.complete();
+      },
+    );
+    await loaded.future;
+    await tester.pump();
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).background?.tint,
+      0xFF123456,
+    );
+  });
+
+  testWidgets('daemon caption settings reach the stage', (tester) async {
+    final client = _CardClient(<Map<String, dynamic>>[_card('card-1')]);
+    addTearDown(client.dispose);
+    client.onCall = (action, payload) {
+      if (action == 'settings.get' && payload?['section'] == 'captions') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'settings': <String, dynamic>{
+              'enabled': false,
+              'fontSize': 150,
+              'opacity': 20,
+              'docking': 'top',
+            },
+          },
+        );
+      }
+      final found = client.cards.where((card) => card['id'] == payload?['id']);
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'card': found.isEmpty ? null : found.first,
+          'cards': client.cards,
+        },
+      );
+    };
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+
+    final stage = tester.widget<StageScreen>(find.byType(StageScreen));
+    expect(stage.captionStyle?.enabled, isFalse);
+    expect(stage.captionStyle?.scale, 1.5);
+    expect(stage.captionStyle?.alpha, closeTo(0.2, 1e-9));
+    expect(stage.captionStyle?.docking, StageCaptionDocking.top);
+    expect(find.byType(StageCaptionOverlay), findsNothing);
+  });
+
+  testWidgets('caption settings are refreshed when re-entering the stage', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[]);
+    addTearDown(client.dispose);
+    var captured = <String, dynamic>{'docking': 'bottom'};
+    client.onCall = (action, payload) {
+      if (action == 'settings.get' && payload?['section'] == 'captions') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{'settings': captured},
+        );
+      }
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+    captured = <String, dynamic>{'docking': 'top', 'enabled': true};
+    await _leaveStage(tester);
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).captionStyle?.docking,
+      StageCaptionDocking.top,
+    );
   });
 
   testWidgets('the scene library is loaded at startup', (tester) async {
