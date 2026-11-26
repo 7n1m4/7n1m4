@@ -20,6 +20,7 @@ dbus = { workspace = true }
 dirs = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 anima-a11y = { path = "../anima-a11y" }
 anima-acp = { path = "../anima-acp" }
 anima-channel = { path = "../anima-channel" }

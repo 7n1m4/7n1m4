@@ -27,6 +27,7 @@ mod gateway;
 mod gateway_contract_tests;
 mod logging;
 mod observe;
+mod provider_validation;
 mod redact;
 mod ring;
 mod screen;
