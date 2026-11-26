@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
@@ -603,6 +604,61 @@ void main() {
         find.byKey(const ValueKey<String>('settings-search-result-ghost')),
         findsNothing,
       );
+    });
+
+    testWidgets('Enter selects the first result and clears the field',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final client = hydratedClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      final field = find.byKey(const Key('settings-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'kira');
+      await tester.pumpAndSettle();
+
+      final handled = await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(handled, isTrue);
+      expect(
+        tester.widget<CardsScreen>(find.byType(CardsScreen)).initialCardId,
+        'c1',
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('settings-search-field'), skipOffstage: false),
+            )
+            .controller!
+            .text,
+        isEmpty,
+        reason: 'selection clears the query like the web reference',
+      );
+    });
+
+    testWidgets('a held Enter repeat does not submit a result', (tester) async {
+      final client = hydratedClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      final field = find.byKey(const Key('settings-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'kira');
+      await tester.pumpAndSettle();
+      expect(find.byType(CardsScreen), findsNothing);
+
+      final handled = await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(handled, isFalse);
+      expect(find.byType(CardsScreen), findsNothing,
+          reason: 'a held key never navigates twice');
     });
   });
 }

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -86,6 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Map<String, dynamic>> _providers = const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
   String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   bool _searchFocused = false;
   bool _settingsBusy = false;
@@ -132,6 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _statusSub?.cancel();
     _searchFocus.removeListener(_onSearchFocusChanged);
     _searchFocus.dispose();
+    _searchController.dispose();
     _language.dispose();
     _tint.dispose();
     super.dispose();
@@ -140,6 +143,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _onSearchFocusChanged() {
     if (!mounted || _searchFocus.hasFocus == _searchFocused) return;
     setState(() => _searchFocused = _searchFocus.hasFocus);
+  }
+
+  /// The current result slice, shared by the dropdown and key handling so a
+  /// keyboard selection resolves against exactly what the user can see.
+  List<SettingsSearchItem> _currentResults() => SettingsSearchIndex.build(
+        providers: _providers,
+        cards: _cards,
+      ).search(_searchQuery);
+
+  static bool _isApplePlatform() =>
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Screen-wide key handling: Ctrl/Cmd+K focuses search, and while the field
+  /// is focused Enter selects the first visible result and Escape clears it.
+  ///
+  /// Only [KeyDownEvent] starts a fresh press; [KeyRepeatEvent] (a held key)
+  /// is ignored so a long press cannot submit or re-trigger the shortcut.
+  KeyEventResult _handleSettingsKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.keyK &&
+        (_isApplePlatform()
+            ? HardwareKeyboard.instance.isMetaPressed
+            : HardwareKeyboard.instance.isControlPressed)) {
+      _searchFocus.requestFocus();
+      // Consume the chord so the 'k' is never inserted into the field.
+      return KeyEventResult.handled;
+    }
+
+    if (_searchFocus.hasFocus) {
+      if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+        final results = _currentResults();
+        if (results.isNotEmpty) _openSearchResult(results.first);
+        return KeyEventResult.handled;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        _closeSearch();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _closeSearch() {
+    _searchFocus.unfocus();
+    _searchController.clear();
+    setState(() => _searchQuery = '');
   }
 
   Future<void> _loadSections() async {
@@ -344,6 +396,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _openSearchResult(SettingsSearchItem item) {
     _searchFocus.unfocus();
+    _searchController.clear();
     setState(() => _searchQuery = '');
     switch (item.kind) {
       case SettingsSearchKind.catalog:
@@ -396,13 +449,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final results = SettingsSearchIndex.build(
-      providers: _providers,
-      cards: _cards,
-    ).search(_searchQuery);
+    final results = _currentResults();
     final children = <Widget>[
       TextField(
         key: const Key('settings-search-field'),
+        controller: _searchController,
         focusNode: _searchFocus,
         decoration: const InputDecoration(
           hintText: 'Search settings, cards, providers...',
@@ -471,9 +522,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
     ];
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: children,
+    return Focus(
+      // Keep a focus node in this screen's subtree even before the user taps
+      // the field, so the shortcut works from a freshly opened settings hub.
+      autofocus: true,
+      onKeyEvent: _handleSettingsKey,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: children,
+      ),
     );
   }
 

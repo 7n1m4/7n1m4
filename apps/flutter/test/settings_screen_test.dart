@@ -2,7 +2,9 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
@@ -612,6 +614,167 @@ void main() {
     expect(written, isNotNull);
     expect(written!['language'], 'ja');
     expect(written['remoteSyncEnabled'], true);
+  });
+
+  group('settings search keyboard shortcuts', () {
+    bool searchFocused(WidgetTester tester) =>
+        tester
+            .widget<TextField>(find.byKey(const Key('settings-search-field')))
+            .focusNode!
+            .hasFocus;
+
+    String searchText(WidgetTester tester) =>
+        tester
+            .widget<TextField>(find.byKey(const Key('settings-search-field')))
+            .controller!
+            .text;
+
+    /// Returns whether the framework consumed the chord — the direct proof
+    /// that the shortcut handled (prevented default) the key, independent of
+    /// text contents (WidgetTester never inserts characters from key events).
+    Future<bool> chord(
+      WidgetTester tester,
+      LogicalKeyboardKey modifier,
+      LogicalKeyboardKey key,
+    ) async {
+      await tester.sendKeyDownEvent(modifier);
+      final handled = await tester.sendKeyEvent(key);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      return handled;
+    }
+
+    testWidgets('Ctrl+K focuses search without typing the k', (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      expect(searchFocused(tester), isFalse);
+      final handled =
+          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+
+      expect(handled, isTrue, reason: 'the chord is consumed (preventDefault)');
+      expect(searchFocused(tester), isTrue);
+      expect(searchText(tester), isEmpty,
+          reason: 'the chord is consumed instead of inserting a character');
+      expect(find.text('Search Results'), findsOneWidget);
+    });
+
+    testWidgets('Ctrl+K moves focus from another field without typing into it',
+        (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      final language = find.widgetWithText(TextField, 'Language code');
+      await reveal(tester, 'Save general'); // materializes the general card
+      await tester.ensureVisible(language);
+      await tester.pumpAndSettle();
+      await tester.tap(language);
+      await tester.enterText(language, 'en');
+      await tester.pumpAndSettle();
+      // Focusing search scrolls it back into view, so hold the controller
+      // instead of re-finding a widget that may be offstage afterwards.
+      final languageController = tester.widget<TextField>(language).controller!;
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(of: language, matching: find.byType(EditableText)),
+            )
+            .focusNode
+            .hasFocus,
+        isTrue,
+        reason: 'the test starts with a different field focused',
+      );
+
+      final handled =
+          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+
+      expect(handled, isTrue,
+          reason: 'the chord is consumed while a different field has focus');
+      expect(
+        languageController.text,
+        'en',
+        reason: 'the consumed chord never inserts k into the focused field',
+      );
+      expect(searchFocused(tester), isTrue);
+      expect(searchText(tester), isEmpty);
+    });
+
+    testWidgets('Cmd+K focuses search on Apple platforms', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      final handled =
+          await chord(tester, LogicalKeyboardKey.meta, LogicalKeyboardKey.keyK);
+
+      expect(handled, isTrue, reason: 'Cmd+K is consumed on Apple platforms');
+      expect(searchFocused(tester), isTrue,
+          reason: 'Apple platforms bind the shortcut to Cmd+K');
+      expect(searchText(tester), isEmpty);
+    });
+
+    testWidgets('the non-platform modifier does not focus search',
+        (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      final handled =
+          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+
+      expect(handled, isFalse,
+          reason: 'the wrong-platform chord is not consumed');
+      expect(searchFocused(tester), isFalse,
+          reason: 'Ctrl+K is not the Apple binding');
+      expect(find.text('Search Results'), findsNothing);
+    });
+
+    testWidgets('a held Ctrl+K repeat is ignored', (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      final handled = await tester.sendKeyRepeatEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pumpAndSettle();
+
+      expect(handled, isFalse, reason: 'repeat events are not consumed');
+      expect(searchFocused(tester), isFalse);
+    });
+
+    testWidgets('Escape closes suggestions and clears the query',
+        (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+
+      final field = find.byKey(const Key('settings-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'connection');
+      await tester.pumpAndSettle();
+      expect(searchText(tester), 'connection');
+      expect(find.text('Search Results'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(searchText(tester), isEmpty);
+      expect(searchFocused(tester), isFalse);
+      expect(find.text('Search Results'), findsNothing);
+    });
   });
 }
 
