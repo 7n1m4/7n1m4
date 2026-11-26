@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import '../../daemon_client/daemon_client.dart';
 import '../../speech/lip_sync_rms_data.dart';
 import 'model_expression.dart';
+import 'stage_atmosphere.dart';
 import 'stage_background.dart';
 
 /// One sentence-sync segment of an assistant turn (Vue `CaptionSegment`).
@@ -256,12 +257,14 @@ class StageRenderState extends ChangeNotifier {
     bool paused = false,
     String? actorId,
     StageIdleMotion idle = const StageIdleMotion(),
+    StageAtmosphere atmosphere = StageAtmosphere.none,
   }) : _background = background,
        _captions = captions,
        _showModel = showModel,
        _paused = paused,
        _actorId = actorId,
-       _idle = idle {
+       _idle = idle,
+       _atmosphere = atmosphere {
     _captionController.addListener(notifyListeners);
   }
 
@@ -269,6 +272,7 @@ class StageRenderState extends ChangeNotifier {
   StageCaptionStyle _captions;
   final StageCaptionController _captionController = StageCaptionController();
   StageIdleMotion _idle;
+  StageAtmosphere _atmosphere;
   bool _showModel;
   bool _paused;
   String? _actorId;
@@ -284,6 +288,10 @@ class StageRenderState extends ChangeNotifier {
   StageCaptionSnapshot get caption => _captionController.snapshot;
   StageCaptionController get captions => _captionController;
   StageIdleMotion get idle => _idle;
+
+  /// Client-local atmosphere preview selection. Defaults to `none`.
+  StageAtmosphere get atmosphere => _atmosphere;
+
   bool get showModel => _showModel;
   bool get paused => _paused;
   String? get actorId => _actorId;
@@ -333,6 +341,16 @@ class StageRenderState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Select the particle atmosphere for this client-local preview.
+  ///
+  /// Client-local only: the Vue store also writes the id to the active card
+  /// and to localStorage, but this client has no card-write verb and no daemon
+  /// field for atmosphere. Persisting the selection is a separate decision.
+  void setAtmosphere(StageAtmosphere atmosphere) {
+    _atmosphere = atmosphere;
+    notifyListeners();
+  }
+
   /// Restrict frames and cues to one actor (Vue multi-actor staging).
   void setActorId(String? value, {bool notify = true}) {
     _actorId = value;
@@ -377,6 +395,19 @@ class StageRenderState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drop turn-scoped render data when the socket drops: a half-written
+  /// caption, the latest cue and the latest RMS frame must not linger on a
+  /// disconnected stage. Client-owned settings (background, caption style,
+  /// model visibility, idle) survive. Sequence baselines stay intact so a
+  /// replayed frame or cue cannot resurrect stale data on the next connection.
+  void clearTransient() {
+    _cue = null;
+    _frame = null;
+    // `StageCaptionController.clear()` notifies through the listener installed
+    // in the constructor, so one notification covers the whole clear.
+    _captionController.clear();
+  }
+
   @override
   void dispose() {
     _captionController.removeListener(notifyListeners);
@@ -404,6 +435,7 @@ class StageRenderStateBinding {
     _statusSubscription = client.statusStream.listen((status) {
       final connected = status.state == DaemonConnectionState.connected;
       if (connected && !_wasConnected) _subscribe();
+      if (!connected && _wasConnected) _state.clearTransient();
       _wasConnected = connected;
     });
   }

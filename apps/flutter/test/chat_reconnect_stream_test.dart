@@ -22,6 +22,29 @@ import 'support/fakes.dart';
 
 final Finder _bubbles = find.byWidgetPredicate((widget) => widget is Card && widget.child is Padding);
 
+/// A `token.delta` carrying the bus `seq` and per-turn `index` fields that
+/// older fakes omit. These are the fields used to drop replayed frames.
+GatewayEventFrame sequencedDelta({
+  String messageId = 'm-1',
+  required String delta,
+  required int seq,
+  required int index,
+  bool isFinal = false,
+}) {
+  return GatewayEventFrame(
+    topic: EventTopic.tokenDelta,
+    rawTopic: 'token.delta',
+    data: <String, dynamic>{
+      'session_id': 's1',
+      'message_id': messageId,
+      'delta': delta,
+      'seq': seq,
+      'index': index,
+      'final': isFinal,
+    },
+  );
+}
+
 void main() {
   /// A screen whose session is already streaming when the test starts, the way
   /// a second client of the same session looks after it reconnects.
@@ -99,5 +122,50 @@ void main() {
     expect(_bubbles, findsNWidgets(3));
     expect(find.text('Hel'), findsOneWidget);
     expect(find.text('Hi'), findsOneWidget);
+  });
+
+  testWidgets('stale/duplicate deltas do not double text and a replayed final cannot end a new turn',
+      (tester) async {
+    final client = await streamingScreen(tester);
+
+    client.emitEvent(sequencedDelta(delta: 'Hel', seq: 10, index: 0));
+    client.emitEvent(sequencedDelta(delta: 'Hel', seq: 10, index: 0)); // replay
+    await tester.pump();
+    expect(find.text('Hel'), findsOneWidget);
+
+    client.emitEvent(sequencedDelta(delta: 'lo', seq: 11, index: 1));
+    client.emitEvent(sequencedDelta(delta: 'lo', seq: 10, index: 1)); // stale
+    await tester.pump();
+    expect(find.text('Hello'), findsOneWidget);
+    expect(find.text('Hel'), findsNothing);
+
+    // Terminal frames carry index 0 even after higher token indices; the
+    // higher seq still lets it finalize.
+    client.emitEvent(sequencedDelta(delta: '', seq: 12, index: 0, isFinal: true));
+    await tester.pump();
+    expect(find.text('Hello'), findsOneWidget);
+    expect(find.byIcon(Icons.send), findsOneWidget);
+
+    // A new turn starts. Replaying the old final must not close it.
+    client.emitEvent(
+      sequencedDelta(messageId: 'm-2', delta: 'New', seq: 13, index: 0),
+    );
+    await tester.pump();
+    expect(find.text('New'), findsOneWidget);
+
+    client.emitEvent(sequencedDelta(delta: '', seq: 12, index: 0, isFinal: true));
+    client.emitEvent(
+      sequencedDelta(messageId: 'm-2', delta: ' answer', seq: 14, index: 1),
+    );
+    await tester.pump();
+    expect(find.text('New answer'), findsOneWidget);
+    expect(find.text('answer'), findsNothing);
+
+    client.emitEvent(
+      sequencedDelta(messageId: 'm-2', delta: '', seq: 15, index: 0, isFinal: true),
+    );
+    await tester.pump();
+    expect(find.text('New answer'), findsOneWidget);
+    expect(find.byIcon(Icons.send), findsOneWidget);
   });
 }

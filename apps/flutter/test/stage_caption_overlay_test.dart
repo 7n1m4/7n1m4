@@ -6,8 +6,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/features/stage/model_expression.dart';
+import 'package:anima_control/features/stage/stage_background.dart';
 import 'package:anima_control/features/stage/stage_caption_overlay.dart';
 import 'package:anima_control/features/stage/stage_overlay_state.dart';
+import 'package:anima_control/speech/lip_sync_rms_data.dart';
+import 'support/fakes.dart';
 
 void main() {
   group('StageCaptionController', () {
@@ -276,5 +281,100 @@ void main() {
       expect(transform.transform, isA<Matrix4>());
       expect(transform.transform.getMaxScaleOnAxis(), closeTo(1.5, 1e-9));
     });
+  });
+
+  group('StageRenderStateBinding disconnect cleanup', () {
+    test(
+      'a mid-turn caption, cue and frame clear on disconnect while settings survive',
+      () async {
+        final client = FakeChatClient();
+        final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+          'docking': 'top',
+          'fontSize': 150,
+          'opacity': 40,
+        });
+        final background = StageBackground.tintFromHex('#123456');
+        final state = StageRenderState(
+          actorId: 'pet-1',
+          captions: style,
+          background: background,
+        );
+        final binding = StageRenderStateBinding(client: client, state: state);
+        addTearDown(state.dispose);
+        addTearDown(binding.dispose);
+        addTearDown(client.dispose);
+
+        client.emitStatus(DaemonConnectionState.connected);
+
+        // The caption and cue arrive on the daemon event lane; the frame comes
+        // from the local audio tap, as it does in the real stage.
+        client.emitEvent(tokenDelta(messageId: 'm1', delta: 'Hel'));
+        client.emitEvent(
+          GatewayEventFrame(
+            topic: EventTopic.emotionTag,
+            rawTopic: EventTopic.emotionTag.wireName,
+            data: <String, dynamic>{
+              'tag': 'happy',
+              'kind': 'emotion',
+              'intensity': 0.8,
+              'actor_id': 'pet-1',
+              'seq': 3,
+              'ts_ms': 1700000000003,
+            },
+          ),
+        );
+        expect(
+          state.applyFrame(
+            const LipSyncRmsData(
+              actorId: 'pet-1',
+              level: 0.6,
+              seq: 7,
+              tsMs: 1700000000007,
+            ),
+          ),
+          isTrue,
+        );
+
+        expect(state.caption.segments.single.text, 'Hel');
+        expect(state.cue?.tag, 'happy');
+        expect(state.frame?.seq, 7);
+
+        var notifications = 0;
+        state.addListener(() => notifications++);
+        client.emitStatus(DaemonConnectionState.disconnected);
+        // The fake's status stream is broadcast (async delivery).
+        await Future<void>.delayed(Duration.zero);
+
+        expect(notifications, 1, reason: 'one notification covers the clear');
+        expect(state.caption.isEmpty, isTrue);
+        expect(state.cue, isNull);
+        expect(state.frame, isNull);
+        expect(state.captionStyle, same(style));
+        expect(state.background, same(background));
+
+        // Dedupe baselines survive the clear: a replay cannot resurrect data.
+        expect(
+          state.applyFrame(
+            const LipSyncRmsData(actorId: 'pet-1', level: 0.9, seq: 7, tsMs: 1),
+          ),
+          isFalse,
+        );
+        expect(
+          state.applyCue(
+            const StageExpressionCue(
+              tag: 'happy',
+              kind: 'emotion',
+              intensity: 0.8,
+              actorId: 'pet-1',
+              seq: 3,
+              tsMs: 1,
+            ),
+          ),
+          isFalse,
+        );
+        expect(state.cue, isNull);
+        expect(state.frame, isNull);
+      },
+    );
   });
 }

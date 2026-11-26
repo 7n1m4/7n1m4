@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../connection/connection_error.dart';
 import '../../connection/connection_settings_screen.dart';
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class ConnectionsScreen extends StatelessWidget {
           initialData: client.snapshot,
           builder: (context, snapshot) {
             final status = snapshot.data ?? client.snapshot;
+            final error = status.error;
             return Card(
               color: AppTheme.surface,
               child: Padding(
@@ -33,10 +35,13 @@ class ConnectionsScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(status.state.name),
                     if (status.host != null) Text(status.host!),
-                    if (status.error != null) ...<Widget>[
+                    if (error != null) ...<Widget>[
                       const SizedBox(height: 8),
                       Text(
-                        status.error.toString(),
+                        userSafeConnectionError(
+                          error,
+                          context: 'connections:status',
+                        ),
                         style: TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
                     ],

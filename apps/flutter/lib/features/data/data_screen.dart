@@ -37,12 +37,22 @@ class _DataScreenState extends State<DataScreen> {
   /// The daemon accepts JSONL inside one WebSocket frame; leave room for the
   /// JSON-RPC envelope and the 4/3 base64 expansion of the decoded payload.
   static const int _maxImportBytes = (1024 * 1024 - 8192) * 3 ~/ 4;
+  /// Mirrors the daemon's `VAULT_ARCHIVE_DOMAINS` (gateway.rs): `providers`
+  /// carries API credentials and must never be offered for archive export.
   static const List<String> _archiveDomains = <String>[
     'characters',
     'chats',
     'memory',
     'backgrounds',
   ];
+  static const Map<String, String> _archiveDomainLabels = <String, String>{
+    'characters': 'Characters',
+    'chats': 'Chat sessions',
+    'memory': 'Memory',
+    'backgrounds': 'Backgrounds',
+  };
+  /// All domains are selected by default: existing exports stay unchanged.
+  final Set<String> _selectedArchiveDomains = _archiveDomains.toSet();
 
   @override
   void initState() {
@@ -194,14 +204,52 @@ class _DataScreenState extends State<DataScreen> {
     return cleaned.isEmpty ? 'session' : cleaned;
   }
 
+  void _toggleArchiveDomain(String domain, bool? selected) {
+    if (!_archiveDomains.contains(domain)) return;
+    setState(() {
+      if (selected == true) {
+        _selectedArchiveDomains.add(domain);
+      } else {
+        _selectedArchiveDomains.remove(domain);
+      }
+    });
+  }
+
+  /// Only report a size the daemon actually returned in `vault.status`.
+  static String? _reportedBytes(Map<String, dynamic>? stats, String domain) {
+    final value = stats?[domain];
+    if (value is! Map<String, dynamic>) return null;
+    final bytes = value['bytes'];
+    if (bytes is! num) return null;
+    return '${bytes.toInt()} B';
+  }
+
+  Widget _archiveDomainTile(String domain, Map<String, dynamic>? stats) {
+    final bytes = _reportedBytes(stats, domain);
+    return CheckboxListTile(
+      key: Key('data-archive-domain-$domain'),
+      dense: true,
+      value: _selectedArchiveDomains.contains(domain),
+      onChanged: _busy ? null : (bool? value) => _toggleArchiveDomain(domain, value),
+      title: Text(_archiveDomainLabels[domain] ?? domain),
+      secondary: bytes == null ? null : Text(bytes),
+    );
+  }
+
   Future<void> _exportVault() async {
+    // Order and membership come from the allowlist, never from raw UI state.
+    final domains = _archiveDomains.where(_selectedArchiveDomains.contains).toList();
+    if (domains.isEmpty) {
+      _fail('Select at least one vault domain to export.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
       _status = null;
     });
     try {
-      final archive = await widget.client.vaultArchiveCollect(_archiveDomains);
+      final archive = await widget.client.vaultArchiveCollect(domains);
       if (!mounted) return;
       final bytes = base64.decode(archive.archive);
       if (bytes.length > _maxArchiveBytes) {
@@ -465,11 +513,13 @@ class _DataScreenState extends State<DataScreen> {
                   const Divider(),
                   const ListTile(title: Text('Vault archive'), dense: true),
                   const Text(
-                    'A full vault ZIP excludes provider credentials. Import '
-                    'inspects metadata first and never applies an archive '
-                    'that advertises secrets.',
+                    'Select the domains to include in the ZIP. Provider '
+                    'credentials are always excluded. Import inspects metadata '
+                    'first and never applies an archive that advertises secrets.',
                   ),
                   const SizedBox(height: 8),
+                  for (final domain in _archiveDomains)
+                    _archiveDomainTile(domain, stats),
                   OutlinedButton(
                     key: const Key('data-export-vault'),
                     onPressed: _busy ? null : _exportVault,

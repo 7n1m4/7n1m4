@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/chat/chat_screen.dart';
 import 'package:anima_control/features/chat/chat_composer_controller.dart';
+import 'package:genui/genui.dart';
 
 import 'support/fakes.dart';
 
@@ -213,6 +214,51 @@ void main() {
     await tester.pump();
     expect(find.text('Hello world!'), findsOneWidget);
     expect(find.text('!'), findsNothing);
+  });
+
+  testWidgets(
+      'markers are hidden in the bubble but the raw turn still parses GenUI',
+      (tester) async {
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: ChatScreen(client: client))),
+    );
+    await tester.pump();
+
+    const catalogId =
+        'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json';
+    const stream = '<|ACTOR|>{excited}\n'
+        '```json\n'
+        '{"version":"v0.9","createSurface":'
+        '{"surfaceId":"marker-card","catalogId":"$catalogId"}}\n'
+        '```\n'
+        '```json\n'
+        '{"version":"v0.9","updateComponents":{"surfaceId":"marker-card",'
+        '"components":[{"id":"root","component":"Text",'
+        '"text":"Marker widget"}]}}\n'
+        '```\n';
+    for (var i = 0; i < stream.length; i += 37) {
+      client.emitEvent(
+        tokenDelta(
+          delta: stream.substring(i, (i + 37).clamp(0, stream.length)),
+        ),
+      );
+      await tester.pump();
+    }
+    client.emitEvent(tokenDelta(delta: '', isFinal: true));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pumpAndSettle();
+
+    // The unstripped stream was fed to GenUI, so the widget still renders.
+    expect(find.byType(Surface), findsOneWidget);
+    expect(find.text('Marker widget'), findsOneWidget);
+    // Only the displayed bubble hides the marker.
+    expect(find.textContaining('<|ACTOR|>'), findsNothing);
   });
 
   testWidgets('ChatScreen unregisters its event listener on dispose', (tester) async {

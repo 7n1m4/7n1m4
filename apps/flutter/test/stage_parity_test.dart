@@ -16,6 +16,7 @@ import 'package:anima_control/features/stage/model_asset_resolver.dart';
 import 'package:anima_control/features/stage/model_backend.dart';
 import 'package:anima_control/features/stage/model_expression.dart';
 import 'package:anima_control/features/stage/model_runtime.dart';
+import 'package:anima_control/features/stage/stage_atmosphere.dart';
 import 'package:anima_control/features/stage/stage_background.dart';
 import 'package:anima_control/features/stage/stage_caption_overlay.dart';
 import 'package:anima_control/features/stage/stage_control_strip.dart';
@@ -381,6 +382,19 @@ void main() {
       );
       expect(quarter, closeTo(1 / 3, 1e-9));
     });
+
+    test('the atmosphere selection is client-local and notifies on change', () {
+      final state = StageRenderState();
+      expect(state.atmosphere, StageAtmosphere.none);
+      var notifications = 0;
+      state.addListener(() => notifications++);
+      state.setAtmosphere(StageAtmosphere.hearts);
+      expect(state.atmosphere, StageAtmosphere.hearts);
+      expect(notifications, 1);
+      state.setAtmosphere(StageAtmosphere.none);
+      expect(state.atmosphere, StageAtmosphere.none);
+      expect(notifications, 2);
+    });
   });
 
   Future<void> settle(WidgetTester tester) async {
@@ -470,6 +484,54 @@ void main() {
       expect(find.byType(StageCaptionOverlay), findsNothing);
       expect(find.text('Anima'), findsNothing);
       expect(find.byType(StageCueBadge), findsNothing);
+    });
+
+    testWidgets('the unpainter-safe none preset paints no particles', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StageOverlays(
+              state: StageRenderState(),
+              model: const ColoredBox(color: Color(0xFF202020)),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(StageAtmosphereLayer), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint && widget.painter is StageAtmospherePainter,
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a selected preset installs the atmosphere painter', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StageOverlays(
+              state: StageRenderState(atmosphere: StageAtmosphere.hearts),
+              model: const ColoredBox(color: Color(0xFF202020)),
+            ),
+          ),
+        ),
+      );
+      final paint = tester.widget<CustomPaint>(
+        find.byKey(const Key('stage-atmosphere-particles')),
+      );
+      expect(paint.painter, isA<StageAtmospherePainter>());
+      expect(
+        (paint.painter! as StageAtmospherePainter).preset,
+        StageAtmosphere.hearts,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 

@@ -30,8 +30,22 @@ void main() {
     }
   }
 
+  Future<void> toggleSwitch(WidgetTester tester, String title) async {
+    final tile = find.ancestor(
+      of: find.text(title),
+      matching: find.byType(SwitchListTile),
+    );
+    await tester.ensureVisible(tile);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(
+      of: tile,
+      matching: find.byType(Switch),
+    ));
+    await tester.pumpAndSettle();
+  }
+
   /// The sections the screen reads, in load order.
-  const sections = <String>['general', 'captions', 'control-strip'];
+  const sections = <String>['general', 'theme', 'captions', 'control-strip'];
 
   testWidgets('Save is disabled until a real load and preserves unrelated keys',
       (tester) async {
@@ -194,7 +208,12 @@ void main() {
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
       await tester.pumpAndSettle();
 
-      expect(find.text('write denied'), findsOneWidget);
+      expect(
+        find.text('Connection failed. Check the daemon and retry.'),
+        findsOneWidget,
+      );
+      expect(find.text('write denied'), findsNothing,
+          reason: 'raw handler text is never rendered');
       expect(find.text('Captions settings saved.'), findsNothing);
     });
   });
@@ -276,6 +295,229 @@ void main() {
     });
   });
 
+  group('general section', () {
+    testWidgets('switches write the fields the daemon owns, not remote sync',
+        (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      client.onCall = (action, payload) {
+        if (action == 'settings.get') {
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{
+              'settings': <String, dynamic>{
+                'language': 'en',
+                'disableTransitions': true,
+                'usePageSpecificTransitions': true,
+                'websocketSecureEnabled': false,
+                'autostart': false,
+                'remoteSyncEnabled': true, // retired under airi-3cp
+              },
+            },
+          );
+        }
+        throw StateError('unexpected action $action');
+      };
+
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'Save general');
+
+      // The one retired field is neither a control nor a new key on save.
+      final card = find.ancestor(
+        of: find.text('General Preferences'),
+        matching: find.byType(Card),
+      );
+      final titles = tester
+          .widgetList<SwitchListTile>(
+            find.descendant(of: card, matching: find.byType(SwitchListTile)),
+          )
+          .map((widget) => (widget.title as Text).data)
+          .toSet();
+      expect(titles, <String>{
+        'Disable page transitions',
+        'Use page-specific transitions',
+        'Secure websocket (wss://)',
+        'Launch at login',
+      });
+
+      await toggleSwitch(tester, 'Launch at login');
+      await toggleSwitch(tester, 'Secure websocket (wss://)');
+      await toggleSwitch(tester, 'Disable page transitions');
+      await reveal(tester, 'Save general');
+      saveButton(tester, 'Save general').onPressed!();
+      await tester.pump();
+
+      final written = client.lastSettingsWritten;
+      expect(written, isNotNull);
+      expect(written!['autostart'], isTrue);
+      expect(written['websocketSecureEnabled'], isTrue);
+      expect(written['disableTransitions'], isFalse);
+      expect(written['usePageSpecificTransitions'], isTrue);
+      expect(written['remoteSyncEnabled'], isTrue,
+          reason: 'the retired key is preserved, never surfaced or rewritten');
+    });
+
+    testWidgets('invalid locale code is rejected before any write',
+        (tester) async {
+      final client = FakeChatClient()
+        ..settingsToLoad = <String, dynamic>{'language': 'en'};
+      addTearDown(client.dispose);
+
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'Save general');
+
+      final field = find.widgetWithText(TextField, 'Language code');
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      await tester.enterText(field, 'not a locale!');
+      saveButton(tester, 'Save general').onPressed!();
+      await tester.pumpAndSettle();
+
+      expect(client.lastSettingsWritten, isNull,
+          reason: 'invalid input never reaches settingsSet');
+      expect(
+        find.text('Use a locale code such as "en" or "zh-Hant".'),
+        findsOneWidget,
+      );
+
+      // A valid edit clears the error and can be saved. Empty is the daemon's
+      // "use system default" value.
+      await tester.enterText(field, '');
+      await reveal(tester, 'Save general');
+      saveButton(tester, 'Save general').onPressed!();
+      await tester.pump();
+      expect(client.lastSettingsWritten!['language'], isEmpty);
+    });
+  });
+
+  group('theme section', () {
+    testWidgets('a preset and the dark toggle write typed theme settings',
+        (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      String? writtenSection;
+      client.onSet = (section, settings) => writtenSection = section;
+      client.onCall = (action, payload) {
+        if (action == 'settings.get') {
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{
+              'settings': <String, dynamic>{
+                'hue': 12.5,
+                'hueDynamic': false,
+                'chromaMultiplier': 'not a number', // normalized on load
+                'dark': true,
+                'futureKey': 'keep-me',
+              },
+            },
+          );
+        }
+        throw StateError('unexpected action $action');
+      };
+
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'Save theme');
+
+      final preset = find.widgetWithText(TextButton, 'Ocean');
+      await tester.ensureVisible(preset);
+      await tester.pumpAndSettle();
+      await tester.tap(preset);
+      await tester.pumpAndSettle();
+      await toggleSwitch(tester, 'Dark mode');
+      await reveal(tester, 'Save theme');
+      saveButton(tester, 'Save theme').onPressed!();
+      await tester.pump();
+
+      expect(writtenSection, 'theme');
+      final written = client.lastSettingsWritten;
+      expect(written, isNotNull);
+      expect(written!['hue'], 262.88, reason: 'Ocean preset hue');
+      expect(written['hueDynamic'], isFalse,
+          reason: 'choosing a hue makes it manual');
+      expect(written['dark'], isFalse);
+      expect(written['chromaMultiplier'], 1.0,
+          reason: 'malformed input was normalized to the daemon default');
+      expect(written['futureKey'], 'keep-me',
+          reason: 'untouched keys are sent back, not wiped');
+    });
+
+    testWidgets('reset restores palette defaults and keeps dark mode', (
+      tester,
+    ) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      client.onCall = (action, payload) {
+        if (action == 'settings.get') {
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{
+              'settings': <String, dynamic>{
+                'hue': 17.58,
+                'hueDynamic': true,
+                'chromaMultiplier': 1.5,
+                'dark': false,
+              },
+            },
+          );
+        }
+        throw StateError('unexpected action $action');
+      };
+
+      await tester.pumpWidget(screen(client));
+      await tester.pumpAndSettle();
+      await reveal(tester, 'Save theme');
+
+      final reset = find.widgetWithText(TextButton, 'Reset to defaults');
+      await tester.ensureVisible(reset);
+      await tester.pumpAndSettle();
+      await tester.tap(reset);
+      await tester.pumpAndSettle();
+      await reveal(tester, 'Save theme');
+      saveButton(tester, 'Save theme').onPressed!();
+      await tester.pump();
+
+      final written = client.lastSettingsWritten;
+      expect(written, isNotNull);
+      expect(written!['hue'], 220.44);
+      expect(written['hueDynamic'], isFalse);
+      expect(written['chromaMultiplier'], 1.0);
+      expect(written['dark'], isFalse,
+          reason: 'a palette reset must not flip the user brightness choice');
+    });
+  });
+
+  testWidgets('a settings failure shows a safe message, never the raw RPC text',
+      (tester) async {
+    // The shared fake swallows exceptions in settingsGet, so use a small
+    // subclass that really throws like the client does on an RPC failure.
+    final client = _FailingSettingsClient();
+    addTearDown(client.dispose);
+    const secret = '/home/user/.config/anima/token=abc123?key=secret';
+
+    await tester.pumpWidget(screen(client));
+    await tester.pumpAndSettle();
+    await reveal(tester, 'Save theme');
+    // The error row sits below the section cards in the same lazily built
+    // ListView; scroll until it is materialized.
+    final safe = find.text(
+      'Could not reach the daemon. Check the host and port, then retry.',
+    );
+    for (var i = 0; i < 40 && safe.evaluate().isEmpty; i++) {
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.textContaining('secret'), findsNothing);
+    expect(find.textContaining('abc123'), findsNothing);
+    expect(safe, findsOneWidget);
+  });
+
   testWidgets('settings.changed reloads the section from the daemon', (tester) async {
     final client = FakeChatClient()
       ..settingsToLoad = <String, dynamic>{
@@ -285,7 +527,7 @@ void main() {
     addTearDown(client.dispose);
     await tester.pumpWidget(screen(client));
     await tester.pumpAndSettle();
-    expect(client.settingsLoads, 3);
+    expect(client.settingsLoads, sections.length);
 
     // Another client changed `general`; the event carries no values, so the
     // screen must re-read the authoritative blob.
@@ -310,4 +552,16 @@ void main() {
     expect(written!['language'], 'ja');
     expect(written['remoteSyncEnabled'], true);
   });
+}
+
+/// A client whose settings.get really throws, as DaemonClient does on a
+/// failed RPC (the shared fake swallows handler exceptions by design).
+class _FailingSettingsClient extends FakeChatClient {
+  @override
+  Future<Map<String, dynamic>> settingsGet(String section) async {
+    throw DaemonClientException(
+      kind: DaemonFailureKind.transport,
+      message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
+    );
+  }
 }

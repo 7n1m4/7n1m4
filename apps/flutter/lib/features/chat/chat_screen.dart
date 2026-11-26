@@ -3,10 +3,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
 import 'chat_composer_controller.dart';
+import 'chat_message_display.dart';
 import 'genui_surface_controller.dart';
 import '../sessions/sessions_screen.dart';
 
@@ -50,6 +52,15 @@ class _ChatScreenState extends State<ChatScreen> {
   void Function()? _unsubscribeEvent;
   bool _wasConnected = false;
   _EmotionCue? _cue;
+  final Map<String, int> _cueSeqByActor = <String, int>{};
+  // Bus ordering per message, used to drop replayed/out-of-order token frames
+  // after a reconnect. The daemon re-publishes on the same event topic.
+  final Map<String, int> _lastTokenSeq = <String, int>{};
+  final Map<String, int> _lastTokenIndex = <String, int>{};
+  final Set<String> _finalizedMessageIds = <String>{};
+  // Dedup only needs replay depth, not session history: prune the oldest
+  // finalized turn once the window is exceeded.
+  final List<String> _finalizedMessageOrder = <String>[];
   // Event topics are per socket; serialize subscribe/unsubscribe so disposing
   // mid-RPC cannot leave a stale topic enabled on the daemon.
   Future<void> _eventRpc = Future<void>.value();
@@ -117,12 +128,19 @@ class _ChatScreenState extends State<ChatScreen> {
     if (event.topic == EventTopic.emotionTag) {
       final cue = _decodeEmotionCue(event.data);
       if (cue == null || !mounted) return;
-      final previous = _cue;
-      if (previous != null &&
-          previous.seq != null &&
-          cue.seq != null &&
-          cue.seq! <= previous.seq!) {
-        return; // Ignore replayed/out-of-order cues.
+      // Only the selected character's cues drive the chat badge. With no
+      // character selected there is no actor to filter against.
+      final selected = _selectedCardId;
+      if (selected != null && selected.isNotEmpty && cue.actorId != selected) {
+        return;
+      }
+      // Per-actor monotonic sequence: ignore replays/out-of-order cues even
+      // when another actor's cue happened to arrive later.
+      final seq = cue.seq;
+      if (seq != null) {
+        final last = _cueSeqByActor[cue.actorId];
+        if (last != null && seq <= last) return;
+        _cueSeqByActor[cue.actorId] = seq;
       }
       setState(() => _cue = cue);
       return;
@@ -142,7 +160,46 @@ class _ChatScreenState extends State<ChatScreen> {
     final mid = data['message_id'] as String? ?? '';
     final delta = data['delta'] as String? ?? '';
     final isFinal = data['final'] == true;
+    final reason = data['reason'];
+    // The publisher treats cancelled/error as terminal even on a non-final
+    // frame (events.rs:376-378), so the composer must unlock there too.
+    final terminal = isFinal || reason == 'cancelled' || reason == 'error';
+    // A missing reason means `complete` on older daemons. Cancelled/error
+    // turns must not be displayed, parsed or spoken (mirrors main.dart).
+    final failedTurn = terminal && reason != null && reason != 'complete';
+    final rawSeq = data['seq'];
+    final rawIndex = data['index'];
+    final seq = rawSeq is int ? rawSeq : null;
+    final index = rawIndex is int ? rawIndex : null;
     if (!mounted) return;
+
+    // A reconnect can replay a whole turn. Drop stale/duplicate frames so a
+    // delta never doubles visible text and a replayed final cannot close a
+    // newer turn. Frames without seq/index (older daemons/fakes) bypass dedup.
+    if (terminal && mid.isNotEmpty && _finalizedMessageIds.contains(mid)) {
+      return;
+    }
+    final lastSeq = _lastTokenSeq[mid];
+    final lastIndex = _lastTokenIndex[mid];
+    if (seq != null && lastSeq != null && seq <= lastSeq) return;
+    // Terminal frames may carry index 0 (or the next index) after higher
+    // token indices, so the per-turn index check applies to deltas only.
+    if (!terminal && index != null && lastIndex != null && index <= lastIndex) {
+      return;
+    }
+    if (seq != null) _lastTokenSeq[mid] = seq;
+    if (index != null) _lastTokenIndex[mid] = index;
+    if (terminal && mid.isNotEmpty) {
+      _finalizedMessageIds.add(mid);
+      _finalizedMessageOrder.add(mid);
+      if (_finalizedMessageOrder.length > 200) {
+        final oldest = _finalizedMessageOrder.removeAt(0);
+        _finalizedMessageIds.remove(oldest);
+        _lastTokenSeq.remove(oldest);
+        _lastTokenIndex.remove(oldest);
+      }
+    }
+
     setState(() {
       // The delta always lands on the open bubble: a genuinely new turn
       // starts a new assistant bubble; otherwise the delta appends to it.
@@ -165,15 +222,21 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages[idx] = last.copyWith(text: _deltaBuffer.toString());
         }
       }
-      if (isFinal) {
+      if (terminal) {
         _assistantStreaming = false;
         _activeMessageId = null;
         _deltaBuffer.clear();
+        if (failedTurn) {
+          // Discard the failed turn's partial text and GenUI surfaces. The
+          // user's own bubble is never touched.
+          final idx = _lastAssistantIndex();
+          if (idx != null) _messages.removeAt(idx);
+        }
       }
     });
-    if (isFinal) {
+    if (terminal) {
       _composer.finishTurn();
-      _finishGenUiTurn();
+      if (!failedTurn) _finishGenUiTurn();
     }
   }
 
@@ -419,6 +482,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _assistantStreaming = false;
     _historyUnavailable = false;
     _cue = null;
+    _cueSeqByActor.clear();
+    _lastTokenSeq.clear();
+    _lastTokenIndex.clear();
+    _finalizedMessageIds.clear();
+    _finalizedMessageOrder.clear();
   }
 
   void _startNewSession() {
@@ -687,7 +755,12 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   );
                 }
-                final m = _messages[index - (_historyCursor == null ? 0 : 1)];
+                final messageIndex = index - (_historyCursor == null ? 0 : 1);
+                final m = _messages[messageIndex];
+                // Assistant markers are stripped only for display: `m.text`
+                // stays raw so GenUI parsing in `_finishGenUiTurn` sees the
+                // full turn. Literally typed user text is left untouched.
+                final displayed = m.isUser ? m.text : stripMarkers(m.text);
                 return Align(
                   alignment: m.isUser
                       ? Alignment.centerRight
@@ -701,7 +774,18 @@ class _ChatScreenState extends State<ChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(m.text.isEmpty ? '…' : m.text),
+                          Text(displayed.isEmpty ? '…' : displayed),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: IconButton(
+                              key: Key('chat-copy-$messageIndex'),
+                              icon: const Icon(Icons.copy_all_outlined, size: 18),
+                              tooltip: 'Copy',
+                              onPressed: () => Clipboard.setData(
+                                ClipboardData(text: displayed),
+                              ),
+                            ),
+                          ),
                           for (final surfaceId in m.surfaceIds)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),

@@ -5,7 +5,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../connection/connection_error.dart';
 import '../../daemon_client/daemon_client.dart';
+import '../../theme/app_theme.dart';
 import '../cards/cards_screen.dart';
 import '../data/data_screen.dart';
 import '../memory/memory_screen.dart';
@@ -36,6 +38,7 @@ class SettingsScreen extends StatefulWidget {
 /// fails the read instead of silently editing a shape the daemon rejects.
 enum _SettingsSection {
   general('general', 'General Preferences', 'Save general'),
+  theme('theme', 'Theme', 'Save theme'),
   captions('captions', 'Captions', 'Save captions'),
   controlStrip('control-strip', 'Floating Controls', 'Save floating controls');
 
@@ -83,6 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _settingsBusy = false;
   String? _settingsError;
   String? _settingsStatus;
+  String? _languageError;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvents;
   bool _wasConnected = false;
@@ -123,8 +127,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  bool get _loaded => _drafts[_SettingsSection.general]!.loaded;
-
   Future<void> _loadSections() async {
     setState(() {
       _settingsBusy = true;
@@ -147,7 +149,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final language = general['language'];
         final tint = _drafts[_SettingsSection.controlStrip]!.values['backgroundTint'];
         _language.text = language is String ? language : '';
+        _languageError = null;
         _tint.text = tint is String ? tint : '#171717';
+        // Normalize the four theme fields through the same decoder the app
+        // uses, so the editor only ever writes back well-typed values. Other
+        // keys in the section are carried through untouched.
+        final themeDraft = _drafts[_SettingsSection.theme]!;
+        final theme = AppThemeSettings.fromSettings(themeDraft.values);
+        themeDraft.values = <String, dynamic>{
+          ...themeDraft.values,
+          'dark': theme.dark,
+          'hue': theme.hue,
+          'hueDynamic': theme.hueDynamic,
+          'chromaMultiplier': theme.chromaMultiplier,
+        };
       });
     } on DaemonClientException catch (e) {
       if (mounted) {
@@ -156,8 +171,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _drafts[section] = _SectionDraft.unavailable();
           }
           _language.text = '';
+          _languageError = null;
           _tint.text = '';
-          _settingsError = e.message;
+          _settingsError = userSafeConnectionError(
+            e,
+            context: 'settings.load',
+          );
         });
       }
     } finally {
@@ -205,8 +224,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final draft = _drafts[section]!;
     if (!draft.loaded) return;
     if (section == _SettingsSection.general) {
+      final language = _language.text.trim();
+      if (!_isValidLocale(language)) {
+        setState(() {
+          _languageError = 'Use a locale code such as "en" or "zh-Hant".';
+          _settingsStatus = null;
+        });
+        return;
+      }
       draft.values = Map<String, dynamic>.from(draft.values)
-        ..['language'] = _language.text.trim();
+        ..['language'] = language;
     }
     if (section == _SettingsSection.controlStrip) {
       draft.values = Map<String, dynamic>.from(draft.values)
@@ -231,7 +258,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             : '${section.label} settings were not saved.';
       });
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _settingsError = e.message);
+      if (mounted) {
+        setState(() {
+          _settingsError = userSafeConnectionError(
+            e,
+            context: 'settings.set:${section.key}',
+          );
+        });
+      }
     } finally {
       if (mounted) setState(() => _settingsBusy = false);
     }
@@ -295,6 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       else
         const Text('Providers: unavailable'),
       _buildGeneralCard(context),
+      _buildThemeCard(context),
       for (final node in _catalog.orderedChildren(_catalog.rootId))
         if (node.visible)
           if (node.id == 'area-stage')
@@ -328,16 +363,158 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildGeneralCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.general]!;
+    final values = draft.values;
+    final enabled = draft.loaded && !_settingsBusy;
+    // `remoteSyncEnabled` is deliberately absent: it was retired under
+    // airi-3cp. The key is still round-tripped in [values] on save.
     return _buildCard(
       _SettingsSection.general,
       children: <Widget>[
         TextField(
           controller: _language,
-          enabled: !_settingsBusy && _loaded,
-          decoration: const InputDecoration(labelText: 'Language code'),
+          enabled: enabled,
+          decoration: InputDecoration(
+            labelText: 'Language code',
+            errorText: _languageError,
+          ),
+          onChanged: (_) {
+            if (_languageError != null) setState(() => _languageError = null);
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['disableTransitions'] != false,
+          onChanged: enabled
+              ? (value) =>
+                  _edit(_SettingsSection.general, 'disableTransitions', value)
+              : null,
+          title: const Text('Disable page transitions'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['usePageSpecificTransitions'] != false,
+          onChanged: enabled
+              ? (value) => _edit(
+                  _SettingsSection.general, 'usePageSpecificTransitions', value)
+              : null,
+          title: const Text('Use page-specific transitions'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['websocketSecureEnabled'] == true,
+          onChanged: enabled
+              ? (value) => _edit(
+                  _SettingsSection.general, 'websocketSecureEnabled', value)
+              : null,
+          title: const Text('Secure websocket (wss://)'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['autostart'] == true,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.general, 'autostart', value)
+              : null,
+          title: const Text('Launch at login'),
         ),
       ],
     );
+  }
+
+  Widget _buildThemeCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.theme]!;
+    final values = draft.values;
+    final enabled = draft.loaded && !_settingsBusy;
+    final theme = AppThemeSettings.fromSettings(values);
+    return _buildCard(
+      _SettingsSection.theme,
+      children: <Widget>[
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: theme.dark,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.theme, 'dark', value)
+              : null,
+          title: const Text('Dark mode'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: theme.hueDynamic,
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.theme, 'hueDynamic', value)
+              : null,
+          title: const Text('Dynamic hue'),
+        ),
+        const SizedBox(height: 4),
+        const Text('Preset hues', style: TextStyle(fontWeight: FontWeight.bold)),
+        Wrap(
+          spacing: 8,
+          children: <Widget>[
+            for (final preset in _themeHuePresets)
+              TextButton(
+                onPressed: enabled
+                    ? () => _applyThemeHue(preset.hue)
+                    : null,
+                child: Text(preset.label),
+              ),
+          ],
+        ),
+        _labeledSlider(
+          label: 'Hue',
+          value: theme.hue,
+          min: 0,
+          max: 360,
+          enabled: enabled && !theme.hueDynamic,
+          onChanged: (value) => _edit(_SettingsSection.theme, 'hue', value),
+        ),
+        _labeledSlider(
+          label: 'Vibrancy',
+          value: theme.chromaMultiplier,
+          min: 0,
+          max: 2,
+          enabled: enabled,
+          onChanged: (value) =>
+              _edit(_SettingsSection.theme, 'chromaMultiplier', value),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: enabled ? _resetTheme : null,
+            child: const Text('Reset to defaults'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A preset writes both fields the way Vue's `applyPrimaryColorFrom` does:
+  /// a chosen hue is manual, so dynamic hue is switched off.
+  void _applyThemeHue(double hue) {
+    final draft = _drafts[_SettingsSection.theme]!;
+    if (!draft.loaded) return;
+    setState(() {
+      draft.values = Map<String, dynamic>.from(draft.values)
+        ..['hue'] = hue
+        ..['hueDynamic'] = false;
+      _settingsStatus = null;
+    });
+  }
+
+  /// Restore the daemon's own theme defaults; nothing else in the section is
+  /// touched, so unknown keys still round-trip on save.
+  void _resetTheme() {
+    const defaults = AppThemeSettings.daemonDefaults;
+    final draft = _drafts[_SettingsSection.theme]!;
+    if (!draft.loaded) return;
+    setState(() {
+      // Vue's resetToDefault() restores hue/chroma only: dark mode is a
+      // separate user choice and must not be flipped by a palette reset.
+      draft.values = Map<String, dynamic>.from(draft.values)
+        ..['hue'] = defaults.hue
+        ..['hueDynamic'] = defaults.hueDynamic
+        ..['chromaMultiplier'] = defaults.chromaMultiplier;
+      _settingsStatus = null;
+    });
   }
 
   Widget _buildCaptionsCard(BuildContext context) {
@@ -466,6 +643,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// A bounded double slider. The value is read from the draft on every build
+  /// so external settings changes are never merged with a stale slider state.
+  Widget _labeledSlider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required bool enabled,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('$label: ${_formatNumber(value)}'),
+        Slider(
+          value: value.clamp(min, max).toDouble(),
+          min: min,
+          max: max,
+          onChanged: enabled ? onChanged : null,
+        ),
+      ],
+    );
+  }
+
   /// A bounded percentage field. The clamp applies as the user types; an
   /// empty field edits nothing.
   Widget _percentField({
@@ -549,6 +750,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 }
+
+/// The four hue presets from `packages/stage-pages/src/pages/settings/system/
+/// color-presets.json`. Values are the OKLCH hue of each group's representative
+/// swatch (Crimson, Emerald, Cerulean, Indigo), computed with the same
+/// conversion as `packages/stage-ui/src/stores/settings/theme.ts` — no palette
+/// value is invented here.
+const List<({String label, double hue})> _themeHuePresets =
+    <({String label, double hue})>[
+  (label: 'Warm', hue: 17.58), // #E11D48 Crimson
+  (label: 'Flora', hue: 149.21), // #16A34A Emerald
+  (label: 'Ocean', hue: 262.88), // #2563EB Cerulean
+  (label: 'Bloom', hue: 293.01), // #7C3AED Indigo
+];
+
+/// Empty means "use system default" (the daemon's `GeneralSettings::default`).
+/// Otherwise accept a BCP-47-style tag: 2-3 letters plus optional subtags.
+final RegExp _localePattern = RegExp(r'^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$');
+
+bool _isValidLocale(String value) =>
+    value.isEmpty || _localePattern.hasMatch(value);
 
 /// Wire value of a stored caption docking (`top`/`bottom`/`head`/`none`);
 /// anything unrecognized reads as the daemon's own default, `none`.

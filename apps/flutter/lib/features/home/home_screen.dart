@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../connection/connection_error.dart';
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
 
@@ -19,6 +20,7 @@ class HomeScreen extends StatelessWidget {
       builder: (context, snapshot) {
         final status = snapshot.data ?? client.snapshot;
         final core = status.core;
+        final error = status.error;
         return ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
@@ -65,10 +67,10 @@ class HomeScreen extends StatelessWidget {
                         padding: EdgeInsets.only(top: 8),
                         child: Text('No core.status snapshot yet. Connect from the Connections tab.'),
                       ),
-                    if (status.error != null) ...<Widget>[
+                    if (error != null) ...<Widget>[
                       const SizedBox(height: 12),
                       Text(
-                        status.error.toString(),
+                        userSafeConnectionError(error, context: 'home:status'),
                         style: TextStyle(color: Theme.of(context).colorScheme.error),
                       ),
                     ],
