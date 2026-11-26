@@ -86,6 +86,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<Map<String, dynamic>> _providers = const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
   String _searchQuery = '';
+  final FocusNode _searchFocus = FocusNode();
+  bool _searchFocused = false;
   bool _settingsBusy = false;
   String? _settingsError;
   String? _settingsStatus;
@@ -97,6 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocus.addListener(_onSearchFocusChanged);
     _wasConnected = widget.client.snapshot.isConnected;
     _statusSub = widget.client.statusStream.listen((status) {
       if (status.state == DaemonConnectionState.connected && !_wasConnected) {
@@ -127,9 +130,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _unsubscribeEvents?.call();
     _statusSub?.cancel();
+    _searchFocus.removeListener(_onSearchFocusChanged);
+    _searchFocus.dispose();
     _language.dispose();
     _tint.dispose();
     super.dispose();
+  }
+
+  void _onSearchFocusChanged() {
+    if (!mounted || _searchFocus.hasFocus == _searchFocused) return;
+    setState(() => _searchFocused = _searchFocus.hasFocus);
   }
 
   Future<void> _loadSections() async {
@@ -333,16 +343,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _openSearchResult(SettingsSearchItem item) {
+    _searchFocus.unfocus();
     setState(() => _searchQuery = '');
     switch (item.kind) {
       case SettingsSearchKind.catalog:
         final node = item.node;
         if (node != null) _openCatalogNode(node);
       case SettingsSearchKind.provider:
-        _push(ProvidersScreen(client: widget.client));
+        _push(ProvidersScreen(
+          client: widget.client,
+          initialProviderId: _providerIdFromRoute(item.route),
+        ));
       case SettingsSearchKind.card:
-        _push(CardsScreen(client: widget.client));
+        _push(CardsScreen(
+          client: widget.client,
+          initialCardId: _cardIdFromRoute(item.route),
+        ));
     }
+  }
+
+  /// The card route carries its target as `?cardId=`; the provider route
+  /// carries it as the last path segment after `/providers/`.
+  static String? _cardIdFromRoute(String route) =>
+      Uri.tryParse(route)?.queryParameters['cardId'];
+
+  static String? _providerIdFromRoute(String route) {
+    final segments = Uri.tryParse(route)?.pathSegments ?? const <String>[];
+    if (segments.length < 3 || segments[segments.length - 2] != 'providers') {
+      return null;
+    }
+    return segments.last;
   }
 
   IconData _iconForSearchItem(SettingsSearchItem item) => switch (item.kind) {
@@ -373,6 +403,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final children = <Widget>[
       TextField(
         key: const Key('settings-search-field'),
+        focusNode: _searchFocus,
         decoration: const InputDecoration(
           hintText: 'Search settings, cards, providers...',
           prefixIcon: Icon(Icons.search),
@@ -381,7 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         onChanged: (value) => setState(() => _searchQuery = value),
       ),
-      if (_searchQuery.trim().isNotEmpty) ...<Widget>[
+      if (_searchFocused) ...<Widget>[
         const Padding(
           padding: EdgeInsets.only(bottom: 4),
           child: Text('Search Results',

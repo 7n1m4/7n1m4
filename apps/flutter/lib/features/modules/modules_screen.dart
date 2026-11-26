@@ -14,7 +14,16 @@ import 'package:flutter/material.dart';
 import '../../connection/connection_error.dart';
 import '../../daemon_client/daemon_client.dart';
 
-enum _FieldKind { text, number, integer, boolean, choice, jsonList, jsonMap }
+enum _FieldKind {
+  text,
+  number,
+  integer,
+  boolean,
+  choice,
+  jsonList,
+  jsonMap,
+  hearingDeviceMap,
+}
 
 class _ModuleField {
   const _ModuleField(
@@ -94,11 +103,10 @@ const List<_ModuleSection> _sections = <_ModuleSection>[
         kind: _FieldKind.choice,
         options: <String>['dictation', 'voice-message']),
     _ModuleField('vadThreshold', 'VAD threshold', kind: _FieldKind.number),
-    _ModuleField('speechProviderSettings', 'Speech provider settings (JSON object)',
-        kind: _FieldKind.jsonMap, maxLines: 3),
-    _ModuleField('transcriptionProviderSettings',
-        'Transcription provider settings (JSON object)',
-        kind: _FieldKind.jsonMap, maxLines: 3),
+    _ModuleField('speechProviderSettings', 'Speech provider settings',
+        kind: _FieldKind.hearingDeviceMap),
+    _ModuleField('transcriptionProviderSettings', 'Transcription provider settings',
+        kind: _FieldKind.hearingDeviceMap),
   ]),
   _ModuleSection('vision', 'Vision', Icons.visibility_outlined, <_ModuleField>[
     _ModuleField('strategy', 'Strategy',
@@ -151,6 +159,9 @@ class _ModulesScreenState extends State<ModulesScreen> {
   final Map<String, _SectionDraft> _drafts = <String, _SectionDraft>{
     for (final section in _sections) section.key: _SectionDraft.unavailable(),
   };
+  /// Raw row IDs, kept so duplicate keys can be rejected before the emitted
+  /// map silently collapses them and drops a user-entered row.
+  final Map<String, List<String>> _hearingProviderIds = <String, List<String>>{};
   bool _busy = false;
   String? _error;
   String? _status;
@@ -221,8 +232,14 @@ class _ModulesScreenState extends State<ModulesScreen> {
           if (section.key != result.section) continue;
           for (final field in section.fields) {
             if (_isTextLike(field.kind)) {
-              _controllers[fieldId(section.key, field)]!.text =
-                  draft.values[field.key]?.toString() ?? '';
+              final value = draft.values[field.key];
+              _controllers[fieldId(section.key, field)]!.text = switch (field.kind) {
+                // Dart's toString() is not JSON (unquoted keys, single quotes),
+                // so a loaded non-empty container could never be re-saved.
+                _FieldKind.jsonList || _FieldKind.jsonMap =>
+                  value == null ? '' : jsonEncode(value),
+                _ => value?.toString() ?? '',
+              };
             }
           }
         }
@@ -283,6 +300,15 @@ class _ModulesScreenState extends State<ModulesScreen> {
               validationError ??= '${field.label} must be valid JSON.';
             }
           }
+        case _FieldKind.hearingDeviceMap:
+          // The structured editor keeps a typed map in the draft; validate it
+          // here so a half-typed row can never reach the daemon.
+          final error = _hearingDeviceMapError(
+            field,
+            draft.values[field.key],
+            _hearingProviderIds[id],
+          );
+          if (error != null) validationError ??= error;
       }
     }
     if (validationError != null) {
@@ -327,6 +353,37 @@ class _ModulesScreenState extends State<ModulesScreen> {
         },
         _ => '${field.label} must be a number.',
       };
+
+  String? _hearingDeviceMapError(
+    _ModuleField field,
+    Object? value,
+    List<String>? providerIds,
+  ) {
+    if (value is! Map<String, dynamic>) {
+      return '${field.label} must be a map of providers.';
+    }
+    for (final entry in value.entries) {
+      if (entry.key.trim().isEmpty) {
+        return '${field.label} provider IDs cannot be empty.';
+      }
+      final config = entry.value;
+      if (config is! Map<String, dynamic>) {
+        return '${field.label} entries must be device settings.';
+      }
+      if (config['sampleRate'] is! num) {
+        return '${field.label} sample rate must be a number.';
+      }
+    }
+    // Duplicate IDs collapse in the emitted map, silently dropping a row.
+    // Check the raw row IDs so that row is rejected instead of lost.
+    final seen = <String>{};
+    for (final provider in providerIds ?? const <String>[]) {
+      if (!seen.add(provider)) {
+        return '${field.label} provider IDs must be unique.';
+      }
+    }
+    return null;
+  }
 
   void _edit(String section, _ModuleField field, Object? value) {
     final draft = _drafts[section]!;
@@ -436,6 +493,22 @@ class _ModulesScreenState extends State<ModulesScreen> {
             decoration: InputDecoration(labelText: field.label),
           ),
         );
+      case _FieldKind.hearingDeviceMap:
+        final raw = draft.values[field.key];
+        final values = raw is Map<String, dynamic> ? raw : <String, dynamic>{};
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _HearingDeviceMapEditor(
+            fieldId: id,
+            label: field.label,
+            values: values,
+            enabled: enabled,
+            onChanged: (value, providerIds) {
+              _edit(section.key, field, value);
+              _hearingProviderIds[id] = providerIds;
+            },
+          ),
+        );
       case _FieldKind.boolean:
         return SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -465,6 +538,193 @@ class _ModulesScreenState extends State<ModulesScreen> {
           ),
         );
     }
+  }
+}
+
+/// One provider override row. Controllers live in the row so typing never
+/// rebuilds the editor or steals focus from the field being edited.
+class _HearingDeviceRow {
+  _HearingDeviceRow({
+    String provider = '',
+    String deviceId = 'default',
+    String sampleRate = '16000',
+    this.original = const <String, dynamic>{},
+  })  : providerController = TextEditingController(text: provider),
+        deviceIdController = TextEditingController(text: deviceId),
+        sampleRateController = TextEditingController(text: sampleRate);
+
+  final TextEditingController providerController;
+  final TextEditingController deviceIdController;
+  final TextEditingController sampleRateController;
+  /// Unknown nested keys survive a round-trip even though this editor only
+  /// surfaces the two fields in the documented shape.
+  final Map<String, dynamic> original;
+
+  void dispose() {
+    providerController.dispose();
+    deviceIdController.dispose();
+    sampleRateController.dispose();
+  }
+}
+
+/// The typed map plus the raw (pre-collapse) row IDs, so the screen can reject
+/// duplicate providers instead of letting the map literal drop one.
+typedef _HearingMapChanged = void Function(
+  Map<String, dynamic> values,
+  List<String> providerIds,
+);
+
+/// Structured editor for the hearing maps shaped
+/// `Record<string, {deviceId: string, sampleRate: number}>`.
+///
+/// Emits a fresh typed map on every edit. An unparseable sample rate stays as
+/// text so the screen can reject it at save time instead of silently dropping
+/// the row.
+class _HearingDeviceMapEditor extends StatefulWidget {
+  const _HearingDeviceMapEditor({
+    required this.fieldId,
+    required this.label,
+    required this.values,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String fieldId;
+  final String label;
+  final Map<String, dynamic> values;
+  final bool enabled;
+  final _HearingMapChanged onChanged;
+
+  @override
+  State<_HearingDeviceMapEditor> createState() => _HearingDeviceMapEditorState();
+}
+
+class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
+  late final List<_HearingDeviceRow> _rows;
+
+  @override
+  void initState() {
+    super.initState();
+    _rows = <_HearingDeviceRow>[
+      for (final entry in widget.values.entries)
+        _HearingDeviceRow(
+          provider: entry.key,
+          deviceId: entry.value is Map
+              ? entry.value['deviceId']?.toString() ?? 'default'
+              : 'default',
+          sampleRate: entry.value is Map
+              ? entry.value['sampleRate']?.toString() ?? '16000'
+              : '16000',
+          original: entry.value is Map<String, dynamic>
+              ? entry.value
+              : <String, dynamic>{},
+        ),
+    ];
+  }
+
+  @override
+  void dispose() {
+    for (final row in _rows) {
+      row.dispose();
+    }
+    super.dispose();
+  }
+
+  Map<String, dynamic> _collect() => <String, dynamic>{
+        for (final row in _rows)
+          row.providerController.text.trim(): <String, dynamic>{
+            ...row.original,
+            'deviceId': row.deviceIdController.text.trim(),
+            'sampleRate': num.tryParse(row.sampleRateController.text.trim()) ??
+                row.sampleRateController.text.trim(),
+          },
+      };
+
+  List<String> _providerIds() => <String>[
+        for (final row in _rows) row.providerController.text.trim(),
+      ];
+
+  void _changed() => widget.onChanged(_collect(), _providerIds());
+
+  void _addRow() {
+    setState(() => _rows.add(_HearingDeviceRow()));
+    _changed();
+  }
+
+  void _removeRow(int index) {
+    setState(() => _rows.removeAt(index).dispose());
+    _changed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(widget.label, style: const TextStyle(fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        for (var index = 0; index < _rows.length; index++) _buildRow(index),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: Key('${widget.fieldId}-add'),
+            onPressed: widget.enabled ? _addRow : null,
+            icon: const Icon(Icons.add),
+            label: const Text('Add provider'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRow(int index) {
+    final row = _rows[index];
+    final prefix = '${widget.fieldId}-row-$index';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            flex: 2,
+            child: TextField(
+              key: Key('$prefix-provider'),
+              enabled: widget.enabled,
+              controller: row.providerController,
+              onChanged: (_) => _changed(),
+              decoration: const InputDecoration(labelText: 'Provider ID', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: TextField(
+              key: Key('$prefix-deviceId'),
+              enabled: widget.enabled,
+              controller: row.deviceIdController,
+              onChanged: (_) => _changed(),
+              decoration: const InputDecoration(labelText: 'Device ID', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              key: Key('$prefix-sampleRate'),
+              enabled: widget.enabled,
+              controller: row.sampleRateController,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => _changed(),
+              decoration: const InputDecoration(labelText: 'Sample rate', isDense: true),
+            ),
+          ),
+          IconButton(
+            key: Key('$prefix-remove'),
+            onPressed: widget.enabled ? () => _removeRow(index) : null,
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove provider',
+          ),
+        ],
+      ),
+    );
   }
 }
 

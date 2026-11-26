@@ -71,6 +71,11 @@ void main() {
     expect(settingsCatalogTopology.orderedChildren('area-modules').map((node) => node.label).toList(), isNot(contains('Artistry (Deprecated)')));
   });
 
+  test('topology nodes carry curated search keywords', () {
+    expect(settingsCatalogTopology.nodesById['area-card']!.keywords, contains('persona'));
+    expect(settingsCatalogTopology.nodesById['sys-connection']!.keywords, contains('websocket'));
+  });
+
   testWidgets('catalog-driven hub renders all visible top-level areas', (tester) async {
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1;

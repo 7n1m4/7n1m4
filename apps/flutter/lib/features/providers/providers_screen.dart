@@ -56,8 +56,12 @@ const List<String> _providerKinds = <String>[
 ];
 
 class ProvidersScreen extends StatefulWidget {
-  const ProvidersScreen({super.key, required this.client});
+  const ProvidersScreen({super.key, required this.client, this.initialProviderId});
   final DaemonClient client;
+
+  /// Provider to select on arrival (the tail of a provider deep link). The
+  /// matching row is loaded into the existing edit form, like an Edit tap.
+  final String? initialProviderId;
 
   @override
   State<ProvidersScreen> createState() => _ProvidersScreenState();
@@ -80,6 +84,7 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
   Map<String, List<_ProviderModel>> _modelsByProvider = const {};
   bool _modelsLoading = false;
   String? _modelsError;
+  bool _initialTargetApplied = false;
 
   // Daemon-owned selection, mirrored in this widget only as read-only UI
   // state. Writes go through `settings.set` on the daemon, never local storage.
@@ -145,6 +150,16 @@ class _ProvidersScreenState extends State<ProvidersScreen> {
           _activeModelId = _activeModel.isEmpty ? null : _activeModel;
         });
         if (_activeProvider.isNotEmpty) _loadActiveModels(_activeProvider);
+        final target = widget.initialProviderId;
+        if (!_initialTargetApplied && target != null && target.isNotEmpty) {
+          for (final row in rows) {
+            if (row.id == target) {
+              _edit(row);
+              _initialTargetApplied = true;
+              break;
+            }
+          }
+        }
       }
     } on DaemonClientException catch (e) {
       if (mounted) setState(() {

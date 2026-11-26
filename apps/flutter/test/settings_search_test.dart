@@ -127,7 +127,22 @@ void main() {
           SettingsSearchIndex.build(topology: _topology(), providers: providers);
 
       expect(index.search('provider'), hasLength(12));
-      expect(index.search('   '), isEmpty);
+    });
+
+    test('curated aliases flow from catalog nodes into the index', () {
+      final node = settingsCatalogTopology.nodesById['area-providers']!;
+      expect(node.keywords, contains('api key'));
+
+      final index = SettingsSearchIndex.build();
+      final item = index.items.singleWhere((i) => i.id == 'area-providers');
+      expect(item.keywords, contains('api key'));
+      expect(index.search('api key').single.id, 'area-providers');
+    });
+
+    test('a blank query offers the first eight suggestions', () {
+      final index = SettingsSearchIndex.build();
+      expect(index.search(''), orderedEquals(index.items.take(8).toList()));
+      expect(index.search('   '), hasLength(8));
     });
 
     test('id/route-only terms do not create a match', () {
@@ -184,6 +199,31 @@ void main() {
       expect(provider.kind, SettingsSearchKind.provider);
       expect(provider.route, '/settings/providers/openai');
     });
+
+    test('deep-link routes percent-encode reserved characters in ids', () {
+      final index = SettingsSearchIndex.build(
+        topology: _topology(),
+        providers: const <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'acme&?rival',
+            'kind': 'acme',
+            'name': 'Special Acme',
+          },
+        ],
+        cards: const <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'kira/&alt', 'name': 'Kira Alt'},
+        ],
+      );
+
+      final providerRoute = index.search('special').single.route;
+      final cardRoute = index.search('kira').single.route;
+      expect(providerRoute, '/settings/providers/acme%26%3Frival');
+      expect(cardRoute, '/settings/airi-card?cardId=kira%2F%26alt');
+
+      // The screen parses with Uri too: both ids must round-trip exactly.
+      expect(Uri.parse(providerRoute).pathSegments.last, 'acme&?rival');
+      expect(Uri.parse(cardRoute).queryParameters['cardId'], 'kira/&alt');
+    });
   });
 
   group('SettingsScreen search', () {
@@ -200,6 +240,22 @@ void main() {
     FakeChatClient hydratedClient() {
       final client = FakeChatClient();
       client.onCall = (action, payload) => switch (action) {
+            'cards.get' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{
+                  'card': <String, dynamic>{'id': 'c1', 'name': 'Kira'},
+                },
+              ),
+            'cards.metadata' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{
+                  'id': 'c1',
+                  'liked': false,
+                  'bookmarked': false,
+                },
+              ),
             'cards.list' => RpcReply(
                 action: action,
                 ok: true,
@@ -241,7 +297,66 @@ void main() {
       return client;
     }
 
-    testWidgets('a card result opens the cards screen', (tester) async {
+    /// A client whose `cards.get` echoes the requested id, so the open detail
+    /// proves exactly which id the deep link resolved to.
+    FakeChatClient deepLinkClient({
+      required List<Map<String, dynamic>> providers,
+      required List<Map<String, dynamic>> cards,
+    }) {
+      final client = FakeChatClient();
+      client.onCall = (action, payload) => switch (action) {
+            'cards.list' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{'cards': cards, 'truncated': false},
+              ),
+            'cards.get' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{
+                  'card': cards.firstWhere(
+                    (card) => card['id'] == payload?['id'],
+                    orElse: () => <String, dynamic>{},
+                  ),
+                },
+              ),
+            'cards.metadata' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{
+                  'id': payload?['id'] ?? '',
+                  'liked': false,
+                  'bookmarked': false,
+                },
+              ),
+            'providers.list' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{'providers': providers},
+              ),
+            'runtime.status' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{'app': 'anima-daemon', 'version': 'test'},
+              ),
+            'settings.get' => RpcReply(
+                action: action,
+                ok: true,
+                data: <String, dynamic>{
+                  'settings': <String, dynamic>{'language': 'en'},
+                },
+              ),
+            _ => RpcReply(action: action, ok: true, data: <String, dynamic>{}),
+          };
+      return client;
+    }
+
+    testWidgets('a card result opens that exact card', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       final client = hydratedClient();
       addTearDown(client.dispose);
       await tester.pumpWidget(screen(client));
@@ -255,10 +370,19 @@ void main() {
       expect(tile, findsOneWidget);
       await tester.tap(tile);
       await tester.pumpAndSettle();
-      expect(find.byType(CardsScreen), findsOneWidget);
+
+      expect(
+        tester.widget<CardsScreen>(find.byType(CardsScreen)).initialCardId,
+        'c1',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('card-detail-c1')),
+        findsOneWidget,
+        reason: 'the target card editor is open, not just the list',
+      );
     });
 
-    testWidgets('a provider result opens the providers screen', (tester) async {
+    testWidgets('a provider result selects that exact provider', (tester) async {
       final client = hydratedClient();
       addTearDown(client.dispose);
       await tester.pumpWidget(screen(client));
@@ -272,7 +396,175 @@ void main() {
       expect(tile, findsOneWidget);
       await tester.tap(tile);
       await tester.pumpAndSettle();
-      expect(find.byType(ProvidersScreen), findsOneWidget);
+
+      expect(
+        tester.widget<ProvidersScreen>(find.byType(ProvidersScreen))
+            .initialProviderId,
+        'openai',
+      );
+      final idField = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Provider ID'),
+      );
+      expect(idField.controller!.text, 'openai');
+      final modelField = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Model'),
+      );
+      expect(modelField.controller!.text, 'gpt-test');
+    });
+
+    testWidgets('a provider id with reserved characters selects only that provider',
+        (tester) async {
+      const specialId = 'acme&?rival';
+      const decoyId = 'acme&'; // what the unencoded route would resolve to
+      final client = deepLinkClient(
+        providers: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': specialId,
+            'kind': 'open-ai-compatible',
+            'model': 'special-model',
+            'enabled': true,
+          },
+          <String, dynamic>{
+            'id': decoyId,
+            'kind': 'open-ai-compatible',
+            'model': 'decoy-model',
+            'enabled': true,
+          },
+        ],
+        cards: const <Map<String, dynamic>>[],
+      );
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      await tester.enterText(
+          find.byKey(const Key('settings-search-field')), 'acme');
+      await tester.pumpAndSettle();
+
+      final tile = find.byKey(
+          const ValueKey<String>('settings-search-result-prov-acme&?rival'));
+      expect(tile, findsOneWidget);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<ProvidersScreen>(find.byType(ProvidersScreen))
+            .initialProviderId,
+        specialId,
+      );
+      final idField = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Provider ID'),
+      );
+      expect(idField.controller!.text, specialId);
+      expect(idField.controller!.text, isNot(decoyId),
+          reason: 'the truncated id from an unencoded path is never selected');
+      final modelField = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Model'),
+      );
+      expect(modelField.controller!.text, 'special-model');
+    });
+
+    testWidgets('a card id with reserved characters opens only that card',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const specialId = 'kira/&alt';
+      const decoyId = 'kira/'; // what the unencoded query would resolve to
+      final client = deepLinkClient(
+        providers: const <Map<String, dynamic>>[],
+        cards: <Map<String, dynamic>>[
+          <String, dynamic>{'id': specialId, 'name': 'Special Kira'},
+          <String, dynamic>{'id': decoyId, 'name': 'Decoy Kira'},
+        ],
+      );
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      await tester.enterText(
+          find.byKey(const Key('settings-search-field')), 'kira');
+      await tester.pumpAndSettle();
+
+      final tile = find.byKey(
+          const ValueKey<String>('settings-search-result-card-kira/&alt'));
+      expect(tile, findsOneWidget);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<CardsScreen>(find.byType(CardsScreen)).initialCardId,
+        specialId,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('card-detail-kira/&alt')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('card-detail-kira/')),
+        findsNothing,
+        reason: 'the truncated id from an unencoded query is never opened',
+      );
+    });
+
+    testWidgets('selecting a result returns to the hub without suggestions',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final client = hydratedClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      final field = find.byKey(const Key('settings-search-field'));
+      await tester.tap(field);
+      await tester.enterText(field, 'connection');
+      await tester.pumpAndSettle();
+
+      final resultTiles = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListTile &&
+            widget.key is ValueKey<String> &&
+            (widget.key as ValueKey<String>).value.startsWith(
+                'settings-search-result-'),
+        skipOffstage: false,
+      );
+      expect(resultTiles, findsWidgets);
+
+      // This catalog entry only fires a callback, so the hub stays mounted.
+      await tester.tap(find.byKey(
+          const ValueKey<String>('settings-search-result-sys-connection')));
+      await tester.pumpAndSettle();
+
+      expect(resultTiles, findsNothing);
+      expect(find.text('Search Results'), findsNothing);
+    });
+
+    testWidgets('a focused empty search shows eight suggestions',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final client = hydratedClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(screen(client));
+
+      await tester.tap(find.byKey(const Key('settings-search-field')));
+      await tester.pumpAndSettle();
+
+      final suggestionTiles = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListTile &&
+            widget.key is ValueKey<String> &&
+            (widget.key as ValueKey<String>).value.startsWith(
+                'settings-search-result-'),
+        skipOffstage: false,
+      );
+      expect(suggestionTiles.evaluate().length, 8);
     });
 
     testWidgets('a catalog result routes through the catalog handler',

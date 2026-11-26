@@ -18,9 +18,18 @@ class CardFileSelection {
 }
 
 class CardsScreen extends StatefulWidget {
-  const CardsScreen({super.key, required this.client, this.pickCardFile});
+  const CardsScreen({
+    super.key,
+    required this.client,
+    this.pickCardFile,
+    this.initialCardId,
+  });
   final DaemonClient client;
   final Future<CardFileSelection?> Function()? pickCardFile;
+
+  /// Card to open on arrival (the `cardId` query param of a deep link). Empty
+  /// or unknown ids leave the list view as before.
+  final String? initialCardId;
 
   @override
   State<CardsScreen> createState() => _CardsScreenState();
@@ -50,7 +59,17 @@ class _CardsScreenState extends State<CardsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _initialize();
+  }
+
+  /// Load the list first so the target can reuse the same `_open` seam as a
+  /// row tap; a failed load still leaves the rest of the screen usable.
+  Future<void> _initialize() async {
+    await _load();
+    final target = widget.initialCardId;
+    if (target != null && target.isNotEmpty && mounted) {
+      await _open(target);
+    }
   }
 
   @override
@@ -542,6 +561,7 @@ class _CardsScreenState extends State<CardsScreen> {
                     _cardRow(c),
                 if (detail != null)
                   Card(
+                    key: ValueKey<String>('card-detail-${detail['id'] ?? ''}'),
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(

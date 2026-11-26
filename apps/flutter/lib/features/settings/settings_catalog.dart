@@ -65,6 +65,7 @@ class SettingsTopologyNode {
     this.hidden,
     this.deprecated,
     this.clusterGroup,
+    this.keywords = const <String>[],
   });
 
   final String id;
@@ -84,6 +85,7 @@ class SettingsTopologyNode {
   final bool? hidden;
   final bool? deprecated;
   final String? clusterGroup;
+  final List<String> keywords;
 
   bool get visible => hidden != true && deprecated != true;
 }
@@ -133,6 +135,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'CHARACTER & SCENE 姿',
     route: '/settings/airi-card',
     icon: 'i-solar:emoji-funny-square-bold-duotone',
+    keywords: <String>['persona', 'oc', 'character sheet'],
     order: 1,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -180,6 +183,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/memory',
     icon: 'i-solar:leaf-bold-duotone',
+    keywords: <String>['stmm', 'ltmm', 'echo chips'],
     order: 4,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -195,6 +199,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/modules',
     icon: 'i-solar:layers-bold-duotone',
+    keywords: <String>['tts', 'stt', 'vlm'],
     order: 5,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -210,6 +215,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/providers',
     icon: 'i-solar:box-minimalistic-bold-duotone',
+    keywords: <String>['api key', 'model setup'],
     order: 6,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -225,6 +231,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/sessions',
     icon: 'i-solar:chat-round-bold-duotone',
+    keywords: <String>['conversation', 'transcript'],
     order: 6,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -240,6 +247,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'INTELLIGENCE 知',
     route: '/settings/data',
     icon: 'i-solar:database-bold-duotone',
+    keywords: <String>['storage', 'export data'],
     order: 7,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -255,6 +263,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'SYSTEM 系',
     route: '/settings/system',
     icon: 'i-solar:filters-bold-duotone',
+    keywords: <String>['locale', 'appearance'],
     order: 8,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -270,6 +279,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'SYSTEM 系',
     route: '/settings/stage',
     icon: 'i-solar:widget-2-bold-duotone',
+    keywords: <String>['control strip', 'shortcut bar'],
     order: 9,
     parentId: 'hub',
     kind: CatalogNodeKind.area,
@@ -334,6 +344,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'NETWORK 網',
     route: '/settings/system/connection',
     icon: 'i-solar:wi-fi-router-bold-duotone',
+    keywords: <String>['websocket', 'wss', 'hugging face'],
     order: 1,
     parentId: 'area-system',
     kind: CatalogNodeKind.page,
@@ -349,6 +360,7 @@ const List<CatalogNodeItem> _catalogItems = <CatalogNodeItem>[
     clusterGroup: 'PREFERENCES 設',
     route: '/settings/system/general',
     icon: 'i-solar:tuning-square-2-bold-duotone',
+    keywords: <String>['locale', 'i18n'],
     order: 3,
     parentId: 'area-system',
     kind: CatalogNodeKind.page,
@@ -376,6 +388,7 @@ SettingsTopology _buildSettingsCatalogTopology() {
       hidden: item.hidden,
       deprecated: item.deprecated,
       clusterGroup: item.clusterGroup,
+      keywords: item.keywords,
     );
   }
 

@@ -39,7 +39,7 @@ class SettingsSearchItem {
 /// A bounded, in-memory index over the settings catalog plus hydrated cards
 /// and providers. Mirrors `packages/stage-ui/src/constants/settings-search-index.ts`
 /// and `SettingsSearchBar.vue`: dedupe by route (id fallback), title hits
-/// first, at most 12 results.
+/// first, at most 12 results, and the first 8 items as empty-query suggestions.
 @immutable
 class SettingsSearchIndex {
   const SettingsSearchIndex._(this.items);
@@ -85,7 +85,8 @@ class SettingsSearchIndex {
   List<SettingsSearchItem> search(String rawQuery) {
     final query = rawQuery.trim().toLowerCase();
     if (query.isEmpty) {
-      return const <SettingsSearchItem>[];
+      // Vue's dropdown offers a bounded suggestion slice before any typing.
+      return items.take(8).toList(growable: false);
     }
 
     final matched = <({int index, SettingsSearchItem item})>[];
@@ -140,6 +141,7 @@ class SettingsSearchIndex {
         node.label,
         node.shortLabel,
         ...segments,
+        ...node.keywords,
       ],
       node: node,
     );
@@ -201,7 +203,7 @@ class SettingsSearchIndex {
       title: title,
       category: category,
       description: description ?? '$title $category provider',
-      route: '/settings/providers/$id',
+      route: '/settings/providers/${Uri.encodeComponent(id)}',
       kind: SettingsSearchKind.provider,
       keywords: keywords,
     );
@@ -227,7 +229,7 @@ class SettingsSearchIndex {
       title: title,
       category: 'Character Card',
       description: 'Open $title\'s card editor',
-      route: '/settings/airi-card?cardId=$id',
+      route: '/settings/airi-card?cardId=${Uri.encodeQueryComponent(id)}',
       kind: SettingsSearchKind.card,
       keywords: <String>['character', 'card', title.toLowerCase(), id],
     );
