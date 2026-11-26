@@ -550,7 +550,7 @@ class StageRenderStateBinding {
   /// from the stream (mirrors chat_screen.dart:191-192) so production works
   /// without shell plumbing. Kept separate from the learned value so an
   /// explicit binding always wins once one is supplied.
-  final String? _boundSessionId;
+  String? _boundSessionId;
   String? _learnedSessionId;
 
   StreamSubscription<DaemonStatus>? _statusSubscription;
@@ -559,6 +559,21 @@ class StageRenderStateBinding {
   bool _wasConnected = false;
 
   bool get isBound => _unsubscribe != null;
+
+  /// Retarget the caption filter to a new shell session without tearing down
+  /// the event lane. Disposing and recreating the binding would queue
+  /// `event.unsubscribe` after an `await` while the replacement queues
+  /// `event.subscribe` immediately — the unsubscribe can land last and leave
+  /// the daemon topic unsubscribed (captions and TTS stop until reconnect).
+  void setBoundSessionId(String? id) {
+    final normalized = (id == null || id.isEmpty) ? null : id;
+    if (normalized == _boundSessionId) return;
+    _boundSessionId = normalized;
+    // An explicit id wins over anything learned from the previous session;
+    // drop both it and that session's completed captions right away.
+    _learnedSessionId = null;
+    _state.clearTransient();
+  }
 
   void _subscribe() {
     _wasConnected = _client.snapshot.isConnected;

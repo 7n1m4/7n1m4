@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -19,7 +20,16 @@ void main() {
   // state lives in anima-daemon, so closing this window never stops the pet.
   final client = DaemonClient();
   final controller = _localLipSync();
-  if (controller != null) _speakCompletedTurns(client, controller);
+  if (controller != null) {
+    var ustOptions = const UstOptions();
+    // Subscribe first: until the daemon answers, starter defaults apply to
+    // every terminal turn. The holder is read per turn, so a late reply is
+    // picked up without resubscribing.
+    _speakCompletedTurns(client, controller, () => ustOptions);
+    unawaited(
+      loadUstOptionsOnce(client, (options) => ustOptions = options),
+    );
+  }
   runApp(
     AnimaApp(
       client: client,
@@ -45,8 +55,33 @@ LipSyncController? _localLipSync() {
 
 /// Speak completed assistant turns from the daemon event lane. No frames are
 /// produced until a real turn arrives and Piper yields real PCM.
-void _speakCompletedTurns(DaemonClient client, LipSyncController controller) =>
-    speakCompletedTurns(client, controller);
+void _speakCompletedTurns(DaemonClient client, LipSyncController controller,
+        UstOptions Function() optionsForTurn) =>
+    speakCompletedTurns(client, controller, optionsForTurn: optionsForTurn);
+
+/// Read `settings/speech` once, as soon as the client can answer. A client that
+/// has not connected yet (the user connects from the Connections screen) is
+/// waited on rather than probed once and forgotten, but only for a bounded
+/// time. The caller's subscription must already be registered: [apply] writes
+/// the loaded options into the holder that is re-read on every turn. Settings
+/// are daemon-owned, so this never writes a local fallback back.
+Future<void> loadUstOptionsOnce(
+  DaemonClient client,
+  void Function(UstOptions) apply,
+) async {
+  try {
+    if (!client.snapshot.isConnected) {
+      await client.statusStream
+          .firstWhere(
+            (status) => status.state == DaemonConnectionState.connected,
+          )
+          .timeout(const Duration(seconds: 10));
+    }
+    apply(UstOptions.fromSpeechSettings(await client.settingsGet('speech')));
+  } catch (_) {
+    // An unreachable daemon or section keeps the pre-connect starter defaults.
+  }
+}
 
 /// Testable seam for the token.delta -> local TTS bridge. A terminal frame
 /// carries `reason: complete|cancelled|error`; cancelled and error are
@@ -60,6 +95,7 @@ void speakCompletedTurns(
   DaemonClient client,
   LipSyncController controller, {
   SpeechIntentQueue? queue,
+  UstOptions Function()? optionsForTurn,
 }) {
   // One client-local queue per bridge: it serializes synthesis and aborts the
   // in-flight source on replace/interrupt. No daemon state is duplicated here.
@@ -68,6 +104,7 @@ void speakCompletedTurns(
     onError: (error, intent) =>
         debugPrint('speech failed for ${intent.intentId}: $error'),
   );
+  final ustOptions = optionsForTurn ?? () => const UstOptions();
   final buffer = StringBuffer();
   String? boundSessionId;
   client.onEvent((event) {
@@ -104,7 +141,7 @@ void speakCompletedTurns(
       // Normal priority, queue behavior: failures are reported through
       // onError, never as fabricated audio.
       speechQueue.openIntent(
-        text: applyUstTransform(text, const UstOptions()),
+        text: applyUstTransform(text, ustOptions()),
         priority: SpeechPriority.normal,
       );
     }

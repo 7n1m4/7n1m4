@@ -95,6 +95,10 @@ class ChatScreenState extends State<ChatScreen> {
   // a later single Enter cannot inherit the previous turn's timestamp.
   int _lastComposerEnterMs = 0;
 
+  /// Session the composer currently targets. The shell reads this to bind
+  /// stage captions to the active chat session; null means no session yet.
+  String? get activeSessionId => _composer.sessionId;
+
   @override
   void initState() {
     super.initState();

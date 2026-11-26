@@ -45,6 +45,7 @@ class StageScreen extends StatefulWidget {
     this.cacheDirectoryProvider,
     this.background,
     this.captionStyle,
+    this.boundSessionId,
     this.stripState,
     this.render,
     this.paused,
@@ -77,6 +78,11 @@ class StageScreen extends StatefulWidget {
 
   /// Caption appearance; defaults to the daemon's own defaults.
   final StageCaptionStyle? captionStyle;
+
+  /// Active chat session whose `token.delta` frames may drive captions.
+  /// Null keeps the binding's self-learn fallback for callers that do not
+  /// plumb the shell's session.
+  final String? boundSessionId;
 
   /// Control-strip host state; defaults to the platform defaults.
   final StageControlStripState? stripState;
@@ -147,18 +153,45 @@ class _StageScreenState extends State<StageScreen> {
     _resourceStatus = widget.resourceStatus;
     _strip = widget.stripState ?? StageControlStripState();
     _boundRender = _render;
-    _binding = StageRenderStateBinding(client: widget.client, state: _render);
+    _binding = StageRenderStateBinding(
+      client: widget.client,
+      state: _render,
+      boundSessionId: widget.boundSessionId,
+    );
     final frames = widget.frames;
     if (frames != null) _frameSubscription = frames.listen(_render.applyFrame);
+  }
+
+  /// Retarget the caption session filter in place. The stage mounts before a
+  /// chat session is chosen, so the filter must follow the shell's id. Keeping
+  /// the event subscription intact matters: dispose queues `event.unsubscribe`
+  /// after an await while a replacement queues `event.subscribe` immediately,
+  /// so a session-only recreate could leave the daemon topic unsubscribed.
+  void _rebindSessionFilter() {
+    _binding?.setBoundSessionId(widget.boundSessionId);
+  }
+
+  /// Replace the event-lane binding when its client or render surface changes.
+  /// Both are fixed for a binding's lifetime, so unlike a session change these
+  /// really do need a fresh subscribe.
+  void _recreateBinding() {
+    _binding?.dispose();
+    _binding = StageRenderStateBinding(
+      client: widget.client,
+      state: _render,
+      boundSessionId: widget.boundSessionId,
+    );
   }
 
   @override
   void didUpdateWidget(StageScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.client != widget.client) {
-      _binding?.dispose();
-      _binding = StageRenderStateBinding(client: widget.client, state: _render);
-    }
+
+    final clientChanged = oldWidget.client != widget.client;
+    final renderChanged =
+        !identical(oldWidget.render, widget.render) && widget.render != null;
+    final sessionChanged = oldWidget.boundSessionId != widget.boundSessionId;
+
     // An injected status (tests/embeds) wins over the live runtime report.
     if (widget.resourceStatus != oldWidget.resourceStatus) {
       _resourceStatus = widget.resourceStatus;
@@ -168,14 +201,12 @@ class _StageScreenState extends State<StageScreen> {
     if (widget.paused != null && oldWidget.paused != widget.paused) {
       _render.setPaused(widget.paused!);
     }
-    if (!identical(oldWidget.render, widget.render) && widget.render != null) {
+    if (renderChanged) {
       _render.removeListener(_onRenderChanged);
       if (oldWidget.render == null) _render.dispose();
       _render = widget.render!;
       _render.addListener(_onRenderChanged);
       _boundRender = _render;
-      _binding?.dispose();
-      _binding = StageRenderStateBinding(client: widget.client, state: _render);
       _frameSubscription?.cancel();
       _frameSubscription = widget.frames?.listen(_render.applyFrame);
       if (widget.paused != null) _render.setPaused(widget.paused!);
@@ -185,6 +216,15 @@ class _StageScreenState extends State<StageScreen> {
       if (widget.captionStyle != null) {
         _render.setCaptionStyle(widget.captionStyle!);
       }
+    }
+
+    // Recreate once, after `_render` is settled, with the latest session. A
+    // session-only change never reaches here: it retargets the existing
+    // binding, avoiding a duplicate rebind when the render also changed.
+    if (clientChanged || renderChanged) {
+      _recreateBinding();
+    } else if (sessionChanged) {
+      _rebindSessionFilter();
     }
     if (oldWidget.background != widget.background) {
       _render.setBackground(widget.background ?? StageBackground.none);

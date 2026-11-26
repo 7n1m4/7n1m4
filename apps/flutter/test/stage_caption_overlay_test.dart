@@ -4,6 +4,8 @@
 // No daemon client, sockets, assets or platform channels are involved: the
 // widget renders a snapshot and the accumulator consumes plain maps.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
@@ -11,6 +13,9 @@ import 'package:anima_control/features/stage/model_expression.dart';
 import 'package:anima_control/features/stage/stage_background.dart';
 import 'package:anima_control/features/stage/stage_caption_overlay.dart';
 import 'package:anima_control/features/stage/stage_overlay_state.dart';
+import 'package:anima_control/features/stage/stage_screen.dart';
+import 'package:anima_control/l10n/app_localizations.dart';
+import 'package:anima_control/navigation/navigation_shell.dart';
 import 'package:anima_control/speech/lip_sync_rms_data.dart';
 import 'support/fakes.dart';
 
@@ -670,5 +675,238 @@ void main() {
       client.emitEvent(tokenDelta(sessionId: 's2', delta: 'now mine'));
       expect(state.caption.segments.single.text, 'now mine');
     });
+
+    test(
+      'setBoundSessionId retargets in place, dropping the learned session and captions',
+      () async {
+        final client = FakeChatClient();
+        final actions = <String>[];
+        client.onCall = (action, payload) {
+          actions.add(action);
+          return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+        };
+        final state = StageRenderState();
+        final binding = StageRenderStateBinding(client: client, state: state);
+        addTearDown(binding.dispose);
+        addTearDown(state.dispose);
+        addTearDown(client.dispose);
+        await Future<void>.delayed(Duration.zero); // flush the initial subscribe
+
+        // Unbound binding learns s1 from the stream.
+        client.emitEvent(tokenDelta(sessionId: 's1', delta: 'old'));
+        expect(state.caption.segments.single.text, 'old');
+        final listeners = client.listeners.length;
+        expect(listeners, 1);
+
+        binding.setBoundSessionId('s2');
+        expect(state.caption.isEmpty, isTrue, reason: 'old captions clear at once');
+        expect(
+          client.listeners.length,
+          listeners,
+          reason: 'the event lane stays subscribed',
+        );
+        expect(actions, <String>['event.subscribe']);
+
+        client.emitEvent(tokenDelta(sessionId: 's1', delta: 'stale'));
+        expect(state.caption.isEmpty, isTrue, reason: 'the learned session is dropped');
+        client.emitEvent(tokenDelta(sessionId: 's2', delta: 'new'));
+        expect(state.caption.segments.single.text, 'new');
+
+        // An unchanged id is a no-op: no clear and no event-lane churn.
+        binding.setBoundSessionId('s2');
+        expect(state.caption.segments.single.text, 'new');
+        expect(client.listeners.length, listeners);
+        expect(actions, <String>['event.subscribe']);
+
+        // Empty normalizes to null: the explicit filter is released and the
+        // binding learns the next turn from the stream again.
+        binding.setBoundSessionId('');
+        expect(state.caption.isEmpty, isTrue);
+        client.emitEvent(tokenDelta(sessionId: 's3', delta: 'learned'));
+        expect(state.caption.segments.single.text, 'learned');
+        expect(client.listeners.length, listeners);
+        expect(actions, <String>['event.subscribe']);
+      },
+    );
   });
+
+  group('stage captions follow the active chat session', () {
+    testWidgets('switching the shell session rebinds the caption filter', (
+      tester,
+    ) async {
+      final client = _ShellCaptionClient();
+      addTearDown(client.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: NavigationShell(
+            client: client,
+            sceneStorageDirectory: Directory.current,
+            sceneLibraryLoader: (store) async {},
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+
+      Future<void> tapDestination(String label) async {
+        await tester.tap(find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> openSession(String title) async {
+        await tester.tap(find.byKey(const Key('chat-sessions-button')));
+        await tester.pump();
+        final tile = find.widgetWithText(ListTile, title);
+        await tester.ensureVisible(tile);
+        await tester.pump();
+        await tester.tap(tile);
+        await tester.pumpAndSettle();
+      }
+
+      List<String> captionTexts() => tester
+          .widget<StageCaptionOverlay>(find.byType(StageCaptionOverlay))
+          .caption
+          .segments
+          .map((segment) => segment.text)
+          .toList();
+
+      // The stage is mounted before a session is chosen: only a later shell
+      // rebuild can hand it the chat session id.
+      await tapDestination('Chat');
+      await openSession('First session'); // s1
+
+      await tapDestination('Stage');
+      expect(
+        tester.widget<StageScreen>(find.byType(StageScreen)).boundSessionId,
+        's1',
+      );
+      final subscribesBefore = client.eventRpcCount('event.subscribe');
+      final unsubscribesBefore = client.eventRpcCount('event.unsubscribe');
+
+      client.emitEvent(
+        tokenDelta(sessionId: 's2', messageId: 'foreign', delta: 'S2 FOREIGN'),
+      );
+      await tester.pump();
+      expect(captionTexts(), isEmpty, reason: 's2 must not caption an s1 chat');
+
+      client.emitEvent(
+        tokenDelta(sessionId: 's1', messageId: 'mine', delta: 'S1 MINE'),
+      );
+      await tester.pump();
+      expect(captionTexts(), <String>['S1 MINE']);
+
+      // Switch the shell's active session. StageScreen must rebuild its
+      // binding: s1 is now foreign and s2 is the only stream it accepts.
+      await tapDestination('Chat');
+      await openSession('Second session'); // s2
+      await tapDestination('Stage');
+      expect(
+        tester.widget<StageScreen>(find.byType(StageScreen)).boundSessionId,
+        's2',
+      );
+
+      // A session-only change retargets the filter in place: no event-lane
+      // churn, so no unsubscribe can land after a replacement subscribe.
+      expect(
+        client.eventRpcCount('event.unsubscribe'),
+        unsubscribesBefore,
+        reason: 'session switching must not unsubscribe the daemon topic',
+      );
+      expect(
+        client.eventRpcCount('event.subscribe'),
+        subscribesBefore,
+        reason: 'session switching must not recreate the event binding',
+      );
+      expect(
+        captionTexts(),
+        isEmpty,
+        reason: "the previous session's captions clear immediately",
+      );
+
+      client.emitEvent(
+        tokenDelta(sessionId: 's1', messageId: 'stale', delta: 'S1 STALE'),
+      );
+      await tester.pump();
+      expect(captionTexts(), isNot(contains('S1 STALE')));
+
+      client.emitEvent(
+        tokenDelta(sessionId: 's2', messageId: 'new', delta: 'S2 NEW'),
+      );
+      await tester.pump();
+      expect(captionTexts(), <String>['S2 NEW']);
+    });
+  });
+}
+
+class _ShellCaptionClient extends FakeChatClient {
+  /// Event-lane RPCs this fake has seen, with their topic lists. The stage
+  /// binding carries `token.delta`; chat only ever carries `emotion.tag`.
+  final List<String> eventActions = <String>[];
+  final List<List<String>> eventTopics = <List<String>>[];
+
+  int eventRpcCount(String action) {
+    var count = 0;
+    for (var i = 0; i < eventActions.length; i++) {
+      if (eventActions[i] == action && eventTopics[i].contains('token.delta')) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  @override
+  Future<Map<String, dynamic>> settingsGet(String section) async {
+    if (section == 'captions') {
+      return <String, dynamic>{'enabled': true, 'docking': 'bottom'};
+    }
+    return const <String, dynamic>{};
+  }
+
+  @override
+  Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
+    if (action == 'event.subscribe' || action == 'event.unsubscribe') {
+      eventActions.add(action);
+      eventTopics.add(
+        (payload?['topics'] as List<dynamic>? ?? const <dynamic>[])
+            .map((topic) => topic.toString())
+            .toList(),
+      );
+    }
+    switch (action) {
+      case 'cards.list':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{'cards': <dynamic>[], 'truncated': false},
+        );
+      case 'sessions.list':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'sessions': <Map<String, dynamic>>[
+              <String, dynamic>{'id': 's1', 'title': 'First session'},
+              <String, dynamic>{'id': 's2', 'title': 'Second session'},
+            ],
+          },
+        );
+      case 'chat.history':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'messages': <dynamic>[],
+            'truncated': false,
+          },
+        );
+      default:
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    }
+  }
 }

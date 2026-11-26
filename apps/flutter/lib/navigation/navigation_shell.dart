@@ -575,6 +575,7 @@ class _NavigationShellState extends State<NavigationShell> {
             client: widget.client,
             frames: widget.lipSyncFrames,
             cardId: _selectedCardId,
+            boundSessionId: _chatKey.currentState?.activeSessionId,
             background: store?.activeBackgroundFor(_selectedCardId) ??
                 StageBackground.none,
             captionStyle: _captionStyle,

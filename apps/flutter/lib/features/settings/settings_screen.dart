@@ -16,6 +16,7 @@ import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
 import '../stage/stage_control_strip_state.dart';
 import 'settings_catalog.dart';
+import 'settings_search.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -83,6 +84,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   };
   Map<String, dynamic>? _runtimeStatus;
   List<Map<String, dynamic>> _providers = const <Map<String, dynamic>>[];
+  List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
+  String _searchQuery = '';
   bool _settingsBusy = false;
   String? _settingsError;
   String? _settingsStatus;
@@ -102,6 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // draft.
         unawaited(_loadSections());
         unawaited(_loadRuntimeState());
+        unawaited(_loadCards());
       }
       _wasConnected = status.state == DaemonConnectionState.connected;
     });
@@ -116,6 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     unawaited(_loadSections());
     unawaited(_loadRuntimeState());
+    unawaited(_loadCards());
   }
 
   @override
@@ -220,6 +225,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Card names extend the search index. A failed read only empties that
+  /// source: it must not clear the provider/runtime state loaded above.
+  Future<void> _loadCards() async {
+    try {
+      // NOTICE: the daemon may cap `cards.list` below this limit; only the
+      // first 200 cards can appear in the search index, not the whole library.
+      final page = await widget.client.cardsListPage(limit: 200);
+      if (!mounted) return;
+      setState(() => _cards = page.items.toList(growable: false));
+    } on Object catch (_) {
+      if (mounted) setState(() => _cards = const <Map<String, dynamic>>[]);
+    }
+  }
+
   /// Edit one draft field in memory; nothing reaches the daemon until Save.
   void _edit(_SettingsSection section, String key, Object? value) {
     final draft = _drafts[section]!;
@@ -313,6 +332,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _openSearchResult(SettingsSearchItem item) {
+    setState(() => _searchQuery = '');
+    switch (item.kind) {
+      case SettingsSearchKind.catalog:
+        final node = item.node;
+        if (node != null) _openCatalogNode(node);
+      case SettingsSearchKind.provider:
+        _push(ProvidersScreen(client: widget.client));
+      case SettingsSearchKind.card:
+        _push(CardsScreen(client: widget.client));
+    }
+  }
+
+  IconData _iconForSearchItem(SettingsSearchItem item) => switch (item.kind) {
+        SettingsSearchKind.provider => Icons.extension_outlined,
+        SettingsSearchKind.card => Icons.person_outline,
+        SettingsSearchKind.catalog =>
+          item.node == null ? Icons.settings_outlined : _iconForNode(item.node!),
+      };
+
   /// Bring a section's editor into view. The hub is one scrolling page, so the
   /// catalog entry scrolls to the card instead of pushing an empty route.
   void _scrollTo(_SettingsSection section) {
@@ -327,7 +366,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final results = SettingsSearchIndex.build(
+      providers: _providers,
+      cards: _cards,
+    ).search(_searchQuery);
     final children = <Widget>[
+      TextField(
+        key: const Key('settings-search-field'),
+        decoration: const InputDecoration(
+          hintText: 'Search settings, cards, providers...',
+          prefixIcon: Icon(Icons.search),
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        onChanged: (value) => setState(() => _searchQuery = value),
+      ),
+      if (_searchQuery.trim().isNotEmpty) ...<Widget>[
+        const Padding(
+          padding: EdgeInsets.only(bottom: 4),
+          child: Text('Search Results',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        if (results.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('No results'),
+          ),
+        for (final item in results)
+          ListTile(
+            key: ValueKey<String>('settings-search-result-${item.id}'),
+            leading: Icon(_iconForSearchItem(item)),
+            title: Text(item.title),
+            subtitle: Text(item.category),
+            onTap: () => _openSearchResult(item),
+          ),
+        const Divider(),
+      ],
       const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
       const SizedBox(height: 8),
       if (_runtimeStatus != null)

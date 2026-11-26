@@ -6,8 +6,8 @@
 // `packages/stage-ui/src/stores/modules/speech.ts:147-434` (behavioral spec:
 // `packages/stage-ui/src/stores/modules/README-speech-transformer.md`).
 // Only the engine-agnostic steps are ported: math and chemical notation and
-// their locale packs stay in a separate scope. No settings are read or
-// written here; callers pass explicit UstOptions.
+// their locale packs stay in a separate scope. Settings are only parsed (by
+// [UstOptions.fromSpeechSettings]); nothing here ever writes settings back.
 
 /// Action for a bracket pair. `token` rewrites `<aside>` to `<|aside|>`.
 enum UstBracketAction { mute, flatten, passThrough, ignore, token }
@@ -47,6 +47,101 @@ class UstOptions {
     this.legacyCustomStripChars = '',
   });
 
+  /// Select the active voice profile from a decoded `settings/speech` map and
+  /// read its UST settings, mirroring `transformTextForSpeech`'s precedence in
+  /// `packages/stage-ui/src/stores/modules/speech.ts:659-681`:
+  ///  - a virtual profile (or one whose `baseVoice`/`baseProvider` matches the
+  ///    active voice and provider) wins;
+  ///  - a missing/unreadable profile, section or `enabled` flag is an exact
+  ///    passthrough (`enabled: false`), as in the TS early return;
+  ///  - configured fields fall back to the starter [UstOptions] defaults when
+  ///    absent or of the wrong type; providers that speak raw text bypass UST.
+  factory UstOptions.fromSpeechSettings(Map<String, dynamic> settings) {
+    const defaults = UstOptions();
+    final rawProfiles = settings['voiceProfiles'];
+    if (rawProfiles is! List) return const UstOptions(enabled: false);
+    final profiles = rawProfiles.whereType<Map<String, dynamic>>().toList();
+    if (profiles.isEmpty) return const UstOptions(enabled: false);
+
+    final provider = settings['activeProvider'];
+    final voice = settings['voice'];
+    if (provider == 'chatterbox' || provider == 'airi-audio-server') {
+      return const UstOptions(enabled: false);
+    }
+
+    Map<String, dynamic>? profile;
+    if (provider == 'virtual-audio-studio' &&
+        voice is String &&
+        voice.isNotEmpty) {
+      for (final candidate in profiles) {
+        if (candidate['id'] == voice || candidate['name'] == voice) {
+          profile = candidate;
+          break;
+        }
+      }
+    }
+    if (profile == null) {
+      for (final candidate in profiles) {
+        if (candidate['baseVoice'] == voice &&
+            candidate['baseProvider'] == provider) {
+          profile = candidate;
+          break;
+        }
+      }
+    }
+    if (profile == null) return const UstOptions(enabled: false);
+
+    final ust = profile['ust'];
+    if (ust is! Map<String, dynamic>) return const UstOptions(enabled: false);
+    final enabled = ust['enabled'];
+    if (enabled is! bool || !enabled) return const UstOptions(enabled: false);
+
+    final codeBlocksRaw = ust['codeBlocks'];
+    final codeBlocks = codeBlocksRaw is String
+        ? _codeBlockActions[codeBlocksRaw] ?? defaults.codeBlocks
+        : ust['stripCodeBlocks'] == false
+            ? UstCodeBlockAction.passThrough
+            : defaults.codeBlocks;
+
+    return UstOptions(
+      enabled: enabled,
+      asterisks: _bracketAction(ust['asterisks'], defaults.asterisks),
+      squareBrackets:
+          _bracketAction(ust['squareBrackets'], defaults.squareBrackets),
+      parentheses: _bracketAction(ust['parentheses'], defaults.parentheses),
+      angleBrackets:
+          _bracketAction(ust['angleBrackets'], defaults.angleBrackets),
+      customBracketEnabled:
+          _bool(ust['customBracketEnabled'], defaults.customBracketEnabled),
+      customBracketStart:
+          _string(ust['customBracketStart'], defaults.customBracketStart),
+      customBracketEnd:
+          _string(ust['customBracketEnd'], defaults.customBracketEnd),
+      customBracketAction: _bracketAction(
+        ust['customBracketAction'],
+        defaults.customBracketAction,
+      )!,
+      codeBlocks: codeBlocks,
+      stripHtml: _bool(ust['stripHtml'], defaults.stripHtml),
+      preserveMarkdownLinks: _linkMode(
+        ust['preserveMarkdownLinks'],
+        defaults.preserveMarkdownLinks,
+      )!,
+      normalizeBlockPauses:
+          _bool(ust['normalizeBlockPauses'], defaults.normalizeBlockPauses),
+      preserveMathOperators:
+          _bool(ust['preserveMathOperators'], defaults.preserveMathOperators),
+      stripEmojis: _bool(ust['stripEmojis'], defaults.stripEmojis),
+      stripSymbols: _bool(ust['stripSymbols'], defaults.stripSymbols),
+      tildeReplacement: _stringOrNull(ust['tildeReplacement']),
+      legacyMode: _legacyMode(ust['mode'], defaults.legacyMode),
+      legacyCustomStripChars:
+          _string(ust['customStripChars'], defaults.legacyCustomStripChars),
+      // customReplacements is deferred: it needs an ordered rule list with
+      // regex/text flags, which UstOptions does not model yet.
+    );
+  }
+
   final bool enabled;
   final UstBracketAction? asterisks;
   final UstBracketAction? squareBrackets;
@@ -68,6 +163,42 @@ class UstOptions {
   final UstLegacyMode? legacyMode;
   final String legacyCustomStripChars;
 }
+
+const Map<String, UstBracketAction> _bracketActions =
+    <String, UstBracketAction>{
+  'mute': UstBracketAction.mute,
+  'flatten': UstBracketAction.flatten,
+  'passThrough': UstBracketAction.passThrough,
+  'ignore': UstBracketAction.ignore,
+  'token': UstBracketAction.token,
+};
+const Map<String, UstCodeBlockAction> _codeBlockActions =
+    <String, UstCodeBlockAction>{
+  'mute': UstCodeBlockAction.mute,
+  'passThrough': UstCodeBlockAction.passThrough,
+  'ignore': UstCodeBlockAction.ignore,
+};
+const Map<String, UstLinkMode> _linkModes = <String, UstLinkMode>{
+  'extract_text': UstLinkMode.extractText,
+  'mute': UstLinkMode.mute,
+  'raw': UstLinkMode.raw,
+};
+const Map<String, UstLegacyMode> _legacyModes = <String, UstLegacyMode>{
+  'mute': UstLegacyMode.mute,
+  'flatten': UstLegacyMode.flatten,
+  'custom': UstLegacyMode.custom,
+};
+
+bool _bool(Object? value, bool fallback) => value is bool ? value : fallback;
+String _string(Object? value, String fallback) =>
+    value is String ? value : fallback;
+String? _stringOrNull(Object? value) => value is String ? value : null;
+UstBracketAction? _bracketAction(Object? value, UstBracketAction? fallback) =>
+    value is String ? _bracketActions[value] ?? fallback : fallback;
+UstLegacyMode? _legacyMode(Object? value, UstLegacyMode? fallback) =>
+    value is String ? _legacyModes[value] ?? fallback : fallback;
+UstLinkMode? _linkMode(Object? value, UstLinkMode? fallback) =>
+    value is String ? _linkModes[value] ?? fallback : fallback;
 
 final RegExp _imageEmbed = RegExp(r'!\[.*?\]\(.*?\)');
 final RegExp _codeBlock = RegExp(r'```[\s\S]*?```');
