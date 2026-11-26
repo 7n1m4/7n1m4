@@ -106,7 +106,7 @@ A later, much larger change — PR **#2739 / commit `671fbf0d33`** (2026-10-02) 
 
 - Shortlist tier **P5 — retired historical record; no revival.** (`docs/project-selective-upstream-sync-shortlist.md:69,221,233,245`).
 - Radar marks PR #2739 as **`Auto-Reject / Do Not Port`** because it reintroduces deprecated `controls-island` and conflicts with this fork's decoupled Electron + Control Strip design (`docs/UPSTREAM_RADAR.md:1842-1843`). It separately warns never to pull or mix components from the Kirie tree into our surfaces (`docs/UPSTREAM_RADAR.md:1847`).
-- The pivot design records import as a **retired historical status**, not an open sub-question (`docs/design-flutter-godot-pivot.md:67,327-330,409-413`).
+- The pivot design records import as a **retired historical status**, not an open sub-question (`docs/design-flutter-godot-pivot.md` §5 decision A / §7 Wave 4 / §9 cross-links).
 
 ### Neutral recommendation (not a decision)
 
@@ -114,7 +114,7 @@ A later, much larger change — PR **#2739 / commit `671fbf0d33`** (2026-10-02) 
 
 - *Against import (retired historical record; no revival):* its host is Electron + a local WS handshake, whereas Anima's single writer is `anima-daemon` and every GUI is a thin WS client (pivot decisions 1-3, `docs/design-flutter-godot-pivot.md:64-66`). It is VRM-only while decision A selected **both** backends. It carries large vendored addon trees and an incomplete VRM 1.0 runtime. #2739 is a desktop-host migration, not an avatar renderer, and is already auto-rejected.
 - *For selective reading (retired historical record; no revival):* #1697/#1724 are useful examples of Godot 4 + C# project layout, sidecar lifecycle and export/packaging contract; #1865 records a main-scene path lesson. These are cheap to re-derive from Godot docs, which is what this scaffold does.
-- *Recommendation (retired historical record; no revival):* the sub-question is closed as retired. No revisit, time-boxed trial, or re-evaluation is planned; the pivot forbids fetch/merge/rebase/push here (`docs/design-flutter-godot-pivot.md:426-431`).
+- *Recommendation (retired historical record; no revival):* the sub-question is closed as retired. No revisit, time-boxed trial, or re-evaluation is planned; the pivot forbids fetch/merge/rebase/push here (`docs/design-flutter-godot-pivot.md`, §9 canonical cross-links / upstream-write prohibition).
 
 ## 4. Decision matrix and plugin boundary (historical research)
 
@@ -156,7 +156,7 @@ Historical verification performed (retired research artifact only): `project.god
 
 **Local (re-read for this spike; no upstream fetch):**
 
-- `docs/design-flutter-godot-pivot.md` — decision A (:67), decisions 1-3 (:64-66), decision B (:73), mobile composition (historical open-at-the-time, :207-209), §6 reality table (:231-237), invariant 4 (:137-140), Wave 4 (:320-334), sidecar sub-question (historical retired status, :327-330, :409-413), cross-links (:426-431).
+- `docs/design-flutter-godot-pivot.md` — decision A (:67), decisions 1-3 (:64-66), decision B (:73), mobile composition (historical open-at-the-time, :207-209), §6 reality table (:231-237), invariant 4 (:137-140), Wave 4 (:320-334), sidecar sub-question (historical retired status, §5 decision A / §7 Wave 4), cross-links (§9 canonical cross-links).
 - `docs/project-selective-upstream-sync-shortlist.md` — P5 tier (:20, :31), "Godot stage — retired historical tier" (:57-69), PR detail (:209-245).
 - `docs/UPSTREAM_RADAR.md` — Cubism 2 discussion (:34, :267), #1865 (:1709), #2739 summary (:1818) and auto-reject/warnings (:1842-1847), #2739 commit (:1862), Godot-C# skill doc (:1866).
 - `crates/anima-render/src/vrm/lipsync.rs` — smoothing contract (:3-7) and implementation (:24-38).

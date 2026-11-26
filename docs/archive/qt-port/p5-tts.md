@@ -91,7 +91,7 @@ Crate: `apps/airi-qt/crates/airi-speech/` (new; workspace member; no Qt; no chan
 - `cargo fmt --all --check` — airi-speech **clean**. (`airi-stt` shows diffs — that lane's files,
   out of scope; left untouched.) `cargo fmt -p airi-speech` was applied.
 - `cargo clippy --workspace --all-targets -- -D warnings` — **blocked by `airi-stt`**:
-  `crates/airi-stt/examples/vad_probe.rs:13` trips `clippy::type_complexity` (`-D warnings`).
+  `crates/airi-stt/examples/vad_probe.rs` (VAD probe example, since deleted) trips `clippy::type_complexity` (`-D warnings`).
   p5-stt is actively editing that crate; not fixed here (lane scope). airi-speech passes.
 - `--smoke` not re-run: the GUI smoke binary (`cargo run -p airi-qt -- --smoke`) does not depend on
   this crate (`airi-qt` has no `airi-speech` dependency), so this lane cannot break it; building

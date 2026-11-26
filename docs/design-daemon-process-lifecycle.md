@@ -80,9 +80,9 @@ encodes the client half: "closing Flutter must not tear this process down"
 | Action | Path | Notes |
 |---|---|---|
 | Login | systemd user target → daemon (D-Bus) + supervisor (tray) | daemon may equally be D-Bus activated on first `GetGatewayConfig`; both are correct |
-| Start pet | tray → `spawn godot` → Godot connects `ws://127.0.0.1:6121`, auths, `event.subscribe` | endpoint `godot/scripts/Net/DaemonClient.cs:58`, token read at `:105-108`, connect `:132`, disconnect `:275` |
+| Start pet | tray → `spawn godot` → Godot connects `ws://127.0.0.1:6121`, auths, `event.subscribe` | endpoint `godot/scripts/Net/DaemonClient.cs` (gateway endpoint constant, config token read, connect/disconnect lifecycle; deleted with Godot) |
 | Start control surface | tray → `spawn flutter` → same gateway contract | endpoint defaults `apps/flutter/lib/connection/connection_settings.dart:21-24` |
-| Stop client | tray menu (or window close) → process exits; daemon unaffected | Godot disconnects in `_ExitTree` (`godot/scripts/Main.cs:102-114`) |
+| Stop client | tray menu (or window close) → process exits; daemon unaffected | Godot disconnects in `_ExitTree` (`godot/scripts/Main.cs`, deleted with Godot) |
 | Restart client | tray → stop + start | bounded; a client crash is not a daemon event |
 | Restart daemon | `systemctl --user restart anima-daemon`, or fix the bind error the daemon reports | the supervisor never restarts the daemon — see §2 |
 | Stop everything | tray "Quit" → stops clients, then the tray process | the daemon may keep running (it is not GUI state) |
@@ -117,7 +117,7 @@ Why the daemon must not own the tray:
   toolkit and a display dependency to the one process that must survive everything.
 - Tray failure would then be daemon failure, or would need an awkward "tray is optional" branch in
   the daemon. Today that branch already exists on the client side
-  (`crates/anima-slint/src/bridges/desktop.rs:120-146`: no `StatusNotifierWatcher` → no icon, app
+  (`crates/anima-slint/src/bridges/desktop.rs`, deleted in the Slint big-bang cutover: no `StatusNotifierWatcher` → no icon, app
   runs normally). That degradation belongs in a process whose job *is* the tray.
 - The tray is a *client lifecycle* affordance (show settings, open chat, toggle pet, quit). It is
   control-plane-adjacent, and pivot decision 8 is explicit that this must not become a new
@@ -154,7 +154,7 @@ tray becomes the only one. Two tray items must never be installed at once.
 | Electrobun desktop | in-app server **deleted in E5**; before that, the retired fallback applies | same | bind 6121 |
 
 The Flutter policy is the reference shape and stays as-is; Godot's client keeps its current "log
-and keep the window alive" behaviour (`godot/scripts/Main.cs:60-65`) and grows the same bounded
+and keep the window alive" behaviour (`godot/scripts/Main.cs`, deleted with Godot) and grows the same bounded
 policy rather than a different one. Neither is a reconnect *storm*: 5 attempts, then quiet.
 
 **One daemon, and what "absent" means.** A client that cannot reach the session bus at all is in
@@ -188,7 +188,7 @@ whether a socket answered.
   loopback `ws://` by default, forced `wss://` beyond loopback, first-message `authToken` gate,
   0600 config and CA key (`design-daemon-gateway.md:53-84`). The supervisor holds *no* token and
   mints *no* cert; it starts processes that read the daemon-owned
-  `<data>/airi-slint/server-channel/config.json` themselves (`godot/scripts/Net/DaemonClient.cs:58,405-422`).
+  `<data>/airi-slint/server-channel/config.json` themselves (`godot/scripts/Net/DaemonClient.cs` config-path read, deleted with Godot).
 - **Open follow-ups for E5**, not decided here: supervisor implementation language (staying in the
   Rust workspace is the obvious default, but it is E5's call); whether the tray item also surfaces
   daemon bind status (`bound` / `lastError`); what "Quit" does to the daemon; whether the supervisor
