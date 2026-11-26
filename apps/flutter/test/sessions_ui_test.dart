@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/chat/chat_screen.dart';
 import 'package:anima_control/features/sessions/sessions_screen.dart';
+import 'package:intl/intl.dart';
 
 import 'support/fakes.dart';
 
@@ -198,5 +199,62 @@ void main() {
     await tester.pump();
 
     expect(find.widgetWithText(ListTile, 'Gamma session'), findsNothing);
+  });
+
+  testWidgets('session subtitle shows wire timestamps in Vue date format', (
+    tester,
+  ) async {
+    final created = DateTime(2025, 3, 14, 9, 26);
+    final updated = DateTime(2025, 6, 1, 18, 5);
+    final client = _SessionsUiClient();
+    addTearDown(client.dispose);
+    client.onCall = (action, payload) {
+      if (action == 'sessions.list') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'sessions': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'dated',
+                'title': 'Dated session',
+                'created_at': created.millisecondsSinceEpoch,
+                'updated_at': updated.millisecondsSinceEpoch,
+              },
+              // A wrong type must not crash the row; it keeps the id fallback.
+              <String, dynamic>{
+                'id': 'untimed',
+                'title': 'Untimed session',
+                'created_at': 'not-a-timestamp',
+              },
+              // toInt() throws on non-finite doubles; guard before converting.
+              <String, dynamic>{
+                'id': 'nonfinite',
+                'title': 'Non-finite session',
+                'created_at': double.infinity,
+              },
+            ],
+            'truncated': false,
+          },
+        );
+      }
+      return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    };
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: SessionsScreen(client: client))),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final format = DateFormat('MMM d, yyyy HH:mm');
+    expect(
+      find.text(
+        '${format.format(created)}\nLast active ${format.format(updated)}',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('untimed'), findsOneWidget);
+    expect(find.text('nonfinite'), findsOneWidget);
+    expect(find.text('dated'), findsNothing);
   });
 }

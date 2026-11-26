@@ -23,6 +23,7 @@ import 'model_asset_resolver.dart';
 import 'model_backend.dart';
 import 'model_runtime.dart';
 import 'presence_status_chip.dart';
+import 'stage_atmosphere.dart';
 import 'stage_background.dart';
 import 'stage_control_strip.dart';
 import 'stage_control_strip_state.dart';
@@ -225,6 +226,21 @@ class _StageScreenState extends State<StageScreen> {
             cacheDirectoryProvider: widget.cacheDirectoryProvider,
             frames: widget.frames,
             actorId: widget.actorId,
+          ),
+        ),
+        // Top-left picker; the presence chip owns the top-right and the cue
+        // badge the bottom-left of this stack.
+        Positioned(
+          left: 12,
+          top: 12,
+          // Bound the chip row so it cannot grow under the top-right
+          // presence chip on narrow screens.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: StageAtmosphereSelector(
+              selected: _render.atmosphere,
+              onChanged: (p) => _render.setAtmosphere(p),
+            ),
           ),
         ),
         Positioned(

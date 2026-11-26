@@ -7,9 +7,13 @@
 import 'dart:ui' as ui;
 
 import 'package:anima_control/features/stage/stage_atmosphere.dart';
+import 'package:anima_control/features/stage/stage_overlay_state.dart';
 import 'package:anima_control/features/stage/stage_overlays.dart';
+import 'package:anima_control/features/stage/stage_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fakes.dart';
 
 void main() {
   group('atmosphere preset metadata', () {
@@ -132,6 +136,26 @@ void main() {
       painter.paint(canvas, ui.Size.zero);
       painter.paint(canvas, size);
       recorder.endRecording().dispose();
+    });
+  });
+
+  group('stage shell wiring', () {
+    testWidgets('the shell picker drives the shared render state', (tester) async {
+      final client = FakeChatClient();
+      final state = StageRenderState();
+      addTearDown(client.dispose);
+      addTearDown(state.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: StageScreen(client: client, render: state)),
+        ),
+      );
+      await tester.pump();
+      expect(state.atmosphere, StageAtmosphere.none);
+
+      await tester.tap(find.text('Sakura'));
+      await tester.pump();
+      expect(state.atmosphere, StageAtmosphere.petals);
     });
   });
 }

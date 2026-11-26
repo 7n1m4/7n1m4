@@ -72,11 +72,16 @@ void main() {
   });
 
   testWidgets('catalog-driven hub renders all visible top-level areas', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final client = FakeChatClient();
     addTearDown(client.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SizedBox(height: 1200, child: SettingsScreen(client: client, onOpenConnections: () {}))),
+      home: Scaffold(body: SettingsScreen(client: client, onOpenConnections: () {})),
     ));
     await tester.pumpAndSettle();
 
@@ -89,6 +94,11 @@ void main() {
   });
 
   testWidgets('provider-backed settings hydrate from daemon reads and fall back cleanly', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final connected = _HydrationClient(
       runtimeStatus: <String, dynamic>{
         'app': 'anima-daemon',
@@ -102,7 +112,7 @@ void main() {
     addTearDown(connected.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SizedBox(height: 1200, child: SettingsScreen(client: connected, onOpenConnections: () {}))),
+      home: Scaffold(body: SettingsScreen(client: connected, onOpenConnections: () {})),
     ));
     await tester.pumpAndSettle();
 
@@ -119,7 +129,7 @@ void main() {
     addTearDown(disconnected.dispose);
 
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: SizedBox(height: 1200, child: SettingsScreen(client: disconnected, onOpenConnections: () {}))),
+      home: Scaffold(body: SettingsScreen(client: disconnected, onOpenConnections: () {})),
     ));
     await tester.pumpAndSettle();
 

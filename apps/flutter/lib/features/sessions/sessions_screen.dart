@@ -1,9 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../daemon_client/daemon_client.dart';
 import '../chat/chat_screen.dart';
+
+final DateFormat _sessionDateFormat = DateFormat('MMM d, yyyy HH:mm');
+
+/// Read a wire timestamp (ms epoch) defensively: anything other than a
+/// positive number is treated as absent rather than failing the build.
+DateTime? _sessionTimestamp(Map<String, dynamic> session, String key) {
+  final value = session[key];
+  if (value is! num) return null;
+  // toInt() throws on NaN/Infinity, which can arrive from a malformed wire
+  // reply; reject those before converting.
+  if (value is double && !value.isFinite) return null;
+  final milliseconds = value.toInt();
+  if (milliseconds <= 0) return null;
+  try {
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  } catch (_) {
+    return null;
+  }
+}
+
+String _sessionSubtitle(Map<String, dynamic> session) {
+  final created = _sessionTimestamp(session, 'created_at');
+  final updated = _sessionTimestamp(session, 'updated_at');
+  if (created == null && updated == null) {
+    return session['id']?.toString() ?? '';
+  }
+  return <String>[
+    if (created != null) _sessionDateFormat.format(created),
+    if (updated != null) 'Last active ${_sessionDateFormat.format(updated)}',
+  ].join('\n');
+}
 
 class SessionsScreen extends StatefulWidget {
   const SessionsScreen({super.key, required this.client});
@@ -269,7 +301,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     for (final s in _visibleSessions)
                       ListTile(
                         title: Text((s['title'] as String?) ?? (s['id'] as String?) ?? ''),
-                        subtitle: Text((s['id'] as String?) ?? ''),
+                        subtitle: Text(_sessionSubtitle(s)),
                         // Opening a session replays its persisted turns via
                         // chat.history on the chat screen.
                         onTap: () => Navigator.of(context).push(
