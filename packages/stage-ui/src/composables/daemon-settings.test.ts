@@ -252,3 +252,106 @@ describe('bridgeDaemonSettings', () => {
     bridge.stop()
   })
 })
+
+/**
+ * `bridgeDaemonSettingsField` narrows a section bridge to one localStorage-style
+ * key. The daemon returns (and the PATCH carries) the whole section, so these
+ * tests pin that hydration takes only the bridged field and write-back sends a
+ * PATCH holding only that field — leaving the section's siblings alone.
+ */
+describe('bridgeDaemonSettingsField', () => {
+  it('hydrates only the bridged field from the daemon section', async () => {
+    mod = await freshSettings()
+    h.fetch.mockResolvedValue({
+      'onboarding/v3-draft': { step: 3, userName: 'Daemon' },
+      'onboarding/v3-completed': false,
+    })
+    const field = ref({ step: 0, userName: 'Cached' })
+
+    const bridge = mod.bridgeDaemonSettingsField('onboarding', 'onboarding/v3-draft', () => field.value, (value) => {
+      field.value = value
+    })
+
+    await nextTick()
+    await Promise.resolve()
+    await nextTick()
+    // Let the hydration watcher flush so the guard at daemon-settings.ts:133-136
+    // is exercised before the assertions and the bridge is stopped.
+    await nextTick()
+
+    expect(field.value).toEqual({ step: 3, userName: 'Daemon' })
+    expect(h.requests).toEqual([{ action: 'settings.get', payload: { section: 'onboarding' } }])
+    bridge.stop()
+  })
+
+  it('writes back a PATCH holding only the bridged field', async () => {
+    mod = await freshSettings()
+    h.fetch.mockResolvedValue({
+      'onboarding/v3-draft': { step: 0, userName: 'Daemon' },
+      'onboarding/v3-completed': false,
+    })
+    const field = ref({ step: 0, userName: 'Cached' })
+
+    const bridge = mod.bridgeDaemonSettingsField('onboarding', 'onboarding/v3-draft', () => field.value, (value) => {
+      field.value = value
+    })
+
+    await nextTick()
+    await Promise.resolve()
+    await nextTick()
+    await nextTick()
+    // Drop the hydration read; only the write-back below is under test.
+    h.requests.length = 0
+
+    field.value = { step: 5, userName: 'Edited' }
+    await nextTick()
+    await nextTick()
+
+    expect(h.requests).toEqual([{
+      action: 'settings.set',
+      payload: { section: 'onboarding', settings: { 'onboarding/v3-draft': { step: 5, userName: 'Edited' } } },
+    }])
+    bridge.stop()
+  })
+
+  it('keeps siblings out of hydration and the PATCH', async () => {
+    mod = await freshSettings()
+    h.fetch.mockResolvedValue({
+      'onboarding/v3-completed': true,
+      'onboarding/v3-skipped': true,
+      'onboarding/v3-draft': { userName: 'Daemon' },
+    })
+    const local = ref({
+      'onboarding/v3-completed': false,
+      'onboarding/v3-skipped': false,
+    })
+
+    const bridge = mod.bridgeDaemonSettingsField('onboarding', 'onboarding/v3-skipped', () => local.value['onboarding/v3-skipped'], (value) => {
+      local.value['onboarding/v3-skipped'] = value
+    })
+
+    await nextTick()
+    await Promise.resolve()
+    await nextTick()
+    await nextTick()
+
+    // Hydration installs only the bridged field; the local sibling is untouched.
+    expect(local.value).toEqual({
+      'onboarding/v3-completed': false,
+      'onboarding/v3-skipped': true,
+    })
+
+    h.requests.length = 0
+    local.value['onboarding/v3-skipped'] = false
+    await nextTick()
+    await nextTick()
+
+    // The PATCH holds only the bridged field, so the daemon's recursive merge
+    // keeps the completed flag and the draft intact.
+    expect(h.requests).toEqual([{
+      action: 'settings.set',
+      payload: { section: 'onboarding', settings: { 'onboarding/v3-skipped': false } },
+    }])
+    bridge.stop()
+  })
+})
