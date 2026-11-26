@@ -41,10 +41,26 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > /tmp/release.keystore
       - name: Build AAB
         working-directory: apps/flutter
-        run: flutter build appbundle --release
+        env:
+          BUILD_BRANCH: ${{ github.ref_name }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          BUILD_BUILT_ON="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flutter build appbundle --release \
+            --dart-define=BRANCH="$BUILD_BRANCH" \
+            --dart-define=COMMIT="$BUILD_COMMIT" \
+            --dart-define=BUILT_ON="$BUILD_BUILT_ON"
       - name: Build APK (sideload)
         working-directory: apps/flutter
-        run: flutter build apk --release
+        env:
+          BUILD_BRANCH: ${{ github.ref_name }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          BUILD_BUILT_ON="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flutter build apk --release \
+            --dart-define=BRANCH="$BUILD_BRANCH" \
+            --dart-define=COMMIT="$BUILD_COMMIT" \
+            --dart-define=BUILT_ON="$BUILD_BUILT_ON"
       - name: Clean keystore
         if: always()
         run: rm -f /tmp/release.keystore
@@ -80,7 +96,15 @@ jobs:
           echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
       - name: Build IPA
         working-directory: apps/flutter
-        run: flutter build ipa --release
+        env:
+          BUILD_BRANCH: ${{ github.ref_name }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          BUILD_BUILT_ON="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          flutter build ipa --release \
+            --dart-define=BRANCH="$BUILD_BRANCH" \
+            --dart-define=COMMIT="$BUILD_COMMIT" \
+            --dart-define=BUILT_ON="$BUILD_BUILT_ON"
       - name: Clean signing material
         if: always()
         run: |
