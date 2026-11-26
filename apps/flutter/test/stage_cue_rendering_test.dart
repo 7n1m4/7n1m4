@@ -29,8 +29,8 @@ StageExpressionCue _cue({
 
 void main() {
   group('cue parsing and channels', () {
-    test('emotion and motion cues parse with their channels', () {
-      for (final kind in <String>['emotion', 'motion']) {
+    test('emotion, motion and vfx cues parse with their channels', () {
+      for (final kind in <String>['emotion', 'motion', 'vfx']) {
         final cue = parseExpressionCue(<String, dynamic>{
           'tag': 'wave',
           'kind': kind,
@@ -55,27 +55,28 @@ void main() {
         expect(cue!.kind, kind);
         expect(
           stageCueChannel(cue),
-          kind == 'emotion' ? StageCueChannel.emotion : StageCueChannel.motion,
+          switch (kind) {
+            'emotion' => StageCueChannel.emotion,
+            'motion' => StageCueChannel.motion,
+            _ => StageCueChannel.vfx,
+          },
         );
       }
     });
 
-    test('a vfx cue is not an expression frame and never parses', () {
-      // `parseExpressionCue` accepts emotion/motion only (the daemon's
-      // `emotion.tag` lane); a vfx tag on that topic is junk.
-      expect(
-        parseExpressionCue(<String, dynamic>{
-          'tag': 'sparkle',
-          'kind': 'vfx',
-          'intensity': 0.5,
-          'actor_id': 'pet-1',
-          'seq': 1,
-        }),
-        isNull,
-      );
-      // The channel mapping still labels a vfx cue correctly if one is
-      // constructed directly.
-      expect(stageCueChannel(_cue(kind: 'vfx')), StageCueChannel.vfx);
+    test('a vfx cue parses to its own channel, never a facial expression', () {
+      final cue = parseExpressionCue(<String, dynamic>{
+        'tag': 'sparkle',
+        'kind': 'vfx',
+        'intensity': 0.5,
+        'actor_id': 'pet-1',
+        'seq': 1,
+        'ts_ms': 1700000000001,
+      });
+      expect(cue, isNotNull);
+      expect(cue!.isMotion, isFalse);
+      expect(cue.isNonFacial, isTrue);
+      expect(stageCueChannel(cue), StageCueChannel.vfx);
     });
 
     test('malformed and wrong-actor cues are ignored', () {

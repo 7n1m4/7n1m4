@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Client-local background library, ported in behavior from the Vue
-// `useBackgroundStore` (packages/stage-ui/src/stores/background.ts). The daemon
-// has no background verb, so entries and the active selection are persisted
-// only in this client's application-support directory. No card document or
-// daemon setting is written here.
+// `useBackgroundStore` (packages/stage-ui/src/stores/background.ts). The
+// daemon has no background verb, so entries are persisted only in this
+// client's application-support directory. Per-card backdrop ids are seeded
+// from daemon card documents (`extensions.airi.modules.activeBackgroundId`,
+// mirrored under `data.extensions.airi.modules`); this store never writes a
+// card, leaving that to the owning UI via `cards.update`.
 
 import 'dart:convert';
 import 'dart:io';
@@ -102,6 +104,15 @@ class StageSceneStore {
   String? get activeId => _activeId;
   StageBackground get activeBackground => activeBackgroundFor(null);
 
+  /// The library entry matching [id], or null when the id is unknown.
+  StageSceneEntry? entryFor(String? id) {
+    if (id == null) return null;
+    for (final entry in _entries) {
+      if (entry.id == id) return entry;
+    }
+    return null;
+  }
+
   /// The scene id currently selected for [cardId], or null when none.
   String? activeFor(String? cardId) =>
       (cardId == null ? _activeId : _activeByCard[cardId]) ?? _activeId;
@@ -118,6 +129,42 @@ class StageSceneStore {
       if (entry.id == id) return entry.background;
     }
     return StageBackground.none;
+  }
+
+  /// Seed the per-card selection from a card document without persisting.
+  /// An absent or unrecognized id leaves any local selection intact: Vue ids
+  /// may reference builtin or journal backgrounds this library cannot paint.
+  /// An explicit `none` clears the per-card choice.
+  void seedActiveForCard(String cardId, String? backgroundId) {
+    if (backgroundId == null) return;
+    if (backgroundId == 'none') {
+      _activeByCard.remove(cardId);
+      return;
+    }
+    final entry = entryFor(backgroundId);
+    if (entry != null) _activeByCard[cardId] = entry.id;
+  }
+
+  /// Change the card's backdrop and persist the selection locally. `none`
+  /// clears the per-card choice; an unknown id fails loudly.
+  Future<void> activateForCard(String cardId, String? backgroundId) async {
+    final entry = backgroundId == null || backgroundId == 'none'
+        ? null
+        : entryFor(backgroundId);
+    if (backgroundId != null &&
+        backgroundId != 'none' &&
+        entry == null) {
+      throw const StageSceneException(
+        'unknown-scene',
+        'That scene is no longer in the library.',
+      );
+    }
+    if (entry == null) {
+      _activeByCard.remove(cardId);
+    } else {
+      _activeByCard[cardId] = entry.id;
+    }
+    await _persist();
   }
 
   Future<void> load() async {

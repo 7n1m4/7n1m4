@@ -559,6 +559,36 @@ void main() {
       expect(find.textContaining('emotion'), findsNothing);
     });
 
+    testWidgets('a daemon vfx cue reaches the stage cue channel', (
+      tester,
+    ) async {
+      await pumpStage(tester);
+      client.emitEvent(
+        GatewayEventFrame(
+          topic: EventTopic.emotionTag,
+          rawTopic: 'emotion.tag',
+          data: <String, dynamic>{
+            'tag': 'fire',
+            'kind': 'vfx',
+            'intensity': 0.7,
+            'actor_id': 'pet-1',
+            'seq': 11,
+            'ts_ms': 1700000000400,
+          },
+        ),
+      );
+      await settle(tester);
+      // The daemon payload parsed into a real cue, the binding applied it to
+      // the shared render state, and the badge labels its vfx channel.
+      expect(find.text('vfx fire'), findsOneWidget);
+      expect(find.textContaining('emotion'), findsNothing);
+      expect(backend.emotions.single.kind, 'vfx');
+      expect(backend.emotions.single.tag, 'fire');
+      expect(backend.emotions.single.isNonFacial, isTrue);
+      expect(backend.emotions.single.isMotion, isFalse);
+      expect(stageCueChannel(backend.emotions.single), StageCueChannel.vfx);
+    });
+
     testWidgets('the strip reports intent without inventing daemon state', (
       tester,
     ) async {

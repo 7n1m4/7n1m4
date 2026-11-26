@@ -252,12 +252,14 @@ void main() {
         .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
         .where((frame) => frame['action'] == 'event.subscribe')
         .toList();
-    expect(subscriptions, hasLength(2));
+    expect(subscriptions, hasLength(4));
     expect(
       subscriptions.map((frame) => frame['payload']).toList(),
       <Object>[
         <String, dynamic>{'topics': <String>['token.delta']},
         <String, dynamic>{'topics': <String>['settings.changed']},
+        <String, dynamic>{'topics': <String>['presence.changed']},
+        <String, dynamic>{'topics': <String>['status.changed']},
       ],
     );
   });
@@ -330,8 +332,10 @@ void main() {
         <Object>[
           <String, dynamic>{'topics': <String>['token.delta']},
           <String, dynamic>{'topics': <String>['settings.changed']},
+          <String, dynamic>{'topics': <String>['presence.changed']},
+          <String, dynamic>{'topics': <String>['status.changed']},
         ],
-        reason: 'every authenticated socket re-subscribes to both topics',
+        reason: 'every authenticated socket re-subscribes to all four topics',
       );
     }
 
@@ -379,7 +383,7 @@ void main() {
         .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
         .where((frame) => frame['action'] == 'event.subscribe')
         .toList();
-    expect(subscriptions, hasLength(2));
+    expect(subscriptions, hasLength(4));
 
     // An older daemon rejects settings.changed but accepts token.delta.
     for (final frame in subscriptions) {
@@ -534,12 +538,13 @@ void main() {
     );
   }
 
-  test('paged list wrappers expose truncation and a next cursor', () async {
+  test('paged list wrappers forward daemon keyset cursors verbatim', () async {
     final (client, fake) = await connectedClient();
     addTearDown(client.dispose);
 
-    // chat.history: the cursor is the createdAt of the oldest message in the
-    // page; the daemon reports truncation rather than telling us to continue.
+    // Two turns share a timestamp: the daemon breaks the tie with rowId, and
+    // that composite must survive the round trip unchanged.
+    final historyCursor = <String, dynamic>{'createdAt': 20, 'rowId': 4};
     final history = client.chatHistoryPage('s1', limit: 2);
     final historyRequest = lastRequest(fake);
     expect(historyRequest['action'], 'chat.history');
@@ -550,18 +555,45 @@ void main() {
     reply(fake, historyRequest, <String, dynamic>{
       'sessionId': 's1',
       'messages': <Map<String, dynamic>>[
-        <String, dynamic>{'role': 'assistant', 'content': 'old', 'createdAt': 20},
-        <String, dynamic>{'role': 'user', 'content': 'new', 'createdAt': 30},
+        <String, dynamic>{
+          'role': 'assistant',
+          'content': 'old',
+          'createdAt': 20,
+          'rowId': 4,
+        },
+        <String, dynamic>{
+          'role': 'user',
+          'content': 'new',
+          'createdAt': 20,
+          'rowId': 7,
+        },
       ],
       'limit': 2,
       'truncated': true,
+      'cursor': historyCursor,
     });
     final historyPage = await history;
     expect(historyPage.items, hasLength(2));
     expect(historyPage.truncated, isTrue);
-    expect(historyPage.nextCursor, 20);
+    expect(historyPage.nextCursor, historyCursor);
 
-    // cards.list: offset cursor after the last returned row.
+    final moreHistory = client.chatHistoryPage(
+      's1',
+      limit: 2,
+      cursor: historyPage.nextCursor,
+    );
+    expect(lastRequest(fake)['payload'], <String, dynamic>{
+      'session_id': 's1',
+      'limit': 2,
+      'cursor': historyCursor,
+    });
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'messages': <Map<String, dynamic>>[],
+      'truncated': false,
+    });
+    expect((await moreHistory).nextCursor, isNull);
+
+    final cardCursor = <String, dynamic>{'updatedAt': 100, 'rowId': 9};
     final cards = client.cardsListPage(limit: 1);
     expect(lastRequest(fake)['payload'], <String, dynamic>{'limit': 1});
     reply(fake, lastRequest(fake), <String, dynamic>{
@@ -569,16 +601,17 @@ void main() {
         <String, dynamic>{'id': 'c1'},
       ],
       'truncated': true,
+      'cursor': cardCursor,
     });
     final cardPage = await cards;
     expect(cardPage.items.single['id'], 'c1');
     expect(cardPage.truncated, isTrue);
-    expect(cardPage.nextCursor, 1);
+    expect(cardPage.nextCursor, cardCursor);
 
     final moreCards = client.cardsListPage(limit: 1, cursor: cardPage.nextCursor);
     expect(lastRequest(fake)['payload'], <String, dynamic>{
       'limit': 1,
-      'cursor': 1,
+      'cursor': cardCursor,
     });
     reply(fake, lastRequest(fake), <String, dynamic>{
       'cards': <Map<String, dynamic>>[],
@@ -589,7 +622,7 @@ void main() {
     expect(lastCardPage.truncated, isFalse);
     expect(lastCardPage.nextCursor, isNull);
 
-    // sessions.list: same offset cursor shape.
+    final sessionCursor = <String, dynamic>{'updatedAt': 200, 'rowId': 11};
     final sessions = client.sessionsListPage(limit: 1);
     expect(lastRequest(fake)['payload'], <String, dynamic>{'limit': 1});
     reply(fake, lastRequest(fake), <String, dynamic>{
@@ -597,11 +630,12 @@ void main() {
         <String, dynamic>{'id': 's1'},
       ],
       'truncated': true,
+      'cursor': sessionCursor,
     });
     final sessionPage = await sessions;
     expect(sessionPage.items.single['id'], 's1');
     expect(sessionPage.truncated, isTrue);
-    expect(sessionPage.nextCursor, 1);
+    expect(sessionPage.nextCursor, sessionCursor);
 
     final moreSessions = client.sessionsListPage(
       limit: 1,
@@ -609,13 +643,66 @@ void main() {
     );
     expect(lastRequest(fake)['payload'], <String, dynamic>{
       'limit': 1,
-      'cursor': 1,
+      'cursor': sessionCursor,
     });
     reply(fake, lastRequest(fake), <String, dynamic>{
       'sessions': <Map<String, dynamic>>[],
       'truncated': false,
     });
     expect((await moreSessions).nextCursor, isNull);
+  });
+
+  test('paged list wrappers keep legacy numeric cursors working', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final history = client.chatHistoryPage('s1', limit: 1);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'messages': <Map<String, dynamic>>[
+        <String, dynamic>{'role': 'user', 'content': 'old', 'createdAt': 20},
+      ],
+      'truncated': true,
+    });
+    expect((await history).nextCursor, 20);
+    final moreHistory = client.chatHistoryPage('s1', cursor: 20);
+    expect(lastRequest(fake)['payload']['cursor'], 20);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'messages': <Map<String, dynamic>>[],
+      'truncated': false,
+    });
+    await moreHistory;
+
+    final cards = client.cardsListPage(limit: 1);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'cards': <Map<String, dynamic>>[
+        <String, dynamic>{'id': 'c1'},
+      ],
+      'truncated': true,
+    });
+    expect((await cards).nextCursor, 1);
+    final moreCards = client.cardsListPage(limit: 1, cursor: 1);
+    expect(lastRequest(fake)['payload']['cursor'], 1);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'cards': <Map<String, dynamic>>[],
+      'truncated': false,
+    });
+    await moreCards;
+
+    final sessions = client.sessionsListPage(limit: 1);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'sessions': <Map<String, dynamic>>[
+        <String, dynamic>{'id': 's1'},
+      ],
+      'truncated': true,
+    });
+    expect((await sessions).nextCursor, 1);
+    final moreSessions = client.sessionsListPage(limit: 1, cursor: 1);
+    expect(lastRequest(fake)['payload']['cursor'], 1);
+    reply(fake, lastRequest(fake), <String, dynamic>{
+      'sessions': <Map<String, dynamic>>[],
+      'truncated': false,
+    });
+    await moreSessions;
   });
 
   test('memory delete wrappers send ids and decode bool replies', () async {
@@ -648,6 +735,121 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('stmmUpsert sends the wire payload and returns the upserted count', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final block = <String, dynamic>{
+      'id': 'summary-1',
+      'day': '2026-11-25',
+      'content': 'A summary',
+      'tokenEstimate': 3,
+      'sourceSessionIds': <String>['s1'],
+      'createdAt': 1764000000000000,
+    };
+    final pending = client.stmmUpsert(<Map<String, dynamic>>[block]);
+    final request = lastRequest(fake);
+    expect(request['action'], 'stmm.upsert');
+    expect(request['payload'], <String, dynamic>{
+      'blocks': <Map<String, dynamic>>[block],
+    });
+    reply(fake, request, <String, dynamic>{'upserted': 1});
+    expect(await pending, 1);
+
+    final sentBeforeEmpty = fake.sent.length;
+    expect(await client.stmmUpsert(const <Map<String, dynamic>>[]), 0);
+    expect(
+      fake.sent.length,
+      sentBeforeEmpty,
+      reason: 'an empty batch must not reach the wire',
+    );
+  });
+
+  test('stmmUpsert chunks at the daemon cap and sums replies', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+    final blocks = List<Map<String, dynamic>>.generate(201, (i) {
+      return <String, dynamic>{
+        'id': 'b$i',
+        'day': '2026-11-25',
+        'content': 'Summary $i',
+        'tokenEstimate': 2,
+        'sourceSessionIds': <String>[],
+        'createdAt': i,
+      };
+    });
+    final pending = client.stmmUpsert(blocks);
+    final chunks = <Map<String, dynamic>>[];
+    for (var i = 0; i < 3; i++) {
+      final request = lastRequest(fake);
+      expect(request['action'], 'stmm.upsert');
+      final sent = request['payload']!['blocks'] as List<dynamic>;
+      expect(sent.length, i == 2 ? 1 : 100);
+      chunks.addAll(sent.cast<Map<String, dynamic>>());
+      reply(fake, request, <String, dynamic>{'upserted': sent.length});
+      if (i < 2) await _pump();
+    }
+    expect(chunks, blocks);
+    expect(await pending, 201);
+  });
+
+  test('stmmUpsert allowlists wire fields and defaults missing ones', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+
+    final pending = client.stmmUpsert(<Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'b1',
+        'day': '2026-11-25',
+        'content': 'Summary',
+        'extra': 'client-only field',
+        'sourceSessionIds': <dynamic>['s1', 42],
+      },
+    ]);
+    final request = lastRequest(fake);
+    expect(request['action'], 'stmm.upsert');
+    final sent = (request['payload']!['blocks'] as List<dynamic>).single
+        as Map<String, dynamic>;
+    expect(sent, <String, dynamic>{
+      'id': 'b1',
+      'day': '2026-11-25',
+      'content': 'Summary',
+      'tokenEstimate': 0,
+      'sourceSessionIds': <String>['s1'],
+      'createdAt': 0,
+    });
+    reply(fake, request, <String, dynamic>{'upserted': 1});
+    expect(await pending, 1);
+  });
+
+  test('stmmUpsert rejects blocks missing required fields before any RPC', () async {
+    final (client, fake) = await connectedClient();
+    addTearDown(client.dispose);
+    final base = <String, dynamic>{
+      'id': 'b1',
+      'day': '2026-11-25',
+      'content': 'A summary',
+    };
+    final sentBefore = fake.sent.length;
+    for (final bad in <Map<String, dynamic>>[
+      <String, dynamic>{...base, 'id': ''},
+      <String, dynamic>{...base, 'day': '25-11-2026'},
+      <String, dynamic>{...base, 'content': '  '},
+    ]) {
+      await expectLater(
+        client.stmmUpsert(<Map<String, dynamic>>[bad]),
+        throwsA(
+          isA<DaemonClientException>().having(
+            (e) => e.kind,
+            'kind',
+            DaemonFailureKind.protocol,
+          ),
+        ),
+      );
+    }
+    expect(fake.sent.length, sentBefore);
   });
 
 
@@ -935,10 +1137,13 @@ void main() {
           ),
         ),
       );
+      // Setup frames (auth, health probe, topic subscriptions) are expected;
+      // what matters is that no cards.import frame was sent.
       expect(
-        fake.sent,
-        hasLength(4),
-        reason: 'auth + core.status + two event.subscribe requests',
+        fake.sent
+            .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
+            .where((frame) => frame['action'] == 'cards.import'),
+        isEmpty,
       );
     },
   );

@@ -14,3 +14,10 @@
 - All fix workers landed. Integrated verification: `cargo test -p anima-channel --locked` PASS; `cargo fmt -p anima-channel -- --check` + daemon fmt PASS; exporter `--check` 43 fixtures current; `cargo test -p anima-daemon --locked` PASS on rerun (first parallel run hit known chat-test flakiness; serial run 227/227 passed); Flutter focused 10-file run 143/143 PASS; CI harnesses 6/6 + 1/1 PASS; stage-ui typecheck + provider-catalog vitest 11/11 PASS.
 - Pre-existing, out of scope: `settings_screen_test.dart` has an ambiguous `DropdownButtonFormField` tap at HEAD that fails intermittently in combined Flutter runs; no changes were made to that file.
 - Next scan: compare the integrated daemon handler inventory and Flutter typed calls against Vue behaviour references; file gaps as beads before implementing.
+
+## 2026-11-26 — round 2 (scan → improve → verify)
+
+- Scan at `57eff076` by four read-only scouts: RPC coverage, event lane, stage parity, docs/tests. Findings filed as `airi-dib9`, `airi-sxin`, `airi-ag24`, `airi-bmt5`, `airi-pntk`, `airi-kke4`; all implemented by disjoint workers and closed after focused verification.
+- Implemented: Flutter forwards daemon keyset cursors verbatim (cards/sessions/chat); VFX emotion cues parse and route; daemon-backed active card + per-card backdrop restore; typed `stmm.upsert` wrapper + explicit summary form; typed presence/status event hooks with sequence dedupe; `daemonKind` documented as TS-local metadata.
+- Verification: focused cursor 59/59, VFX 39/39, card-state 54/54, memory 38+7/7, presence 35/35; daemon serial suite 227/227; stage-ui typecheck PASS; `git diff --check` clean. Full Flutter suite: 459 tests, 5 failures — three provider-screen and one settings-screen failure reproduce with implementation and tests byte-identical to HEAD; one scene-management failure is intermittent and passed in focused runs.
+- Next scan: re-audit RPC/event/stage surfaces at the new commit for remaining gaps; consider the pre-existing provider/settings test failures as a separate test-hygiene bead (test files unchanged from HEAD, so not a parity regression).

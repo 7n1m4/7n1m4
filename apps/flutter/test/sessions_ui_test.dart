@@ -36,7 +36,7 @@ class _SessionsUiClient extends FakeChatClient {
     if (action == 'sessions.list') {
       listPayloads.add(payload);
       listCalls++;
-      final cursor = payload?['cursor'] as int?;
+      final cursor = payload?['cursor'];
       if (cursor != null) {
         return RpcReply(
           action: action,
@@ -58,6 +58,7 @@ class _SessionsUiClient extends FakeChatClient {
             <String, dynamic>{'id': 'beta', 'title': 'Beta session'},
           ],
           'truncated': true,
+          'cursor': <String, dynamic>{'updatedAt': 200, 'rowId': 11},
         },
       );
     }
@@ -123,7 +124,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(client.listPayloads.last?['cursor'], 2);
+    expect(client.listPayloads.last?['cursor'],
+        <String, dynamic>{'updatedAt': 200, 'rowId': 11});
     await tester.drag(find.byType(ListView), const Offset(0, -1000));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ListTile, 'Gamma session'), findsOneWidget);

@@ -35,7 +35,6 @@ class _CardClient extends FakeChatClient {
   bool listFails = false;
 
   _CardClient(this.cards);
-
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     final handler = onCall;
@@ -70,7 +69,6 @@ class _CardClient extends FakeChatClient {
           data: <String, dynamic>{'card': found.isEmpty ? null : found.first},
         );
       case 'settings.get':
-        final handler = onCall;
         if (handler != null) {
           try {
             return handler(action, payload);
@@ -123,6 +121,18 @@ Future<void> _leaveStage(WidgetTester tester) async {
   await tester.tap(find.text('Control'));
   await tester.pumpAndSettle();
 }
+
+
+/// A card document carrying the Vue per-card backdrop field.
+Map<String, dynamic> _cardWithBackground(String id, String backgroundId) =>
+    <String, dynamic>{
+      ..._card(id),
+      'extensions': <String, dynamic>{
+        'airi': <String, dynamic>{
+          'modules': <String, dynamic>{'activeBackgroundId': backgroundId},
+        },
+      },
+    };
 
 void main() {
   late Directory temp;
@@ -626,6 +636,136 @@ void main() {
     expect(
       tester.widget<StageScreen>(find.byType(StageScreen)).background!.tint,
       0xFF222222,
+    );
+  });
+
+  testWidgets('settings/cards activeCardId restores the selected card', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[
+      _card('card-1'),
+      _card('card-2'),
+    ]);
+    addTearDown(client.dispose);
+    client.settingsToLoad = <String, dynamic>{'activeCardId': 'card-2'};
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).cardId,
+      'card-2',
+    );
+  });
+  testWidgets('an empty settings/cards activeCardId means no card', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[_card('card-1')]);
+    addTearDown(client.dispose);
+    client.settingsToLoad = <String, dynamic>{'activeCardId': ''};
+
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).cardId,
+      isNull,
+    );
+  });
+
+
+  testWidgets('a card document restores its per-card backdrop', (tester) async {
+    final store = StageSceneStore(storageDirectory: temp);
+    await tester.runAsync(() => store.add(tint: '#654321'));
+    final entry = store.entries.single;
+    await tester.runAsync(
+      () => store.activate(entry.id, cardId: 'card-1'),
+    );
+    // The card document, not the client-local activeByCard, is the seed.
+    await tester.runAsync(() => store.deactivate(cardId: 'card-1'));
+    final client = _CardClient(<Map<String, dynamic>>[
+      _cardWithBackground('card-1', entry.id),
+    ]);
+    addTearDown(client.dispose);
+
+    final loaded = Completer<void>();
+    await _pumpShell(
+      tester,
+      client,
+      sceneStorageDirectory: temp,
+      sceneLibraryLoader: (store) async {
+        await tester.runAsync(store.load);
+        loaded.complete();
+      },
+    );
+    await loaded.future;
+    await tester.pumpAndSettle();
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).background?.tint,
+      0xFF654321,
+    );
+  });
+  testWidgets('an unknown card backdrop id leaves local selection alone', (
+    tester,
+  ) async {
+    final client = _CardClient(<Map<String, dynamic>>[
+      _cardWithBackground('card-1', 'builtin:cozy-tea-corner'),
+    ]);
+    addTearDown(client.dispose);
+    final store = StageSceneStore(storageDirectory: temp);
+    await tester.runAsync(() => store.add(tint: '#123456'));
+    await tester.runAsync(
+      () => store.activate(store.entries.single.id, cardId: 'card-1'),
+    );
+
+    final loaded = Completer<void>();
+    await _pumpShell(
+      tester,
+      client,
+      sceneStorageDirectory: temp,
+      sceneLibraryLoader: (store) async {
+        await tester.runAsync(store.load);
+        loaded.complete();
+      },
+    );
+    await loaded.future;
+    await tester.pump();
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).background?.tint,
+      0xFF123456,
+    );
+  });
+
+  testWidgets('choosing another card persists activeCardId', (tester) async {
+    final client = _CardClient(<Map<String, dynamic>>[
+      _card('card-1'),
+      _card('card-2'),
+    ]);
+    addTearDown(client.dispose);
+    final writes = <Map<String, dynamic>>[];
+    client.onSet = (section, settings) {
+      if (section == 'cards') writes.add(settings);
+    };
+    await _pumpShell(tester, client, sceneStorageDirectory: temp);
+    await _openStage(tester);
+    await tester.tap(find.byType(DropdownButton<String?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Card card-2').last);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(
+      writes,
+      contains(
+        allOf(
+          containsPair('activeCardId', 'card-2'),
+          isA<Map<String, dynamic>>(),
+        ),
+      ),
     );
   });
 }

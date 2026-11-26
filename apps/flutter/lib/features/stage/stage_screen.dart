@@ -115,8 +115,25 @@ class _StageScreenState extends State<StageScreen> {
           actorId: widget.actorId,
           paused: widget.paused ?? false,
         );
-    _strip = widget.stripState ?? StageControlStripState();
+    if (widget.render != null &&
+        (widget.background != null ||
+            widget.captionStyle != null ||
+            widget.actorId != null ||
+            widget.paused != null)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !identical(_render, widget.render)) return;
+        if (widget.background != null) {
+          _render.setBackground(widget.background!);
+        }
+        if (widget.captionStyle != null) {
+          _render.setCaptionStyle(widget.captionStyle!);
+        }
+        if (widget.actorId != null) _render.setActorId(widget.actorId);
+        if (widget.paused != null) _render.setPaused(widget.paused!);
+      });
+    }
     _render.addListener(_onRenderChanged);
+    _strip = widget.stripState ?? StageControlStripState();
     _boundRender = _render;
     _binding = StageRenderStateBinding(client: widget.client, state: _render);
     final frames = widget.frames;

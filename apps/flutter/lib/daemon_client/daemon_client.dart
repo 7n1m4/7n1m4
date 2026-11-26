@@ -19,20 +19,23 @@ export 'protocol.dart'
     show
         EventTopic,
         GatewayEventFrame,
+        PresenceChangedData,
         ServerFrame,
         ServerFrameKind,
+        StatusChangedData,
         encodeAuthFrame,
         encodeModuleAuthFrame,
         encodePingFrame,
-        kProtocolId;
+        kProtocolId,
+        parseEventPayload;
 export 'reconnect_policy.dart' show ReconnectPolicy;
 export 'rpc.dart' show CoreStatus, RpcError, RpcReply, RpcRequest;
 export 'transport.dart'
     show DaemonTransport, DaemonTransportFactory, TransportClosed;
 
 /// One page of a list RPC. [nextCursor] is only set when the daemon says the
-/// list was truncated, so callers never page past the end. Its meaning is
-/// per-verb: a message `createdAt` for chat.history, an offset otherwise.
+/// list was truncated, so callers never page past the end. Cursor shape is
+/// opaque to callers: newer daemons return a keyset map, older ones an int.
 class ListPage<T> {
   const ListPage({
     required this.items,
@@ -42,7 +45,8 @@ class ListPage<T> {
 
   final List<T> items;
   final bool truncated;
-  final int? nextCursor;
+  /// Forward verbatim as the next request's `cursor`; never synthesize one.
+  final Object? nextCursor;
 }
 
 class CardWriteResult {
@@ -260,6 +264,29 @@ class DaemonClient {
     return () => _eventSubscribers.remove(listener);
   }
 
+  final Set<void Function(PresenceChangedData)> _presenceListeners =
+      <void Function(PresenceChangedData)>{};
+  final Set<void Function(StatusChangedData)> _statusListeners =
+      <void Function(StatusChangedData)>{};
+
+  /// Registers a listener for decoded `presence.changed` frames. Malformed
+  /// payloads are skipped: listeners only ever see real daemon data.
+  void Function() onPresenceChanged(
+    void Function(PresenceChangedData data) listener,
+  ) {
+    _presenceListeners.add(listener);
+    return () => _presenceListeners.remove(listener);
+  }
+
+  /// Registers a listener for decoded `status.changed` frames. Malformed
+  /// payloads are skipped: listeners only ever see real daemon data.
+  void Function() onStatusChanged(
+    void Function(StatusChangedData data) listener,
+  ) {
+    _statusListeners.add(listener);
+    return () => _statusListeners.remove(listener);
+  }
+
   void _emit({
     DaemonConnectionState? state,
     CoreStatus? core,
@@ -427,6 +454,8 @@ class DaemonClient {
     for (final topic in <String>[
       EventTopic.tokenDelta.wireName,
       EventTopic.settingsChanged.wireName,
+      EventTopic.presenceChanged.wireName,
+      EventTopic.statusChanged.wireName,
     ]) {
       unawaited(_subscribeTopic(topic));
     }
@@ -508,6 +537,16 @@ class DaemonClient {
           // Snapshot: a listener may unsubscribe while we dispatch.
           for (final listener in _eventSubscribers.toList()) {
             listener(event);
+          }
+          final payload = parseEventPayload(event);
+          if (payload is PresenceChangedData) {
+            for (final listener in _presenceListeners.toList()) {
+              listener(payload);
+            }
+          } else if (payload is StatusChangedData) {
+            for (final listener in _statusListeners.toList()) {
+              listener(payload);
+            }
           }
         }
         break;
@@ -690,6 +729,21 @@ class DaemonClient {
     return data[key];
   }
 
+  /// The next request cursor for a keyset list RPC: use the daemon's value
+  /// as-is when present, and synthesize an offset only for older daemons.
+  static Object? _listPageCursor(
+    RpcReply reply,
+    int pageSize,
+    Object? current,
+    bool truncated,
+  ) {
+    if (!truncated) return null;
+    final wire = _field(reply, 'cursor');
+    if (wire is Map<String, dynamic> || wire is int) return wire;
+    final previous = current is int ? current : 0;
+    return previous + pageSize;
+  }
+
   static String _requiredString(RpcReply reply, String key) {
     final v = _field(reply, key);
     if (v is! String) {
@@ -758,15 +812,15 @@ class DaemonClient {
 
   /// Prior persisted turns of a session (`chat.history`), newest page first.
   ///
-  /// The cursor is the `createdAt` of the oldest turn in the previous page.
+  /// The daemon's keyset cursor `{createdAt, rowId}` is forwarded verbatim so
+  /// rows sharing a timestamp are not skipped or repeated. Older daemons that
+  /// omit the cursor fall back to the oldest `createdAt`.
   /// Pages are returned oldest-first for display, but each new page contains
-  /// turns strictly older than that cursor.
-  /// The daemon reports `truncated`; this wrapper turns that into a cursor so
-  /// callers can keep paging without interpreting the wire shape.
+  /// turns strictly older than the cursor.
   Future<ListPage<Map<String, dynamic>>> chatHistoryPage(
     String sessionId, {
     int limit = 50,
-    int? cursor,
+    Object? cursor,
   }) async {
     final payload = <String, dynamic>{
       'session_id': sessionId,
@@ -797,13 +851,18 @@ class DaemonClient {
     }
     final items = messages.whereType<Map<String, dynamic>>().toList();
     final truncated = data['truncated'] == true;
-    // Replies are oldest-first; the oldest returned turn is items.first, and
-    // that createdAt is the cursor for the next (older) page.
-    final oldest = items.isEmpty ? null : items.first['createdAt'];
+    // Prefer the daemon's composite cursor; a bare createdAt is the legacy
+    // fallback for daemons that do not send one.
+    final wireCursor = data['cursor'];
+    final fallback = items.isEmpty ? null : items.first['createdAt'];
+    final candidate = truncated ? (wireCursor ?? fallback) : null;
+    final nextCursor = candidate is Map<String, dynamic> || candidate is int
+        ? candidate
+        : null;
     return ListPage(
       items: items.toList(growable: false),
-      truncated: truncated && oldest is int,
-      nextCursor: truncated && oldest is int ? oldest : null,
+      truncated: nextCursor != null,
+      nextCursor: nextCursor,
     );
   }
 
@@ -939,6 +998,70 @@ class DaemonClient {
   /// Prune/rebuild short-term memory (`stmm.rebuild`).
   Future<void> stmmRebuild() async {
     await _callOk('stmm.rebuild');
+  }
+
+  /// Maximum blocks accepted by one daemon `stmm.upsert` call.
+  /// Mirrors `STMM_UPSERT_MAX_BLOCKS` in `crates/anima-daemon/src/gateway.rs`.
+  static const int stmmUpsertChunkSize = 100;
+
+  /// Persist short-term summary blocks (`stmm.upsert`), returning the total
+  /// `upserted` count across all calls. Blocks use the daemon's wire shape:
+  /// `id`, `day` (YYYY-MM-DD), `content`, `tokenEstimate`, `sourceSessionIds`
+  /// and `createdAt`. Only fields whose absence would silently write a bad
+  /// row are checked here; the daemon remains authoritative for the rest.
+  /// An empty batch is never sent, and oversized batches are chunked at the
+  /// daemon's per-call cap.
+  Future<int> stmmUpsert(List<Map<String, dynamic>> blocks) async {
+    if (blocks.isEmpty) return 0;
+    final wireBlocks = <Map<String, dynamic>>[];
+    for (final block in blocks) {
+      final id = block['id'];
+      final day = block['day'];
+      final content = block['content'];
+      final validDay = day is String &&
+          RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(day);
+      if (id is! String || id.trim().isEmpty ||
+          !validDay ||
+          content is! String || content.trim().isEmpty) {
+        throw const DaemonClientException(
+          kind: DaemonFailureKind.protocol,
+          message: 'Invalid stmm.upsert block: id, day and content are required.',
+        );
+      }
+      // Only the fields the daemon persists go on the wire; caller-supplied
+      // extras must never leak through. Numeric/list fields default like the
+      // daemon does when they are missing or malformed.
+      final tokenEstimate = block['tokenEstimate'];
+      final createdAt = block['createdAt'];
+      final sourceSessionIds = block['sourceSessionIds'];
+      wireBlocks.add(<String, dynamic>{
+        'id': id,
+        'day': day,
+        'content': content,
+        'tokenEstimate': (tokenEstimate is num && tokenEstimate.isFinite)
+            ? tokenEstimate.round()
+            : 0,
+        'sourceSessionIds': (sourceSessionIds is List)
+            ? sourceSessionIds.whereType<String>().toList()
+            : <String>[],
+        'createdAt': (createdAt is num && createdAt.isFinite)
+            ? createdAt.round()
+            : 0,
+      });
+    }
+    var upserted = 0;
+    for (var offset = 0; offset < wireBlocks.length; offset += stmmUpsertChunkSize) {
+      final chunk = wireBlocks.sublist(
+        offset,
+        (offset + stmmUpsertChunkSize).clamp(0, wireBlocks.length),
+      );
+      final reply = await _callOk(
+        'stmm.upsert',
+        payload: <String, dynamic>{'blocks': chunk},
+      );
+      upserted += _requiredInt(reply, 'upserted');
+    }
+    return upserted;
   }
 
   /// Append a long-term journal entry (`journal.append`).
@@ -1112,11 +1235,12 @@ class DaemonClient {
     );
   }
 
-  /// One page of character cards (`cards.list`). The cursor is an offset into
-  /// the daemon's stable card order.
+  /// One page of character cards (`cards.list`). The daemon's keyset cursor
+  /// `{updatedAt, rowId}` is forwarded verbatim; older daemons without a
+  /// cursor still get a synthesized numeric offset.
   Future<ListPage<Map<String, dynamic>>> cardsListPage({
     int limit = 50,
-    int? cursor,
+    Object? cursor,
   }) async {
     final reply = await _callOk(
       'cards.list',
@@ -1127,7 +1251,7 @@ class DaemonClient {
     );
     final items = _objects(reply, 'cards');
     final truncated = _field(reply, 'truncated') == true;
-    final nextCursor = truncated ? (cursor ?? 0) + items.length : null;
+    final nextCursor = _listPageCursor(reply, items.length, cursor, truncated);
     return ListPage(
       items: items,
       truncated: truncated,
@@ -1308,11 +1432,12 @@ class DaemonClient {
     );
   }
 
-  /// One page of chat sessions (`sessions.list`). The cursor is an offset into
-  /// the daemon's most-recent-first order.
+  /// One page of chat sessions (`sessions.list`). The daemon's keyset cursor
+  /// `{updatedAt, rowId}` is forwarded verbatim; older daemons without a
+  /// cursor still get a synthesized numeric offset.
   Future<ListPage<Map<String, dynamic>>> sessionsListPage({
     int limit = 50,
-    int? cursor,
+    Object? cursor,
   }) async {
     final reply = await _callOk(
       'sessions.list',
@@ -1326,7 +1451,7 @@ class DaemonClient {
     return ListPage(
       items: items,
       truncated: truncated,
-      nextCursor: truncated ? (cursor ?? 0) + items.length : null,
+      nextCursor: _listPageCursor(reply, items.length, cursor, truncated),
     );
   }
 
@@ -1411,6 +1536,8 @@ class DaemonClient {
   void dispose() {
     _wantsConnection = false;
     _eventSubscribers.clear();
+    _presenceListeners.clear();
+    _statusListeners.clear();
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _failAllPending(

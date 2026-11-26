@@ -254,8 +254,17 @@ interface ProviderCatalogProvider {
   validated: boolean
   validationBypassed: boolean
   enabled?: boolean
+  daemonKind?: string
 }
 ```
+
+`daemonKind` is TS-local reconciliation metadata cached from the `providers.list`
+reply (`kind` field) for daemon rows without a local definition. It is not a
+`local:providers` wire field: Flutter's provider screen reads `kind` directly
+from `providers.list` and sends it on `providers.save`, so no Flutter model
+change is needed (verified 2026-11-26; `providers.repo.ts:13`,
+`provider-catalog.ts:65,162`, `crates/anima-channel/src/wire.rs:218-232`,
+`apps/flutter/lib/features/providers/providers_screen.dart:21-27,189-252`).
 
 ### 1.4 Chat Sessions Index
 

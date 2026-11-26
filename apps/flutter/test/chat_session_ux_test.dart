@@ -64,14 +64,19 @@ class _ChatContextClient extends FakeChatClient {
     if (action == 'chat.history') {
       openedSessions.add((payload?['session_id'] as String?) ?? '');
       historyPayloads.add(payload);
-      final cursor = payload?['cursor'] as int?;
+      final cursor = payload?['cursor'];
       if (singlePageHistory) {
         return RpcReply(
           action: action,
           ok: true,
           data: <String, dynamic>{
             'messages': <Map<String, dynamic>>[
-              <String, dynamic>{'role': 'user', 'content': 'old message', 'createdAt': 20},
+              <String, dynamic>{
+                'role': 'user',
+                'content': 'old message',
+                'createdAt': 20,
+                'rowId': 7,
+              },
             ],
             'truncated': false,
           },
@@ -83,7 +88,12 @@ class _ChatContextClient extends FakeChatClient {
           ok: true,
           data: <String, dynamic>{
             'messages': <Map<String, dynamic>>[
-              <String, dynamic>{'role': 'user', 'content': 'older message', 'createdAt': 10},
+              <String, dynamic>{
+                'role': 'user',
+                'content': 'older message',
+                'createdAt': 20,
+                'rowId': 4,
+              },
             ],
             'truncated': false,
           },
@@ -94,9 +104,15 @@ class _ChatContextClient extends FakeChatClient {
         ok: true,
         data: <String, dynamic>{
           'messages': <Map<String, dynamic>>[
-            <String, dynamic>{'role': 'user', 'content': 'old message', 'createdAt': 20},
+            <String, dynamic>{
+              'role': 'user',
+              'content': 'old message',
+              'createdAt': 20,
+              'rowId': 7,
+            },
           ],
           'truncated': true,
+          'cursor': <String, dynamic>{'createdAt': 20, 'rowId': 7},
         },
       );
     }
@@ -200,7 +216,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(client.historyPayloads.last?['cursor'], 20);
+    expect(client.historyPayloads.last?['cursor'],
+        <String, dynamic>{'createdAt': 20, 'rowId': 7});
     expect(find.text('older message'), findsOneWidget);
     expect(find.byKey(const Key('chat-load-older-history')), findsNothing);
   });

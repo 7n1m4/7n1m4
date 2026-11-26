@@ -18,6 +18,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
   String _kindFilter = 'all';
   Map<String, dynamic>? _stats;
   List<Map<String, dynamic>> _summaries = const <Map<String, dynamic>>[];
+  final TextEditingController _summaryContentController = TextEditingController();
+  final TextEditingController _summaryDayController = TextEditingController();
   List<Map<String, dynamic>> _entries = const <Map<String, dynamic>>[];
   bool _retrievalAvailable = false;
   bool? _remoteSyncEnabled;
@@ -36,6 +38,8 @@ class _MemoryScreenState extends State<MemoryScreen> {
   void dispose() {
     _appendController.dispose();
     _searchController.dispose();
+    _summaryContentController.dispose();
+    _summaryDayController.dispose();
     super.dispose();
   }
 
@@ -160,6 +164,46 @@ class _MemoryScreenState extends State<MemoryScreen> {
     }
   }
 
+
+  /// Persist a summary block from the explicit form values. Text and day come
+  /// from the user's input; the id, token estimate and timestamp are derived
+  /// locally for this minimal manual path, and no source session is claimed.
+  Future<void> _saveSummary() async {
+    final content = _summaryContentController.text.trim();
+    final day = _summaryDayController.text.trim();
+    if (content.isEmpty || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(day)) {
+      setState(() => _error = 'Enter a summary and a day in YYYY-MM-DD format.');
+      return;
+    }
+    final id = 'flutter-summary-$day-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final upserted = await widget.client.stmmUpsert(<Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': id,
+          'day': day,
+          'content': content,
+          'tokenEstimate': (content.length / 4).round(),
+          'sourceSessionIds': const <String>[],
+          'createdAt': DateTime.now().microsecondsSinceEpoch,
+        },
+      ]);
+      if (mounted) {
+        setState(() => _status = 'Saved $upserted summary block');
+      }
+      _summaryContentController.clear();
+      await _load();
+    } on DaemonClientException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _append() async {
     final content = _appendController.text.trim();
     if (content.isEmpty) return;
@@ -264,6 +308,31 @@ class _MemoryScreenState extends State<MemoryScreen> {
                           onPressed: () => _deleteSummary(s),
                         ),
                       ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const Key('memory-summary-content'),
+                    controller: _summaryContentController,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'New summary',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const Key('memory-summary-day'),
+                    controller: _summaryDayController,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'Summary day (YYYY-MM-DD)',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    key: const Key('memory-summary-save'),
+                    onPressed: _busy ? null : _saveSummary,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Save summary'),
+                  ),
                   TextField(
                     key: const Key('memory-search'),
                     controller: _searchController,

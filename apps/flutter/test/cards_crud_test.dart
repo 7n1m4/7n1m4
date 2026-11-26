@@ -64,7 +64,7 @@ class _RecordingCardsClient extends FakeChatClient {
         if (!truncatedList) {
           return <String, dynamic>{'cards': cards, 'truncated': false};
         }
-        final cursor = p?['cursor'] as int?;
+        final cursor = p?['cursor'];
         if (cursor != null) {
           return <String, dynamic>{
             'cards': <Map<String, dynamic>>[
@@ -78,6 +78,7 @@ class _RecordingCardsClient extends FakeChatClient {
             <String, dynamic>{'id': 'card-1', 'name': 'Card One'},
           ],
           'truncated': true,
+          'cursor': <String, dynamic>{'updatedAt': 100, 'rowId': 9},
         };
       case 'cards.get':
         final id = (p?['id'] as String?) ?? '';
@@ -576,7 +577,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(client.payloadsFor('cards.list').last?['cursor'], 1);
+    expect(client.payloadsFor('cards.list').last?['cursor'],
+        <String, dynamic>{'updatedAt': 100, 'rowId': 9});
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump(const Duration(milliseconds: 1));
     await tester.drag(find.byType(ListView), const Offset(0, -600));
@@ -658,5 +660,28 @@ void main() {
 
     expect(find.widgetWithText(ListTile, 'Card Two'), findsNothing);
     expect(find.widgetWithText(ListTile, 'Card One'), findsOneWidget);
+  });
+
+  testWidgets('keyset cursors are forwarded without a synthesized offset', (
+    tester,
+  ) async {
+    final client = _RecordingCardsClient()..truncatedList = true;
+    addTearDown(client.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+
+    // With tied timestamps the daemon's cursor carries rowId; forwarding it
+    // verbatim (rather than synthesizing an int offset) is what keeps later
+    // pages correct even when rows are inserted between pages.
+    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    await tester.pumpAndSettle();
+    final sent = client.payloadsFor('cards.list').last?['cursor'];
+    expect(sent, isA<Map<String, dynamic>>());
+    expect((sent as Map<String, dynamic>)['rowId'], isA<int>());
   });
 }

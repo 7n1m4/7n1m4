@@ -44,7 +44,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final StringBuffer _deltaBuffer = StringBuffer();
   bool _assistantStreaming = false;
   bool _historyUnavailable = false;
-  int? _historyCursor;
+  Object? _historyCursor;
   bool _historyLoading = false;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;

@@ -19,7 +19,7 @@ class _HistoryChatClient extends FakeChatClient {
   Future<ListPage<Map<String, dynamic>>> chatHistoryPage(
     String sessionId, {
     int limit = 50,
-    int? cursor,
+    Object? cursor,
   }) async =>
       ListPage(
         items: history,

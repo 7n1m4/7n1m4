@@ -32,6 +32,14 @@ class _RecordingMemoryClient extends FakeChatClient {
         data: <String, dynamic>{'deleted': true},
       );
     }
+    if (action == 'stmm.upsert') {
+      final sentBlocks = (payload?['blocks'] as List?)?.length ?? 0;
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{'upserted': sentBlocks},
+      );
+    }
     if (action == 'vault.status') {
       return RpcReply(
         action: action,
@@ -226,5 +234,61 @@ void main() {
     ]);
     expect(client.deletes.first.payload, <String, dynamic>{'id': 'summary-1'});
     expect(client.deletes.last.payload, <String, dynamic>{'id': 'e1'});
+  });
+
+  testWidgets('summary form saves a real block through stmm.upsert', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    await _scrollTo(tester, const Key('memory-summary-content'));
+    await tester.enterText(
+      find.byKey(const Key('memory-summary-content')),
+      '  Reviewed session notes  ',
+    );
+    await tester.enterText(
+      find.byKey(const Key('memory-summary-day')),
+      '2026-11-26',
+    );
+    tester
+        .widget<FilledButton>(find.byKey(const Key('memory-summary-save')))
+        .onPressed!();
+    await tester.pump();
+    await tester.pump();
+
+    final upserts = client.calls
+        .where((c) => c.action == 'stmm.upsert')
+        .toList();
+    expect(upserts, hasLength(1));
+    final blocks = upserts.single.payload!['blocks'] as List<dynamic>;
+    expect(blocks, hasLength(1));
+    final block = blocks.single as Map<String, dynamic>;
+    expect(block['day'], '2026-11-26');
+    expect(block['content'], 'Reviewed session notes');
+    expect(block['id'], startsWith('flutter-summary-2026-11-26-'));
+    expect(block['sourceSessionIds'], isEmpty);
+    expect(block['tokenEstimate'], isA<int>());
+    expect(block['createdAt'], isA<int>());
+  });
+
+  testWidgets('summary form rejects an invalid day before any RPC', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    await _scrollTo(tester, const Key('memory-summary-content'));
+    await tester.enterText(
+      find.byKey(const Key('memory-summary-content')),
+      'A summary',
+    );
+    await tester.enterText(
+      find.byKey(const Key('memory-summary-day')),
+      '26-11-2026',
+    );
+    tester
+        .widget<FilledButton>(find.byKey(const Key('memory-summary-save')))
+        .onPressed!();
+    await tester.pump();
+
+    expect(client.calls.where((c) => c.action == 'stmm.upsert'), isEmpty);
+    expect(find.textContaining('YYYY-MM-DD'), findsWidgets);
   });
 }

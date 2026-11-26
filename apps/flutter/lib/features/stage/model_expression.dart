@@ -23,6 +23,11 @@ class StageExpressionCue {
   final int seq;
   final int tsMs;
 
+  /// Whether the cue drives a body/visual-effect channel rather than a facial
+  /// expression (`crates/anima-channel/src/wire.rs` `CueKind`). Neither one
+  /// may be mapped to a morph by a renderer.
+  bool get isNonFacial => kind == 'motion' || kind == 'vfx';
+
   bool get isMotion => kind == 'motion';
 
   @override
@@ -43,7 +48,11 @@ StageExpressionCue? parseExpressionCue(
   final seq = data['seq'];
   final ts = data['ts_ms'];
   if (tag is! String || tag.trim().isEmpty) return null;
-  if (kind is! String || (kind != 'emotion' && kind != 'motion')) return null;
+  // `motion` and `vfx` are real cue kinds on this lane, not facial morphs.
+  if (kind is! String ||
+      !const <String>{'emotion', 'motion', 'vfx'}.contains(kind)) {
+    return null;
+  }
   if (intensity is! num) return null;
   if (seq is! int || ts is! int) return null;
   if (actorId != null && actor != actorId) return null;

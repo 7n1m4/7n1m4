@@ -20,7 +20,87 @@ import '../features/stage/stage_background.dart';
 import '../features/stage/stage_scene_manager.dart';
 import '../features/stage/stage_scenes_screen.dart';
 import '../features/stage/stage_screen.dart';
+import '../connection/connection_error.dart';
 import '../ui/status_bits.dart';
+
+/// The daemon section holding [`CardsSettings.activeCardId`](../../../../crates/anima-core/src/settings.rs).
+const String _cardsSettingsSection = 'cards';
+
+/// Read the card id from `settings/cards`, or null when unset/unreadable.
+/// An unreachable daemon must not silently override a local choice.
+Future<String?> _daemonActiveCardId(DaemonClient client) async {
+  try {
+    final settings = await client.settingsGet(_cardsSettingsSection);
+    final id = settings['activeCardId'] ?? settings['active_card_id'];
+    if (id is String) return id;
+    return null;
+  } on Object {
+    return null;
+  }
+}
+
+/// Read one Airi module field from a card document. Vue stores these under
+/// `extensions.airi.modules` and mirrors them under `data.extensions`; this
+/// client accepts either shape, preferring the root when both are present.
+String? _cardModuleField(Map<String, dynamic> card, String field) {
+  final extensions = card['extensions'];
+  final data = card['data'];
+  for (final candidate in <Object?>[
+    extensions,
+    if (data is Map<String, dynamic>) data['extensions'],
+  ]) {
+    if (candidate is! Map<String, dynamic>) continue;
+    final airi = candidate['airi'];
+    if (airi is! Map<String, dynamic>) continue;
+    final modules = airi['modules'];
+    if (modules is! Map<String, dynamic>) continue;
+    final value = modules[field];
+    if (value is String && value.isNotEmpty) return value;
+  }
+  return null;
+}
+
+/// Write one Airi module field into a fresh card document, preserving all
+/// other fields (including the nested `data.extensions` mirror) verbatim.
+Map<String, dynamic> _withCardModuleField(
+  Map<String, dynamic> card,
+  String field,
+  String value,
+) {
+  final updated = <String, dynamic>{...card};
+  final extensions = updated['extensions'];
+  final airi = extensions is Map<String, dynamic>
+      ? Map<String, dynamic>.from(extensions['airi'] is Map<String, dynamic>
+          ? extensions['airi'] as Map<String, dynamic>
+          : const <String, dynamic>{})
+      : <String, dynamic>{};
+  final modules = airi['modules'];
+  airi['modules'] = <String, dynamic>{
+    ...(modules is Map<String, dynamic> ? modules : const <String, dynamic>{}),
+    field: value,
+  };
+  updated['extensions'] = <String, dynamic>{...?extensions, 'airi': airi};
+  final data = updated['data'];
+  if (data is Map<String, dynamic>) {
+    final nested = data['extensions'];
+    final nestedAiri = nested is Map<String, dynamic> &&
+            nested['airi'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(nested['airi'] as Map<String, dynamic>)
+        : <String, dynamic>{};
+    final nestedModules = nestedAiri['modules'];
+    nestedAiri['modules'] = <String, dynamic>{
+      ...(nestedModules is Map<String, dynamic>
+          ? nestedModules
+          : const <String, dynamic>{}),
+      field: value,
+    };
+    updated['data'] = <String, dynamic>{
+      ...data,
+      'extensions': <String, dynamic>{...?nested, 'airi': nestedAiri},
+    };
+  }
+  return updated;
+}
 
 /// Supplies the client-local scene library directory. Injected in tests;
 /// production resolves the application support directory, never system temp.
@@ -74,6 +154,10 @@ class _NavigationShellState extends State<NavigationShell> {
   bool _noCardExplicitlySelected = false;
   String? _cardError;
   String? _sceneError;
+  String? _writeError;
+  int _cardReadGeneration = 0;
+  bool _backdropRestored = false;
+  String? _savedBackgroundId;
   StageCaptionStyle _captionStyle = const StageCaptionStyle(docking: StageCaptionDocking.none);
   int _captionReadGeneration = 0;
   final _stageRender = StageRenderState();
@@ -125,6 +209,7 @@ class _NavigationShellState extends State<NavigationShell> {
     if (!mounted) return;
     setState(() {
       _scenes = store;
+      _backdropRestored = false;
       _sceneError = null;
     });
     try {
@@ -136,32 +221,29 @@ class _NavigationShellState extends State<NavigationShell> {
     }
     if (!mounted || !identical(_scenes, store)) return;
     setState(() => _sceneError = null);
+    unawaited(_restoreBackdropForSelectedCard());
   }
 
   String _sceneFailure(Object error) => error is StageSceneException
       ? error.message
       : 'The scene library could not be loaded: $error';
-
   Future<void> _loadCards() async {
+    final generation = ++_cardReadGeneration;
     try {
       final cards = await widget.client.cardsList();
-      if (!mounted) return;
+      final persistedId = await _daemonActiveCardId(widget.client);
+      if (!mounted || generation != _cardReadGeneration) return;
+      if (persistedId == '') _noCardExplicitlySelected = true;
+      final id = _resolveSelectedCardId(cards, persistedId);
+      if (!mounted || generation != _cardReadGeneration) return;
       setState(() {
         _cards = cards;
-        final current = _selectedCardId;
-        if (cards.isEmpty) {
-          _selectedCardId = null;
-        } else if (_noCardExplicitlySelected) {
-          // An explicit "No card" is a choice, not a missing selection.
-          _selectedCardId = null;
-        } else if (current == null ||
-            !cards.any((card) => card['id'] == current)) {
-          _selectedCardId = cards.first['id'] as String?;
-        }
+        _selectedCardId = id;
         _cardError = null;
       });
+      await _restoreBackdropForSelectedCard();
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _cardReadGeneration) return;
       setState(() {
         _cardError = error is DaemonClientException
             ? error.message
@@ -169,6 +251,104 @@ class _NavigationShellState extends State<NavigationShell> {
       });
     }
   }
+
+  /// The daemon's persisted choice wins when it names an available card.
+  /// Without one, keep a still-valid local choice and otherwise fall back to
+  /// the first card, as before. An explicit "No card" is always respected.
+  String? _resolveSelectedCardId(
+    List<Map<String, dynamic>> cards,
+    String? persistedId,
+  ) {
+    if (cards.isEmpty || _noCardExplicitlySelected) return null;
+    if (persistedId != null &&
+        cards.any((card) => card['id'] == persistedId)) {
+      return persistedId;
+    }
+    final current = _selectedCardId;
+    if (current != null && cards.any((card) => card['id'] == current)) {
+      return current;
+    }
+    return cards.first['id'] as String?;
+  }
+
+  /// Read the selected card document and seed the local scene store. Both
+  /// startup orders (cards first or scene library first) converge here.
+  Future<void> _restoreBackdropForSelectedCard() async {
+    final store = _scenes;
+    final cardId = _selectedCardId;
+    if (store == null || cardId == null || _backdropRestored) return;
+    try {
+      final card = await widget.client.cardsGet(cardId);
+      if (!mounted || !identical(store, _scenes) || _selectedCardId != cardId) {
+        return;
+      }
+      if (card == null) return;
+      final backgroundId = _cardModuleField(card, 'activeBackgroundId');
+      _savedBackgroundId = backgroundId;
+      if (backgroundId != null) {
+        // A persisted id may name a scene the library has not loaded yet;
+        // leave the flag clear so the load completion retries the seed.
+        if (backgroundId != 'none' && store.entryFor(backgroundId) == null) {
+          return;
+        }
+        store.seedActiveForCard(cardId, backgroundId);
+      }
+      _backdropRestored = true;
+      if (mounted) setState(() {});
+    } on Object {
+      // The card read is best-effort: the card list already decided what to
+      // render, and a missing document leaves the local scene selection alone.
+    }
+  }
+
+  /// Record a successful daemon write, or surface a user-safe failure.
+  Future<void> _runWrite(Future<void> Function() write) async {
+    try {
+      await write();
+      if (mounted) setState(() => _writeError = null);
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _writeError = userSafeConnectionError(
+            error,
+            context: 'stage:persist:',
+          ));
+    }
+  }
+
+
+  /// Persist a backdrop choice on the card and in this client's library.
+  Future<void> _activateBackdrop(String cardId, String backgroundId) async {
+    final store = _scenes;
+    if (store == null) return;
+    await _runWrite(() async {
+      final card = await widget.client.cardsGet(cardId);
+      if (card == null) {
+        throw const DaemonClientException(
+          kind: DaemonFailureKind.protocol,
+          message: 'That card is no longer available.',
+        );
+      }
+      final updated = _withCardModuleField(card, 'activeBackgroundId', backgroundId);
+      await widget.client.cardsUpdate(cardId, updated);
+      await store.activateForCard(cardId, backgroundId);
+      if (!mounted) return;
+      setState(() {
+        _cards = <Map<String, dynamic>>[
+          for (final entry in _cards)
+            entry['id'] == cardId ? updated : entry,
+        ];
+      });
+    });
+  }
+
+  /// Persist a card choice in the daemon's `cards` settings section.
+  Future<void> _persistActiveCard(String? cardId) async => _runWrite(() async {
+    final settings = await widget.client.settingsGet(_cardsSettingsSection);
+    await widget.client.settingsSet(_cardsSettingsSection, <String, dynamic>{
+      ...settings,
+      'activeCardId': cardId ?? '',
+    });
+  });
 
   /// Captions are daemon-owned settings; the stage only renders the snapshot.
   /// A failed or stale read leaves captions hidden (daemon default docking:none).
@@ -265,6 +445,7 @@ class _NavigationShellState extends State<NavigationShell> {
   Widget _buildStage() {
     final cardError = _cardError;
     final sceneError = _sceneError;
+    final writeError = _writeError;
     final store = _scenes;
     return Column(
       children: <Widget>[
@@ -281,6 +462,14 @@ class _NavigationShellState extends State<NavigationShell> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Text(
               sceneError,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        if (writeError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Text(
+              writeError,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
@@ -310,10 +499,17 @@ class _NavigationShellState extends State<NavigationShell> {
                         ),
                       ),
                   ],
-                  onChanged: (value) => setState(() {
-                    _selectedCardId = value;
-                    _noCardExplicitlySelected = value == null;
-                  }),
+                  onChanged: (value) {
+                    _cardReadGeneration++;
+                    _savedBackgroundId = null;
+                    setState(() {
+                      _selectedCardId = value;
+                      _noCardExplicitlySelected = value == null;
+                      _backdropRestored = false;
+                    });
+                    unawaited(_persistActiveCard(value));
+                    unawaited(_restoreBackdropForSelectedCard());
+                  },
                 ),
               ),
               IconButton(
@@ -321,15 +517,41 @@ class _NavigationShellState extends State<NavigationShell> {
                 icon: const Icon(Icons.landscape_outlined),
                 onPressed: store == null
                     ? null
-                    : () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (context) => StageScenesScreen(
-                            store: store,
-                            cardId: _selectedCardId,
-                            onChanged: () => setState(() {}),
+                    : () {
+                        final cardId = _selectedCardId;
+                        var activated = false;
+                        final route = Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (context) => StageScenesScreen(
+                              store: store,
+                              cardId: cardId,
+                              onChanged: () {
+                                setState(() {});
+                                if (cardId == null) return;
+                                final current = store.activeForCard(cardId);
+                                final saved = _savedBackgroundId;
+                                if (current != saved) {
+                                  activated = true;
+                                  _savedBackgroundId = current;
+                                  unawaited(_activateBackdrop(
+                                    cardId,
+                                    current ?? 'none',
+                                  ));
+                                }
+                              },
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                        unawaited(route.whenComplete(() {
+                          if (!mounted) return;
+                          if (activated) {
+                            setState(() {});
+                            return;
+                          }
+                          setState(() => _backdropRestored = false);
+                          unawaited(_restoreBackdropForSelectedCard());
+                        }));
+                      },
               ),
             ],
           ),

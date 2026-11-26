@@ -19,7 +19,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Map<String, dynamic>? _core;
   Map<String, dynamic>? _vault;
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
-  int? _sessionCursor;
+  Object? _sessionCursor;
   bool _sessionsTruncated = false;
   bool _loadingMore = false;
   int _loadGeneration = 0;

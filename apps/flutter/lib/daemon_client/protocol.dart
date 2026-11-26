@@ -5,7 +5,8 @@
 // sync with the Rust golden fixtures (test/golden_fixtures_test.dart); the
 // protocol id remains the literal carve-out `airi-channel/1` (do not rename
 // to `anima-*`). Event topics are decoded into [EventTopic]; subscriptions are
-// issued by callers (the chat surface subscribes to `token.delta`).
+// issued by callers (the chat surface subscribes to `token.delta`). Payload
+// parsers for daemon-published presence/status events live here too.
 
 import 'dart:convert';
 
@@ -104,6 +105,77 @@ class GatewayEventFrame {
   }
 }
 
+/// One daemon-published `presence.changed` payload (`PresenceChangedData` in
+/// crates/anima-channel/src/wire.rs). Wire keys stay snake_case.
+class PresenceChangedData {
+  const PresenceChangedData({
+    required this.subject,
+    required this.state,
+    required this.seq,
+    required this.tsMs,
+  });
+
+  final String subject;
+  final String state;
+  final int seq;
+  final int tsMs;
+
+  /// Returns null unless every required wire field has the expected type.
+  /// Missing payloads must not be turned into fabricated presence values.
+  static PresenceChangedData? fromJson(Map<String, dynamic> json) {
+    final subject = json['subject'];
+    final state = json['state'];
+    final seq = json['seq'];
+    final tsMs = json['ts_ms'];
+    if (subject is! String || state is! String) return null;
+    if (seq is! int || tsMs is! int) return null;
+    return PresenceChangedData(
+      subject: subject,
+      state: state,
+      seq: seq,
+      tsMs: tsMs,
+    );
+  }
+}
+
+/// One daemon-published `status.changed` payload (`StatusChangedData` in
+/// crates/anima-channel/src/wire.rs). Wire keys stay snake_case. The payload
+/// is coarse health only; it never carries credentials or other secrets.
+class StatusChangedData {
+  const StatusChangedData({
+    required this.coreAvailable,
+    required this.storeAvailable,
+    required this.storeHealth,
+    required this.seq,
+    required this.tsMs,
+  });
+
+  final bool coreAvailable;
+  final bool storeAvailable;
+  final String storeHealth;
+  final int seq;
+  final int tsMs;
+
+  /// Returns null unless every required wire field has the expected type.
+  /// Missing payloads must not be turned into fabricated health values.
+  static StatusChangedData? fromJson(Map<String, dynamic> json) {
+    final coreAvailable = json['core_available'];
+    final storeAvailable = json['store_available'];
+    final storeHealth = json['store_health'];
+    final seq = json['seq'];
+    final tsMs = json['ts_ms'];
+    if (coreAvailable is! bool || storeAvailable is! bool) return null;
+    if (storeHealth is! String || seq is! int || tsMs is! int) return null;
+    return StatusChangedData(
+      coreAvailable: coreAvailable,
+      storeAvailable: storeAvailable,
+      storeHealth: storeHealth,
+      seq: seq,
+      tsMs: tsMs,
+    );
+  }
+}
+
 /// Decoded server text frame. Parsing is total: malformed frames become
 /// [ServerFrameKind.unknown] with a [parseError] instead of throwing.
 class ServerFrame {
@@ -167,3 +239,11 @@ class ServerFrame {
     }
   }
 }
+
+/// Parse one event frame's payload by topic. Unknown topics and malformed
+/// payloads yield null; state holders must leave stale values untouched.
+Object? parseEventPayload(GatewayEventFrame frame) => switch (frame.topic) {
+      EventTopic.presenceChanged => PresenceChangedData.fromJson(frame.data),
+      EventTopic.statusChanged => StatusChangedData.fromJson(frame.data),
+      _ => null,
+    };

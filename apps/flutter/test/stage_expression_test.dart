@@ -67,10 +67,18 @@ void main() {
     test('wrong-actor and malformed frames are ignored', () {
       expect(parseExpressionCue(payload(), actorId: 'other'), isNull);
       expect(parseExpressionCue(payload(tag: '')), isNull);
-      expect(parseExpressionCue(payload(kind: 'vfx')), isNull);
+      expect(parseExpressionCue(payload(kind: 'unknown')), isNull);
       expect(parseExpressionCue(payload(intensity: 'high')), isNull);
       expect(parseExpressionCue(payload(seq: '7')), isNull);
       expect(parseExpressionCue(payload(tsMs: '123')), isNull);
+    });
+
+    test('a vfx cue parses but is never a facial expression', () {
+      final cue = parseExpressionCue(payload(kind: 'vfx', tag: 'fire'));
+      expect(cue, isNotNull);
+      expect(cue!.isMotion, isFalse);
+      expect(cue.isNonFacial, isTrue);
+      expect(cue.tag, 'fire');
     });
   });
 }

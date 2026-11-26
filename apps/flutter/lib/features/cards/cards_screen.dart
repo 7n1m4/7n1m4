@@ -32,7 +32,7 @@ class _CardsScreenState extends State<CardsScreen> {
   final TextEditingController _documentController = TextEditingController();
 
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
-  int? _cardCursor;
+  Object? _cardCursor;
   bool _cardsTruncated = false;
   bool _loadingMore = false;
   int _loadGeneration = 0;
