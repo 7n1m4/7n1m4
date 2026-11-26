@@ -35,11 +35,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.dart_tool'
 // and a line anchor; a bare `:digits` is a continuation anchor. Ports, section
 // numbers and single-segment shorthands (`gateway.rs:79`) deliberately do not
 // match. The lookbehind stops a path from being matched starting mid-segment.
-const CITATION_RE = /(?<![\/\w@.+-])(?:([\w@.+-]+(?:\/[\w@.+-]+)+):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)|:(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*))\b/g
+const CITATION_RE = /(?<![/\w@.+-])(?:([\w@.+-]+(?:\/[\w@.+-]+)+):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)|:(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*))\b/g
 
 // Explicit narrow prose contract. The token shape above already excludes these,
 // but keep the allowlist stated so it cannot be widened accidentally.
-const ALLOWED_PROSE_RE = /^(?:wss?:\/\/\S+|\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):\d+\b|\bport\s+\d+\b|§\d+|\b(?:Section|Step|line)\s+\d+\b)$/i
+const ALLOWED_PROSE_RE = /^(?:wss?:\/\/\S+|(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]):\d+|port\s+\d+|§\d+|(?:Section|Step|line)\s+\d+)$/i
 
 const args = process.argv.slice(2)
 const isVerbose = args.includes('--verbose') || args.includes('-v')

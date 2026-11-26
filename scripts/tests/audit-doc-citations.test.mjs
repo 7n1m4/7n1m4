@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+
+import { spawnSync } from 'node:child_process'
+// eslint-disable-next-line test/no-import-node-test -- this fixture lane runs under `node --test`
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const auditorPath = path.join(__dirname, 'audit-doc-citations.mjs')
@@ -61,8 +63,7 @@ test('Out-of-range: a uniquely resolvable relative path past EOF is broken', (t)
   const result = runAuditor(doc)
   assert.notEqual(result.status, 0, `auditor accepted a past-EOF relative anchor:\n${outputOf(result)}`)
   assert.match(outputOf(result), /cited line out of range/)
-  assert.ok(outputOf(result).includes('features/chat/chat_composer_controller.dart:999999'),
-    `diagnostic must name the citation:\n${outputOf(result)}`)
+  assert.ok(outputOf(result).includes('features/chat/chat_composer_controller.dart:999999'), `diagnostic must name the citation:\n${outputOf(result)}`)
 })
 
 test('Ambiguous: two fixture files sharing a suffix are reported as broken', (t) => {
@@ -76,6 +77,5 @@ test('Ambiguous: two fixture files sharing a suffix are reported as broken', (t)
   const result = runAuditor(doc)
   assert.notEqual(result.status, 0, `auditor accepted an ambiguous relative path:\n${outputOf(result)}`)
   assert.match(outputOf(result), /cited path is ambiguous/)
-  assert.ok(outputOf(result).includes('libs/auth.ts:10-15'),
-    `diagnostic must name the citation:\n${outputOf(result)}`)
+  assert.ok(outputOf(result).includes('libs/auth.ts:10-15'), `diagnostic must name the citation:\n${outputOf(result)}`)
 })
