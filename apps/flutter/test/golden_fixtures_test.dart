@@ -55,6 +55,7 @@ void main() {
       'event.emotion_tag.emotion': 'emotion.tag',
       'event.emotion_tag.motion_no_duration': 'emotion.tag',
       'event.emotion_tag.vfx': 'emotion.tag',
+      'event.emotion_tag.with_session': 'emotion.tag',
       'event.token_delta.partial': 'token.delta',
       'event.token_delta.final': 'token.delta',
       'event.presence_changed.online': 'presence.changed',
@@ -112,6 +113,15 @@ void main() {
       expect(data['intensity'], closeTo(0.8, 1e-6));
       expect(data['duration_ms'], 3000);
       expect(data['seq'], 42);
+    });
+
+    test('emotion_tag.with_session carries session_id', () {
+      final frame = ServerFrame.parse(
+        _loadFixture('event.emotion_tag.with_session'),
+      );
+      final data = frame.event!.data;
+      expect(data['session_id'], 'sess-abc');
+      expect(data['tag'], 'curious');
     });
 
     test('emotion_tag.motion_no_duration omits duration_ms', () {

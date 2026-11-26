@@ -154,12 +154,15 @@ class _NavigationShellState extends State<NavigationShell> {
   String? _savedBackgroundId;
   StageCaptionStyle _captionStyle = const StageCaptionStyle(docking: StageCaptionDocking.none);
   int _captionReadGeneration = 0;
+  final _chatKey = GlobalKey<ChatScreenState>();
+  void Function()? _unsubscribeSettingsEvents;
   final _stageRender = StageRenderState();
   bool _stageVisible = false;
 
   @override
   void initState() {
     super.initState();
+    _unsubscribeSettingsEvents = widget.client.onEvent(_onSettingsChanged);
     unawaited(_prepareScenes());
     unawaited(_loadCards());
     unawaited(_loadCaptionSettings());
@@ -167,8 +170,24 @@ class _NavigationShellState extends State<NavigationShell> {
 
   @override
   void dispose() {
+    _unsubscribeSettingsEvents?.call();
     _stageRender.dispose();
     super.dispose();
+  }
+
+  /// The event carries only a section name: re-read the caches that section
+  /// feeds, never a value from the payload. Sections this shell does not
+  /// render are left alone.
+  void _onSettingsChanged(GatewayEventFrame event) {
+    if (event.topic != EventTopic.settingsChanged) return;
+    final section = event.data['section'];
+    if (section is! String) return;
+    switch (section) {
+      case 'cards':
+        unawaited(_loadCards());
+      case 'captions':
+        unawaited(_loadCaptionSettings());
+    }
   }
 
   @override
@@ -366,17 +385,18 @@ class _NavigationShellState extends State<NavigationShell> {
       _stageVisible = index == 5;
       _stageRender.setPaused(!_stageVisible);
     });
-    if (index == 5) {
+    if (index == 1 || index == 5) {
       unawaited(_loadCards());
       unawaited(_loadCaptionSettings());
     }
+    if (index == 1) unawaited(_chatKey.currentState?.reload());
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomeScreen(client: widget.client),
-      ChatScreen(client: widget.client),
+      ChatScreen(key: _chatKey, client: widget.client),
       SettingsScreen(
         client: widget.client,
         onOpenConnections: () => setState(() => _index = 3),

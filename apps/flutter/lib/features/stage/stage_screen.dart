@@ -22,7 +22,9 @@ import 'method_channel_backend.dart';
 import 'model_asset_resolver.dart';
 import 'model_backend.dart';
 import 'model_runtime.dart';
+import 'model_stage_state.dart';
 import 'presence_status_chip.dart';
+import 'resource_status_island.dart';
 import 'stage_atmosphere.dart';
 import 'stage_background.dart';
 import 'stage_control_strip.dart';
@@ -46,6 +48,7 @@ class StageScreen extends StatefulWidget {
     this.stripState,
     this.render,
     this.paused,
+    this.resourceStatus = ModelStageStatus.none,
   });
 
   final DaemonClient client;
@@ -85,6 +88,11 @@ class StageScreen extends StatefulWidget {
   /// Stop the ambient ticker while this stage is hidden in an IndexedStack.
   final bool? paused;
 
+  /// Model-loading status for the delayed resource-status pill. The native
+  /// runtime owns the live value; the shell supplies it when wired. `none`
+  /// keeps the pill hidden with no behavior change for existing callers.
+  final ModelStageStatus resourceStatus;
+
   @override
   State<StageScreen> createState() => _StageScreenState();
 }
@@ -97,6 +105,7 @@ class _StageScreenState extends State<StageScreen> {
   late StageControlStripState _strip;
   StageRenderStateBinding? _binding;
   StreamSubscription<LipSyncRmsData>? _frameSubscription;
+  late ModelStageStatus _resourceStatus;
 
   @override
   void initState() {
@@ -135,6 +144,7 @@ class _StageScreenState extends State<StageScreen> {
       });
     }
     _render.addListener(_onRenderChanged);
+    _resourceStatus = widget.resourceStatus;
     _strip = widget.stripState ?? StageControlStripState();
     _boundRender = _render;
     _binding = StageRenderStateBinding(client: widget.client, state: _render);
@@ -148,6 +158,10 @@ class _StageScreenState extends State<StageScreen> {
     if (oldWidget.client != widget.client) {
       _binding?.dispose();
       _binding = StageRenderStateBinding(client: widget.client, state: _render);
+    }
+    // An injected status (tests/embeds) wins over the live runtime report.
+    if (widget.resourceStatus != oldWidget.resourceStatus) {
+      _resourceStatus = widget.resourceStatus;
     }
 
     if (oldWidget.actorId != widget.actorId) _render.setActorId(widget.actorId);
@@ -200,6 +214,12 @@ class _StageScreenState extends State<StageScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onModelStatus(ModelStageStatus status) {
+    if (!mounted || widget.resourceStatus != ModelStageStatus.none) return;
+    if (_resourceStatus == status) return;
+    setState(() => _resourceStatus = status);
+  }
+
   void _onStripAction(StageStripAction action) {
     // Only the expand notch has a local effect; the rest is reported intent
     // for a future daemon-owned panel dispatch.
@@ -226,6 +246,7 @@ class _StageScreenState extends State<StageScreen> {
             cacheDirectoryProvider: widget.cacheDirectoryProvider,
             frames: widget.frames,
             actorId: widget.actorId,
+            onStatus: _onModelStatus,
           ),
         ),
         // Top-left picker; the presence chip owns the top-right and the cue
@@ -248,6 +269,7 @@ class _StageScreenState extends State<StageScreen> {
           top: 12,
           child: PresenceStatusChip(client: widget.client),
         ),
+        ResourceStatusIsland(status: _resourceStatus),
       ],
     );
   }

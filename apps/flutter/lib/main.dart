@@ -78,7 +78,10 @@ void speakCompletedTurns(
     if (text.isNotEmpty) {
       // Normal priority, queue behavior: failures are reported through
       // onError, never as fabricated audio.
-      speechQueue.openIntent(text: text, priority: SpeechPriority.normal);
+      speechQueue.openIntent(
+        text: applyUstTransform(text, const UstOptions()),
+        priority: SpeechPriority.normal,
+      );
     }
   });
 }

@@ -15,6 +15,7 @@ import '../features/stage/method_channel_backend.dart';
 import '../features/stage/model_asset_resolver.dart';
 import '../features/stage/model_backend.dart';
 import '../features/stage/model_runtime.dart';
+import '../features/stage/model_stage_state.dart';
 import '../features/stage/native_model_surface.dart';
 import '../features/stage/stage_overlay_state.dart';
 import '../speech/lip_sync_rms_data.dart';
@@ -297,6 +298,7 @@ class ModelStage extends StatefulWidget {
     this.frames,
     this.actorId,
     this.render,
+    this.onStatus,
   });
 
   final DaemonClient client;
@@ -324,6 +326,10 @@ class ModelStage extends StatefulWidget {
   /// Client-local render state shared with the stage shell's overlays. The
   /// stage shell owns it; this widget only routes the model through it.
   final StageRenderState? render;
+
+  /// Forwarded from the native surface so the stage shell can show delayed
+  /// resource-loading feedback without owning the model runtime.
+  final void Function(ModelStageStatus status)? onStatus;
 
   @override
   State<ModelStage> createState() => _ModelStageState();
@@ -421,6 +427,7 @@ class _ModelStageState extends State<ModelStage> {
               frames: widget.frames,
               actorId: widget.actorId,
               render: widget.render,
+              onStatus: widget.onStatus,
             );
           },
     );

@@ -457,18 +457,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 4),
         const Text('Preset hues', style: TextStyle(fontWeight: FontWeight.bold)),
-        Wrap(
-          spacing: 8,
-          children: <Widget>[
-            for (final preset in _themeHuePresets)
-              TextButton(
-                onPressed: enabled
-                    ? () => _applyThemeHue(preset.hue)
-                    : null,
-                child: Text(preset.label),
-              ),
-          ],
-        ),
+        for (final group in _themeHueGroups) ...<Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              group.title,
+              key: ValueKey<String>('theme-group-${group.key}'),
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              for (final swatch in group.swatches)
+                TextButton(
+                  key: ValueKey<String>('theme-swatch-${group.key}-${swatch.key}'),
+                  onPressed: enabled
+                      ? () => _applyThemeHue(swatch.hue)
+                      : null,
+                  child: Text(swatch.label),
+                ),
+            ],
+          ),
+        ],
         _labeledSlider(
           label: 'Hue',
           value: theme.hue,
@@ -761,17 +773,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// The four hue presets from `packages/stage-pages/src/pages/settings/system/
-/// color-presets.json`. Values are the OKLCH hue of each group's representative
-/// swatch (Crimson, Emerald, Cerulean, Indigo), computed with the same
-/// conversion as `packages/stage-ui/src/stores/settings/theme.ts` — no palette
-/// value is invented here.
-const List<({String label, double hue})> _themeHuePresets =
-    <({String label, double hue})>[
-  (label: 'Warm', hue: 17.58), // #E11D48 Crimson
-  (label: 'Flora', hue: 149.21), // #16A34A Emerald
-  (label: 'Ocean', hue: 262.88), // #2563EB Cerulean
-  (label: 'Bloom', hue: 293.01), // #7C3AED Indigo
+/// One swatch in a theme preset group. [hue] is the OKLCH hue angle from
+/// culori's `converter('oklch')` — the same conversion Vue's `getHueFrom()`
+/// uses — rounded to two decimals, so a swatch applies exactly the hue the
+/// web settings page would for the same hex.
+typedef _HueSwatch = ({String key, String label, double hue});
+
+/// One row of the 24-colour spectrum, in the order of
+/// `packages/stage-pages/src/pages/settings/system/color-presets.json`.
+typedef _HueGroup = ({
+  String key,
+  String title,
+  List<_HueSwatch> swatches,
+});
+
+/// All 24 grouped swatches from `color-presets.json`: four groups of six.
+/// The swatch labelled with the group's short name is that group's
+/// representative — the four hues this screen offered before expansion — so
+/// the existing labels and their hues keep working. A `null` hex (ocean's
+/// signature cyan) falls back to the daemon default hue, as Vue does.
+const List<_HueGroup> _themeHueGroups = <_HueGroup>[
+  (
+    key: 'warm',
+    title: 'Warm & Fire',
+    swatches: <_HueSwatch>[
+      (key: 'crimson', label: 'Warm', hue: 17.58), // #E11D48 Crimson
+      (key: 'coral', label: 'Coral', hue: 16.44), // #F43F5E
+      (key: 'tangerine', label: 'Tangerine', hue: 41.12), // #EA580C
+      (key: 'marigold', label: 'Marigold', hue: 70.08), // #F59E0B
+      (key: 'amber', label: 'Amber', hue: 86.05), // #EAB308
+      (key: 'lemon', label: 'Lemon', hue: 130.85), // #84CC16
+    ],
+  ),
+  (
+    key: 'flora',
+    title: 'Earth & Flora',
+    swatches: <_HueSwatch>[
+      (key: 'lime', label: 'Lime', hue: 131.68), // #65A30D
+      (key: 'emerald', label: 'Flora', hue: 149.21), // #16A34A Emerald
+      (key: 'mint', label: 'Mint', hue: 162.48), // #10B981
+      (key: 'jade', label: 'Jade', hue: 163.23), // #059669
+      (key: 'viridian', label: 'Viridian', hue: 184.70), // #0D9488
+      (key: 'teal', label: 'Teal', hue: 221.72), // #0891B2
+    ],
+  ),
+  (
+    key: 'ocean',
+    title: 'Ocean & Sky',
+    swatches: <_HueSwatch>[
+      (key: 'turquoise', label: 'Turquoise', hue: 215.22), // #06B6D4
+      (key: 'cyan', label: 'Signature Cyan', hue: 220.44), // null → default
+      (key: 'cerulean', label: 'Ocean', hue: 262.88), // #2563EB Cerulean
+      (key: 'cobalt', label: 'Cobalt', hue: 259.81), // #3B82F6
+      (key: 'sapphire', label: 'Sapphire', hue: 276.97), // #4F46E5
+      (key: 'denim', label: 'Denim', hue: 277.12), // #6366F1
+    ],
+  ),
+  (
+    key: 'bloom',
+    title: 'Royal & Bloom',
+    swatches: <_HueSwatch>[
+      (key: 'indigo', label: 'Bloom', hue: 293.01), // #7C3AED Indigo
+      (key: 'amethyst', label: 'Amethyst', hue: 302.32), // #9333EA
+      (key: 'violet', label: 'Violet', hue: 303.90), // #A855F7
+      (key: 'fuchsia', label: 'Fuchsia', hue: 322.90), // #C026D3
+      (key: 'magenta', label: 'Magenta', hue: 0.58), // #DB2777
+      (key: 'rose', label: 'Rose', hue: 2.17), // #E11D74
+    ],
+  ),
 ];
 
 /// Empty means "use system default" (the daemon's `GeneralSettings::default`).

@@ -37,6 +37,7 @@ class NativeModelSurface extends StatefulWidget {
     this.frames,
     this.actorId,
     this.render,
+    this.onStatus,
   });
 
   final DaemonClient client;
@@ -53,6 +54,10 @@ class NativeModelSurface extends StatefulWidget {
   /// Client-local render state shared with the stage shell's overlays. When
   /// null the surface keeps a private one.
   final StageRenderState? render;
+
+  /// Notified on every client-local model-stage status transition so the
+  /// stage shell can drive the delayed resource-status island.
+  final void Function(ModelStageStatus status)? onStatus;
 
   @override
   State<NativeModelSurface> createState() => _NativeModelSurfaceState();
@@ -142,6 +147,7 @@ class _NativeModelSurfaceState extends State<NativeModelSurface>
   void _onChanged(ModelStageSnapshot snapshot) {
     if (!mounted) return;
     setState(() => _snapshot = snapshot);
+    widget.onStatus?.call(snapshot.status);
     _syncAmbientTicker();
   }
 

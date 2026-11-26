@@ -37,10 +37,12 @@ class ChatScreen extends StatefulWidget {
   final String? initialSessionId;
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<ChatScreen> createState() => ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+/// Public so the navigation shell can call [reload] when the chat tab is
+/// activated. The daemon owns sessions; this only re-reads its view caches.
+class ChatScreenState extends State<ChatScreen> {
   // Streamed LLM turns can contain a stray, unterminated ``` fence on its own
   // line. The default gitHubFlavored set parses that as a code block and hides
   // any trailing text, so drop only the fenced-code syntax and keep everything
@@ -71,6 +73,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _historyLoading = false;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
+  int _contextReadGeneration = 0;
+  int _historyReadGeneration = 0;
+  int _metadataReadGeneration = 0;
   bool _wasConnected = false;
   _EmotionCue? _cue;
   final Map<String, int> _cueSeqByActor = <String, int>{};
@@ -149,6 +154,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onEvent(GatewayEventFrame event) {
+    if (event.topic == EventTopic.settingsChanged) {
+      _reloadOnSettingsChanged(event);
+      return;
+    }
     if (event.topic == EventTopic.emotionTag) {
       final cue = _decodeEmotionCue(event.data);
       if (cue == null || !mounted) return;
@@ -262,6 +271,35 @@ class _ChatScreenState extends State<ChatScreen> {
       _composer.finishTurn();
       if (!failedTurn) _finishGenUiTurn();
     }
+  }
+
+  /// The event carries no values, only the changed section. Re-read the caches
+  /// that section feeds; unrelated sections are none of this screen's business.
+  void _reloadOnSettingsChanged(GatewayEventFrame event) {
+    if (!mounted) return;
+    final section = event.data['section'];
+    if (section is! String) return;
+    switch (section) {
+      case 'cards':
+        unawaited(reload());
+      case 'chat':
+      case 'chat-provider':
+        unawaited(_composer.loadContextSettings());
+    }
+  }
+
+  /// Re-read daemon-owned context and the open session's transcript. Called on
+  /// chat-tab activation and on a relevant `settings.changed`; every read is
+  /// generation-guarded so an older reply cannot overwrite a newer one.
+  Future<void> reload() async {
+    if (!mounted) return;
+    // A streamed turn owns the last bubble; replaying history mid-turn would
+    // overwrite it with already-persisted turns. Context is safe to refresh.
+    if (_assistantStreaming) {
+      await _loadContext();
+      return;
+    }
+    await Future.wait<void>(<Future<void>>[_loadContext(), _loadHistory()]);
   }
 
   /// Parse the fully accumulated turn once: GenUI handles split JSON tokens.
@@ -392,12 +430,15 @@ class _ChatScreenState extends State<ChatScreen> {
   /// session) and an unregistered/failing `chat.history` are both non-fatal:
   /// the user can still chat, the screen just starts empty.
   Future<void> _loadHistory() async {
+    // Invalidate any in-flight read even when there is no session to load:
+    // clearing the transcript must not let an older reply repopulate it.
+    final generation = ++_historyReadGeneration;
     final sid = _composer.sessionId;
     if (sid == null || sid.isEmpty) return;
     try {
       final page = await widget.client.chatHistoryPage(sid);
       final messages = await Future.wait(page.items.map(_messageFromHistory));
-      if (!mounted) return;
+      if (!mounted || generation != _historyReadGeneration) return;
       setState(() {
         _messages
           ..clear()
@@ -406,7 +447,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _historyUnavailable = false;
       });
     } on DaemonClientException {
-      if (!mounted) return;
+      if (!mounted || generation != _historyReadGeneration) return;
       setState(() => _historyUnavailable = true);
     }
   }
@@ -442,6 +483,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadContext() async {
+    final generation = ++_contextReadGeneration;
     try {
       final results = await Future.wait<List<Map<String, dynamic>>>(
         <Future<List<Map<String, dynamic>>>>[
@@ -449,7 +491,7 @@ class _ChatScreenState extends State<ChatScreen> {
           widget.client.cardsList(),
         ],
       );
-      if (!mounted) return;
+      if (!mounted || generation != _contextReadGeneration) return;
       setState(() {
         _sessions = results[0];
         _cards = results[1];
@@ -463,19 +505,19 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       unawaited(_loadCardMetadata(_selectedCardId));
     } on Object catch (e) {
-      if (mounted) {
-        setState(
-          () => _contextError = e is DaemonClientException
-              ? e.message
-              : 'Could not load chat context: $e',
-        );
-      }
+      if (!mounted || generation != _contextReadGeneration) return;
+      setState(
+        () => _contextError = e is DaemonClientException
+            ? e.message
+            : 'Could not load chat context: $e',
+      );
     }
   }
 
   Future<void> _loadCardMetadata(String? id) async {
+    final generation = ++_metadataReadGeneration;
     if (id == null || id.isEmpty) {
-      if (mounted) {
+      if (mounted && generation == _metadataReadGeneration) {
         setState(() {
           _cardMetadata = null;
           _metadataError = null;
@@ -484,7 +526,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    if (mounted) {
+    if (mounted && generation == _metadataReadGeneration) {
       setState(() {
         _metadataBusy = true;
         _metadataError = null;
@@ -492,19 +534,19 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     try {
       final data = await widget.client.cardsMetadata(id);
-      if (!mounted) return;
+      if (!mounted || generation != _metadataReadGeneration) return;
       setState(() {
         _cardMetadata = data;
         _metadataBusy = false;
       });
     } on DaemonClientException catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _metadataReadGeneration) return;
       setState(() {
         _metadataError = e.message;
         _metadataBusy = false;
       });
     } on Object catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _metadataReadGeneration) return;
       setState(() {
         _metadataError = 'Could not load card metadata: $e';
         _metadataBusy = false;
@@ -553,6 +595,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _resetTranscript() {
+    ++_historyReadGeneration;
     _lastComposerEnterMs = 0;
     _messages.clear();
     _deltaBuffer.clear();
