@@ -881,6 +881,10 @@ mod tests {
             ),
             ("sessions.delete", serde_json::json!({ "session_id": "s1" })),
             ("sessions.import", serde_json::json!({ "jsonl": "" })),
+            (
+                "sessions.universe.set",
+                serde_json::json!({ "session_id": "s1", "universe_id": "u1" }),
+            ),
         ] {
             let err = dispatch(&fixture, method, &payload)
                 .expect_err(&format!("{method} must be denied without allowActions"));

@@ -1938,6 +1938,48 @@ mod tests {
     }
 
     #[test]
+    fn settings_control_strip_favorites_round_trip() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set(
+            "control-strip",
+            serde_json::json!({
+                "avatarFavoritesByChar": { "card-a": ["model-1", "model-2"] },
+                "voiceFavorites": ["provider:voice-1", "provider:voice-2", "provider:voice-3"],
+                "characterFavoritesGlobal": ["card-a", "card-b", "card-c"],
+            }),
+        )
+        .unwrap();
+
+        let reply = svc.settings_get("control-strip").unwrap();
+        assert_eq!(reply.section, "control-strip");
+        let value: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert_eq!(
+            value["avatarFavoritesByChar"],
+            serde_json::json!({ "card-a": ["model-1", "model-2"] })
+        );
+        assert_eq!(
+            value["voiceFavorites"],
+            serde_json::json!(["provider:voice-1", "provider:voice-2", "provider:voice-3"])
+        );
+        assert_eq!(
+            value["characterFavoritesGlobal"],
+            serde_json::json!(["card-a", "card-b", "card-c"])
+        );
+
+        // An unrelated partial edit must not wipe the favorites.
+        svc.settings_set("control-strip", serde_json::json!({ "collapsed": true }))
+            .unwrap();
+        let reply = svc.settings_get("control-strip").unwrap();
+        let value: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert_eq!(value["collapsed"], true);
+        assert_eq!(
+            value["voiceFavorites"],
+            serde_json::json!(["provider:voice-1", "provider:voice-2", "provider:voice-3"])
+        );
+    }
+
+    #[test]
     fn settings_set_keeps_unknown_wire_keys_out_of_the_stored_section() {
         let dir = tempdir().unwrap();
         let svc = CoreService::open(Some(dir.path().to_path_buf()));

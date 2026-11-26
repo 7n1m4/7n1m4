@@ -632,6 +632,16 @@ pub struct ControlStripSettings {
     /// unknown ids are ignored. Defaults to both enabled.
     #[serde(default = "default_enabled_buttons")]
     pub enabled_buttons: HashMap<String, bool>,
+    /// Avatar model ids favorited per character, keyed by card id (`global`
+    /// when no card is active). Mirrors the TS per-character favorites map.
+    #[serde(default)]
+    pub avatar_favorites_by_char: HashMap<String, Vec<String>>,
+    /// Voice favorites as `provider:voiceId` keys, oldest first (FIFO cap 3).
+    #[serde(default)]
+    pub voice_favorites: Vec<String>,
+    /// Globally favorited character card ids, oldest first (FIFO cap 3).
+    #[serde(default)]
+    pub character_favorites_global: Vec<String>,
 }
 
 impl Default for ControlStripSettings {
@@ -651,6 +661,9 @@ impl Default for ControlStripSettings {
             buttons: default_control_strip_buttons(),
             buttons_version: default_buttons_version(),
             enabled_buttons: default_enabled_buttons(),
+            avatar_favorites_by_char: HashMap::new(),
+            voice_favorites: Vec::new(),
+            character_favorites_global: Vec::new(),
         }
     }
 }
@@ -1588,6 +1601,17 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    // FIFO cap is enforced by the TS client, so this helper only builds test
+    // fixtures; it is deliberately test-local rather than a production path.
+    const FAVORITES_FIFO_CAP: usize = 3;
+
+    fn push_fifo_favorite(favorites: &mut Vec<String>, id: String) {
+        if favorites.len() >= FAVORITES_FIFO_CAP {
+            favorites.remove(0);
+        }
+        favorites.push(id);
+    }
+
     fn open_db(dir: &tempfile::TempDir) -> Database {
         Database::open(&dir.path().join("settings.sqlite")).unwrap()
     }
@@ -1711,6 +1735,68 @@ mod tests {
         // Round-trip through the store.
         store.save_section(&strip).unwrap();
         let reloaded = store.load_section::<ControlStripSettings>().unwrap();
+        assert_eq!(reloaded, strip);
+    }
+
+    #[test]
+    fn control_strip_favorites_default_to_empty() {
+        let strip = ControlStripSettings::default();
+        assert!(strip.avatar_favorites_by_char.is_empty());
+        assert!(strip.voice_favorites.is_empty());
+        assert!(strip.character_favorites_global.is_empty());
+
+        // Older persisted blobs lack all three keys and must still load.
+        let legacy: ControlStripSettings =
+            serde_json::from_str(r#"{"orientation":"vertical","buttonsVersion":"v5"}"#).unwrap();
+        assert!(legacy.avatar_favorites_by_char.is_empty());
+        assert!(legacy.voice_favorites.is_empty());
+        assert!(legacy.character_favorites_global.is_empty());
+    }
+
+    #[test]
+    fn fifo_favorite_push_evicts_oldest_at_cap() {
+        let mut favorites = vec!["a".to_string(), "b".to_string()];
+        push_fifo_favorite(&mut favorites, "c".to_string());
+        assert_eq!(favorites, ["a", "b", "c"]);
+        push_fifo_favorite(&mut favorites, "d".to_string());
+        assert_eq!(favorites, ["b", "c", "d"]);
+        assert!(favorites.len() <= FAVORITES_FIFO_CAP);
+    }
+
+    #[test]
+    fn control_strip_favorites_serde_round_trip() {
+        let mut strip = ControlStripSettings::default();
+        strip.avatar_favorites_by_char.insert(
+            "card-a".to_string(),
+            vec!["model-1".to_string(), "model-2".to_string()],
+        );
+        for id in [
+            "provider:voice-1",
+            "provider:voice-2",
+            "provider:voice-3",
+            "provider:voice-4",
+        ] {
+            push_fifo_favorite(&mut strip.voice_favorites, id.to_string());
+        }
+        for id in ["card-a", "card-b", "card-c", "card-d"] {
+            push_fifo_favorite(&mut strip.character_favorites_global, id.to_string());
+        }
+
+        let json = serde_json::to_value(&strip).unwrap();
+        assert_eq!(
+            json["avatarFavoritesByChar"],
+            serde_json::json!({ "card-a": ["model-1", "model-2"] })
+        );
+        assert_eq!(
+            json["voiceFavorites"],
+            serde_json::json!(["provider:voice-2", "provider:voice-3", "provider:voice-4"])
+        );
+        assert_eq!(
+            json["characterFavoritesGlobal"],
+            serde_json::json!(["card-b", "card-c", "card-d"])
+        );
+
+        let reloaded: ControlStripSettings = serde_json::from_value(json).unwrap();
         assert_eq!(reloaded, strip);
     }
 

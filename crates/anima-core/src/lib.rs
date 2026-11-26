@@ -49,6 +49,7 @@ pub mod crashlog;
 pub mod grounding;
 pub mod memory;
 pub mod providers;
+pub mod recent_topics;
 pub mod sessions;
 pub mod settings;
 pub mod single_instance;

@@ -2189,6 +2189,39 @@ impl Gateway {
             );
         }
         {
+            let core = core.clone();
+            m.insert(
+                "sessions.universe.set".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        // Raw Value DTO like fork/activate: no wire type, so this
+                        // verb stays out of the specta drift check. Both spellings
+                        // of each id match the other session verbs.
+                        let session_id = value
+                            .get("session_id")
+                            .or_else(|| value.get("sessionId"))
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| "missing session_id".to_string())?;
+                        let universe_id = value
+                            .get("universe_id")
+                            .or_else(|| value.get("universeId"))
+                            .and_then(serde_json::Value::as_str)
+                            .ok_or_else(|| "missing universe_id".to_string())?
+                            .trim();
+                        let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
+                        set_session_universe(&db, session_id, universe_id)?;
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "session_id": session_id,
+                            "universe_id": universe_id,
+                        }))
+                    },
+                ),
+            );
+        }
+        {
             m.insert(
                 "sessions.auto_title".to_string(),
                 handler(move |_method: &str, _value: &serde_json::Value| {
@@ -3201,6 +3234,70 @@ fn fork_session(
         }
         tx.commit()?;
         Ok(new_id)
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Set only the `universeId` key in a session's metadata blob, preserving every
+/// other key. Validation happens before any write so a bad universe id or an
+/// unknown session leaves the stored metadata untouched; the read-modify-write
+/// is one transaction, mirroring [`fork_session`]. Only the metadata column is
+/// touched — sibling artifacts (STMM, journal, echo, backgrounds, lifetime) are
+/// deliberately not retagged; there is no column or writer for a universe id.
+fn set_session_universe(
+    db: &anima_store::Database,
+    session_id: &str,
+    universe_id: &str,
+) -> Result<(), String> {
+    const MAX_UNIVERSE_ID_LEN: usize = 128;
+    let universe_id = universe_id.trim();
+    if universe_id.is_empty() || universe_id.chars().count() > MAX_UNIVERSE_ID_LEN {
+        return Err("invalid universe_id".to_string());
+    }
+    db.with_connection(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let mut source = conn.prepare("select metadata from sessions where id = ?1")?;
+        let found = source
+            .query_map(anima_store::params![session_id], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let Some(metadata) = found.into_iter().next() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("unknown session: {session_id}"),
+            )
+            .into());
+        };
+        drop(source);
+
+        let mut value: serde_json::Value = serde_json::from_str(&metadata)?;
+        if !value.is_object() {
+            // Never coerce malformed stored metadata to {}: that would discard
+            // whatever was there before the universe-id write.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "session metadata is not an object",
+            )
+            .into());
+        }
+        value
+            .as_object_mut()
+            .expect("metadata coerced to object above")
+            .insert(
+                "universeId".to_string(),
+                serde_json::Value::String(universe_id.to_string()),
+            );
+        conn.execute(
+            "update sessions set metadata = ?1, updated_at = ?2 where id = ?3",
+            anima_store::params![
+                serde_json::to_string(&value)?,
+                crate::audit::now_ms() as i64,
+                session_id
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
     })
     .map_err(|e| e.to_string())
 }
@@ -6221,6 +6318,174 @@ mod tests {
             serde_json::json!({ "universeId": "u-1" })
         );
         assert_eq!(messages.list("fork-src").unwrap().len(), 4, "source intact");
+    }
+
+    // Contract: `sessions.universe.set` rewrites only `universeId` in the
+    // session metadata blob; every sibling key survives and an existing value
+    // is overwritten. Snake_case argument spellings are accepted.
+    #[test]
+    fn sessions_universe_set_overwrites_only_universe_key() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db);
+        sessions.create("uni-1", "universe session").unwrap();
+        sessions
+            .update(
+                "uni-1",
+                None,
+                Some(&serde_json::json!({
+                    "universeId": "old-u",
+                    "pinned": true,
+                    "tags": ["a", "b"],
+                })),
+            )
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let set = handlers.get("sessions.universe.set").unwrap();
+        let reply = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "session_id": "uni-1", "universe_id": "new-u" }),
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["session_id"], "uni-1");
+        assert_eq!(reply["universe_id"], "new-u");
+
+        assert_eq!(
+            sessions.get("uni-1").unwrap().unwrap().metadata,
+            serde_json::json!({
+                "universeId": "new-u",
+                "pinned": true,
+                "tags": ["a", "b"],
+            })
+        );
+    }
+
+    // Contract: camelCase argument spellings work too, including when the
+    // session opened with an empty metadata object.
+    #[test]
+    fn sessions_universe_set_accepts_camel_case_arguments() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db);
+        sessions.create("uni-2", "camel session").unwrap();
+
+        let handlers = handlers(&gateway);
+        let set = handlers.get("sessions.universe.set").unwrap();
+        let reply = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "sessionId": "uni-2", "universeId": "camel-u" }),
+        )
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        assert_eq!(reply["universe_id"], "camel-u");
+        assert_eq!(
+            sessions.get("uni-2").unwrap().unwrap().metadata,
+            serde_json::json!({ "universeId": "camel-u" })
+        );
+    }
+
+    // Contract: an unknown session (or a bad universe id) fails before any
+    // write, so metadata is left untouched.
+    #[test]
+    fn sessions_universe_set_rejects_unknown_session_and_invalid_id() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db);
+        sessions.create("uni-3", "guarded session").unwrap();
+        sessions
+            .update("uni-3", None, Some(&serde_json::json!({ "keep": "me" })))
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        let set = handlers.get("sessions.universe.set").unwrap();
+        let err = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "session_id": "missing", "universe_id": "u" }),
+        )
+        .expect_err("unknown session must be rejected");
+        assert!(err.contains("unknown session"), "{err}");
+
+        for bad in ["", "   ", &"x".repeat(129)] {
+            set(
+                "sessions.universe.set",
+                &serde_json::json!({ "session_id": "uni-3", "universe_id": bad }),
+            )
+            .expect_err("empty or over-long universe id must be rejected");
+        }
+        assert_eq!(
+            sessions.get("uni-3").unwrap().unwrap().metadata,
+            serde_json::json!({ "keep": "me" })
+        );
+    }
+
+    // Contract: a universe write bumps updated_at (list ordering uses it),
+    // trims the id, and never coerces malformed stored metadata to an object.
+    #[test]
+    fn sessions_universe_set_stamps_updated_at_and_guards_metadata() {
+        let (gateway, _tmp) = isolated_gateway();
+        enable_actions(&gateway);
+        let db = gateway.core.db().unwrap();
+        let sessions = anima_store::SessionRepo::new(db.clone());
+        sessions.create("uni-5", "stamped session").unwrap();
+        sessions.create("uni-6", "malformed session").unwrap();
+        sessions
+            .update("uni-6", None, Some(&serde_json::json!([])))
+            .unwrap();
+        // A fresh row has created_at == updated_at, so >= would prove nothing.
+        // Force a stale stamp and require the universe write to bump it.
+        db.with_connection(|conn| {
+            conn.execute(
+                "update sessions set updated_at = 1 where id = 'uni-5'",
+                anima_store::params![],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let handlers = handlers(&gateway);
+        let set = handlers.get("sessions.universe.set").unwrap();
+        let reply = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "session_id": "uni-5", "universe_id": "  spaced-u  " }),
+        )
+        .unwrap();
+        assert_eq!(reply["universe_id"], "spaced-u");
+        let row = sessions.get("uni-5").unwrap().unwrap();
+        assert_eq!(row.metadata["universeId"], "spaced-u");
+        assert!(row.updated_at > 1, "universe write must stamp updated_at");
+
+        let err = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "session_id": "uni-6", "universe_id": "u" }),
+        )
+        .expect_err("non-object metadata must not be coerced away");
+        assert!(err.contains("not an object"), "{err}");
+        assert_eq!(
+            sessions.get("uni-6").unwrap().unwrap().metadata,
+            serde_json::json!([])
+        );
+    }
+
+    // Contract: `sessions.universe.set` is a write, so it stays denied until
+    // the operator opts in with `allowActions`.
+    #[test]
+    fn sessions_universe_set_is_denied_without_actions_opt_in() {
+        let (gateway, _tmp) = isolated_gateway();
+        let handlers = handlers(&gateway);
+        let set = handlers
+            .get("sessions.universe.set")
+            .expect("sessions.universe.set must stay registered");
+        let err = set(
+            "sessions.universe.set",
+            &serde_json::json!({ "session_id": "uni-4", "universe_id": "u" }),
+        )
+        .expect_err("universe set must be denied by default");
+        assert!(err.starts_with(ACTIONS_DISABLED_PREFIX), "{err}");
     }
 
     #[test]
