@@ -109,6 +109,90 @@ void main() {
       }));
       expect(model.problemCode, DisplayModel.invalidAssetCode);
     });
+
+    test('a Vue active_state-only displayModelId resolves', () {
+      // ROOT CAUSE: Vue's ControlStrip avatar assignment writes both
+      // `active_state.displayModelId` and `modules.displayModelId`, but
+      // cards authored/synced with only `active_state` restore no model in
+      // Flutter because DisplayModel.fromCard reads only modules/top-level.
+      final model = DisplayModel.fromCard(_card(<String, dynamic>{
+        'active_state': <String, dynamic>{'displayModelId': 'model-in-state'},
+      }));
+      expect(model.kind, ModelKind.none);
+      expect(model.displayModelId, 'model-in-state');
+      expect(model.problemCode, DisplayModel.unknownModelKindCode);
+    });
+
+    test('active_state wins over modules and legacy top-level ids', () {
+      final model = DisplayModel.fromCard(_card(<String, dynamic>{
+        'displayModelId': 'legacy-model',
+        'modules': <String, dynamic>{'displayModelId': 'module-model'},
+        'active_state': <String, dynamic>{'displayModelId': 'state-model'},
+      }));
+      expect(model.displayModelId, 'state-model');
+    });
+
+    test('an empty active_state id falls back to modules and legacy ids', () {
+      final fromModules = DisplayModel.fromCard(_card(<String, dynamic>{
+        'displayModelId': 'legacy-model',
+        'modules': <String, dynamic>{'displayModelId': 'module-model'},
+        'active_state': <String, dynamic>{'displayModelId': ''},
+      }));
+      expect(fromModules.displayModelId, 'module-model');
+
+      final fromLegacy = DisplayModel.fromCard(_card(<String, dynamic>{
+        'displayModelId': 'legacy-model',
+        'active_state': <String, dynamic>{'displayModelId': 42},
+      }));
+      expect(fromLegacy.displayModelId, 'legacy-model');
+    });
+
+    test('active_state under root extensions is read for bare cards', () {
+      final model = DisplayModel.fromCard(<String, dynamic>{
+        'extensions': <String, dynamic>{
+          'airi': <String, dynamic>{
+            'active_state': <String, dynamic>{'displayModelId': 'root-state'},
+          },
+        },
+      });
+      expect(model.displayModelId, 'root-state');
+    });
+
+    test('root active_state wins over a data-only module mirror', () {
+      final model = DisplayModel.fromCard(<String, dynamic>{
+        'extensions': <String, dynamic>{
+          'airi': <String, dynamic>{
+            'active_state': <String, dynamic>{'displayModelId': 'root-state'},
+          },
+        },
+        'data': <String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{
+              'modules': <String, dynamic>{'displayModelId': 'data-module'},
+            },
+          },
+        },
+      });
+      expect(model.displayModelId, 'root-state');
+    });
+
+    test('data active_state is read when the root active_state is empty', () {
+      final model = DisplayModel.fromCard(<String, dynamic>{
+        'extensions': <String, dynamic>{
+          'airi': <String, dynamic>{
+            'active_state': <String, dynamic>{'displayModelId': ''},
+          },
+        },
+        'data': <String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{
+              'active_state': <String, dynamic>{'displayModelId': 'data-state'},
+            },
+          },
+        },
+      });
+      expect(model.displayModelId, 'data-state');
+    });
   });
 
   testWidgets('no card id renders the placeholder, never an error',
@@ -256,6 +340,43 @@ void main() {
         data: <String, dynamic>{
           'id': 'live2d-test',
           'name': 'Live2D Test',
+          'format': 'live2d-zip',
+          'source': 'url',
+          'url': 'https://example.com/m.zip',
+          'file': '',
+        },
+      );
+    };
+
+    await _pump(tester, client, 'card-1');
+
+    expect(find.textContaining('LIVE2D'), findsOneWidget);
+    expect(find.text('No display model'), findsNothing);
+  });
+
+  testWidgets('a Vue active_state-only model resolves through the catalog', (
+    tester,
+  ) async {
+    final client = FakeChatClient();
+    addTearDown(client.dispose);
+    client.onCall = (action, payload) {
+      if (action == 'cards.get') {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'card': _card(<String, dynamic>{
+              'active_state': <String, dynamic>{'displayModelId': 'state-model'},
+            }),
+          },
+        );
+      }
+      return RpcReply(
+        action: action,
+        ok: true,
+        data: <String, dynamic>{
+          'id': 'state-model',
+          'name': 'State Model',
           'format': 'live2d-zip',
           'source': 'url',
           'url': 'https://example.com/m.zip',

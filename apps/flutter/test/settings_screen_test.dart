@@ -236,9 +236,13 @@ void main() {
       await tester.pumpAndSettle();
 
       await reveal(tester, 'Save floating controls');
-      await tester.ensureVisible(find.text('Docked edge'));
+      final dockedEdge = find.ancestor(
+        of: find.text('Docked edge'),
+        matching: find.byType(DropdownButtonFormField<String>),
+      );
+      await tester.ensureVisible(dockedEdge);
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.tap(dockedEdge);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Left').last);
       await tester.pumpAndSettle();
@@ -252,16 +256,20 @@ void main() {
       final buttons = (written['buttons'] as List)
           .whereType<Map<String, dynamic>>()
           .toList(growable: false);
+      // The stored entries keep their position and fields; only ids this
+      // build actually surfaces (kStageStripCatalog) may be appended. Ids
+      // without a stage dispatch are intentionally not advertised.
       expect(
         buttons.map((b) => b['id']).toList(),
-        <String>['stage', 'gemini-tts', 'caption', 'chat', 'actor-characters', 'mic', 'stage-atmosphere'],
+        <String>['stage', 'gemini-tts', 'caption'],
         reason: 'the stored entries keep their position and fields',
       );
-      expect(buttons.firstWhere((b) => b['id'] == 'gemini-tts')['label'],
-          'TTS Output Toggle',
+      final unknown = buttons.firstWhere((b) => b['id'] == 'gemini-tts');
+      expect(unknown['label'], 'TTS Output Toggle',
           reason: 'an id this build does not surface is carried through');
+      expect(unknown['enabled'], isFalse,
+          reason: 'an unknown entry keeps its stored enabled state');
       expect(buttons.firstWhere((b) => b['id'] == 'stage')['enabled'], isTrue);
-      expect(buttons.firstWhere((b) => b['id'] == 'chat')['enabled'], isFalse);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, 5000));
       await tester.pumpAndSettle();
       expect(client.lastSettingsWritten, isNotNull);

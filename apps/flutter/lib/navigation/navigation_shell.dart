@@ -39,10 +39,11 @@ Future<String?> _daemonActiveCardId(DaemonClient client) async {
   }
 }
 
-/// Read one Airi module field from a card document. Vue stores these under
-/// `extensions.airi.modules` and mirrors them under `data.extensions`; this
-/// client accepts either shape, preferring the root when both are present.
-String? _cardModuleField(Map<String, dynamic> card, String field) {
+/// Read one active card field from a card document. Vue treats
+/// `active_state` as canonical and mirrors the same values under
+/// `extensions.airi.modules`; this client accepts both shapes and both card
+/// envelopes, preferring the root when both are present.
+String? readCardActiveField(Map<String, dynamic> card, String field) {
   final extensions = card['extensions'];
   final data = card['data'];
   for (final candidate in <Object?>[
@@ -52,51 +53,44 @@ String? _cardModuleField(Map<String, dynamic> card, String field) {
     if (candidate is! Map<String, dynamic>) continue;
     final airi = candidate['airi'];
     if (airi is! Map<String, dynamic>) continue;
-    final modules = airi['modules'];
-    if (modules is! Map<String, dynamic>) continue;
-    final value = modules[field];
-    if (value is String && value.isNotEmpty) return value;
+    for (final group in <Object?>[airi['active_state'], airi['modules']]) {
+      if (group is! Map<String, dynamic>) continue;
+      final value = group[field];
+      if (value is String && value.isNotEmpty) return value;
+    }
   }
   return null;
 }
 
-/// Write one Airi module field into a fresh card document, preserving all
-/// other fields (including the nested `data.extensions` mirror) verbatim.
-Map<String, dynamic> _withCardModuleField(
+/// Write one active card field into a fresh card document, updating both
+/// `modules` and `active_state` in the root and nested `data.extensions`
+/// mirrors while preserving every other field verbatim.
+Map<String, dynamic> withCardActiveField(
   Map<String, dynamic> card,
   String field,
   String value,
 ) {
   final updated = <String, dynamic>{...card};
-  final extensions = updated['extensions'];
-  final airi = extensions is Map<String, dynamic>
-      ? Map<String, dynamic>.from(extensions['airi'] is Map<String, dynamic>
-          ? extensions['airi'] as Map<String, dynamic>
-          : const <String, dynamic>{})
-      : <String, dynamic>{};
-  final modules = airi['modules'];
-  airi['modules'] = <String, dynamic>{
-    ...(modules is Map<String, dynamic> ? modules : const <String, dynamic>{}),
-    field: value,
-  };
-  updated['extensions'] = <String, dynamic>{...?extensions, 'airi': airi};
-  final data = updated['data'];
-  if (data is Map<String, dynamic>) {
-    final nested = data['extensions'];
-    final nestedAiri = nested is Map<String, dynamic> &&
-            nested['airi'] is Map<String, dynamic>
-        ? Map<String, dynamic>.from(nested['airi'] as Map<String, dynamic>)
+  for (final entry in <Map<String, dynamic>>[
+    updated,
+    if (updated['data'] is Map<String, dynamic>)
+      updated['data'] as Map<String, dynamic>,
+  ]) {
+    final extensions = entry['extensions'];
+    final airi = extensions is Map<String, dynamic> &&
+            extensions['airi'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(extensions['airi'] as Map<String, dynamic>)
         : <String, dynamic>{};
-    final nestedModules = nestedAiri['modules'];
-    nestedAiri['modules'] = <String, dynamic>{
-      ...(nestedModules is Map<String, dynamic>
-          ? nestedModules
-          : const <String, dynamic>{}),
-      field: value,
-    };
-    updated['data'] = <String, dynamic>{
-      ...data,
-      'extensions': <String, dynamic>{...?nested, 'airi': nestedAiri},
+    for (final groupName in <String>['modules', 'active_state']) {
+      final group = airi[groupName];
+      airi[groupName] = <String, dynamic>{
+        ...(group is Map<String, dynamic> ? group : const <String, dynamic>{}),
+        field: value,
+      };
+    }
+    entry['extensions'] = <String, dynamic>{
+      ...(extensions is Map<String, dynamic> ? extensions : const <String, dynamic>{}),
+      'airi': airi,
     };
   }
   return updated;
@@ -283,7 +277,7 @@ class _NavigationShellState extends State<NavigationShell> {
         return;
       }
       if (card == null) return;
-      final backgroundId = _cardModuleField(card, 'activeBackgroundId');
+      final backgroundId = readCardActiveField(card, 'activeBackgroundId');
       _savedBackgroundId = backgroundId;
       if (backgroundId != null) {
         // A persisted id may name a scene the library has not loaded yet;
@@ -328,7 +322,7 @@ class _NavigationShellState extends State<NavigationShell> {
           message: 'That card is no longer available.',
         );
       }
-      final updated = _withCardModuleField(card, 'activeBackgroundId', backgroundId);
+      final updated = withCardActiveField(card, 'activeBackgroundId', backgroundId);
       await widget.client.cardsUpdate(cardId, updated);
       await store.activateForCard(cardId, backgroundId);
       if (!mounted) return;

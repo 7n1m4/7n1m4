@@ -206,6 +206,21 @@ void main() {
     });
   });
 
+  test('active_state.displayModelId is the canonical restore value', () {
+    final model = DisplayModel.fromCard(_cardWith(<String, dynamic>{
+      'modules': <String, dynamic>{'displayModelId': 'stale-module'},
+      'active_state': <String, dynamic>{'displayModelId': 'active-model'},
+    }));
+    expect(model.displayModelId, 'active-model');
+  });
+
+  test('an active_state-only card restores its display model', () {
+    final model = DisplayModel.fromCard(_cardWith(<String, dynamic>{
+      'active_state': <String, dynamic>{'displayModelId': 'active-only'},
+    }));
+    expect(model.displayModelId, 'active-only');
+  });
+
   group('StageCaptionStyle', () {
     test('reads the daemon captions section shape', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{

@@ -68,6 +68,24 @@ class _CardClient extends FakeChatClient {
           ok: true,
           data: <String, dynamic>{'card': found.isEmpty ? null : found.first},
         );
+      case 'cards.update':
+        final id = payload?['id'] as String? ?? '';
+        final document = payload?['document'];
+        if (document is Map<String, dynamic>) {
+          final index = cards.indexWhere((card) => card['id'] == id);
+          if (index >= 0) cards[index] = document;
+        }
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'id': id,
+            'name': document is Map<String, dynamic> && document['name'] is String
+                ? document['name']
+                : '',
+            'updated': true,
+          },
+        );
       case 'settings.get':
         if (handler != null) {
           try {
@@ -130,6 +148,55 @@ Map<String, dynamic> _cardWithBackground(String id, String backgroundId) =>
       'extensions': <String, dynamic>{
         'airi': <String, dynamic>{
           'modules': <String, dynamic>{'activeBackgroundId': backgroundId},
+        },
+      },
+    };
+
+/// A Vue-shaped card whose only backdrop record is `active_state`, under the
+/// CCv3 `data.extensions` envelope.
+Map<String, dynamic> _cardWithActiveStateBackground(
+  String id,
+  String backgroundId,
+) =>
+    <String, dynamic>{
+      ..._card(id),
+      'data': <String, dynamic>{
+        'extensions': <String, dynamic>{
+          'airi': <String, dynamic>{
+            'active_state': <String, dynamic>{
+              'activeBackgroundId': backgroundId,
+            },
+          },
+        },
+      },
+    };
+
+/// A card with independent values in both extension mirrors, so the write
+/// test proves it writes both locations without dropping neighbouring state.
+Map<String, dynamic> _cardWithMirroredExtensionState(String id) =>
+    <String, dynamic>{
+      ..._card(id),
+      'extensions': <String, dynamic>{
+        'airi': <String, dynamic>{
+          'modules': <String, dynamic>{'displayModelId': 'root-model'},
+          'active_state': <String, dynamic>{
+            'displayModelId': 'root-model',
+            'active_expressions': <String, dynamic>{'Happy': 1},
+          },
+          'unrelatedRoot': 'keep',
+        },
+      },
+      'data': <String, dynamic>{
+        'spec': 'chara_card_v3',
+        'extensions': <String, dynamic>{
+          'airi': <String, dynamic>{
+            'modules': <String, dynamic>{
+              'consciousness': <String, dynamic>{'provider': 'kept'},
+            },
+            'active_state': <String, dynamic>{
+              'displayModelId': 'nested-model',
+            },
+          },
         },
       },
     };
@@ -706,6 +773,83 @@ void main() {
       tester.widget<StageScreen>(find.byType(StageScreen)).background?.tint,
       0xFF654321,
     );
+  });
+
+  testWidgets('a Vue active_state-only card restores its per-card backdrop', (
+    tester,
+  ) async {
+    final store = StageSceneStore(storageDirectory: temp);
+    final entry = (await tester.runAsync(() => store.add(tint: '#ABCDEF')))!;
+    final client = _CardClient(<Map<String, dynamic>>[
+      _cardWithActiveStateBackground('card-1', entry.id),
+    ]);
+    addTearDown(client.dispose);
+
+    final loaded = Completer<void>();
+    await _pumpShell(
+      tester,
+      client,
+      sceneStorageDirectory: temp,
+      sceneLibraryLoader: (store) async {
+        await tester.runAsync(store.load);
+        loaded.complete();
+      },
+    );
+    await loaded.future;
+    await tester.pumpAndSettle();
+    await _openStage(tester);
+
+    expect(
+      tester.widget<StageScreen>(find.byType(StageScreen)).background?.tint,
+      0xFFABCDEF,
+    );
+  });
+
+  test('card writes read the canonical active_state field', () {
+    expect(
+      readCardActiveField(_cardWithActiveStateBackground('card-1', 'bg-state'), 'activeBackgroundId'),
+      'bg-state',
+    );
+  });
+  test('a card write mirrors modules and active_state', () {
+    // ROOT CAUSE: Flutter's card write only updated `modules`, leaving Vue's
+    // canonical `active_state` stale in both the root and nested card mirrors.
+    final written = withCardActiveField(
+      _cardWithMirroredExtensionState('card-1'),
+      'activeBackgroundId',
+      'bg-from-flutter',
+    );
+    final rootAiri = (written['extensions'] as Map<String, dynamic>)['airi']
+        as Map<String, dynamic>;
+    final nestedAiri =
+        ((written['data'] as Map<String, dynamic>)['extensions']
+                as Map<String, dynamic>)['airi']
+            as Map<String, dynamic>;
+    for (final airi in <Map<String, dynamic>>[rootAiri, nestedAiri]) {
+      expect(
+        (airi['modules'] as Map<String, dynamic>)['activeBackgroundId'],
+        'bg-from-flutter',
+      );
+      expect(
+        (airi['active_state'] as Map<String, dynamic>)['activeBackgroundId'],
+        'bg-from-flutter',
+      );
+    }
+    expect(
+      (rootAiri['modules'] as Map<String, dynamic>)['displayModelId'],
+      'root-model',
+    );
+    expect(
+      (rootAiri['active_state'] as Map<String, dynamic>)['active_expressions'],
+      <String, dynamic>{'Happy': 1},
+    );
+    expect(rootAiri['unrelatedRoot'], 'keep');
+    expect(
+      ((nestedAiri['modules'] as Map<String, dynamic>)['consciousness']
+          as Map<String, dynamic>)['provider'],
+      'kept',
+    );
+    expect((written['data'] as Map<String, dynamic>)['spec'], 'chara_card_v3');
   });
   testWidgets('an unknown card backdrop id leaves local selection alone', (
     tester,

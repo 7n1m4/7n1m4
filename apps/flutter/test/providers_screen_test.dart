@@ -76,11 +76,29 @@ Future<_RecordingProviderClient> _pump(
 }
 
 Future<void> selectKind(WidgetTester tester, String value) async {
-  await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Kind'));
+  final kind = find.widgetWithText(DropdownButtonFormField<String>, 'Kind');
+  await reveal(tester, kind, dragOffset: const Offset(0, 400));
+  await tester.ensureVisible(kind);
+  await tester.pumpAndSettle();
+  await tester.tap(kind);
   await tester.pumpAndSettle();
   await tester.tap(find.text(value).last);
   await tester.pumpAndSettle();
 }
+/// The screen renders one ListView: rows below the fold are only built once
+/// scrolled into view, so scroll until the target exists (as a user would).
+Future<void> reveal(WidgetTester tester, Finder finder,
+    {Offset dragOffset = const Offset(0, -400)}) async {
+  final scroll = find.byType(Scrollable).first;
+  for (var i = 0; i < 40 && finder.evaluate().isEmpty; i++) {
+    await tester.drag(scroll, dragOffset);
+    await tester.pumpAndSettle();
+  }
+}
+/// Status and error banners live at the top of the ListView; after the form
+/// has been scrolled they are built but off-stage, so scroll back to them.
+Future<void> revealStatus(WidgetTester tester, Finder finder) =>
+    reveal(tester, finder, dragOffset: const Offset(0, 400));
 
 void main() {
   testWidgets('save writes through providers.save and refreshes the list',
@@ -113,7 +131,9 @@ void main() {
       'rotateSecrets': true, // a typed key is the rotation opt-in
     });
     // The daemon returns its canonical id in the reply; the screen shows that.
-    expect(find.text('Saved provider p1'), findsOneWidget);
+    final status = find.text('Saved provider p1');
+    await revealStatus(tester, status);
+    expect(status, findsOneWidget);
     // Only the write path carries the key: never re-listed or echoed.
     expect(
       client.calls
@@ -156,7 +176,9 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    final error = find.text('The daemon could not complete the request.');
+    await revealStatus(tester, error);
+    expect(error, findsOneWidget);
     expect(find.textContaining('sk-LEAKED'), findsNothing);
     expect(find.textContaining('https://api.openai.com'), findsNothing);
     expect(find.textContaining('Saved provider'), findsNothing);
@@ -221,12 +243,16 @@ void main() {
       return _ok(action, <String, dynamic>{'ok': true});
     };
 
-    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Models'));
+    final modelsButton = find.widgetWithText(OutlinedButton, 'Models');
+    await reveal(tester, modelsButton);
+    await tester.ensureVisible(modelsButton);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(OutlinedButton, 'Models'));
     await tester.pumpAndSettle();
 
-    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    final error = find.text('The daemon could not complete the request.');
+    await revealStatus(tester, error);
+    expect(error, findsOneWidget);
     expect(find.textContaining('sk-LEAKED'), findsNothing);
     expect(find.textContaining('/etc/anima'), findsNothing);
   });
@@ -237,9 +263,9 @@ void main() {
       _seededProvider(),
     ]);
 
-    tester
-        .widget<TextButton>(find.widgetWithText(TextButton, 'Disable'))
-        .onPressed!();
+    final disableButton = find.widgetWithText(TextButton, 'Disable');
+    await reveal(tester, disableButton);
+    tester.widget<TextButton>(disableButton).onPressed!();
     await tester.pumpAndSettle();
 
     final saveCall = client.calls.firstWhere(
@@ -255,7 +281,9 @@ void main() {
     });
     expect(saveCall.payload!.containsKey('rotateSecrets'), isFalse,
         reason: 'a toggle must not rotate a managed credential');
-    expect(find.text('Disabled provider p-openai'), findsOneWidget);
+    final status = find.text('Disabled provider p-openai');
+    await reveal(tester, status, dragOffset: const Offset(0, 400));
+    expect(status, findsOneWidget);
   });
 
   testWidgets('renders exactly the metadata the daemon supplies',
@@ -275,10 +303,10 @@ void main() {
       },
     ]);
 
-    expect(
-      find.text('open-ai-compatible · gpt · https://api.openai.com/v1 · enabled'),
-      findsOneWidget,
-    );
+    final metadata = find.text(
+        'open-ai-compatible · gpt · https://api.openai.com/v1 · enabled');
+    await reveal(tester, metadata);
+    expect(metadata, findsOneWidget);
     expect(find.textContaining('invalid'), findsNothing);
     expect(find.textContaining('bad key'), findsNothing);
 
@@ -291,7 +319,9 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('Saved provider p1'), findsOneWidget);
+    final savedStatus = find.text('Saved provider p1');
+    await reveal(tester, savedStatus, dragOffset: const Offset(0, 400));
+    expect(savedStatus, findsOneWidget);
     expect(find.textContaining('invalid'), findsNothing);
   });
 
@@ -399,7 +429,8 @@ void main() {
       reason: 'the saved provider must be checked before claiming success',
     );
     expect(find.textContaining('Saved provider'), findsNothing);
-    expect(find.textContaining('The daemon could not complete the request.'),
-        findsWidgets);
+    final error = find.textContaining('The daemon could not complete the request.');
+    await revealStatus(tester, error);
+    expect(error, findsWidgets);
   });
 }

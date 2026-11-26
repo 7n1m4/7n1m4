@@ -22,6 +22,7 @@ import 'method_channel_backend.dart';
 import 'model_asset_resolver.dart';
 import 'model_backend.dart';
 import 'model_runtime.dart';
+import 'presence_status_chip.dart';
 import 'stage_background.dart';
 import 'stage_control_strip.dart';
 import 'stage_control_strip_state.dart';
@@ -209,19 +210,29 @@ class _StageScreenState extends State<StageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StageOverlays(
-      state: _render,
-      strip: StageControlStrip(state: _strip, onAction: _onStripAction),
-      model: ModelStage(
-        client: widget.client,
-        cardId: widget.cardId,
-        render: _render,
-        backends: _backends,
-        resolver: _resolver,
-        cacheDirectoryProvider: widget.cacheDirectoryProvider,
-        frames: widget.frames,
-        actorId: widget.actorId,
-      ),
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        StageOverlays(
+          state: _render,
+          strip: StageControlStrip(state: _strip, onAction: _onStripAction),
+          model: ModelStage(
+            client: widget.client,
+            cardId: widget.cardId,
+            render: _render,
+            backends: _backends,
+            resolver: _resolver,
+            cacheDirectoryProvider: widget.cacheDirectoryProvider,
+            frames: widget.frames,
+            actorId: widget.actorId,
+          ),
+        ),
+        Positioned(
+          right: 12,
+          top: 12,
+          child: PresenceStatusChip(client: widget.client),
+        ),
+      ],
     );
   }
 }

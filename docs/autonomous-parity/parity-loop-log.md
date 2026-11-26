@@ -21,3 +21,11 @@
 - Implemented: Flutter forwards daemon keyset cursors verbatim (cards/sessions/chat); VFX emotion cues parse and route; daemon-backed active card + per-card backdrop restore; typed `stmm.upsert` wrapper + explicit summary form; typed presence/status event hooks with sequence dedupe; `daemonKind` documented as TS-local metadata.
 - Verification: focused cursor 59/59, VFX 39/39, card-state 54/54, memory 38+7/7, presence 35/35; daemon serial suite 227/227; stage-ui typecheck PASS; `git diff --check` clean. Full Flutter suite: 459 tests, 5 failures — three provider-screen and one settings-screen failure reproduce with implementation and tests byte-identical to HEAD; one scene-management failure is intermittent and passed in focused runs.
 - Next scan: re-audit RPC/event/stage surfaces at the new commit for remaining gaps; consider the pre-existing provider/settings test failures as a separate test-hygiene bead (test files unchanged from HEAD, so not a parity regression).
+
+## 2026-11-26 — round 3 (scan → improve → verify)
+
+- Scan at `628a996a` by three read-only scouts. Rejected one false positive: `runtime.status` is built into `anima-channel`'s `RpcRegistry` and already served by the daemon's session dispatcher; no handler is missing.
+- Verified gaps filed as `airi-rs74` (typed presence/status hooks had no lib/ consumer), `airi-2wew` (Flutter card restore ignored Vue's canonical `extensions.airi.active_state`), and `airi-l0u2` (pre-existing provider/settings test failures).
+- `airi-l0u2` fixed at the harness level: lazy-ListView tests now reveal widgets before interaction; the settings dropdown finder is scoped and its stale catalog expectation matches the intentionally supported two-button catalog. Focused suite 19/19 passed 3x plus coordinator re-run; production untouched.
+- `airi-rs74`: a stage `PresenceStatusChip` now consumes the typed hooks and renders only daemon-supplied presence/health, clearing stale values on disconnect. `airi-2wew`: Flutter reads Vue's canonical `active_state` card fields first and writes both `active_state` and `modules` mirrors.
+- Integrated verification: full Flutter suite **481/481 passed**; daemon serial suite and channel tests PASS; stage-ui typecheck PASS; `git diff --check` clean.

@@ -90,36 +90,45 @@ class DisplayModel {
   /// fails loudly instead of falling back to a fabricated model.
   static DisplayModel fromCard(Map<String, dynamic>? card) {
     if (card == null) return none;
-    final airi = _airiExtension(card);
-    if (airi == null) return none;
-    for (final entry in const <(ModelKind, String)>[
-      (ModelKind.vrm, 'vrm'),
-      (ModelKind.live2d, 'live2d'),
-      (ModelKind.mmd, 'mmd'),
-      (ModelKind.spine, 'spine'),
-    ]) {
-      final descriptor = airi[entry.$2];
-      if (descriptor is Map) {
-        return DisplayModel(
-          kind: entry.$1,
-          asset: _assetFromDescriptor(entry.$1, descriptor),
-        );
+    final candidates = _airiExtensions(card);
+    for (final airi in candidates) {
+      for (final entry in const <(ModelKind, String)>[
+        (ModelKind.vrm, 'vrm'),
+        (ModelKind.live2d, 'live2d'),
+        (ModelKind.mmd, 'mmd'),
+        (ModelKind.spine, 'spine'),
+      ]) {
+        final descriptor = airi[entry.$2];
+        if (descriptor is Map) {
+          return DisplayModel(
+            kind: entry.$1,
+            asset: _assetFromDescriptor(entry.$1, descriptor),
+          );
+        }
       }
     }
-    // Vue's model-assignment modal writes `modules.displayModelId`; older
-    // cards and hand-authored fixtures use the top-level key. Prefer the
-    // nested one, the canonical AiriCard location.
-    final modules = airi['modules'];
-    final nested = modules is Map ? modules['displayModelId'] : null;
-    final displayModelId = nested is String && nested.trim().isNotEmpty
-        ? nested
-        : airi['displayModelId'];
-    if (displayModelId is String && displayModelId.trim().isNotEmpty) {
-      return DisplayModel(
-        kind: ModelKind.none,
-        asset: ModelAssetRef(kind: ModelKind.none, value: displayModelId),
-        displayModelId: displayModelId,
-      );
+    // Vue's ControlStrip writes `active_state.displayModelId` as the
+    // canonical live value and mirrors it into `modules`; some cards have
+    // only the active_state copy. Older cards use modules or top-level.
+    final ids = <Object?>[
+      for (final airi in candidates) ...<Object?>[
+        (airi['active_state'] is Map)
+            ? (airi['active_state'] as Map)['displayModelId']
+            : null,
+        (airi['modules'] is Map)
+            ? (airi['modules'] as Map)['displayModelId']
+            : null,
+        airi['displayModelId'],
+      ],
+    ];
+    for (final candidate in ids) {
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return DisplayModel(
+          kind: ModelKind.none,
+          asset: ModelAssetRef(kind: ModelKind.none, value: candidate),
+          displayModelId: candidate,
+        );
+      }
     }
     return none;
   }
@@ -164,14 +173,22 @@ class DisplayModel {
     return unknownModelKindCode;
   }
 
-  static Map<dynamic, dynamic>? _airiExtension(Map<String, dynamic> card) {
+  static List<Map<dynamic, dynamic>> _airiExtensions(
+    Map<String, dynamic> card,
+  ) {
     // The daemon hands back the stored card document: CCv2/CCv3 wrap the body
     // in `data`, while a bare document carries `extensions` at the top level.
-    final data = card['data'];
-    final extensions = data is Map ? data['extensions'] : card['extensions'];
-    if (extensions is! Map) return null;
-    final airi = extensions['airi'];
-    return airi is Map ? airi : null;
+    // Vue merges both mirrors with root winning per field, so include both.
+    final result = <Map<dynamic, dynamic>>[];
+    for (final extensions in <Object?>[
+      card['extensions'],
+      if (card['data'] is Map) (card['data'] as Map)['extensions'],
+    ]) {
+      if (extensions is! Map) continue;
+      final airi = extensions['airi'];
+      if (airi is Map) result.add(airi);
+    }
+    return result;
   }
 
   static ModelAssetRef _assetFromDescriptor(
