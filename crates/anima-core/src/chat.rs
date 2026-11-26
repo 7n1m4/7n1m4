@@ -35,25 +35,27 @@ use anima_llm::{
     build_client, ChatMessage, ChatProvider, ChatRequest, ProviderConfig, ProviderRegistry, Role,
 };
 use anima_store::{
-    CardRepo, Database, MessageRepo, SessionRepo, SettingsRepo, StoredMessage, StoredSession,
-    SummaryRepo,
+    CardRepo, Database, MessageRepo, ProviderRepo, SessionRepo, SettingsRepo, StoredMessage,
+    StoredSession, SummaryRepo,
 };
 use anyhow::{anyhow, Context, Result};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::cards::{parse_card_json, AiriCard, AiriCardExtensions, AiriExtension};
+use crate::cards::{parse_card_json, AiriExtension};
 use crate::compaction::{
     cap_winnow_survivors_to_budget, estimate_message_list_tokens, extract_compaction_message_text,
     CompactionMessage, MessageContent, WINNOW_TARGET_BUDGET_RATIO,
 };
-use crate::grounding::{assemble, GroundingBlock, GroundingBudget};
+use crate::grounding::{assemble, GroundingBlock, GroundingBudget, SemanticMemoryItem};
+use crate::memory::embedding::{Embedder, EmbeddingClient};
+use crate::memory::retrieval::MemoryRetrieval;
 use crate::memory::ShortTermMemoryService;
 use crate::recent_topics::{score_recent_topics, RecentTopicsInput};
 #[cfg(feature = "local-llm")]
 use crate::settings::LocalLlmSettings;
-use crate::settings::{CardsSettings, SettingsSection};
+use crate::settings::{CardsSettings, ChatProviderSettings, SettingsSection};
 use crate::{new_id, now_ms};
 
 /// Lifecycle status of a chat session.
@@ -130,6 +132,12 @@ const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// sessions are never trimmed, deleted, or rewritten.
 const HISTORY_PROMPT_TOKEN_THRESHOLD: usize = 12_000;
 
+/// Top-k bound for semantic-memory evidence injected into a turn. Mirrors the
+/// TS `searchEngine.evidenceLimit` default (`chat.ts:820`); the retrieval
+/// formatter itself drops non-positive scores, so no extra min-score knob is
+/// needed here.
+const RETRIEVAL_TOP_K: usize = 6;
+
 /// Server-side instruction for the A2UI subset Flutter GenUI can render.
 ///
 /// Applied only through the A2UI-capable turn methods, never on ordinary
@@ -159,6 +167,9 @@ pub struct ChatService {
     statuses: Arc<Mutex<HashMap<String, ChatStatus>>>,
     cancels: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     bus: broadcast::Sender<ChatEvent>,
+    /// Test-only embedder override for semantic-memory retrieval. Production
+    /// builds it from daemon-owned provider config on each opt-in turn.
+    retrieval_embedder: Option<Arc<dyn Embedder>>,
 }
 
 impl ChatService {
@@ -193,6 +204,7 @@ impl ChatService {
             statuses: Arc::new(Mutex::new(HashMap::new())),
             cancels: Arc::new(Mutex::new(HashMap::new())),
             bus,
+            retrieval_embedder: None,
         }
     }
 
@@ -217,6 +229,15 @@ impl ChatService {
             .lock()
             .expect("providers mutex poisoned")
             .insert(provider_id.into(), client);
+    }
+
+    /// Inject an embedder for semantic-memory retrieval (tests only).
+    ///
+    /// Production always builds one from daemon-owned provider config; this
+    /// seam keeps the grounding path testable without a live embeddings API.
+    #[cfg(test)]
+    pub(crate) fn set_retrieval_embedder(&mut self, embedder: Arc<dyn Embedder>) {
+        self.retrieval_embedder = Some(embedder);
     }
 
     /// Clone a registered client from the shared table.
@@ -381,7 +402,7 @@ impl ChatService {
         // so this never aborts the turn, and `history` is borrowed, never
         // mutated — every persisted row stays exactly where it was.
         let messages = cap_prompt_history(&history);
-        let system = self.build_system_prompt(&session_id, a2ui)?;
+        let system = self.build_system_prompt(&session_id, text, a2ui).await?;
         self.run_stream(
             session_id,
             assistant_message_id.map(str::to_string),
@@ -400,33 +421,98 @@ impl ChatService {
         .await
     }
 
+    /// Load the active card's `extensions.airi`, normalized from either the
+    /// editor envelope or a spec-wrapped CC v2/v3 document. Cards are stored
+    /// verbatim, so both grounding gates parse through the same seam.
+    fn active_airi_extension(&self) -> Option<AiriExtension> {
+        let Ok(Some(cards)) = self.settings.get::<CardsSettings>(CardsSettings::KEY) else {
+            return None;
+        };
+        if cards.active_card_id.is_empty() {
+            return None;
+        }
+        let Ok(Some(card)) = CardRepo::new(self.db.clone()).get(&cards.active_card_id) else {
+            return None;
+        };
+        parse_card_json(card.document.as_bytes())
+            .ok()
+            .and_then(|card| card.airi_extension().cloned())
+    }
+
     /// Recent-topic grounding is opt-in per card, mirroring the TS
     /// `extensions.airi.groundingTopicsEnabled` check in chat.ts:841.
     fn grounding_topics_enabled(&self) -> bool {
-        let Ok(Some(cards)) = self.settings.get::<CardsSettings>(CardsSettings::KEY) else {
-            return false;
-        };
-        if cards.active_card_id.is_empty() {
-            return false;
-        }
-        let Ok(Some(card)) = CardRepo::new(self.db.clone()).get(&cards.active_card_id) else {
-            return false;
-        };
-        // Cards are stored verbatim: editor-envelope AiriCard documents and
-        // spec-wrapped CC v2/v3 documents both occur, so normalize first.
-        let Ok(card) = parse_card_json(card.document.as_bytes()) else {
-            return false;
-        };
-        card.airi_extension()
+        self.active_airi_extension()
             .and_then(|airi| airi.grounding_topics_enabled)
             .unwrap_or(false)
     }
 
+    /// Semantic-memory grounding is opt-in per card, mirroring the TS
+    /// `extensions.airi.groundingMemoryEnabled` check in chat.ts:790.
+    fn grounding_memory_enabled(&self) -> bool {
+        let Some(airi) = self.active_airi_extension() else {
+            return false;
+        };
+        if airi.grounding_memory_enabled.unwrap_or(false) {
+            return true;
+        }
+        // TS also enables retrieval through these three card paths
+        // (chat.ts:790-793); a card using one of them must not be ignored.
+        if airi
+            .universe_rag
+            .as_ref()
+            .and_then(|rag| rag.enabled)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        if airi.first_hop_processor == Some(crate::cards::AiriFirstHopProcessor::UniverseRag) {
+            return true;
+        }
+        airi.cognition
+            .as_ref()
+            .and_then(|cognition| cognition.search_engine.as_ref())
+            .and_then(|engine| engine.universe_rag_enabled)
+            .unwrap_or(false)
+    }
+
+    /// Embedder for retrieval: the test override when present, otherwise one
+    /// built from the daemon-owned provider table and selection. Credentials,
+    /// base URL and model never come from the chat request.
+    fn retrieval_embedder(&self) -> Option<Arc<dyn Embedder>> {
+        if let Some(embedder) = &self.retrieval_embedder {
+            return Some(embedder.clone());
+        }
+        let rows = ProviderRepo::new(self.db.clone()).list().ok()?;
+        let selection = self
+            .settings
+            .get::<ChatProviderSettings>(ChatProviderSettings::KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let resolution = crate::providers::resolve_provider_selection(
+            |key| std::env::var(key).ok(),
+            &rows,
+            &selection.active_provider,
+            &selection.active_model,
+        )?;
+        // The chat model is not an embedding model; use the client's default
+        // rather than inventing a dedicated settings section.
+        let client = EmbeddingClient::from_provider_config(&resolution.config, "").ok()?;
+        Some(Arc::new(client))
+    }
+
     /// Assemble the turn's system prompt: the A2UI instruction when requested,
-    /// followed by stored continuity and recent-topic blocks routed through the
-    /// grounding formatter. With no grounding at all the prompt shape is
-    /// unchanged (`None` for ordinary turns).
-    fn build_system_prompt(&self, session_id: &str, a2ui: bool) -> Result<Option<String>> {
+    /// followed by stored continuity, opt-in semantic memories, and recent
+    /// topics routed through the grounding formatter. `query` is the current
+    /// user turn, used for retrieval. With no grounding at all the prompt shape
+    /// is unchanged (`None` for ordinary turns).
+    async fn build_system_prompt(
+        &self,
+        session_id: &str,
+        query: &str,
+        a2ui: bool,
+    ) -> Result<Option<String>> {
         let days = recent_utc_day_keys(now_ms() / 1000);
         // Continuity is best-effort: a locked/busy summary store must never
         // abort a turn or discard the user's message.
@@ -436,6 +522,32 @@ impl ChatService {
         let mut blocks = Vec::new();
         if !context.is_empty() {
             blocks.push(GroundingBlock::short_term_memory(context));
+        }
+
+        // TS injects retrieved memories only for cards that opt in
+        // (chat.ts:790). Best-effort throughout: no provider, an empty index,
+        // or a locked DB just skips the block and never aborts the turn.
+        // Retrieved text is untrusted; `assemble` applies the 7000-char budget.
+        // shortcut: memory_embeddings has no character/universe column yet, so
+        // a shared index can surface another card's text; scoping needs a store
+        // schema change (tracked in airi-at80). The card gate still bounds who
+        // gets retrieval at all.
+        if self.grounding_memory_enabled() {
+            if let Some(embedder) = self.retrieval_embedder() {
+                let retrieval = MemoryRetrieval::new(self.db.clone(), embedder);
+                match retrieval.build_prompt_block(query, RETRIEVAL_TOP_K).await {
+                    Ok(block) if !block.is_empty() => {
+                        blocks.push(GroundingBlock::SemanticMemories {
+                            memories: vec![SemanticMemoryItem {
+                                content: block,
+                                ..SemanticMemoryItem::default()
+                            }],
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(err) => tracing::debug!("semantic memory grounding skipped: {err:#}"),
+                }
+            }
         }
 
         // TS injects topics only for cards that opt in (chat.ts:841). Both
@@ -1101,6 +1213,9 @@ fn to_chat_message(message: CompactionMessage) -> Option<ChatMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cards::{AiriCard, AiriCardExtensions};
+    use crate::memory::embedding::EmbeddingError;
+    use crate::memory::retrieval::MemoryIndexer;
     use anima_llm::{ChatChunk, ChatStream, ModelInfo};
     use anima_store::{StoredSummary, SummaryRepo};
     use async_trait::async_trait;
@@ -1225,6 +1340,72 @@ mod tests {
                 &serde_json::to_string(&card).unwrap(),
                 "Test card",
             )
+            .unwrap();
+    }
+
+    /// Install an active card carrying the given AIRI extension.
+    fn set_active_airi(db: &Database, airi: AiriExtension) {
+        SettingsRepo::new(db.clone())
+            .set(
+                CardsSettings::KEY,
+                &CardsSettings {
+                    active_card_id: "card-1".to_string(),
+                },
+            )
+            .unwrap();
+        let card = AiriCard {
+            extensions: Some(AiriCardExtensions {
+                airi: Some(airi),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        CardRepo::new(db.clone())
+            .insert(
+                "card-1",
+                &serde_json::to_string(&card).unwrap(),
+                "Test card",
+            )
+            .unwrap();
+    }
+
+    /// Opt the active card into both semantic-memory and recent-topic grounding.
+    fn enable_grounding_memory(db: &Database) {
+        set_active_airi(
+            db,
+            AiriExtension {
+                grounding_memory_enabled: Some(true),
+                grounding_topics_enabled: Some(true),
+                ..Default::default()
+            },
+        );
+    }
+
+    /// Every text maps to the same unit vector, so indexed rows score above
+    /// the retrieval formatter's positive-score cutoff.
+    struct ConstantEmbedder;
+
+    #[async_trait]
+    impl Embedder for ConstantEmbedder {
+        async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        }
+    }
+
+    struct BrokenEmbedder;
+
+    #[async_trait]
+    impl Embedder for BrokenEmbedder {
+        async fn embed(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+            Err(EmbeddingError::Empty)
+        }
+    }
+
+    async fn seed_semantic_memory(db: &Database) {
+        let embedder: Arc<dyn Embedder> = Arc::new(ConstantEmbedder);
+        MemoryIndexer::new(db.clone(), embedder)
+            .index_journal_entry("j1", "The user's cat is named Miso")
+            .await
             .unwrap();
     }
 
@@ -1544,8 +1725,8 @@ mod tests {
         assert!(a2ui.contains("https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"));
     }
 
-    #[test]
-    fn build_system_prompt_routes_continuity_through_grounding_assembler() {
+    #[tokio::test]
+    async fn build_system_prompt_routes_continuity_through_grounding_assembler() {
         let (_dir, db) = test_db();
         enable_grounding_topics(&db);
         let service = ChatService::new(db.clone());
@@ -1573,7 +1754,8 @@ mod tests {
             .unwrap();
 
         let plain = service
-            .build_system_prompt(&session.id, false)
+            .build_system_prompt(&session.id, "garden roses bloom", false)
+            .await
             .unwrap()
             .expect("continuity and topics must produce a system prompt");
         assert!(plain.starts_with("[PAST CONTINUITY / DAILY SUMMARIES]"));
@@ -1584,7 +1766,8 @@ mod tests {
         assert!(!plain.contains("v0.9"));
 
         let a2ui = service
-            .build_system_prompt(&session.id, true)
+            .build_system_prompt(&session.id, "garden roses bloom", true)
+            .await
             .unwrap()
             .expect("A2UI turn must keep both blocks");
         assert!(a2ui.starts_with(A2UI_SYSTEM_PROMPT));
@@ -1592,19 +1775,29 @@ mod tests {
         assert!(a2ui.contains("garden roses (weight: 1.50)"));
     }
 
-    #[test]
-    fn build_system_prompt_with_empty_session_keeps_shape_unchanged() {
+    #[tokio::test]
+    async fn build_system_prompt_with_empty_session_keeps_shape_unchanged() {
         let (_dir, db) = test_db();
         let service = ChatService::new(db);
-        assert_eq!(service.build_system_prompt("", false).unwrap(), None);
         assert_eq!(
-            service.build_system_prompt("", true).unwrap().as_deref(),
+            service
+                .build_system_prompt("", "anything", false)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            service
+                .build_system_prompt("", "anything", true)
+                .await
+                .unwrap()
+                .as_deref(),
             Some(A2UI_SYSTEM_PROMPT)
         );
     }
 
-    #[test]
-    fn build_system_prompt_respects_card_topics_opt_in() {
+    #[tokio::test]
+    async fn build_system_prompt_respects_card_topics_opt_in() {
         let (_dir, db) = test_db();
         let session = ChatService::new(db.clone())
             .new_session_with_title("Topics gate")
@@ -1621,7 +1814,8 @@ mod tests {
             .unwrap();
         let service = ChatService::new(db.clone());
         let without_flag = service
-            .build_system_prompt(&session.id, false)
+            .build_system_prompt(&session.id, "anything", false)
+            .await
             .unwrap()
             .unwrap_or_default();
         assert!(
@@ -1631,7 +1825,8 @@ mod tests {
 
         enable_grounding_topics(&db);
         let with_flag = service
-            .build_system_prompt(&session.id, false)
+            .build_system_prompt(&session.id, "anything", false)
+            .await
             .unwrap()
             .expect("opted-in card must emit topics");
         assert!(with_flag.contains("[RECENT TOPICS]"));
@@ -1658,7 +1853,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            service.build_system_prompt("", false).unwrap(),
+            service
+                .build_system_prompt("", "anything", false)
+                .await
+                .unwrap(),
             None,
             "a failed continuity read must degrade to no extra system prompt"
         );
@@ -1678,8 +1876,8 @@ mod tests {
             .expect("the user turn must still be accepted");
     }
 
-    #[test]
-    fn build_system_prompt_honors_wrapped_card_topics_opt_in() {
+    #[tokio::test]
+    async fn build_system_prompt_honors_wrapped_card_topics_opt_in() {
         let (_dir, db) = test_db();
         let session = ChatService::new(db.clone())
             .new_session_with_title("Wrapped card")
@@ -1716,10 +1914,198 @@ mod tests {
 
         let service = ChatService::new(db);
         let system = service
-            .build_system_prompt(&session.id, false)
+            .build_system_prompt(&session.id, "anything", false)
+            .await
             .unwrap()
             .expect("a spec-wrapped card must still opt in");
         assert!(system.contains("[RECENT TOPICS]"));
+    }
+
+    #[tokio::test]
+    async fn all_universe_rag_card_paths_enable_retrieval() {
+        use crate::cards::{AiriCognition, AiriCognitionSearchEngine, AiriUniverseRag};
+
+        let cases: [(&str, AiriExtension); 3] = [
+            (
+                "universeRag.enabled",
+                AiriExtension {
+                    universe_rag: Some(AiriUniverseRag {
+                        enabled: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ),
+            (
+                "firstHopProcessor",
+                AiriExtension {
+                    first_hop_processor: Some(crate::cards::AiriFirstHopProcessor::UniverseRag),
+                    ..Default::default()
+                },
+            ),
+            (
+                "cognition.searchEngine.universeRagEnabled",
+                AiriExtension {
+                    cognition: Some(AiriCognition {
+                        search_engine: Some(AiriCognitionSearchEngine {
+                            universe_rag_enabled: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ),
+        ];
+        for (name, extension) in cases {
+            let (_dir, db) = test_db();
+            set_active_airi(&db, extension);
+            seed_semantic_memory(&db).await;
+            let mut service = ChatService::new(db);
+            service.set_retrieval_embedder(Arc::new(ConstantEmbedder));
+            let system = service
+                .build_system_prompt("", "cat", false)
+                .await
+                .unwrap()
+                .unwrap_or_default();
+            assert!(
+                system.contains("[GROUNDED LONG-TERM MEMORIES]"),
+                "{name} must enable retrieval: {system}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn semantic_grounding_with_no_hits_leaves_prompt_shape_unchanged() {
+        let (_dir, db) = test_db();
+        enable_grounding_memory(&db);
+        let mut service = ChatService::new(db);
+        service.set_retrieval_embedder(Arc::new(ConstantEmbedder));
+
+        assert_eq!(
+            service
+                .build_system_prompt("", "what is my cat's name", false)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            service
+                .build_system_prompt("", "what is my cat's name", true)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(A2UI_SYSTEM_PROMPT)
+        );
+    }
+
+    #[tokio::test]
+    async fn opted_in_card_injects_semantic_block_before_recent_topics() {
+        let (_dir, db) = test_db();
+        enable_grounding_memory(&db);
+        seed_semantic_memory(&db).await;
+        let embedder: Arc<dyn Embedder> = Arc::new(ConstantEmbedder);
+        let mut service = ChatService::new(db.clone());
+        service.set_retrieval_embedder(embedder);
+        let session = service.new_session_with_title("Custom title").unwrap();
+        MessageRepo::new(db.clone())
+            .insert(&StoredMessage {
+                id: new_id(),
+                session_id: session.id.clone(),
+                role: "user".to_string(),
+                content: "garden roses bloom".to_string(),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let plain = service
+            .build_system_prompt(&session.id, "tell me about the cat", false)
+            .await
+            .unwrap()
+            .expect("semantic memory must produce a system prompt");
+        assert!(plain.contains("[GROUNDED LONG-TERM MEMORIES]"), "{plain}");
+        assert!(plain.contains("The user's cat is named Miso"), "{plain}");
+        assert!(plain.contains("[RECENT TOPICS]"), "{plain}");
+        let semantic = plain.find("[GROUNDED LONG-TERM MEMORIES]").unwrap();
+        let topics = plain.find("[RECENT TOPICS]").unwrap();
+        assert!(
+            semantic < topics,
+            "semantic memories must precede recent topics"
+        );
+    }
+
+    #[tokio::test]
+    async fn card_gate_off_emits_no_semantic_block() {
+        let (_dir, db) = test_db();
+        // Topics opt in; memory does not.
+        enable_grounding_topics(&db);
+        seed_semantic_memory(&db).await;
+        let embedder: Arc<dyn Embedder> = Arc::new(ConstantEmbedder);
+        let mut service = ChatService::new(db.clone());
+        service.set_retrieval_embedder(embedder);
+        let session = service.new_session_with_title("Custom title").unwrap();
+        MessageRepo::new(db.clone())
+            .insert(&StoredMessage {
+                id: new_id(),
+                session_id: session.id.clone(),
+                role: "user".to_string(),
+                content: "garden roses bloom".to_string(),
+                created_at: now_ms(),
+                metadata: serde_json::json!({}),
+            })
+            .unwrap();
+
+        let plain = service
+            .build_system_prompt(&session.id, "tell me about the cat", false)
+            .await
+            .unwrap()
+            .expect("topics still produce a system prompt");
+        assert!(plain.contains("[RECENT TOPICS]"));
+        assert!(!plain.contains("[GROUNDED LONG-TERM MEMORIES]"), "{plain}");
+        assert!(!plain.contains("The user's cat is named Miso"), "{plain}");
+    }
+
+    #[tokio::test]
+    async fn embedding_failure_does_not_abort_the_turn() {
+        let (_dir, db) = test_db();
+        enable_grounding_memory(&db);
+        seed_semantic_memory(&db).await;
+        let mut service = ChatService::new(db);
+        service.set_retrieval_embedder(Arc::new(BrokenEmbedder));
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+        let session = service.new_session_with_title("Custom title").unwrap();
+
+        let outcome = service
+            .send_message(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "totally unrelated qqq",
+            )
+            .await
+            .expect("embedding failure must not abort the turn");
+        assert_eq!(outcome.content, "reply");
+
+        let recorded = requests.lock().unwrap();
+        let request = recorded
+            .iter()
+            .find(|req| {
+                req.messages
+                    .iter()
+                    .any(|m| m.content == "totally unrelated qqq")
+            })
+            .expect("no provider request for the user turn");
+        assert!(
+            !request
+                .system
+                .as_deref()
+                .unwrap_or_default()
+                .contains("[GROUNDED LONG-TERM MEMORIES]"),
+            "a failed embedder with no lexical overlap must not inject memories"
+        );
     }
 
     #[tokio::test]

@@ -134,6 +134,10 @@ impl SettingsStore {
     }
 }
 
+fn default_mcp_transport() -> String {
+    "stdio".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -1787,6 +1791,57 @@ impl SettingsSection for FacultiesSettings {
     const KEY: &'static str = "settings/faculties";
 }
 
+// ============================================================================
+// MCP servers
+// ============================================================================
+
+/// One daemon-owned MCP server configuration (`settings/mcp/<name>`).
+///
+/// Mirrors the TS `McpServerConfig` union in one flat, fully-defaulted shape:
+/// stdio servers use `transport: "stdio"` (or omit it) with `command`/`args`/
+/// `env`, HTTP servers use `transport: "http"` with `url`/`headers`. `token`
+/// is the bearer credential accepted by the daemon's MCP client builder. All
+/// three credential-bearing fields (`env`, `headers`, `token`) are masked by
+/// the daemon before they are returned over RPC.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerSettings {
+    /// Transport: `stdio` (default) or `http`.
+    #[serde(default = "default_mcp_transport")]
+    pub transport: String,
+    /// Executable for a stdio server (empty when unset).
+    #[serde(default)]
+    pub command: String,
+    /// Working directory for a stdio server.
+    #[serde(default)]
+    pub cwd: String,
+    /// Endpoint for an HTTP server (empty when unset).
+    #[serde(default)]
+    pub url: String,
+    /// Command-line arguments for a stdio server.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables passed to a stdio server. Values are secrets.
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    /// HTTP headers sent to an HTTP server. Values are secrets.
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    /// Bearer token for an HTTP server secret. Never echoed on the wire.
+    #[serde(default)]
+    pub token: String,
+    /// Whether the daemon may connect to this server.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// MCP server configuration section (`settings/mcp`), keyed by server name.
+pub type McpSettings = HashMap<String, McpServerSettings>;
+
+impl SettingsSection for McpSettings {
+    const KEY: &'static str = "settings/mcp";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1801,6 +1856,17 @@ mod tests {
             favorites.remove(0);
         }
         favorites.push(id);
+    }
+
+    #[test]
+    fn mcp_server_defaults_match_ts_shape() {
+        let server: McpServerSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(server.transport, "stdio");
+        assert_eq!(server.cwd, "");
+        assert!(server.enabled);
+        let with_cwd: McpServerSettings =
+            serde_json::from_value(serde_json::json!({ "cwd": "/srv/mcp" })).unwrap();
+        assert_eq!(with_cwd.cwd, "/srv/mcp");
     }
 
     fn open_db(dir: &tempfile::TempDir) -> Database {

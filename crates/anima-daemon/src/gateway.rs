@@ -866,6 +866,17 @@ impl Gateway {
                         .get("section")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| "missing section".to_string())?;
+                    // MCP config holds env/headers/token secrets. settings.get
+                    // is deliberately ungated, so route that section through
+                    // the masked projection instead of echoing raw secrets.
+                    if section == "mcp" {
+                        let masked = core.mcp_config_get()?;
+                        return Ok(serde_json::json!({
+                            "section": section,
+                            "settings": serde_json::to_string(&masked)
+                                .map_err(|e| e.to_string())?,
+                        }));
+                    }
                     let mut reply = core.settings_get(section)?;
                     if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&reply.settings)
                     {
@@ -2360,6 +2371,87 @@ impl Gateway {
                         }))
                     })
                 }),
+            );
+        }
+        // Config/status verbs for `settings/mcp`. The daemon owns the section;
+        // replies are secret-free and writes keep the strict actions gate.
+        {
+            let core = core.clone();
+            m.insert(
+                "mcp.config.get".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    core.mcp_config_get().map_err(|e| e.to_string())
+                }),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "mcp.config.set".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        core.settings_set("mcp", value.clone())
+                            .map_err(|e| e.to_string())?;
+                        // Never echo the config: env/header/token values stay on disk.
+                        Ok(serde_json::json!({ "ok": true }))
+                    },
+                ),
+            );
+        }
+        {
+            let core = core.clone();
+            m.insert(
+                "mcp.status".to_string(),
+                handler(move |_method: &str, _value: &serde_json::Value| {
+                    core.mcp_status().map_err(|e| e.to_string())
+                }),
+            );
+        }
+        {
+            m.insert(
+                "mcp.test".to_string(),
+                gated(
+                    config_path,
+                    hostname,
+                    move |_method: &str, value: &serde_json::Value| {
+                        let value = value.clone();
+                        with_mcp_acp_deadline(MCP_ACP_DEADLINE, move |deadline| {
+                            let value = &value;
+                            let transport = value
+                                .get("transport")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("stdio");
+                            let mut client = build_mcp_client(value, transport).map_err(|_| {
+                                "mcp test failed: invalid server config".to_string()
+                            })?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(3),
+                            ));
+                            // Errors from the transport can embed the URL/command, so
+                            // translate them into fixed strings instead of echoing.
+                            deadline
+                                .check(client.initialize())
+                                .map_err(|_| "mcp test failed at initialize".to_string())?;
+                            client.set_timeout(bounded_client_timeout(
+                                value,
+                                &deadline,
+                                Duration::from_secs(3),
+                            ));
+                            let tool_count = deadline
+                                .check(client.tools_list())
+                                .map_err(|_| "mcp test failed at tools_list".to_string())?
+                                .len();
+                            client.close();
+                            // Count only: neither tool payloads nor credentials leave
+                            // the daemon through this verb.
+                            Ok(serde_json::json!({ "ok": true, "toolCount": tool_count }))
+                        })
+                    },
+                ),
             );
         }
         // --- ACP bridge (daemon-RPC) ---
@@ -5143,6 +5235,8 @@ mod tests {
             "mcp.tools_list",
             "mcp.tools_call",
             "mcp.call_tool",
+            "mcp.config.set",
+            "mcp.test",
             "acp.run",
             "acp.prompt",
             "acp.list_sessions",

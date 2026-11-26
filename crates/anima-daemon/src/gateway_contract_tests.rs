@@ -902,6 +902,105 @@ mod tests {
     }
 
     #[test]
+    fn mcp_config_verbs_round_trip_without_echoing_secrets() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+
+        let saved = call(
+            &fixture,
+            "mcp.config.set",
+            serde_json::json!({
+                "filesystem": {
+                    "transport": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+                    "env": { "API_KEY": "ENV-SECRET" },
+                    "headers": { "Authorization": "HEADER-SECRET" },
+                    "token": "TOKEN-SECRET"
+                }
+            }),
+        );
+        assert_eq!(saved, serde_json::json!({ "ok": true }));
+        assert!(!saved.to_string().contains("SECRET"));
+
+        let config = call(&fixture, "mcp.config.get", serde_json::json!({}));
+        assert_eq!(config["filesystem"]["command"], "npx");
+        assert_eq!(config["filesystem"]["args"][0], "-y");
+        assert_eq!(config["filesystem"]["token"], "********");
+        assert_eq!(config["filesystem"]["env"]["API_KEY"], "********");
+        assert_eq!(config["filesystem"]["headers"]["Authorization"], "********");
+        for secret in ["ENV-SECRET", "HEADER-SECRET", "TOKEN-SECRET"] {
+            assert!(
+                !config.to_string().contains(secret),
+                "mcp.config.get leaked {secret}"
+            );
+        }
+
+        let status = call(&fixture, "mcp.status", serde_json::json!({}));
+        assert_eq!(status, serde_json::json!({ "servers": ["filesystem"] }));
+        assert!(!status.to_string().contains("SECRET"));
+
+        // A read-modify-write cycle that echoes the masks is accepted; the
+        // stored secret values are pinned by the core.rs unit test (the wire
+        // reply is masked either way, so it cannot distinguish them here).
+        call(
+            &fixture,
+            "mcp.config.set",
+            serde_json::json!({
+                "filesystem": {
+                    "command": "node",
+                    "env": { "API_KEY": "********" },
+                    "token": "********"
+                }
+            }),
+        );
+        let edited = call(&fixture, "mcp.config.get", serde_json::json!({}));
+        assert_eq!(edited["filesystem"]["command"], "node");
+        assert_eq!(edited["filesystem"]["token"], "********");
+        assert_eq!(edited["filesystem"]["headers"]["Authorization"], "********");
+
+        // settings.get is ungated, so the MCP section must not leak plaintext
+        // secrets through that generic path either.
+        let generic = call(
+            &fixture,
+            "settings.get",
+            serde_json::json!({ "section": "mcp" }),
+        );
+        let generic_settings: serde_json::Value =
+            serde_json::from_str(generic["settings"].as_str().unwrap()).unwrap();
+        assert_eq!(generic["section"], "mcp");
+        for secret in ["ENV-SECRET", "HEADER-SECRET", "TOKEN-SECRET"] {
+            assert!(
+                !generic_settings.to_string().contains(secret),
+                "settings.get leaked {secret}"
+            );
+        }
+
+        // Test failure shape: a fixed error, never the offending config.
+        let err = dispatch(&fixture, "mcp.test", &serde_json::json!({}))
+            .expect_err("invalid test config must fail");
+        assert_eq!(err.code(), "rpc_handler_error");
+        assert!(err.message().contains("mcp test failed"));
+        assert!(!err.message().contains("command"));
+    }
+
+    #[test]
+    fn mcp_writes_are_action_gated_but_reads_are_not() {
+        let fixture = isolated_gateway();
+        // No allowActions: both mutating/executing verbs fail at the gate.
+        for method in ["mcp.config.set", "mcp.test"] {
+            let err = dispatch(&fixture, method, &serde_json::json!({}))
+                .expect_err(&format!("{method} must be denied without allowActions"));
+            assert_eq!(err.code(), "rpc_actions_disabled", "{method}: {err:?}");
+        }
+        // Reads stay available without the opt-in and expose no credentials.
+        let config = call(&fixture, "mcp.config.get", serde_json::json!({}));
+        assert_eq!(config, serde_json::json!({}));
+        let status = call(&fixture, "mcp.status", serde_json::json!({}));
+        assert_eq!(status, serde_json::json!({ "servers": [] }));
+    }
+
+    #[test]
     fn vault_archive_reply_is_rejected_before_it_can_overflow_a_frame() {
         let fixture = isolated_gateway();
         enable_actions(&fixture);

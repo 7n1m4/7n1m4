@@ -16,12 +16,73 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use anima_core::settings::SettingsSection;
 use anima_core::AppCore;
 use anima_store::{Database, StoredProvider};
 
 type SettingsLoadFn = fn(&anima_core::settings::SettingsStore) -> Result<serde_json::Value, String>;
 type SettingsSaveFn =
     fn(&anima_core::settings::SettingsStore, serde_json::Value) -> Result<(), String>;
+
+/// Placeholder returned instead of MCP secret values. Sending it back in a
+/// `settings.set` PATCH keeps the stored credential instead of rotating it.
+pub const MCP_SECRET_MASK: &str = "********";
+
+/// Mask every leaf value in an MCP secret container (`env`/`headers`).
+fn mask_secret_map(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), mask_secret_map(value)))
+                .collect(),
+        ),
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(mask_secret_map).collect())
+        }
+        serde_json::Value::String(_) => serde_json::Value::String(MCP_SECRET_MASK.to_string()),
+        other => other.clone(),
+    }
+}
+
+/// Project a stored MCP config into a secret-free reply.
+///
+/// `env`/`headers` values and any credential-shaped field (including `token`)
+/// are replaced with [`MCP_SECRET_MASK`]; server names, transports, commands
+/// and URLs stay visible so a client can render and edit its config. The top
+/// level is the server map, so names are never mistaken for secret fields.
+/// NOTICE: `args` is passed through verbatim; a stdio server may place a
+/// credential in a CLI argument, so that residual is not masked here.
+fn mask_mcp_config(value: &serde_json::Value) -> serde_json::Value {
+    let Some(servers) = value.as_object() else {
+        return serde_json::Value::Object(serde_json::Map::new());
+    };
+    serde_json::Value::Object(
+        servers
+            .iter()
+            .map(|(name, server)| {
+                let masked = match server.as_object() {
+                    Some(fields) => serde_json::Value::Object(
+                        fields
+                            .iter()
+                            .map(|(key, field)| {
+                                let value = if key == "env" || key == "headers" {
+                                    mask_secret_map(field)
+                                } else if anima_core::providers::is_secret_config_key(key) {
+                                    serde_json::Value::String(MCP_SECRET_MASK.to_string())
+                                } else {
+                                    field.clone()
+                                };
+                                (key.clone(), value)
+                            })
+                            .collect(),
+                    ),
+                    None => serde_json::Value::Null,
+                };
+                (name.clone(), masked)
+            })
+            .collect(),
+    )
+}
 
 /// Build the settings registry from `(wire key, section type)` pairs.
 ///
@@ -105,6 +166,66 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
                 merged.insert(key.clone(), value.clone());
             }
         }
+    } else if S::KEY == "settings/mcp" {
+        // Servers are nested configs, and `env`/`headers`/secret-shaped keys
+        // carry credentials. Start from the stored server so a PATCH that
+        // omits (or echoes the mask of) a secret cannot overwrite it.
+        for (name, incoming) in patch {
+            if incoming.is_null() {
+                merged.remove(name);
+                continue;
+            }
+            let fields = incoming
+                .as_object()
+                .ok_or_else(|| "invalid settings shape".to_string())?;
+            let base = merged
+                .get(name)
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+            let mut server = base;
+            for (key, value) in fields {
+                if value.is_null() {
+                    // A null env/headers is a masked/omitted credential in a
+                    // client PATCH, not a delete instruction.
+                    if key == "env" || key == "headers" {
+                        continue;
+                    }
+                    server.remove(key);
+                    continue;
+                }
+                if key == "env" || key == "headers" {
+                    if !value.is_object() {
+                        return Err("invalid settings shape".to_string());
+                    }
+                    let base = server
+                        .get(key)
+                        .and_then(|v| v.as_object())
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut secret_map = base;
+                    for (secret_key, secret_value) in value.as_object().cloned().unwrap_or_default()
+                    {
+                        if secret_value.is_null() || secret_value.as_str() == Some(MCP_SECRET_MASK)
+                        {
+                            // Omitted/masked: the stored credential stays.
+                            continue;
+                        }
+                        secret_map.insert(secret_key, secret_value);
+                    }
+                    server.insert(key.clone(), serde_json::Value::Object(secret_map));
+                } else if anima_core::providers::is_secret_config_key(key)
+                    && value.as_str() == Some(MCP_SECRET_MASK)
+                {
+                    // `mcp.config.get` masks `token` (and any credential-shaped
+                    // field); echoing that mask back must not rotate it.
+                    continue;
+                } else {
+                    server.insert(key.clone(), value.clone());
+                }
+            }
+            merged.insert(name.clone(), serde_json::Value::Object(server));
+        }
     } else {
         for (key, value) in patch {
             if value.is_null() {
@@ -140,6 +261,7 @@ settings_sections!(
     ("hearing", anima_core::settings::HearingSettings),
     ("vision", anima_core::settings::VisionSettings),
     ("faculties", anima_core::settings::FacultiesSettings),
+    ("mcp", anima_core::settings::McpSettings),
 );
 
 /// Resolve a settings-section name to its typed load/save operations.
@@ -622,6 +744,45 @@ impl CoreService {
             save(&store, settings)?;
         }
         Ok(anima_channel::wire::SettingsSetReply { ok: true })
+    }
+
+    /// Secret-free view of the daemon-owned MCP config for `mcp.config.get`.
+    pub fn mcp_config_get(&self) -> Result<serde_json::Value, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
+        let stored = core
+            .settings()
+            .load_opt::<serde_json::Value>(anima_core::settings::McpSettings::KEY)
+            .map_err(|_| "load failed".to_string())?
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        Ok(mask_mcp_config(&stored))
+    }
+
+    /// Name-only projection of the MCP config for `mcp.status`.
+    ///
+    /// No transport detail and no secret-bearing field ever reaches the wire.
+    pub fn mcp_status(&self) -> Result<serde_json::Value, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
+        let settings: anima_core::settings::McpSettings = core
+            .settings()
+            .load_section()
+            .map_err(|_| "load failed".to_string())?;
+        // TS runtime status skips disabled servers; mirror that so the status
+        // projection reflects only servers the daemon may actually connect to.
+        let mut names: Vec<&str> = settings
+            .iter()
+            .filter(|(_, server)| server.enabled)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        names.sort_unstable();
+        Ok(serde_json::json!({ "servers": names }))
     }
 
     /// Resolve a display model descriptor by id.
@@ -1273,6 +1434,7 @@ mod tests {
             "hearing",
             "vision",
             "faculties",
+            "mcp",
         ];
         assert_eq!(SETTINGS_SECTIONS.len(), expected_keys.len());
         for ((key, _, _), expected) in SETTINGS_SECTIONS.iter().zip(expected_keys) {
@@ -1292,6 +1454,110 @@ mod tests {
                 "stale key {stale} must not resolve"
             );
         }
+    }
+
+    #[test]
+    fn mcp_status_lists_only_enabled_servers() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set(
+            "mcp",
+            serde_json::json!({
+                "on": { "transport": "stdio", "command": "a", "enabled": true },
+                "off": { "transport": "stdio", "command": "b", "enabled": false },
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            svc.mcp_status().unwrap(),
+            serde_json::json!({ "servers": ["on"] })
+        );
+    }
+
+    #[test]
+    fn mcp_config_patch_preserves_stored_secrets() {
+        let dir = tempdir().unwrap();
+        let svc = CoreService::open(Some(dir.path().to_path_buf()));
+        svc.settings_set(
+            "mcp",
+            serde_json::json!({
+                "filesystem": {
+                    "transport": "stdio",
+                    "command": "npx",
+                    "args": ["-y", "srv"],
+                    "env": { "API_KEY": "ENV-SECRET" },
+                    "headers": { "Authorization": "HEADER-SECRET" },
+                    "token": "TOKEN-SECRET"
+                }
+            }),
+        )
+        .unwrap();
+
+        // The PATCH edits a non-secret field, echoes masks for two secrets and
+        // omits `headers` entirely. None of the stored credentials may rotate.
+        svc.settings_set(
+            "mcp",
+            serde_json::json!({
+                "filesystem": {
+                    "command": "node",
+                    "env": { "API_KEY": MCP_SECRET_MASK },
+                    "token": MCP_SECRET_MASK
+                }
+            }),
+        )
+        .unwrap();
+
+        let reply = svc.settings_get("mcp").unwrap();
+        let stored: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        let server = &stored["filesystem"];
+        assert_eq!(server["command"], "node");
+        assert_eq!(server["token"], "TOKEN-SECRET");
+        assert_eq!(server["env"]["API_KEY"], "ENV-SECRET");
+        assert_eq!(server["headers"]["Authorization"], "HEADER-SECRET");
+
+        // An explicit null is a masked/omitted credential in a client PATCH,
+        // not a delete instruction: it must not wipe the stored secrets.
+        svc.settings_set(
+            "mcp",
+            serde_json::json!({
+                "filesystem": { "env": null, "headers": null },
+            }),
+        )
+        .unwrap();
+        let reply = svc.settings_get("mcp").unwrap();
+        let stored: serde_json::Value = serde_json::from_str(&reply.settings).unwrap();
+        assert_eq!(stored["filesystem"]["env"]["API_KEY"], "ENV-SECRET");
+        assert_eq!(
+            stored["filesystem"]["headers"]["Authorization"],
+            "HEADER-SECRET"
+        );
+
+        assert!(
+            svc.settings_set(
+                "mcp",
+                serde_json::json!({ "filesystem": { "env": ["API_KEY"] } }),
+            )
+            .is_err(),
+            "a non-object env must be rejected, not silently treated as empty"
+        );
+
+        // The read projection is secret-free but still usable for editing.
+        let safe = svc.mcp_config_get().unwrap();
+        let text = safe.to_string();
+        assert!(!text.contains("TOKEN-SECRET"));
+        assert!(!text.contains("ENV-SECRET"));
+        assert!(!text.contains("HEADER-SECRET"));
+        assert_eq!(safe["filesystem"]["token"], MCP_SECRET_MASK);
+        assert_eq!(safe["filesystem"]["env"]["API_KEY"], MCP_SECRET_MASK);
+        assert_eq!(
+            safe["filesystem"]["headers"]["Authorization"],
+            MCP_SECRET_MASK
+        );
+        assert_eq!(safe["filesystem"]["command"], "node");
+        assert_eq!(
+            svc.mcp_status().unwrap(),
+            serde_json::json!({ "servers": ["filesystem"] })
+        );
     }
 
     #[test]
