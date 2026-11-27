@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// Archetype bubble styling is exposed here for the bubble-rendering call site.
+// The style key is passed in explicitly by the session/persona; it is never
+// derived from message text, sender names or a new wire field (airi-6anh).
+export 'chat_archetype_style.dart'
+    show ArchetypeStyle, ArchetypeStyledBubble, bubbleDecorationFor, styleFor;
+
 /// Display-time cleanup for AIRI LLM markers.
 ///
 /// Ported from `stripMarkers` in
