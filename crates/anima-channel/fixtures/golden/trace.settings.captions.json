@@ -1,0 +1,13 @@
+{
+  "schema": "airi-channel-trace-v1",
+  "path": "settings.get/set",
+  "frames": [
+    {"type":"rpc","action":"settings.get","id":"s1","payload":{"section":"captions"}},
+    {"type":"rpc","action":"settings.get","id":"s1","ok":true,"data":{"section":"captions","settings":"{\"enabled\":false,\"fontSize\":150,\"opacity\":70,\"docking\":\"head\"}"}},
+    {"type":"rpc","action":"settings.set","id":"s2","payload":{"section":"captions","settings":"{\"opacity\":55}"}},
+    {"type":"rpc","action":"settings.set","id":"s2","ok":true,"data":{"ok":true}},
+    {"type":"event","topic":"settings.changed","data":{"section":"captions","seq":102,"ts_ms":1700000000900}},
+    {"type":"rpc","action":"settings.get","id":"s3","payload":{"section":"captions"}},
+    {"type":"rpc","action":"settings.get","id":"s3","ok":true,"data":{"section":"captions","settings":"{\"enabled\":false,\"fontSize\":150,\"opacity\":55,\"docking\":\"head\"}"}}
+  ]
+}
