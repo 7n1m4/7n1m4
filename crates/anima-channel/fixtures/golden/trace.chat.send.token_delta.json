@@ -1,0 +1,54 @@
+{
+  "schema": "airi-channel-trace-v1",
+  "path": "chat.send",
+  "frames": [
+    {
+      "type": "rpc",
+      "action": "chat.send",
+      "id": "t1",
+      "payload": {
+        "sessionId": "sess-abc",
+        "content": "Hello, Anima!"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "chat.send",
+      "ok": true,
+      "id": "t1",
+      "data": {
+        "sessionId": "sess-abc",
+        "messageId": "msg-1",
+        "accepted": true
+      }
+    },
+    {
+      "type": "event",
+      "topic": "token.delta",
+      "data": {
+        "session_id": "sess-abc",
+        "message_id": "msg-1",
+        "delta": "Hello",
+        "index": 0,
+        "final": false,
+        "seq": 5,
+        "ts_ms": 1700000000900
+      }
+    },
+    {
+      "type": "event",
+      "topic": "token.delta",
+      "data": {
+        "session_id": "sess-abc",
+        "message_id": "msg-1",
+        "delta": " world",
+        "index": 1,
+        "final": true,
+        "reason": "complete",
+        "seq": 6,
+        "ts_ms": 1700000001000
+      }
+    }
+  ]
+}
