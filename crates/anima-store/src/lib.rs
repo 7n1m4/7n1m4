@@ -370,6 +370,27 @@ impl SettingsRepo {
         Ok(self.get(key)?.unwrap_or(default))
     }
 
+    /// Get a setting together with its `updated_at` stamp in one read.
+    ///
+    /// Both columns come from a single query, so a concurrent writer cannot
+    /// land between reading the value and reading the stamp: the pair is a
+    /// consistent snapshot suitable for a later [`Self::set_if_unchanged`]
+    /// compare-and-swap.
+    pub fn get_with_updated_at<T: DeserializeOwned>(&self, key: &str) -> Result<Option<(T, i64)>> {
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let row: Option<(String, i64)> = conn
+            .query_row(
+                "select value, updated_at from settings where key = ?1",
+                params![key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        match row {
+            Some((value, updated_at)) => Ok(Some((serde_json::from_str(&value)?, updated_at))),
+            None => Ok(None),
+        }
+    }
+
     /// Set a setting value.
     ///
     /// A write older than the stored row's `updated_at` is rejected with an
@@ -390,6 +411,36 @@ impl SettingsRepo {
         anyhow::ensure!(
             affected > 0,
             "setting `{key}` was not written: a newer value already exists"
+        );
+        Ok(())
+    }
+
+    /// Write a setting only while its stored `updated_at` still matches a
+    /// snapshot obtained from [`Self::get_with_updated_at`].
+    ///
+    /// The comparison and the write are a single atomic upsert, so a stale
+    /// writer fails loudly instead of reverting a newer concurrent value (a
+    /// guard inside SQLite, not just this process's mutex). The new stamp is
+    /// forced strictly past `expected_updated_at` so two consecutive CAS
+    /// writes cannot collide on the same millisecond or reuse a future stamp.
+    pub fn set_if_unchanged<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+        expected_updated_at: i64,
+    ) -> Result<()> {
+        let json = serde_json::to_string(value)?;
+        let ts = now_ms().max(expected_updated_at.saturating_add(1));
+        let conn = self.db.conn.lock().expect("database mutex poisoned");
+        let affected = conn.execute(
+            "insert into settings (key, value, updated_at) values (?1, ?2, ?3)
+             on conflict(key) do update set value = excluded.value, updated_at = excluded.updated_at
+             where settings.updated_at = ?4",
+            params![key, json, ts, expected_updated_at],
+        )?;
+        anyhow::ensure!(
+            affected > 0,
+            "setting `{key}` was not written: stale snapshot (expected updated_at = {expected_updated_at})"
         );
         Ok(())
     }
@@ -1674,6 +1725,88 @@ mod tests {
     }
 
     #[test]
+    fn settings_set_if_unchanged_rejects_stale_snapshot() {
+        let db = test_db();
+        let repo = SettingsRepo::new(db.clone());
+        let conn = db.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "insert into settings (key, value, updated_at) values ('cas', '\"kept\"', 2)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        // The caller's snapshot (1) is older than the stored stamp (2).
+        let err = repo
+            .set_if_unchanged("cas", &"replacement", 1)
+            .expect_err("stale snapshot rejected");
+        assert!(err.to_string().contains("stale"), "error: {err:#}");
+
+        // Nothing was written: both the value and the stamp survive.
+        let (value, updated_at): (String, i64) = repo
+            .get_with_updated_at("cas")
+            .unwrap()
+            .expect("row exists");
+        assert_eq!(value, "kept");
+        assert_eq!(updated_at, 2);
+    }
+
+    #[test]
+    fn settings_set_if_unchanged_succeeds_on_matching_snapshot() {
+        let db = test_db();
+        let repo = SettingsRepo::new(db.clone());
+        let conn = db.conn.lock().expect("database mutex poisoned");
+        conn.execute(
+            "insert into settings (key, value, updated_at) values ('cas-ok', '\"before\"', 10)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        repo.set_if_unchanged("cas-ok", &"after", 10).unwrap();
+        let (value, updated_at): (String, i64) = repo
+            .get_with_updated_at("cas-ok")
+            .unwrap()
+            .expect("row exists");
+        assert_eq!(value, "after");
+        assert!(updated_at > 10, "stamp must strictly advance: {updated_at}");
+    }
+
+    #[test]
+    fn settings_set_if_unchanged_is_stale_across_database_handles() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("cas.sqlite");
+        // Two independent handles onto the same file stand in for two processes.
+        let first = SettingsRepo::new(Database::open(&path).expect("open first handle"));
+        let second = SettingsRepo::new(Database::open(&path).expect("open second handle"));
+
+        first.set("shared", &"initial").unwrap();
+        let (_, expected): (String, i64) = second
+            .get_with_updated_at("shared")
+            .unwrap()
+            .expect("row exists");
+
+        // The other handle advances the stamp strictly past `expected`.
+        second
+            .set_if_unchanged("shared", &"newer", expected)
+            .unwrap();
+
+        // The first handle's snapshot is now stale: its CAS must fail and must
+        // not revert the other handle's value. This is what the in-process
+        // mutex cannot help with, so the guard must live in SQLite itself.
+        let err = first
+            .set_if_unchanged("shared", &"stale", expected)
+            .expect_err("cross-handle stale snapshot rejected");
+        assert!(err.to_string().contains("stale"), "error: {err:#}");
+
+        let (value, _): (String, i64) = second
+            .get_with_updated_at("shared")
+            .unwrap()
+            .expect("row exists");
+        assert_eq!(value, "newer");
+    }
+
+    #[test]
     fn list_recent_returns_only_the_requested_rows() {
         let db = test_db();
         for i in 0..12 {
@@ -1686,7 +1819,6 @@ mod tests {
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["s11", "s10", "s9", "s8", "s7"]);
     }
-
 
     #[test]
     fn insert_with_session_rolls_back_together() {

@@ -13,10 +13,11 @@
 //! NOTICE: validation state lives in the raw `settings/provider-validation`
 //! blob, exactly like the daemon's `settings/chat` session choice. It is not a
 //! typed settings section (no registry entry, no wire verb). All writes go
-//! through `anima_store::SettingsRepo::set`, so its `updated_at` staleness gate
-//! (`anima-store/src/lib.rs:373-394`) rejects a slower writer instead of
-//! reverting a newer value. The read-modify-write is additionally serialized
-//! in-process; see [`record`].
+//! through `anima_store::SettingsRepo::set_if_unchanged`, which compares the
+//! `updated_at` captured by `get_with_updated_at` against the stored row inside
+//! one atomic SQLite statement: a slower writer is rejected instead of
+//! reverting a newer value, even across processes. The read-modify-write is
+//! additionally serialized in-process; see [`record`].
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -37,9 +38,7 @@ pub const SETTINGS_KEY: &str = "settings/provider-validation";
 /// new marker and every cached decision revalidates once, never a false hit.
 pub const HASH_ALGORITHM: &str = "sha256-v1";
 
-/// Serializes the raw read-modify-write inside this process. Without it two
-/// callers (e.g. gateway WS and D-Bus) can both read the same blob and the
-/// later `SettingsRepo::set` timestamp wins, dropping a sibling's decision.
+/// Serializes in-process read-modify-writes to avoid spurious CAS failures between callers; stale snapshots are rejected by `set_if_unchanged`.
 static RECORD_LOCK: Mutex<()> = Mutex::new(());
 
 /// Secret-free validation metadata for one provider instance.
@@ -189,26 +188,28 @@ pub fn cached_is_configured(
 
 /// Single raw read-modify-write of the validation blob for one instance.
 ///
-/// NOTICE: the lock only serializes writers in THIS process; a cross-process
-/// compare-and-swap needs a new `SettingsRepo` CAS API (or raw SQL access),
-/// neither of which fits the daemon's owned files. Poisoning is recovered:
-/// the blob is validated on every read, so a poisoned lock holds no state.
+/// The value and its `updated_at` are read together, mutated, then written back
+/// with `SettingsRepo::set_if_unchanged`. The lock serializes writers in THIS
+/// process; the compare-and-swap inside SQLite covers other processes too.
+/// Poisoning is recovered: the blob is validated on every read, so a poisoned
+/// lock holds no state.
 fn record(core: &CoreService, new_state: &ProviderValidationState) -> Result<(), String> {
     let _guard = RECORD_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
     let repo = anima_store::SettingsRepo::new(db);
-    let mut blob: serde_json::Value = repo
-        .get(SETTINGS_KEY)
+    let (mut blob, expected): (serde_json::Value, i64) = repo
+        .get_with_updated_at(SETTINGS_KEY)
         .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| serde_json::json!({}));
+        .unwrap_or_else(|| (serde_json::json!({}), 0));
     let map = blob
         .as_object_mut()
         .ok_or_else(|| "invalid provider validation settings".to_string())?;
     let value = serde_json::to_value(new_state).map_err(|e| e.to_string())?;
     map.insert(new_state.instance_id.clone(), value);
-    repo.set(SETTINGS_KEY, &blob).map_err(|e| e.to_string())
+    repo.set_if_unchanged(SETTINGS_KEY, &blob, expected)
+        .map_err(|e| e.to_string())
 }
 
 /// Persist a validation outcome and return its secret-free metadata. The full
@@ -586,5 +587,99 @@ mod tests {
             cached_is_configured(&core, "never-seen:*", &config, false).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn two_core_handles_on_one_file_both_keep_their_decision() {
+        let dir = tempfile::tempdir().unwrap();
+        // Two CoreService handles open the same airi.sqlite through independent
+        // Database/connection mutexes, standing in for two processes.
+        let first = core_at(&dir);
+        let second = CoreService::open(Some(dir.path().to_path_buf()));
+        let config = serde_json::json!({ "model": "m" });
+
+        record_validation(&first, "openai:one", &config, true, true, false).unwrap();
+        record_validation(&second, "ollama:two", &config, false, false, true).unwrap();
+
+        let states = load_states(&first).unwrap();
+        assert_eq!(
+            states.len(),
+            2,
+            "neither handle may clobber the other's write"
+        );
+        assert!(states["openai:one"].is_configured);
+        assert!(!states["ollama:two"].is_configured);
+        assert!(states["ollama:two"].validation_bypassed);
+    }
+
+    #[test]
+    fn stale_expected_write_to_validation_blob_is_rejected_without_changing_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = core_at(&dir);
+        let config = serde_json::json!({ "model": "m" });
+        record_validation(&core, "openai:*", &config, true, true, false).unwrap();
+
+        let repo = anima_store::SettingsRepo::new(core.db().expect("daemon db handle"));
+        let (mut stale_blob, stale_expected): (serde_json::Value, i64) = repo
+            .get_with_updated_at(SETTINGS_KEY)
+            .unwrap()
+            .expect("validation blob exists");
+
+        // A newer write advances the stored stamp, invalidating our snapshot.
+        record_validation(&core, "ollama:local", &config, false, false, true).unwrap();
+        stale_blob["openai:*"]["isConfigured"] = serde_json::json!(false);
+
+        let err = repo
+            .set_if_unchanged(SETTINGS_KEY, &stale_blob, stale_expected)
+            .expect_err("stale validation-blob write rejected");
+        assert!(err.to_string().contains("stale"), "error: {err:#}");
+
+        // The rejected write leaves the blob as the newer writer left it.
+        let after = blob(&core);
+        assert_eq!(after["openai:*"]["isConfigured"], true);
+        assert_eq!(after["ollama:local"]["validationBypassed"], true);
+        assert_eq!(after.as_object().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn stale_snapshot_from_one_handle_cannot_clobber_another_handles_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = core_at(&dir);
+        let second = CoreService::open(Some(dir.path().to_path_buf()));
+        let config = serde_json::json!({ "model": "m" });
+
+        record_validation(&first, "openai:*", &config, true, true, false).unwrap();
+
+        // Both handles observe the SAME value/stamp snapshot of the one row.
+        let first_repo = anima_store::SettingsRepo::new(first.db().expect("first db handle"));
+        let second_repo = anima_store::SettingsRepo::new(second.db().expect("second db handle"));
+        let (snapshot, expected): (serde_json::Value, i64) = first_repo
+            .get_with_updated_at(SETTINGS_KEY)
+            .unwrap()
+            .expect("validation blob exists");
+        let (_, second_expected): (serde_json::Value, i64) = second_repo
+            .get_with_updated_at(SETTINGS_KEY)
+            .unwrap()
+            .expect("validation blob exists");
+        assert_eq!(expected, second_expected, "both handles share one snapshot");
+
+        // Handle A records a change, advancing updated_at strictly.
+        record_validation(&first, "ollama:local", &config, false, false, true).unwrap();
+
+        // Handle B writes from its now-stale snapshot. `record` always re-reads
+        // under RECORD_LOCK, so the explicit-stamp path is the store CAS: a
+        // plain `set` (or the in-process lock alone) would clobber A's write.
+        let mut stale = snapshot;
+        stale["openai:*"]["isConfigured"] = serde_json::json!(false);
+        let err = second_repo
+            .set_if_unchanged(SETTINGS_KEY, &stale, expected)
+            .expect_err("stale snapshot from second handle rejected");
+        assert!(err.to_string().contains("stale"), "error: {err:#}");
+
+        // A's newer value is intact: the rejected write changed nothing.
+        let after = blob(&first);
+        assert_eq!(after["openai:*"]["isConfigured"], true);
+        assert_eq!(after["ollama:local"]["validationBypassed"], true);
+        assert_eq!(after.as_object().unwrap().len(), 2);
     }
 }
