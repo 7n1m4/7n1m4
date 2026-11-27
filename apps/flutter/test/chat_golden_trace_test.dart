@@ -9,8 +9,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
 import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/features/chat/chat_screen.dart';
+
+import 'support/fakes.dart';
 
 /// Path to the shared Rust golden fixtures directory.
 final String _fixturesDir = () {
@@ -121,4 +126,44 @@ void main() {
     );
     expect(terminal['reason'], 'complete');
   });
+
+  testWidgets(
+    'chat.send token.delta trace renders one finalized assistant bubble',
+    (tester) async {
+      final file = File('$_fixturesDir/trace.chat.send.token_delta.json');
+      final fixture =
+          jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      final frames = (fixture['frames'] as List).cast<Map<String, dynamic>>();
+
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ChatScreen(client: client)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Anti-vacuous baseline: no assistant bubble before the trace is replayed.
+      expect(find.byType(Card), findsNothing);
+      expect(find.text('Hello world'), findsNothing);
+
+      // Frame 1 is the ack echoing the fixture's string id "t1"; DaemonClient
+      // correlates pending calls by int id only (daemon_client.dart:575), so it
+      // would be dropped. FakeChatClient bypasses transport/auth entirely, so
+      // the two token.delta events go straight to the widget's onEvent listener.
+      client.emitEvent(GatewayEventFrame.fromJson(frames[2]));
+      await tester.pump();
+      expect(find.text('Hello'), findsOneWidget);
+      expect(find.text('Hello world'), findsNothing);
+      client.emitEvent(GatewayEventFrame.fromJson(frames[3]));
+      await tester.pumpAndSettle();
+
+      // Partial 'Hello' + terminal ' world' accumulate into ONE finalized bubble.
+      expect(find.byType(Card), findsOneWidget);
+      expect(find.text('Hello world'), findsOneWidget);
+      expect(find.text('Hello'), findsNothing);
+      expect(find.text(' world'), findsNothing);
+    },
+  );
 }
