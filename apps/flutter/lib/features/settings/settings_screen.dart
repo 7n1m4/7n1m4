@@ -103,7 +103,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   bool _searchFocused = false;
-  bool _settingsBusy = false;
+  // Loads and saves share one in-flight count so an overlapping reload cannot
+  // clear the busy flag while a save is still writing. Per-section sets keep a
+  // reload from swapping a draft that is dirty or currently being saved.
+  int _settingsInFlight = 0;
+  final Set<_SettingsSection> _savingSections = <_SettingsSection>{};
+  final Set<_SettingsSection> _dirtySections = <_SettingsSection>{};
+
+  bool get _settingsBusy => _settingsInFlight > 0;
+
+  /// Clamp so a duplicated completion can never drive the count negative.
+  void _decrementInFlight() {
+    setState(() {
+      if (_settingsInFlight > 0) {
+        _settingsInFlight--;
+      }
+    });
+  }
+
   String? _settingsError;
   String? _settingsStatus;
   String? _languageError;
@@ -119,9 +136,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _wasConnected = widget.client.snapshot.isConnected;
     _statusSub = widget.client.statusStream.listen((status) {
       if (status.state == DaemonConnectionState.connected && !_wasConnected) {
-        // A reconnect means the daemon's state moved under us: every section
-        // is reloaded before Save is offered again, never merged with a stale
-        // draft.
+        // A reconnect means the daemon's state moved under us: every clean
+        // section is reloaded, while a dirty or saving section keeps its draft.
         unawaited(_loadSections());
         unawaited(_loadRuntimeState());
         unawaited(_loadCards());
@@ -200,13 +216,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSections() async {
     setState(() {
-      _settingsBusy = true;
+      _settingsInFlight++;
       _settingsError = null;
     });
 
     // One real `settings.get` per section, each with its own error boundary:
     // a section that will not load stays unsaved without disabling siblings.
     Future<void> loadSection(_SettingsSection section) async {
+      // An uncommitted edit or a save in flight owns this draft; swapping it
+      // out would discard what the user typed or what is being written.
+      if (_dirtySections.contains(section) ||
+          _savingSections.contains(section)) {
+        return;
+      }
       try {
         final values = await widget.client.settingsGet(section.key);
         if (!mounted) return;
@@ -284,7 +306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         for (final section in _SettingsSection.values) loadSection(section),
       ]);
     } finally {
-      if (mounted) setState(() => _settingsBusy = false);
+      if (mounted) _decrementInFlight();
     }
   }
 
@@ -336,83 +358,89 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!draft.loaded) return;
     setState(() {
       draft.values = Map<String, dynamic>.from(draft.values)..[key] = value;
+      _dirtySections.add(section);
       _settingsStatus = null;
     });
   }
 
   Future<void> _save(_SettingsSection section) async {
     final draft = _drafts[section]!;
-    if (!draft.loaded) return;
-    if (section == _SettingsSection.general) {
-      final language = _language.text.trim();
-      if (!_isValidLocale(language)) {
-        setState(() {
-          _languageError = 'Use a locale code such as "en" or "zh-Hant".';
-          _settingsStatus = null;
-        });
-        return;
-      }
-      draft.values = Map<String, dynamic>.from(draft.values)
-        ..['language'] = language;
-    }
-    if (section == _SettingsSection.controlStrip) {
-      draft.values = Map<String, dynamic>.from(draft.values)
-        ..['backgroundTint'] = _tint.text.trim();
-      if (draft.values.containsKey('buttons')) {
-        draft.values['buttons'] = _completeStripButtons(
-          draft.values['buttons'],
-        );
-      }
-    }
-    if (section == _SettingsSection.captions) {
-      final validation = validateCaptions(draft.values);
-      if (!validation.isValid) {
-        setState(() {
-          _settingsError = validation.error;
-          _settingsStatus = null;
-        });
-        return;
-      }
-    }
-    if (section == _SettingsSection.userProfile) {
-      // The draft is the source of truth: edits land there via _edit, so a
-      // malformed persisted value the user never touched still fails closed
-      // before settingsSet is called.
-      final validation = validateUserProfile(draft.values);
-      if (!validation.isValid) {
-        setState(() {
-          _settingsError = validation.error;
-          _settingsStatus = null;
-        });
-        return;
-      }
-    }
-    final updated = Map<String, dynamic>.from(draft.values);
+    if (!draft.loaded || _savingSections.contains(section)) return;
+    _savingSections.add(section);
     setState(() {
-      _settingsBusy = true;
+      _settingsInFlight++;
       _settingsError = null;
       _settingsStatus = null;
     });
     try {
-      final ok = await widget.client.settingsSet(section.key, updated);
-      if (!mounted) return;
-      setState(() {
-        _drafts[section] = _SectionDraft(updated);
-        _settingsStatus = ok
-            ? '${section.label} settings saved.'
-            : '${section.label} settings were not saved.';
-      });
-    } on DaemonClientException catch (e) {
-      if (mounted) {
-        setState(() {
-          _settingsError = userSafeConnectionError(
-            e,
-            context: 'settings.set:${section.key}',
+      if (section == _SettingsSection.general) {
+        final language = _language.text.trim();
+        if (!_isValidLocale(language)) {
+          setState(() {
+            _languageError = 'Use a locale code such as "en" or "zh-Hant".';
+            _settingsStatus = null;
+          });
+          return;
+        }
+        draft.values = Map<String, dynamic>.from(draft.values)
+          ..['language'] = language;
+      }
+      if (section == _SettingsSection.controlStrip) {
+        draft.values = Map<String, dynamic>.from(draft.values)
+          ..['backgroundTint'] = _tint.text.trim();
+        if (draft.values.containsKey('buttons')) {
+          draft.values['buttons'] = _completeStripButtons(
+            draft.values['buttons'],
           );
+        }
+      }
+      if (section == _SettingsSection.captions) {
+        final validation = validateCaptions(draft.values);
+        if (!validation.isValid) {
+          setState(() {
+            _settingsError = validation.error;
+            _settingsStatus = null;
+          });
+          return;
+        }
+      }
+      if (section == _SettingsSection.userProfile) {
+        // The draft is the source of truth: edits land there via _edit, so a
+        // malformed persisted value the user never touched still fails closed
+        // before settingsSet is called.
+        final validation = validateUserProfile(draft.values);
+        if (!validation.isValid) {
+          setState(() {
+            _settingsError = validation.error;
+            _settingsStatus = null;
+          });
+          return;
+        }
+      }
+      final updated = Map<String, dynamic>.from(draft.values);
+      try {
+        final ok = await widget.client.settingsSet(section.key, updated);
+        if (!mounted) return;
+        setState(() {
+          _drafts[section] = _SectionDraft(updated);
+          _dirtySections.remove(section);
+          _settingsStatus = ok
+              ? '${section.label} settings saved.'
+              : '${section.label} settings were not saved.';
         });
+      } on DaemonClientException catch (e) {
+        if (mounted) {
+          setState(() {
+            _settingsError = userSafeConnectionError(
+              e,
+              context: 'settings.set:${section.key}',
+            );
+          });
+        }
       }
     } finally {
-      if (mounted) setState(() => _settingsBusy = false);
+      _savingSections.remove(section);
+      if (mounted) _decrementInFlight();
     }
   }
 
@@ -625,6 +653,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             errorText: _languageError,
           ),
           onChanged: (_) {
+            _dirtySections.add(_SettingsSection.general);
             if (_languageError != null) setState(() => _languageError = null);
           },
         ),
@@ -763,6 +792,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       draft.values = Map<String, dynamic>.from(draft.values)
         ..['hue'] = hue
         ..['hueDynamic'] = false;
+      _dirtySections.add(_SettingsSection.theme);
       _settingsStatus = null;
     });
   }
@@ -780,6 +810,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ..['hue'] = defaults.hue
         ..['hueDynamic'] = defaults.hueDynamic
         ..['chromaMultiplier'] = defaults.chromaMultiplier;
+      _dirtySections.add(_SettingsSection.theme);
       _settingsStatus = null;
     });
   }
@@ -801,21 +832,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         _percentField(
           label: 'Font size (%)',
-          value: values['fontSize'] ?? values['font_size'],
+          value: values['fontSize'],
           min: 50,
           max: 200,
           enabled: enabled,
-          onChanged: (value) {
-            // Migrate a stale snake_case spelling to camelCase in the same edit,
-            // removing font_size when fontSize is not yet present, then set fontSize.
-            final draft = _drafts[_SettingsSection.captions]!;
-            final current = draft.values;
-            if (current['fontSize'] == null && current['font_size'] != null) {
-              draft.values = Map<String, dynamic>.from(current)
-                ..remove('font_size');
-            }
-            _edit(_SettingsSection.captions, 'fontSize', value);
-          },
+          onChanged: (value) =>
+              _edit(_SettingsSection.captions, 'fontSize', value),
         ),
         _percentField(
           label: 'Opacity (%)',
@@ -1056,6 +1078,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           enabled: enabled,
           controller: _tint,
           decoration: const InputDecoration(labelText: 'Background tint'),
+          onChanged: (_) => _dirtySections.add(_SettingsSection.controlStrip),
         ),
         const SizedBox(height: 8),
         const Text('Buttons', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -1129,8 +1152,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: InputDecoration(labelText: label),
       onChanged: (text) {
         final parsed = double.tryParse(text);
-        if (parsed != null && parsed != value)
+        if (parsed != null && parsed != value) {
           onChanged(parsed.clamp(min, max));
+        }
       },
     );
   }

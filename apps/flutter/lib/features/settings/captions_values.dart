@@ -118,6 +118,14 @@ bool _isOffset(Object? value) {
 /// closed, and unknown keys survive the round-trip untouched.
 Map<String, dynamic> normalizeCaptions(Map<String, dynamic> values) {
   final result = Map<String, dynamic>.from(values);
+  // Legacy blobs spelled this one field `font_size`. Migrate it at read time:
+  // otherwise the defaults loop fills `fontSize` with 100 and the next
+  // unrelated save silently replaces the user's size. A migrated value that
+  // is out of range stays in the draft so validateCaptions still fails closed.
+  if (result['fontSize'] == null && result['font_size'] != null) {
+    result['fontSize'] = result['font_size'];
+    result.remove('font_size');
+  }
   for (final entry in captionsDefaults.entries) {
     if (result.containsKey(entry.key)) continue;
     final value = entry.value;

@@ -36,7 +36,14 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
   String? _error;
   String? _status;
   String? _syncWarning;
-  Timer? _numericDebounce;
+  // `mounted` is still true while dispose() runs, so a flushed save needs an
+  // explicit flag to skip setState on an element that is being unmounted.
+  bool _disposing = false;
+  // One timer per field: typing in two numeric fields inside the same window
+  // must not cancel the first field's pending save.
+  final Map<String, Timer> _numericDebounces = <String, Timer>{};
+  final Map<String, void Function()> _pendingNumericSaves =
+      <String, void Function()>{};
 
   @override
   void initState() {
@@ -46,7 +53,18 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
 
   @override
   void dispose() {
-    _numericDebounce?.cancel();
+    _disposing = true;
+    // Flush keystrokes that have not reached their timer yet, while the
+    // controllers are still readable and before the widget leaves the tree.
+    final pending = _pendingNumericSaves.values.toList(growable: false);
+    _pendingNumericSaves.clear();
+    for (final save in pending) {
+      save();
+    }
+    for (final timer in _numericDebounces.values) {
+      timer.cancel();
+    }
+    _numericDebounces.clear();
     _maxSessions.dispose();
     _timeout.dispose();
     _minTurns.dispose();
@@ -73,10 +91,9 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
       });
     } on Object catch (e) {
       if (!mounted || generation != _generation) return;
-      setState(() => _error = userSafeConnectionError(
-            e,
-            context: 'dream-state.load',
-          ));
+      setState(
+        () => _error = userSafeConnectionError(e, context: 'dream-state.load'),
+      );
     } finally {
       if (mounted && generation == _generation) {
         setState(() => _busy = false);
@@ -91,6 +108,10 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
     _minTurns.text = _numberText(dreamState['minConversationTurns'], 4);
   }
 
+  void _setUiState(void Function() update) {
+    if (mounted && !_disposing) setState(update);
+  }
+
   /// One field edit: re-read the card, spread the whole fresh document, then
   /// replace only the touched `dreamState` key. Re-reading before the save is
   /// the `cards_screen.dart` pattern: an external edit must not be clobbered.
@@ -99,7 +120,7 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
     final cardId = _cardId;
     if (card == null || cardId == null || cardId.isEmpty) return;
 
-    setState(() {
+    _setUiState(() {
       _busy = true;
       _error = null;
       _status = null;
@@ -109,9 +130,12 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
       final fresh = await widget.client.cardsGet(cardId);
       final base = fresh ?? card;
       final extensions = base['extensions'];
-      final airi = extensions is Map<String, dynamic> ? extensions['airi'] : null;
-      final dreamState =
-          airi is Map<String, dynamic> ? airi['dreamState'] : null;
+      final airi = extensions is Map<String, dynamic>
+          ? extensions['airi']
+          : null;
+      final dreamState = airi is Map<String, dynamic>
+          ? airi['dreamState']
+          : null;
       final updated = <String, dynamic>{
         ...base,
         'extensions': <String, dynamic>{
@@ -119,7 +143,9 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
               ? extensions
               : const <String, dynamic>{}),
           'airi': <String, dynamic>{
-            ...(airi is Map<String, dynamic> ? airi : const <String, dynamic>{}),
+            ...(airi is Map<String, dynamic>
+                ? airi
+                : const <String, dynamic>{}),
             'dreamState': <String, dynamic>{
               ...(dreamState is Map<String, dynamic>
                   ? dreamState
@@ -132,22 +158,19 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
       await widget.client.cardsUpdate(cardId, updated);
       // The save succeeded: commit locally before the best-effort refresh. A
       // failed refresh is only a sync warning, never a save error.
-      if (!mounted) return;
-      setState(() {
+      if (_disposing || !mounted) return;
+      _setUiState(() {
         _card = updated;
         _syncControllers(updated);
         _status = 'Dream state updated.';
       });
       await _refreshSaved(cardId, updated);
     } on Object catch (e) {
-      if (mounted) {
-        setState(() => _error = userSafeConnectionError(
-              e,
-              context: 'dream-state.save',
-            ));
-      }
+      _setUiState(
+        () => _error = userSafeConnectionError(e, context: 'dream-state.save'),
+      );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _setUiState(() => _busy = false);
     }
   }
 
@@ -157,17 +180,17 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
     String cardId,
     Map<String, dynamic> savedDocument,
   ) async {
-    setState(() => _syncWarning = null);
+    _setUiState(() => _syncWarning = null);
     try {
       final saved = await widget.client.cardsGet(cardId);
-      if (!mounted) return;
-      setState(() {
+      _setUiState(() {
         _card = saved ?? savedDocument;
         _syncControllers(_card);
       });
     } on Object {
-      if (!mounted) return;
-      setState(() => _syncWarning = 'Saved, but could not refresh latest settings');
+      _setUiState(
+        () => _syncWarning = 'Saved, but could not refresh latest settings',
+      );
     }
   }
 
@@ -180,13 +203,17 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
     required int min,
     required int max,
   }) {
-    _numericDebounce?.cancel();
-    _numericDebounce = Timer(const Duration(milliseconds: 150), () {
-      _numericDebounce = null;
+    _numericDebounces[field]?.cancel();
+    // Capture the parsed value now: a sibling save can refresh the controllers
+    // before this timer fires, and dispose flushes pending saves first.
+    final value = _numberValue(controller, fallback, min: min, max: max);
+    void save() => _patchDreamState(<String, dynamic>{field: value});
+    _pendingNumericSaves[field] = save;
+    _numericDebounces[field] = Timer(const Duration(milliseconds: 150), () {
+      _numericDebounces.remove(field);
+      _pendingNumericSaves.remove(field);
       if (!mounted) return;
-      _patchDreamState(<String, dynamic>{
-        field: _numberValue(controller, fallback, min: min, max: max),
-      });
+      save();
     });
   }
 
@@ -197,8 +224,8 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
     required int min,
     required int max,
   }) {
-    _numericDebounce?.cancel();
-    _numericDebounce = null;
+    _numericDebounces.remove(field)?.cancel();
+    _pendingNumericSaves.remove(field);
     _patchDreamState(<String, dynamic>{
       field: _numberValue(controller, fallback, min: min, max: max),
     });
@@ -207,8 +234,7 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
   static Map<String, dynamic> _dreamStateFrom(Map<String, dynamic>? card) {
     final extensions = card?['extensions'];
     final airi = extensions is Map<String, dynamic> ? extensions['airi'] : null;
-    final dreamState =
-        airi is Map<String, dynamic> ? airi['dreamState'] : null;
+    final dreamState = airi is Map<String, dynamic> ? airi['dreamState'] : null;
     return dreamState is Map<String, dynamic>
         ? dreamState
         : const <String, dynamic>{};
@@ -235,10 +261,10 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
   }
 
   static String _threshold(Object? value) => switch (value) {
-        'minimal' => 'minimal',
-        'lush' => 'lush',
-        _ => 'balanced',
-      };
+    'minimal' => 'minimal',
+    'lush' => 'lush',
+    _ => 'balanced',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -258,8 +284,9 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
                     child: Text(
                       _error!,
                       key: const Key('dream-save-error'),
-                      style:
-                          TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
                 if (_status != null)
@@ -293,9 +320,11 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
                   ),
                 if (_card == null)
                   ListTile(
-                    title: Text(_cardId == null
-                        ? 'No active card selected.'
-                        : 'Card not found.'),
+                    title: Text(
+                      _cardId == null
+                          ? 'No active card selected.'
+                          : 'Card not found.',
+                    ),
                   )
                 else ...<Widget>[
                   SwitchListTile(
@@ -308,15 +337,18 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
                     onChanged: _busy
                         ? null
                         : (value) => _patchDreamState(<String, dynamic>{
-                              'enabled': value,
-                            }),
+                            'enabled': value,
+                          }),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Journaling Threshold',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Journaling Threshold',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   DropdownButtonFormField<String>(
                     key: ValueKey<String>(
-                        'dream-journaling-threshold-$threshold'),
+                      'dream-journaling-threshold-$threshold',
+                    ),
                     initialValue: threshold,
                     decoration: const InputDecoration(
                       labelText: 'Density of recorded memories',
@@ -381,8 +413,8 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
                     onChanged: _busy
                         ? null
                         : (value) => _patchDreamState(<String, dynamic>{
-                              'strictAfkGating': value,
-                            }),
+                            'strictAfkGating': value,
+                          }),
                   ),
                 ],
               ],
@@ -413,21 +445,21 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
         onChanged: _busy
             ? null
             : (_) => _scheduleNumericPatch(
-                  field,
-                  controller,
-                  fallback,
-                  min: min,
-                  max: max,
-                ),
+                field,
+                controller,
+                fallback,
+                min: min,
+                max: max,
+              ),
         onFieldSubmitted: _busy
             ? null
             : (_) => _flushNumericPatch(
-                  field,
-                  controller,
-                  fallback,
-                  min: min,
-                  max: max,
-                ),
+                field,
+                controller,
+                fallback,
+                min: min,
+                max: max,
+              ),
       ),
     );
   }
