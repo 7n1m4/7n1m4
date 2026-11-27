@@ -411,4 +411,52 @@ mod tests {
         assert_eq!(summaries[0]["token_estimate"], 9);
         assert_eq!(summaries[0]["created_at"], 20);
     }
+
+    // Contract: the whole eight-frame STMM authority trace replays against the
+    // REAL handlers. Every reply is compared byte-for-byte to the fixture with
+    // zero normalization, so field renames or casing drift fail the test.
+    #[test]
+    fn stmm_authority_trace_replays_through_real_handlers() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+        let handlers = verbs(&fixture);
+
+        let trace_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../anima-channel/fixtures/golden/trace.stmm.authority.json");
+        let trace: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&trace_path).unwrap()).unwrap();
+        let frames = trace["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 8, "authority trace must hold 8 frames");
+
+        // Seed summary-1 through the REAL upsert handler using frame[2]'s
+        // camelCase block BEFORE m1. The fixture's m1 already lists the row, so
+        // a fresh store would otherwise answer with an empty list.
+        let seed =
+            handlers.get("stmm.upsert").unwrap()("stmm.upsert", &frames[2]["payload"]).unwrap();
+        assert_eq!(seed["upserted"], 1);
+
+        let m1 = handlers.get("stmm.list").unwrap()("stmm.list", &frames[0]["payload"]).unwrap();
+        assert_eq!(m1, frames[1]["data"], "m1 reply must match fixture exactly");
+        let row = &m1["summaries"][0];
+        assert_eq!(row["token_estimate"], 3);
+        assert_eq!(row["created_at"], 1764000000000000i64);
+        assert_eq!(row["source_session_ids"], serde_json::json!(["s1"]));
+
+        let m2 =
+            handlers.get("stmm.upsert").unwrap()("stmm.upsert", &frames[2]["payload"]).unwrap();
+        assert_eq!(m2, frames[3]["data"], "m2 reply must match fixture exactly");
+        assert_eq!(m2["upserted"], 1);
+
+        let m3 =
+            handlers.get("stmm.delete").unwrap()("stmm.delete", &frames[4]["payload"]).unwrap();
+        assert_eq!(m3, frames[5]["data"], "m3 reply must match fixture exactly");
+        assert_eq!(m3["deleted"], true);
+
+        let m4 = handlers.get("stmm.list").unwrap()("stmm.list", &frames[6]["payload"]).unwrap();
+        assert_eq!(m4, frames[7]["data"], "m4 reply must match fixture exactly");
+        assert!(
+            m4["summaries"].as_array().unwrap().is_empty(),
+            "delete must not resurrect"
+        );
+    }
 }
