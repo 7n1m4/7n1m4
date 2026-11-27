@@ -315,6 +315,34 @@ class _ModulesScreenState extends State<ModulesScreen> {
   static String fieldId(String section, _ModuleField field) =>
       'modules-$section-${field.key}';
 
+  /// Choice fields render their first option for a stored value outside the
+  /// option list. Snap the stored value to that same option at hydration so
+  /// build() stays pure and save() writes the value the user sees.
+  Map<String, dynamic> _normalizeChoices(
+    String sectionKey,
+    Map<String, dynamic> stored,
+  ) {
+    final values = Map<String, dynamic>.from(stored);
+    for (final section in _sections) {
+      if (section.key != sectionKey) continue;
+      for (final field in section.fields) {
+        if (field.kind != _FieldKind.choice || field.options.isEmpty) continue;
+        final raw = values[field.key];
+        if (raw is String) {
+          final trimmed = raw.trim();
+          values[field.key] = field.options.firstWhere(
+            (option) => option.toLowerCase() == trimmed.toLowerCase(),
+            orElse: () => field.options.first,
+          );
+        } else {
+          // Missing, null or non-string values all display the first option.
+          values[field.key] = field.options.first;
+        }
+      }
+    }
+    return values;
+  }
+
   Future<void> _load() async {
     setState(() {
       _busy = true;
@@ -347,7 +375,9 @@ class _ModulesScreenState extends State<ModulesScreen> {
           _drafts[result.section] = _SectionDraft.unavailable();
           continue;
         }
-        final draft = _SectionDraft(result.values!);
+        final draft = _SectionDraft(
+          _normalizeChoices(result.section, result.values!),
+        );
         _drafts[result.section] = draft;
         for (final section in _sections) {
           if (section.key != result.section) continue;
@@ -934,6 +964,14 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
   String? _error;
   void Function()? _unsubscribeEvents;
 
+  /// Invalidates reads started before a newer state change (including a save),
+  /// so a slower earlier read cannot overwrite the newer view.
+  int _loadGen = 0;
+
+  /// A settings.changed echo that landed mid-save. A successful PATCH already
+  /// applies its own effect, so the echo needs no re-read; a failed one does.
+  bool _reloadAfterSave = false;
+
   @override
   void initState() {
     super.initState();
@@ -942,6 +980,10 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
     _unsubscribeEvents = widget.client.onEvent((event) {
       if (event.topic != EventTopic.settingsChanged) return;
       if (event.data['section'] != 'discord') return;
+      if (_saving) {
+        _reloadAfterSave = true;
+        return;
+      }
       unawaited(_load());
     });
   }
@@ -954,6 +996,7 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
   }
 
   Future<void> _load() async {
+    final gen = ++_loadGen;
     setState(() {
       _loading = true;
       _error = null;
@@ -961,7 +1004,7 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
     });
     try {
       final view = await widget.client.settingsGet('discord');
-      if (!mounted) return;
+      if (!mounted || gen != _loadGen) return;
       setState(() {
         _view = view;
         _choices = <String, String>{
@@ -975,7 +1018,7 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
         _loading = false;
       });
     } on Object catch (error) {
-      if (mounted) {
+      if (mounted && gen == _loadGen) {
         setState(() {
           _error = userSafeConnectionError(
             error,
@@ -1003,9 +1046,13 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
       _error = null;
       _status = null;
     });
+    // Any read already in flight predates this write; it must not land later.
+    _loadGen++;
     try {
       final saved = await widget.client.settingsSet('discord', patch);
       if (!mounted) return;
+      final reloadQueued = _reloadAfterSave;
+      _reloadAfterSave = false;
       setState(() {
         _saving = false;
         if (saved) {
@@ -1014,8 +1061,9 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
           // Keep the edited values, but never retain a token locally: the next
           // save must not re-send it just because the field was cleared. A
           // freshly saved token flips the read hint immediately; the credential
-          // itself is never held or rendered.
-          final nextView = <String, dynamic>{...view, ...patch}
+          // itself is never held or rendered. Merge onto the latest view in
+          // case a read landed between capture and completion.
+          final nextView = <String, dynamic>{...(_view ?? view), ...patch}
             ..remove('token');
           if (tokenSaved) nextView['hasToken'] = true;
           _view = nextView;
@@ -1023,8 +1071,13 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
           _status = 'Discord settings were not saved.';
         }
       });
+      // A successful PATCH already carries the queued echo's effect. A failed
+      // one left the daemon changed, so re-read the authoritative view.
+      if (!saved && reloadQueued) unawaited(_load());
     } on Object catch (error) {
       if (mounted) {
+        final reloadQueued = _reloadAfterSave;
+        _reloadAfterSave = false;
         setState(() {
           _saving = false;
           _error = userSafeConnectionError(
@@ -1032,6 +1085,7 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
             context: 'settings.set:discord',
           );
         });
+        if (reloadQueued) unawaited(_load());
       }
     }
   }
