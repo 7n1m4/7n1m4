@@ -459,4 +459,118 @@ mod tests {
             "delete must not resurrect"
         );
     }
+
+    // Semantic reuse: this module owns the only isolated_gateway() /
+    // enable_actions() / verbs() handler fixture, so the cards golden execution
+    // proof lives here despite the STMM-named file (same handler-contract test).
+    #[test]
+    fn cards_golden_execution_replays_through_real_handlers() {
+        let load = |name: &str| -> serde_json::Value {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../anima-channel/fixtures/golden")
+                .join(name);
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
+        };
+
+        let fixture = isolated_gateway();
+        let handlers = verbs(&fixture);
+
+        // Fail-closed: a write verb is denied until the operator opts in.
+        let err = handlers.get("cards.create").unwrap()(
+            "cards.create",
+            &load("cards.create.request.json"),
+        )
+        .expect_err("cards.create must be action-gated");
+        assert!(
+            err.starts_with(crate::gateway::ACTIONS_DISABLED_PREFIX),
+            "{err}"
+        );
+
+        enable_actions(&fixture);
+        let handlers = verbs(&fixture);
+
+        // Seed through the REAL cards.create handler with the golden request.
+        let created = handlers.get("cards.create").unwrap()(
+            "cards.create",
+            &load("cards.create.request.json"),
+        )
+        .unwrap();
+        // PRE-projection invariant (a) on the REAL frame: the daemon mints a
+        // non-empty string id (time + pid + counter, so never the golden card-7).
+        let minted = created["id"]
+            .as_str()
+            .expect("cards.create must mint a string id");
+        assert!(!minted.is_empty(), "cards.create id must not be empty");
+        assert_ne!(minted, "card-7");
+        // Projection (a): bind the minted id, then compare the reply exactly.
+        let mut expected_create = load("cards.create.reply.json");
+        expected_create["id"] = serde_json::json!(minted);
+        assert_eq!(
+            created, expected_create,
+            "cards.create reply shape must match golden"
+        );
+
+        // cards.get is ungated and returns the stored document verbatim.
+        let got =
+            handlers.get("cards.get").unwrap()("cards.get", &serde_json::json!({ "id": minted }))
+                .unwrap();
+        assert_eq!(
+            got,
+            load("cards.get.reply.json"),
+            "cards.get must return the stored document verbatim"
+        );
+
+        // cards.list: the golden predates the keyset cursor and has no such
+        // field. PRE-projection invariant (b) on the REAL frame: every
+        // non-empty page carries a well-formed cursor even when
+        // truncated:false (gateway.rs list_next_cursor), so assert it is
+        // present and shaped correctly BEFORE projecting it away. Never drop
+        // a cursor that the daemon actually emitted without saying so.
+        let listed =
+            handlers.get("cards.list").unwrap()("cards.list", &serde_json::json!({ "limit": 50 }))
+                .unwrap();
+        assert_eq!(listed["truncated"], false, "golden page is not truncated");
+        let cursor = listed
+            .get("cursor")
+            .expect("a non-empty cards page must carry a keyset cursor");
+        assert!(
+            cursor["updatedAt"].is_i64() && cursor["rowId"].is_i64(),
+            "keyset cursor shape drifted: {cursor}"
+        );
+        // Projection (b): bind the minted id and remove ONLY the cursor that
+        // was just asserted on the real frame; cards + truncated stay exact.
+        let mut real_projected = listed.clone();
+        real_projected.as_object_mut().unwrap().remove("cursor");
+        let mut expected_list = load("cards.list.reply.json");
+        expected_list["cards"][0]["id"] = serde_json::json!(minted);
+        assert_eq!(
+            real_projected, expected_list,
+            "cards.list reply must match golden after id + cursor projection"
+        );
+
+        // cards.update: bind the minted id into the golden request; the reply
+        // has no projection and must match byte-for-byte.
+        let mut update_req = load("cards.update.request.json");
+        update_req["id"] = serde_json::json!(minted);
+        let updated = handlers.get("cards.update").unwrap()("cards.update", &update_req).unwrap();
+        assert_eq!(
+            updated,
+            load("cards.update.reply.json"),
+            "cards.update reply must match golden exactly"
+        );
+        assert_eq!(updated["updated"], true);
+
+        // cards.delete: same id binding; reply asserted exactly.
+        let mut delete_req = load("cards.delete.request.json");
+        delete_req["id"] = serde_json::json!(minted);
+        let deleted = handlers.get("cards.delete").unwrap()("cards.delete", &delete_req).unwrap();
+        assert_eq!(
+            deleted,
+            load("cards.delete.reply.json"),
+            "cards.delete reply must match golden exactly"
+        );
+        assert_eq!(deleted["deleted"], true);
+    }
 }
