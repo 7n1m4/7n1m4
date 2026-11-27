@@ -58,6 +58,7 @@ pub mod sessions;
 pub mod settings;
 pub mod single_instance;
 pub mod storylines;
+pub mod tool_bridge;
 pub mod update;
 pub mod util;
 pub mod vault;
