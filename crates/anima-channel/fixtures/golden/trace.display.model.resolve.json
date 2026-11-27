@@ -1,0 +1,140 @@
+{
+  "schema": "airi-channel-trace-v1",
+  "path": "cards.get/settings.set/display-model.resolve/display-model.resolve(error)/cards.get",
+  "frames": [
+    {
+      "type": "rpc",
+      "action": "cards.get",
+      "id": "cg1",
+      "payload": {
+        "id": "v32-card"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "cards.get",
+      "ok": true,
+      "id": "cg1",
+      "data": {
+        "card": {
+          "spec": "chara_card_v3",
+          "spec_version": "3.0",
+          "data": {
+            "name": "V32 Stage Card",
+            "extensions": {
+              "airi": {
+                "active_state": {
+                  "displayModelId": "v32-live2d"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "settings.set",
+      "id": "ss1",
+      "payload": {
+        "section": "stage-model",
+        "settings": {
+          "catalog": [
+            {
+              "id": "v32-live2d",
+              "name": "V32 Live2D Sentinel",
+              "format": "live2d-zip",
+              "source": "file",
+              "file": "<FIXTURE_FILE_SENTINEL>",
+              "url": "<FIXTURE_URL_SENTINEL>"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "settings.set",
+      "ok": true,
+      "id": "ss1",
+      "data": {
+        "updated": true
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "display-model.resolve",
+      "id": "dm1",
+      "payload": {
+        "id": "v32-live2d"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "display-model.resolve",
+      "ok": true,
+      "id": "dm1",
+      "data": {
+        "id": "v32-live2d",
+        "name": "V32 Live2D Sentinel",
+        "format": "live2d-zip",
+        "source": "file",
+        "file": "<FIXTURE_FILE_SENTINEL>",
+        "url": "<FIXTURE_URL_SENTINEL>"
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "display-model.resolve",
+      "id": "dm2",
+      "payload": {
+        "id": "v32-missing"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "display-model.resolve",
+      "ok": false,
+      "id": "dm2",
+      "error": {
+        "code": "display-model-unresolved",
+        "message": "unknown display model id: v32-missing"
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "cards.get",
+      "id": "cg2",
+      "payload": {
+        "id": "v32-missing-card"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "cards.get",
+      "ok": true,
+      "id": "cg2",
+      "data": {
+        "card": {
+          "spec": "chara_card_v3",
+          "spec_version": "3.0",
+          "data": {
+            "name": "V32 Unresolved Card",
+            "extensions": {
+              "airi": {
+                "active_state": {
+                  "displayModelId": "v32-missing"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

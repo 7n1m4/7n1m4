@@ -22,6 +22,8 @@ mod audit;
 mod control;
 mod core;
 #[cfg(test)]
+mod display_model_execution_tests;
+#[cfg(test)]
 mod emotion_tag_execution_tests;
 mod events;
 mod gateway;
