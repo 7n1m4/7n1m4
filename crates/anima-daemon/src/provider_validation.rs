@@ -17,7 +17,8 @@
 //! `updated_at` captured by `get_with_updated_at` against the stored row inside
 //! one atomic SQLite statement: a slower writer is rejected instead of
 //! reverting a newer value, even across processes. The read-modify-write is
-//! additionally serialized in-process; see [`record`].
+//! additionally serialized in-process, and a CAS mismatch from another process
+//! triggers a bounded re-read/re-merge retry; see [`record`].
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -186,7 +187,59 @@ pub fn cached_is_configured(
     }
 }
 
-/// Single raw read-modify-write of the validation blob for one instance.
+/// Bounded read-modify-CAS attempts. The process-local lock removes in-process
+/// races; the loop covers a competing OS process advancing the row between our
+/// read and our write.
+const RECORD_CAS_ATTEMPTS: usize = 3;
+
+/// Ordering guard: may `new_state` replace the entry already stored for its
+/// instance? When both sides carry a `lastValidated` stamp, a strictly newer
+/// stored decision wins and the older write is dropped. Missing/unparseable
+/// stamps cannot be ordered (this blob is an advisory cache), so the merge
+/// proceeds rather than blocking a decision.
+fn should_merge_state(blob: &serde_json::Value, new_state: &ProviderValidationState) -> bool {
+    let Some(existing) = blob
+        .as_object()
+        .and_then(|map| map.get(&new_state.instance_id))
+    else {
+        return true;
+    };
+    let (Some(existing_at), Some(new_at)) = (
+        existing.get("lastValidated").and_then(|v| v.as_i64()),
+        new_state.last_validated,
+    ) else {
+        return true;
+    };
+    new_at >= existing_at
+}
+
+/// Merge exactly one instance entry into a freshly-read blob. Returns `false`
+/// when the ordering guard rejects the write, leaving `blob` untouched.
+fn merge_state_into_blob(
+    blob: &mut serde_json::Value,
+    new_state: &ProviderValidationState,
+) -> Result<bool, String> {
+    if !should_merge_state(blob, new_state) {
+        return Ok(false);
+    }
+    let map = blob
+        .as_object_mut()
+        .ok_or_else(|| "invalid provider validation settings".to_string())?;
+    let value = serde_json::to_value(new_state).map_err(|e| e.to_string())?;
+    map.insert(new_state.instance_id.clone(), value);
+    Ok(true)
+}
+
+/// `set_if_unchanged` emits this marker only for a CAS mismatch; its I/O and
+/// serialization failures carry unrelated messages and must not be retried.
+/// The store returns an untyped `anyhow::Error`, so this unique marker is the
+/// narrowest signal available at the daemon layer.
+fn is_cas_conflict(err: &impl std::fmt::Display) -> bool {
+    err.to_string().contains("stale snapshot")
+}
+
+/// Read-modify-write of the validation blob for one instance, retried on a CAS
+/// mismatch from another process.
 ///
 /// The value and its `updated_at` are read together, mutated, then written back
 /// with `SettingsRepo::set_if_unchanged`. The lock serializes writers in THIS
@@ -197,19 +250,36 @@ fn record(core: &CoreService, new_state: &ProviderValidationState) -> Result<(),
     let _guard = RECORD_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // NOTICE: the guard is held across SQLite I/O for the whole loop, which
+    // serializes in-process writers (and their I/O wait); other processes are
+    // covered by the CAS, so dropping it would only add spurious same-process
+    // conflicts.
     let db = core.db().ok_or_else(|| "core unavailable".to_string())?;
     let repo = anima_store::SettingsRepo::new(db);
-    let (mut blob, expected): (serde_json::Value, i64) = repo
-        .get_with_updated_at(SETTINGS_KEY)
-        .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| (serde_json::json!({}), 0));
-    let map = blob
-        .as_object_mut()
-        .ok_or_else(|| "invalid provider validation settings".to_string())?;
-    let value = serde_json::to_value(new_state).map_err(|e| e.to_string())?;
-    map.insert(new_state.instance_id.clone(), value);
-    repo.set_if_unchanged(SETTINGS_KEY, &blob, expected)
-        .map_err(|e| e.to_string())
+
+    for attempt in 0..RECORD_CAS_ATTEMPTS {
+        // Re-read every attempt: a competing process may have advanced the row,
+        // and only this instance's slot may be merged into the fresh snapshot
+        // so a sibling decision is never reverted by the retry.
+        let (mut blob, expected): (serde_json::Value, i64) = repo
+            .get_with_updated_at(SETTINGS_KEY)
+            .map_err(|e| e.to_string())?
+            .unwrap_or_else(|| (serde_json::json!({}), 0));
+
+        if !merge_state_into_blob(&mut blob, new_state)? {
+            // A strictly newer decision for this instance is already stored.
+            return Ok(());
+        }
+
+        match repo.set_if_unchanged(SETTINGS_KEY, &blob, expected) {
+            Ok(()) => return Ok(()),
+            Err(err) if is_cas_conflict(&err) && attempt + 1 < RECORD_CAS_ATTEMPTS => {
+                continue; // another process won this round; retry with a fresh read
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    unreachable!("the loop returns on success, ordering rejection, or the final attempt")
 }
 
 /// Persist a validation outcome and return its secret-free metadata. The full
@@ -247,9 +317,13 @@ mod tests {
 
     use super::cached_is_configured;
     use super::config_hash;
+    use super::is_cas_conflict;
     use super::load_states;
+    use super::merge_state_into_blob;
     use super::record_validation;
+    use super::should_merge_state;
     use super::state;
+    use super::ProviderValidationState;
     use super::HASH_ALGORITHM;
     use super::SETTINGS_KEY;
 
@@ -681,5 +755,102 @@ mod tests {
         assert_eq!(after["openai:*"]["isConfigured"], true);
         assert_eq!(after["ollama:local"]["validationBypassed"], true);
         assert_eq!(after.as_object().unwrap().len(), 2);
+    }
+
+    fn state_at(
+        instance_id: &str,
+        validated_at: Option<i64>,
+        is_configured: bool,
+    ) -> ProviderValidationState {
+        ProviderValidationState {
+            instance_id: instance_id.to_string(),
+            is_configured,
+            validated: true,
+            validation_bypassed: false,
+            hash: config_hash(&serde_json::json!({ "model": instance_id })),
+            last_validated: validated_at,
+        }
+    }
+
+    #[test]
+    fn ordering_guard_rejects_an_older_decision_for_the_same_instance() {
+        let newer = state_at("openai:*", Some(2000), true);
+        let blob = serde_json::json!({
+            "openai:*": serde_json::to_value(&newer).unwrap(),
+            "ollama:local": { "marker": 1 },
+        });
+
+        let older = state_at("openai:*", Some(1000), false);
+        assert!(
+            !should_merge_state(&blob, &older),
+            "an older decision must not overwrite a newer one"
+        );
+        assert!(
+            should_merge_state(&blob, &newer),
+            "a same-timestamp decision may proceed"
+        );
+        let newest = state_at("openai:*", Some(3000), false);
+        assert!(
+            should_merge_state(&blob, &newest),
+            "a strictly newer decision may proceed"
+        );
+
+        // No stored entry for the instance: always allowed.
+        assert!(should_merge_state(
+            &blob,
+            &state_at("never-seen:*", Some(1), true)
+        ));
+
+        // Missing timestamps on either side cannot be ordered: allow the merge.
+        let no_ts_blob = serde_json::json!({
+            "openai:*": {
+                "instanceId": "openai:*",
+                "isConfigured": true,
+                "validated": true,
+                "validationBypassed": false,
+                "hash": { "algorithm": "sha256-v1", "value": "00" },
+            },
+        });
+        assert!(should_merge_state(&no_ts_blob, &older));
+        let new_no_ts = state_at("openai:*", None, true);
+        assert!(should_merge_state(&blob, &new_no_ts));
+    }
+
+    #[test]
+    fn merge_state_into_blob_only_edits_the_target_instance() {
+        let mut blob = serde_json::json!({
+            "openai:*": { "marker": 1 },
+            "ollama:local": { "marker": 2 },
+        });
+        let decision = state_at("openai:*", Some(1000), true);
+        assert!(merge_state_into_blob(&mut blob, &decision).unwrap());
+        let object = blob.as_object().unwrap();
+        assert_eq!(object.len(), 2, "sibling instance must survive");
+        assert_eq!(object["ollama:local"]["marker"], 2);
+        assert_eq!(object["openai:*"]["instanceId"], "openai:*");
+        assert_eq!(object["openai:*"]["lastValidated"], 1000);
+
+        // A newer stored decision blocks the merge entirely.
+        let newer = state_at("openai:*", Some(2000), false);
+        let mut blob_with_newer = serde_json::json!({
+            "openai:*": serde_json::to_value(&newer).unwrap(),
+        });
+        let before = blob_with_newer.clone();
+        assert!(!merge_state_into_blob(&mut blob_with_newer, &decision).unwrap());
+        assert_eq!(
+            blob_with_newer, before,
+            "blob must be untouched on ordering rejection"
+        );
+    }
+
+    #[test]
+    fn cas_conflict_detection_is_narrow() {
+        let cas = "setting `settings/provider-validation` was not written: stale snapshot (expected updated_at = 42)";
+        assert!(is_cas_conflict(&cas));
+        assert!(!is_cas_conflict(&"database is locked"));
+        assert!(!is_cas_conflict(&"no such table: settings"));
+        assert!(!is_cas_conflict(
+            &"invalid type: string, expected a JSON value"
+        ));
     }
 }
