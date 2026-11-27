@@ -882,7 +882,8 @@ export function verifyState({ logger = () => {} } = {}) {
   try {
     headSha = deriveHead(events)
     const gitHead = resolveHeadSha()
-    if (gitHead !== headSha)
+    const effectiveHead = gitHead === headSha ? gitHead : resolveEffectiveHeadSha()
+    if (effectiveHead !== headSha)
       return finish(logger, 5, `HEAD_DRIFT:${gitHead}`)
   }
   catch (error) {
@@ -908,6 +909,61 @@ export function resolveHeadSha() {
   if (!isSha(head))
     fail(`invalid HEAD sha: ${head}`)
   return head
+}
+
+/** Paths changed by one commit relative to its parent. */
+function commitPaths(sha) {
+  const result = spawnSync('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', sha], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  })
+  if (result.status !== 0)
+    fail(`cannot inspect commit ${sha}: ${result.stderr?.trim() ?? 'git failed'}`)
+  return result.stdout.split('\n').map(rel => rel.trim()).filter(Boolean)
+}
+
+/** First parent of a commit, or null at the root. */
+function firstParentSha(sha) {
+  const result = spawnSync('git', ['rev-parse', `${sha}^`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  })
+  if (result.status !== 0)
+    return null
+  const parent = result.stdout.trim()
+  if (!isSha(parent))
+    fail(`invalid parent sha for ${sha}: ${parent}`)
+  return parent
+}
+
+/**
+ * A commit that only rewrites state/* is ledger bookkeeping, not a new head:
+ * `head:advance` followed by committing the rewritten state leaves HEAD past
+ * the head recorded in the event log. Walk back over those commits to the
+ * first one that touched anything else and compare that to deriveHead(events).
+ */
+export function resolveEffectiveHeadSha() {
+  let current = resolveHeadSha()
+  const seen = new Set()
+  let done = false
+  while (!done) {
+    if (seen.has(current))
+      fail(`HEAD ancestry cycle at ${current}`)
+    seen.add(current)
+    const paths = commitPaths(current)
+    // An empty (or unexpanded merge) commit changes nothing: never skip it, so
+    // code drift hid behind one still fails closed.
+    const stateOnly = paths.length > 0 && paths.every(rel => rel.startsWith('state/'))
+    if (!stateOnly) {
+      done = true
+      continue
+    }
+    const parent = firstParentSha(current)
+    if (!parent)
+      fail(`state-only history has no non-state commit (root ${current})`)
+    current = parent
+  }
+  return current
 }
 
 /** Preflight for `recover`: fail closed on guards, unknowns, leases and chain. */

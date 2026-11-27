@@ -34,6 +34,7 @@ import {
   readBindings,
   readEvents,
   RECEIPT_MANIFEST,
+  resolveEffectiveHeadSha,
   resolveHeadSha,
   scanWave0Receipts,
   SCHEMA_PACKET,
@@ -275,7 +276,8 @@ export function buildLivePacket() {
   const head = deriveHead(events)
   let headMatches = false
   try {
-    headMatches = resolveHeadSha() === head
+    // Exact match first: offline repos can have a raw HEAD with no commit object.
+    headMatches = resolveHeadSha() === head || resolveEffectiveHeadSha() === head
   }
   catch {
     headMatches = false

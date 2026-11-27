@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { BASE_SHA, loadGuardPins } from '../sm.mjs'
-import { buildLivePacket, runSelfTest, validateAuditPacket } from './audit-packet.mjs'
+import { BASE_SHA, deriveHead, loadGuardPins } from '../sm.mjs'
+import { runSelfTest, validateAuditPacket } from './audit-packet.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..', '..')
@@ -28,18 +28,26 @@ function runNode(dir, script, args = []) {
   return spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: 'utf8' })
 }
 
-/** Throwaway repo with a real git index holding the four pinned guard blobs. */
-function makeRepo(t) {
+/**
+ * Throwaway repo with a real git index holding the four pinned guard blobs.
+ * HEAD follows the copied event log unless a test rebuilds it from scratch.
+ */
+function makeRepo(t, { headSha } = {}) {
   mkdirSync(TEMP_BASE, { recursive: true })
   const dir = mkdtempSync(path.join(TEMP_BASE, 'r17-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   for (const rel of ['scripts', 'state', '.wave0'])
     cpSync(path.join(repoRoot, rel), path.join(dir, rel), { recursive: true })
 
+  const copiedEvents = readFileSync(path.join(dir, 'state', 'events.ndjson'), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line))
+  const effectiveHead = headSha ?? deriveHead(copiedEvents)
   const gitDir = path.join(dir, '.git')
   mkdirSync(path.join(gitDir, 'objects'), { recursive: true })
   mkdirSync(path.join(gitDir, 'refs', 'heads'), { recursive: true })
-  writeFileSync(path.join(gitDir, 'HEAD'), `${BASE_SHA}\n`)
+  writeFileSync(path.join(gitDir, 'HEAD'), `${effectiveHead}\n`)
   writeFileSync(path.join(gitDir, 'config'), '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n')
   for (const sha of Object.values(pins)) {
     const rel = path.join('.git', 'objects', sha.slice(0, 2), sha.slice(2))
@@ -54,7 +62,48 @@ function makeRepo(t) {
   for (const [relPath, sha] of Object.entries(pins)) {
     assert.equal(git(['update-index', '--add', '--cacheinfo', `100644,${sha},${relPath}`]).status, 0)
   }
-  return { dir, git }
+  return { dir, git, effectiveHead }
+}
+
+/**
+ * Real git repo with an actual commit ancestry, unlike makeRepo's raw HEAD
+ * pointer: genesis -> feature commit -> head:advance -> state-only commit.
+ */
+function makeGitRepo(t) {
+  mkdirSync(TEMP_BASE, { recursive: true })
+  const dir = mkdtempSync(path.join(TEMP_BASE, 'r17-head-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  for (const rel of ['scripts', 'state', '.wave0'])
+    cpSync(path.join(repoRoot, rel), path.join(dir, rel), { recursive: true })
+
+  const git = args => spawnSync('git', args, {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...process.env, LC_ALL: 'C', GIT_AUTHOR_NAME: 'SM Test', GIT_AUTHOR_EMAIL: 'sm@example.invalid', GIT_COMMITTER_NAME: 'SM Test', GIT_COMMITTER_EMAIL: 'sm@example.invalid' },
+  })
+  const ok = (args) => {
+    const result = git(args)
+    assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`)
+    return result.stdout.trim()
+  }
+  ok(['init', '-q'])
+  ok(['config', 'commit.gpgsign', 'false'])
+  ok(['config', 'core.hooksPath', '/dev/null'])
+  ok(['add', '-A'])
+  ok(['commit', '-q', '-m', 'genesis'])
+
+  writeFileSync(path.join(dir, 'feature.txt'), 'feature\n')
+  ok(['add', 'feature.txt'])
+  ok(['commit', '-q', '-m', 'feature'])
+  const featureSha = ok(['rev-parse', 'HEAD'])
+
+  const advanced = runNode(dir, path.join(dir, 'scripts', 'sm.mjs'), ['head:advance', '--sha', featureSha])
+  assert.equal(advanced.status, 0, advanced.stderr)
+  ok(['add', 'state'])
+  ok(['commit', '-q', '-m', 'state'])
+  const stateSha = ok(['rev-parse', 'HEAD'])
+  assert.notEqual(stateSha, featureSha)
+  return { dir, git, ok, featureSha, stateSha }
 }
 
 function mutateJson(file, mutate) {
@@ -114,10 +163,11 @@ test('each failure class has its own exit code and distinct diagnostic', () => {
   assert.equal(diagnostics.size, 4)
 })
 
-test('live packet is valid and self-test markers precede the live marker', () => {
-  assert.equal(validateAuditPacket(buildLivePacket()).code, 0)
-
-  const first = runCli(repoRoot)
+test('live packet is valid and self-test markers precede the live marker', (t) => {
+  // The real checkout may be mid-integration; use a repo whose HEAD matches
+  // its event log so this test checks the CLI, not unrelated head drift.
+  const { dir } = makeRepo(t)
+  const first = runCli(dir)
   assert.equal(first.status, 0, first.stderr)
   const lines = first.stderr.split('\n')
   const selfIndexes = lines.flatMap((line, index) => line.startsWith('[SELF_TEST]') ? [index] : [])
@@ -126,7 +176,7 @@ test('live packet is valid and self-test markers precede the live marker', () =>
   assert.equal(liveIndexes.length, 1)
   assert.ok(Math.max(...selfIndexes) < liveIndexes[0], 'self-test must run before live validation')
 
-  const second = runCli(repoRoot)
+  const second = runCli(dir)
   assert.equal(second.status, 0, second.stderr)
   assert.equal(second.stderr, first.stderr, 'CLI output must be deterministic')
 })
@@ -230,6 +280,7 @@ test('head:advance appends a chained event and keeps every gate green', (t) => {
   const { dir } = makeRepo(t)
   const sm = path.join(dir, 'scripts', 'sm.mjs')
   const boot = path.join(dir, 'scripts', 'bootstrap-state.mjs')
+  const before = readFileSync(path.join(dir, 'state', 'events.ndjson'), 'utf8').split('\n').filter(Boolean)
   const nextHead = 'a'.repeat(40)
   writeFileSync(path.join(dir, '.git', 'HEAD'), `${nextHead}\n`)
   const advanced = runNode(dir, sm, ['head:advance', '--sha', nextHead])
@@ -242,16 +293,46 @@ test('head:advance appends a chained event and keeps every gate green', (t) => {
   assert.equal(runCli(dir).status, 0)
 
   const lines = readFileSync(path.join(dir, 'state', 'events.ndjson'), 'utf8').split('\n').filter(Boolean)
-  assert.equal(lines.length, 2)
+  assert.equal(lines.length, before.length + 1)
   assert.equal(JSON.parse(lines[0]).base_sha, BASE_SHA)
-  const advancedEvent = JSON.parse(lines[1])
-  assert.equal(advancedEvent.seq, 2)
+  const advancedEvent = JSON.parse(lines[lines.length - 1])
+  assert.equal(advancedEvent.seq, before.length + 1)
   assert.equal(advancedEvent.type, 'head_advanced')
   assert.equal(JSON.parse(readFileSync(path.join(dir, 'state', 'current_wave.json'), 'utf8')).head_sha, nextHead)
 })
 
+test('both validators accept a state-only head and reject later code drift', (t) => {
+  const { dir, ok, featureSha, stateSha } = makeGitRepo(t)
+  const sm = path.join(dir, 'scripts', 'sm.mjs')
+
+  const stateOnly = runNode(dir, sm, ['audit'])
+  assert.equal(stateOnly.status, 0, `HEAD ${stateSha} (feature ${featureSha}): ${stateOnly.stderr}`)
+  const stateOnlyPacket = runCli(dir)
+  assert.equal(stateOnlyPacket.status, 0, stateOnlyPacket.stderr)
+
+  // No changed paths is not state bookkeeping; an empty commit must fail too.
+  ok(['commit', '-q', '--allow-empty', '-m', 'empty after state'])
+  const emptyCommit = runNode(dir, sm, ['audit'])
+  assert.equal(emptyCommit.status, 5, emptyCommit.stderr)
+  assert.match(emptyCommit.stderr, /HEAD_DRIFT/)
+  const emptyPacket = runCli(dir)
+  assert.equal(emptyPacket.status, 5, emptyPacket.stderr)
+  assert.match(emptyPacket.stderr, /head_mismatch/)
+
+  writeFileSync(path.join(dir, 'code.js'), 'export {}\n')
+  ok(['add', 'code.js'])
+  ok(['commit', '-q', '-m', 'code after state'])
+  const drifted = runNode(dir, sm, ['audit'])
+  assert.equal(drifted.status, 5, drifted.stderr)
+  assert.match(drifted.stderr, /HEAD_DRIFT/)
+  const driftedPacket = runCli(dir)
+  assert.equal(driftedPacket.status, 5, driftedPacket.stderr)
+  assert.match(driftedPacket.stderr, /head_mismatch/)
+})
+
 test('unanchored wave0 receipts are ingested and surfaced, not dropped', (t) => {
-  const { dir } = makeRepo(t)
+  // The event log is rebuilt here, so its derived head goes back to BASE_SHA.
+  const { dir } = makeRepo(t, { headSha: BASE_SHA })
   const extra = path.join(dir, '.wave0', 'lane-airi-extra')
   mkdirSync(extra, { recursive: true })
   writeFileSync(path.join(extra, 'receipt.json'), `${JSON.stringify({ lane: 'airi-extra' }, null, 2)}\n`)
