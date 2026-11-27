@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "guard_order": [
+    "flutter-boundary.test.mjs",
+    "flutter_boundary_graph.mjs"
+  ],
+  "cases": [
+    {
+      "id": "conditional-dart-library-io",
+      "control": false,
+      "fault_class": "conditional-uri",
+      "operator": "ADD_CONDITIONAL_LIBRARY_IO_URI",
+      "fixture": "conditional-dart-library-io.dart",
+      "target": {
+        "file": "apps/flutter/lib/features/chat/data/store.dart",
+        "line": 1,
+        "col": 1,
+        "needle": "export 'stub.dart' if (dart.library.io) 'dart:io';"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 0,
+          "expected_stderr_substring": null,
+          "should_kill": false
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "capability=dart:io",
+          "should_kill": true
+        }
+      ],
+      "expected_kills": 1
+    },
+    {
+      "id": "direct-restricted-import",
+      "control": false,
+      "fault_class": "direct-banned-import",
+      "operator": "INSERT_DIRECT_RESTRICTED_IMPORT",
+      "fixture": "direct-restricted-import.dart",
+      "target": {
+        "file": "apps/flutter/lib/features/chat/ui/chat_screen.dart",
+        "line": 2,
+        "col": 1,
+        "needle": "import 'package:hive/hive.dart';"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "forbidden import: package:hive/hive.dart",
+          "should_kill": true
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "capability=package:hive/",
+          "should_kill": true
+        }
+      ],
+      "expected_kills": 2
+    },
+    {
+      "id": "multiline-deferred-alias-import",
+      "control": false,
+      "fault_class": "lexer-multiline-alias",
+      "operator": "SPLIT_DIRECTIVE_DEFERRED_ALIAS",
+      "fixture": "multiline-deferred-alias-import.dart",
+      "target": {
+        "file": "apps/flutter/lib/features/chat/ui/deferred_screen.dart",
+        "line": 2,
+        "col": 1,
+        "needle": "import\n  'package:hive/hive.dart'\n  deferred as hive;"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "forbidden import: package:hive/hive.dart",
+          "should_kill": true
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "capability=package:hive/",
+          "should_kill": true
+        }
+      ],
+      "expected_kills": 2
+    },
+    {
+      "id": "relative-traversal",
+      "control": false,
+      "fault_class": "path-escape",
+      "operator": "REWRITE_RELATIVE_URI_TRAVERSAL",
+      "fixture": "relative-traversal.dart",
+      "target": {
+        "file": "apps/flutter/lib/formatters/pure_formatter.dart",
+        "line": 2,
+        "col": 1,
+        "needle": "import '../../outside.dart';"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "escapes lib root",
+          "should_kill": true
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 0,
+          "expected_stderr_substring": null,
+          "should_kill": false
+        }
+      ],
+      "expected_kills": 1
+    },
+    {
+      "id": "transitive-barrel-reexport",
+      "control": false,
+      "fault_class": "transitive-export-launder",
+      "operator": "INSERT_EXPORT_LAUNDER_CHAIN",
+      "fixture": "transitive-barrel-reexport.dart",
+      "target": {
+        "file": "apps/flutter/lib/features/chat/ui/x.dart",
+        "line": 2,
+        "col": 1,
+        "needle": "import '../state/barrel.dart';"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 0,
+          "expected_stderr_substring": null,
+          "should_kill": false
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 1,
+          "expected_stderr_substring": "[BOUNDARY_GRAPH_VIOLATION] zone=ui capability=dart:io chain=",
+          "should_kill": true
+        }
+      ],
+      "expected_kills": 1
+    },
+    {
+      "id": "valid-import-control",
+      "control": true,
+      "fault_class": "control",
+      "operator": "NONE",
+      "fixture": "valid-import-control.dart",
+      "target": {
+        "file": "apps/flutter/lib/features/chat/ui/valid_screen.dart",
+        "line": 2,
+        "col": 1,
+        "needle": "import '../data/wire_model.dart';"
+      },
+      "guards": [
+        {
+          "guard": "flutter-boundary.test.mjs",
+          "expected_exit_code": 0,
+          "expected_stderr_substring": null,
+          "should_kill": false
+        },
+        {
+          "guard": "flutter_boundary_graph.mjs",
+          "expected_exit_code": 0,
+          "expected_stderr_substring": null,
+          "should_kill": false
+        }
+      ],
+      "expected_kills": 0
+    }
+  ]
+}
