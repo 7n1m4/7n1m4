@@ -19,6 +19,7 @@ import 'captions_values.dart';
 import 'memory_signals_screen.dart';
 import 'settings_catalog.dart';
 import 'settings_search.dart';
+import 'user_profile_values.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -50,6 +51,7 @@ enum _SettingsSection {
   general('general', 'General Preferences', 'Save general'),
   theme('theme', 'Theme', 'Save theme'),
   captions('captions', 'Captions', 'Save captions'),
+  userProfile('user-profile', 'User Profile', 'Save user profile'),
   controlStrip('control-strip', 'Floating Controls', 'Save floating controls');
 
   const _SettingsSection(this.key, this.label, this.saveLabel);
@@ -80,6 +82,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final TextEditingController _language = TextEditingController();
   final TextEditingController _tint = TextEditingController();
+  final TextEditingController _userName = TextEditingController();
+  final TextEditingController _userDescription = TextEditingController();
+  final TextEditingController _userPrompt = TextEditingController();
+  final TextEditingController _userVoiceProfileId = TextEditingController();
   final Map<_SettingsSection, GlobalKey> _cardKeys =
       <_SettingsSection, GlobalKey>{
         for (final section in _SettingsSection.values) section: GlobalKey(),
@@ -146,6 +152,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _searchController.dispose();
     _language.dispose();
     _tint.dispose();
+    _userName.dispose();
+    _userDescription.dispose();
+    _userPrompt.dispose();
+    _userVoiceProfileId.dispose();
     super.dispose();
   }
 
@@ -227,6 +237,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // only the absent ones. Present values stay as loaded so a
             // malformed one fails closed at Save instead of being rewritten.
             draft.values = normalizeCaptions(values);
+          } else if (section == _SettingsSection.userProfile) {
+            // Same rule as captions: fill only absent fields. A present
+            // malformed value stays in the draft so Save fails closed; the
+            // controller is display-only and never writes back on Save.
+            draft.values = normalizeUserProfile(values);
+            _userName.text = _userProfileText(draft.values['name']);
+            _userDescription.text = _userProfileText(
+              draft.values['description'],
+            );
+            _userPrompt.text = _userProfileText(draft.values['prompt']);
+            _userVoiceProfileId.text = _userProfileText(
+              draft.values['voiceProfileId'],
+            );
           }
         });
       } on Object catch (e) {
@@ -240,6 +263,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _languageError = null;
           } else if (section == _SettingsSection.controlStrip) {
             _tint.text = '';
+          } else if (section == _SettingsSection.userProfile) {
+            _userName.text = '';
+            _userDescription.text = '';
+            _userPrompt.text = '';
+            _userVoiceProfileId.text = '';
           }
           _settingsError = e is DaemonClientException
               ? userSafeConnectionError(
@@ -338,6 +366,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (section == _SettingsSection.captions) {
       final validation = validateCaptions(draft.values);
+      if (!validation.isValid) {
+        setState(() {
+          _settingsError = validation.error;
+          _settingsStatus = null;
+        });
+        return;
+      }
+    }
+    if (section == _SettingsSection.userProfile) {
+      // The draft is the source of truth: edits land there via _edit, so a
+      // malformed persisted value the user never touched still fails closed
+      // before settingsSet is called.
+      final validation = validateUserProfile(draft.values);
       if (!validation.isValid) {
         setState(() {
           _settingsError = validation.error;
@@ -532,6 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () => _openCatalogNode(node),
             ),
       _buildCaptionsCard(context),
+      _buildUserProfileCard(context),
       if (_settingsError != null)
         Padding(
           padding: const EdgeInsets.only(top: 8),
@@ -921,6 +963,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  Widget _buildUserProfileCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.userProfile]!;
+    final enabled = draft.loaded && !_settingsBusy;
+    return _buildCard(
+      _SettingsSection.userProfile,
+      children: <Widget>[
+        TextField(
+          key: const Key('user-profile-name'),
+          enabled: enabled,
+          controller: _userName,
+          decoration: const InputDecoration(labelText: 'Display name'),
+          onChanged: (text) =>
+              _edit(_SettingsSection.userProfile, 'name', text),
+        ),
+        TextField(
+          key: const Key('user-profile-description'),
+          enabled: enabled,
+          controller: _userDescription,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Description'),
+          onChanged: (text) =>
+              _edit(_SettingsSection.userProfile, 'description', text),
+        ),
+        TextField(
+          key: const Key('user-profile-prompt'),
+          enabled: enabled,
+          controller: _userPrompt,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Extra prompt'),
+          onChanged: (text) =>
+              _edit(_SettingsSection.userProfile, 'prompt', text),
+        ),
+        TextField(
+          key: const Key('user-profile-voice-profile-id'),
+          enabled: enabled,
+          controller: _userVoiceProfileId,
+          decoration: const InputDecoration(labelText: 'Voice profile id'),
+          onChanged: (text) =>
+              _edit(_SettingsSection.userProfile, 'voiceProfileId', text),
+        ),
+      ],
+    );
+  }
+
   Widget _buildControlStripCard(BuildContext context) {
     final draft = _drafts[_SettingsSection.controlStrip]!;
     final values = draft.values;
@@ -1181,6 +1267,10 @@ final RegExp _localePattern = RegExp(r'^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$');
 
 bool _isValidLocale(String value) =>
     value.isEmpty || _localePattern.hasMatch(value);
+
+/// Display text for a persisted user-profile field. A non-string blob value is
+/// shown as empty but kept in the draft, so Save still fails closed on it.
+String _userProfileText(Object? value) => value is String ? value : '';
 
 /// Wire value of a stored caption docking (`top`/`bottom`/`head`/`none`);
 /// anything unrecognized reads as the daemon's own default, `none`.

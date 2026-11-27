@@ -2,7 +2,8 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -57,50 +58,61 @@ void main() {
     );
     await tester.ensureVisible(tile);
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(
-      of: tile,
-      matching: find.byType(Switch),
-    ));
+    await tester.tap(find.descendant(of: tile, matching: find.byType(Switch)));
     await tester.pumpAndSettle();
   }
 
   /// The sections the screen reads, in load order.
-  const sections = <String>['general', 'theme', 'captions', 'control-strip'];
+  const sections = <String>[
+    'general',
+    'theme',
+    'captions',
+    'user-profile',
+    'control-strip',
+  ];
 
-  testWidgets('Save is disabled until a real load and preserves unrelated keys',
-      (tester) async {
-    final client = FakeChatClient();
-    addTearDown(client.dispose);
-    final pending = Completer<Map<String, dynamic>>();
-    client.deferredSettings = pending;
+  testWidgets(
+    'Save is disabled until a real load and preserves unrelated keys',
+    (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      final pending = Completer<Map<String, dynamic>>();
+      client.deferredSettings = pending;
 
-    await tester.pumpWidget(screen(client));
-    await tester.pump();
+      await tester.pumpWidget(screen(client));
+      await tester.pump();
 
-    // The section has not arrived yet: saving an empty map would make the
-    // daemon refill every missing field with serde defaults.
-    await reveal(tester, 'Save general');
-    expect(saveButton(tester, 'Save general').onPressed, isNull);
+      // The section has not arrived yet: saving an empty map would make the
+      // daemon refill every missing field with serde defaults.
+      await reveal(tester, 'Save general');
+      expect(saveButton(tester, 'Save general').onPressed, isNull);
 
-    pending.complete(<String, dynamic>{
-      'language': 'en',
-      'disableTransitions': true,
-      'usePageSpecificTransitions': true,
-      'remoteSyncEnabled': true, // a key this UI never edits
-    });
-    await tester.pump();
-    await tester.pump();
+      pending.complete(<String, dynamic>{
+        'language': 'en',
+        'disableTransitions': true,
+        'usePageSpecificTransitions': true,
+        'remoteSyncEnabled': true, // a key this UI never edits
+      });
+      await tester.pump();
+      await tester.pump();
 
-    expect(saveButton(tester, 'Save general').onPressed, isNotNull);
-    await tester.enterText(find.widgetWithText(TextField, 'Language code'), 'ja');
-    saveButton(tester, 'Save general').onPressed!();
-    await tester.pump();
+      expect(saveButton(tester, 'Save general').onPressed, isNotNull);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Language code'),
+        'ja',
+      );
+      saveButton(tester, 'Save general').onPressed!();
+      await tester.pump();
 
-    expect(client.lastSettingsWritten, isNotNull);
-    expect(client.lastSettingsWritten!['language'], 'ja');
-    expect(client.lastSettingsWritten!['remoteSyncEnabled'], isTrue,
-        reason: 'untouched keys are sent back, not wiped');
-  });
+      expect(client.lastSettingsWritten, isNotNull);
+      expect(client.lastSettingsWritten!['language'], 'ja');
+      expect(
+        client.lastSettingsWritten!['remoteSyncEnabled'],
+        isTrue,
+        reason: 'untouched keys are sent back, not wiped',
+      );
+    },
+  );
 
   testWidgets('Save stays disabled when the load fails', (tester) async {
     final client = FakeChatClient();
@@ -110,10 +122,12 @@ void main() {
 
     await tester.pumpWidget(screen(client));
     await tester.pump();
-    pending.completeError(const DaemonClientException(
-      kind: DaemonFailureKind.notConnected,
-      message: 'Not connected to the daemon.',
-    ));
+    pending.completeError(
+      const DaemonClientException(
+        kind: DaemonFailureKind.notConnected,
+        message: 'Not connected to the daemon.',
+      ),
+    );
     await tester.pump();
     await tester.pump();
 
@@ -148,13 +162,17 @@ void main() {
     await tester.pump();
     client.emitStatus(DaemonConnectionState.connected);
     await tester.pump();
-    expect(client.settingsLoads, sections.length * 2,
-        reason: 'fresh daemon state is reloaded before Save is allowed again');
+    expect(
+      client.settingsLoads,
+      sections.length * 2,
+      reason: 'fresh daemon state is reloaded before Save is allowed again',
+    );
   });
 
   group('captions section', () {
-    testWidgets('edits only the touched keys and reports the save',
-        (tester) async {
+    testWidgets('edits only the touched keys and reports the save', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       client.onCall = (action, payload) {
@@ -180,9 +198,14 @@ void main() {
       await tester.pumpAndSettle();
 
       await reveal(tester, 'Save captions');
-      await tester.ensureVisible(find.widgetWithText(TextField, 'Font size (%)'));
+      await tester.ensureVisible(
+        find.widgetWithText(TextField, 'Font size (%)'),
+      );
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'Font size (%)'), '150');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Font size (%)'),
+        '150',
+      );
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       saveButton(tester, 'Save captions').onPressed!();
@@ -192,8 +215,11 @@ void main() {
       expect(written, isNotNull);
       expect(written!['fontSize'], 150.0);
       expect(written['docking'], 'none');
-      expect(written['futureKey'], 'keep-me',
-          reason: 'untouched keys are sent back, not wiped');
+      expect(
+        written['futureKey'],
+        'keep-me',
+        reason: 'untouched keys are sent back, not wiped',
+      );
       expect(find.text('Captions settings saved.'), findsOneWidget);
     });
 
@@ -206,7 +232,10 @@ void main() {
             action: action,
             ok: true,
             data: <String, dynamic>{
-              'settings': <String, dynamic>{'enabled': true, 'docking': 'bottom'},
+              'settings': <String, dynamic>{
+                'enabled': true,
+                'docking': 'bottom',
+              },
             },
           );
         }
@@ -232,15 +261,19 @@ void main() {
         find.text('Connection failed. Check the daemon and retry.'),
         findsOneWidget,
       );
-      expect(find.text('write denied'), findsNothing,
-          reason: 'raw handler text is never rendered');
+      expect(
+        find.text('write denied'),
+        findsNothing,
+        reason: 'raw handler text is never rendered',
+      );
       expect(find.text('Captions settings saved.'), findsNothing);
     });
   });
 
   group('control-strip section', () {
-    testWidgets('edits the docked edge and preserves the button catalog',
-        (tester) async {
+    testWidgets('edits the docked edge and preserves the button catalog', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       client.onCall = (action, payload) {
@@ -298,16 +331,22 @@ void main() {
       // The stored entries keep their position and fields; only ids this
       // build actually surfaces (kStageStripCatalog) may be appended. Ids
       // without a stage dispatch are intentionally not advertised.
-      expect(
-        buttons.map((b) => b['id']).toList(),
-        <String>['stage', 'gemini-tts', 'caption'],
-        reason: 'the stored entries keep their position and fields',
-      );
+      expect(buttons.map((b) => b['id']).toList(), <String>[
+        'stage',
+        'gemini-tts',
+        'caption',
+      ], reason: 'the stored entries keep their position and fields');
       final unknown = buttons.firstWhere((b) => b['id'] == 'gemini-tts');
-      expect(unknown['label'], 'TTS Output Toggle',
-          reason: 'an id this build does not surface is carried through');
-      expect(unknown['enabled'], isFalse,
-          reason: 'an unknown entry keeps its stored enabled state');
+      expect(
+        unknown['label'],
+        'TTS Output Toggle',
+        reason: 'an id this build does not surface is carried through',
+      );
+      expect(
+        unknown['enabled'],
+        isFalse,
+        reason: 'an unknown entry keeps its stored enabled state',
+      );
       expect(buttons.firstWhere((b) => b['id'] == 'stage')['enabled'], isTrue);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, 5000));
       await tester.pumpAndSettle();
@@ -316,8 +355,9 @@ void main() {
   });
 
   group('general section', () {
-    testWidgets('switches write the fields the daemon owns, not remote sync',
-        (tester) async {
+    testWidgets('switches write the fields the daemon owns, not remote sync', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       client.onCall = (action, payload) {
@@ -375,12 +415,16 @@ void main() {
       expect(written['websocketSecureEnabled'], isTrue);
       expect(written['disableTransitions'], isFalse);
       expect(written['usePageSpecificTransitions'], isTrue);
-      expect(written['remoteSyncEnabled'], isTrue,
-          reason: 'the retired key is preserved, never surfaced or rewritten');
+      expect(
+        written['remoteSyncEnabled'],
+        isTrue,
+        reason: 'the retired key is preserved, never surfaced or rewritten',
+      );
     });
 
-    testWidgets('invalid locale code is rejected before any write',
-        (tester) async {
+    testWidgets('invalid locale code is rejected before any write', (
+      tester,
+    ) async {
       final client = FakeChatClient()
         ..settingsToLoad = <String, dynamic>{'language': 'en'};
       addTearDown(client.dispose);
@@ -396,8 +440,11 @@ void main() {
       saveButton(tester, 'Save general').onPressed!();
       await tester.pumpAndSettle();
 
-      expect(client.lastSettingsWritten, isNull,
-          reason: 'invalid input never reaches settingsSet');
+      expect(
+        client.lastSettingsWritten,
+        isNull,
+        reason: 'invalid input never reaches settingsSet',
+      );
       expect(
         find.text('Use a locale code such as "en" or "zh-Hant".'),
         findsOneWidget,
@@ -414,8 +461,9 @@ void main() {
   });
 
   group('theme section', () {
-    testWidgets('a preset and the dark toggle write typed theme settings',
-        (tester) async {
+    testWidgets('a preset and the dark toggle write typed theme settings', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       String? writtenSection;
@@ -457,13 +505,22 @@ void main() {
       final written = client.lastSettingsWritten;
       expect(written, isNotNull);
       expect(written!['hue'], 262.88, reason: 'Ocean preset hue');
-      expect(written['hueDynamic'], isFalse,
-          reason: 'choosing a hue makes it manual');
+      expect(
+        written['hueDynamic'],
+        isFalse,
+        reason: 'choosing a hue makes it manual',
+      );
       expect(written['dark'], isFalse);
-      expect(written['chromaMultiplier'], 1.0,
-          reason: 'malformed input was normalized to the daemon default');
-      expect(written['futureKey'], 'keep-me',
-          reason: 'untouched keys are sent back, not wiped');
+      expect(
+        written['chromaMultiplier'],
+        1.0,
+        reason: 'malformed input was normalized to the daemon default',
+      );
+      expect(
+        written['futureKey'],
+        'keep-me',
+        reason: 'untouched keys are sent back, not wiped',
+      );
     });
 
     testWidgets('reset restores palette defaults and keeps dark mode', (
@@ -507,38 +564,45 @@ void main() {
       expect(written!['hue'], 220.44);
       expect(written['hueDynamic'], isFalse);
       expect(written['chromaMultiplier'], 1.0);
-      expect(written['dark'], isFalse,
-          reason: 'a palette reset must not flip the user brightness choice');
+      expect(
+        written['dark'],
+        isFalse,
+        reason: 'a palette reset must not flip the user brightness choice',
+      );
     });
   });
 
-  testWidgets('a settings failure shows a safe message, never the raw RPC text',
-      (tester) async {
-    // The shared fake swallows exceptions in settingsGet, so use a small
-    // subclass that really throws like the client does on an RPC failure.
-    final client = _FailingSettingsClient();
-    addTearDown(client.dispose);
-    const secret = '/home/user/.config/anima/token=abc123?key=secret';
+  testWidgets(
+    'a settings failure shows a safe message, never the raw RPC text',
+    (tester) async {
+      // The shared fake swallows exceptions in settingsGet, so use a small
+      // subclass that really throws like the client does on an RPC failure.
+      final client = _FailingSettingsClient();
+      addTearDown(client.dispose);
+      const secret = '/home/user/.config/anima/token=abc123?key=secret';
 
-    await tester.pumpWidget(screen(client));
-    await tester.pumpAndSettle();
-    await reveal(tester, 'Save theme');
-    // The error row sits below the section cards in the same lazily built
-    // ListView; scroll until it is materialized.
-    final safe = find.text(
-      'Could not reach the daemon. Check the host and port, then retry.',
-    );
-    for (var i = 0; i < 40 && safe.evaluate().isEmpty; i++) {
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+      await tester.pumpWidget(screen(client));
       await tester.pumpAndSettle();
-    }
+      await reveal(tester, 'Save theme');
+      // The error row sits below the section cards in the same lazily built
+      // ListView; scroll until it is materialized.
+      final safe = find.text(
+        'Could not reach the daemon. Check the host and port, then retry.',
+      );
+      for (var i = 0; i < 40 && safe.evaluate().isEmpty; i++) {
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+        await tester.pumpAndSettle();
+      }
 
-    expect(find.textContaining('secret'), findsNothing);
-    expect(find.textContaining('abc123'), findsNothing);
-    expect(safe, findsOneWidget);
-  });
+      expect(find.textContaining('secret'), findsNothing);
+      expect(find.textContaining('abc123'), findsNothing);
+      expect(safe, findsOneWidget);
+    },
+  );
 
-  testWidgets('one failing section leaves its siblings saveable', (tester) async {
+  testWidgets('one failing section leaves its siblings saveable', (
+    tester,
+  ) async {
     // Only theme's settings.get throws; the other three load normally.
     final client = _FailingSettingsClient()
       ..failingSections = const <String>{'theme'}
@@ -555,29 +619,36 @@ void main() {
 
     // General comes first in the list, so save it while it is still painted.
     await reveal(tester, 'Save general');
-    expect(saveButton(tester, 'Save general').onPressed, isNotNull,
-        reason: 'a sibling that loaded remains editable');
+    expect(
+      saveButton(tester, 'Save general').onPressed,
+      isNotNull,
+      reason: 'a sibling that loaded remains editable',
+    );
     saveButton(tester, 'Save general').onPressed!();
     await tester.pumpAndSettle();
     expect(client.lastSettingsWritten!['language'], 'en');
 
     // `reveal` only scrolls down, so visit the rest in document order.
     await reveal(tester, 'Save theme');
-    expect(saveButton(tester, 'Save theme').onPressed, isNull,
-        reason: 'the section that failed to load stays unsaved');
+    expect(
+      saveButton(tester, 'Save theme').onPressed,
+      isNull,
+      reason: 'the section that failed to load stays unsaved',
+    );
 
-    for (final label in <String>[
-      'Save floating controls',
-      'Save captions',
-    ]) {
+    for (final label in <String>['Save floating controls', 'Save captions']) {
       await reveal(tester, label);
-      expect(saveButton(tester, label).onPressed, isNotNull,
-          reason: 'a sibling that loaded remains editable');
+      expect(
+        saveButton(tester, label).onPressed,
+        isNotNull,
+        reason: 'a sibling that loaded remains editable',
+      );
     }
   });
 
-  testWidgets('a non-daemon section failure stays isolated and safe',
-      (tester) async {
+  testWidgets('a non-daemon section failure stays isolated and safe', (
+    tester,
+  ) async {
     final client = _FailingSettingsClient()
       ..failingSections = const <String>{'theme'}
       ..errorOverride = StateError('theme decode failed')
@@ -599,7 +670,9 @@ void main() {
     expect(find.textContaining('theme decode failed'), findsNothing);
   });
 
-  testWidgets('settings.changed reloads the section from the daemon', (tester) async {
+  testWidgets('settings.changed reloads the section from the daemon', (
+    tester,
+  ) async {
     final client = FakeChatClient()
       ..settingsToLoad = <String, dynamic>{
         'language': 'en',
@@ -617,11 +690,13 @@ void main() {
       'disableTransitions': false,
       'remoteSyncEnabled': true,
     };
-    client.emitEvent(GatewayEventFrame(
-      topic: EventTopic.settingsChanged,
-      rawTopic: 'settings.changed',
-      data: <String, dynamic>{'section': 'general'},
-    ));
+    client.emitEvent(
+      GatewayEventFrame(
+        topic: EventTopic.settingsChanged,
+        rawTopic: 'settings.changed',
+        data: <String, dynamic>{'section': 'general'},
+      ),
+    );
     await tester.pumpAndSettle();
     expect(client.settingsLoads, greaterThan(3));
 
@@ -635,21 +710,19 @@ void main() {
   });
 
   group('settings search keyboard shortcuts', () {
-    bool searchFocused(WidgetTester tester) =>
-        tester
-            .widget<TextField>(
-              find.byKey(const Key('settings-search-field'), skipOffstage: false),
-            )
-            .focusNode!
-            .hasFocus;
+    bool searchFocused(WidgetTester tester) => tester
+        .widget<TextField>(
+          find.byKey(const Key('settings-search-field'), skipOffstage: false),
+        )
+        .focusNode!
+        .hasFocus;
 
-    String searchText(WidgetTester tester) =>
-        tester
-            .widget<TextField>(
-              find.byKey(const Key('settings-search-field'), skipOffstage: false),
-            )
-            .controller!
-            .text;
+    String searchText(WidgetTester tester) => tester
+        .widget<TextField>(
+          find.byKey(const Key('settings-search-field'), skipOffstage: false),
+        )
+        .controller!
+        .text;
 
     /// Returns whether the framework consumed the chord — the direct proof
     /// that the shortcut handled (prevented default) the key, independent of
@@ -673,18 +746,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(searchFocused(tester), isFalse);
-      final handled =
-          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+      final handled = await chord(
+        tester,
+        LogicalKeyboardKey.control,
+        LogicalKeyboardKey.keyK,
+      );
 
       expect(handled, isTrue, reason: 'the chord is consumed (preventDefault)');
       expect(searchFocused(tester), isTrue);
-      expect(searchText(tester), isEmpty,
-          reason: 'the chord is consumed instead of inserting a character');
+      expect(
+        searchText(tester),
+        isEmpty,
+        reason: 'the chord is consumed instead of inserting a character',
+      );
       expect(find.text('Search Results'), findsOneWidget);
     });
 
-    testWidgets('Ctrl+K is left to another editor that has focus',
-        (tester) async {
+    testWidgets('Ctrl+K is left to another editor that has focus', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       await tester.pumpWidget(screen(client));
@@ -703,7 +783,10 @@ void main() {
       expect(
         tester
             .widget<EditableText>(
-              find.descendant(of: language, matching: find.byType(EditableText)),
+              find.descendant(
+                of: language,
+                matching: find.byType(EditableText),
+              ),
             )
             .focusNode
             .hasFocus,
@@ -711,15 +794,24 @@ void main() {
         reason: 'the test starts with a different field focused',
       );
 
-      final handled =
-          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+      final handled = await chord(
+        tester,
+        LogicalKeyboardKey.control,
+        LogicalKeyboardKey.keyK,
+      );
 
-      expect(handled, isFalse,
-          reason: 'the chord belongs to the editor that has focus');
+      expect(
+        handled,
+        isFalse,
+        reason: 'the chord belongs to the editor that has focus',
+      );
       expect(
         tester
             .widget<EditableText>(
-              find.descendant(of: language, matching: find.byType(EditableText)),
+              find.descendant(
+                of: language,
+                matching: find.byType(EditableText),
+              ),
             )
             .focusNode
             .hasFocus,
@@ -731,8 +823,11 @@ void main() {
         'en',
         reason: 'the editor keeps its text and its own Ctrl+K binding',
       );
-      expect(searchFocused(tester), isFalse,
-          reason: 'the global chord never steals focus from an editor');
+      expect(
+        searchFocused(tester),
+        isFalse,
+        reason: 'the global chord never steals focus from an editor',
+      );
       expect(searchText(tester), isEmpty);
     });
 
@@ -744,17 +839,24 @@ void main() {
       await tester.pumpWidget(screen(client));
       await tester.pumpAndSettle();
 
-      final handled =
-          await chord(tester, LogicalKeyboardKey.meta, LogicalKeyboardKey.keyK);
+      final handled = await chord(
+        tester,
+        LogicalKeyboardKey.meta,
+        LogicalKeyboardKey.keyK,
+      );
 
       expect(handled, isTrue, reason: 'Cmd+K is consumed on Apple platforms');
-      expect(searchFocused(tester), isTrue,
-          reason: 'Apple platforms bind the shortcut to Cmd+K');
+      expect(
+        searchFocused(tester),
+        isTrue,
+        reason: 'Apple platforms bind the shortcut to Cmd+K',
+      );
       expect(searchText(tester), isEmpty);
     });
 
-    testWidgets('the non-platform modifier does not focus search',
-        (tester) async {
+    testWidgets('the non-platform modifier does not focus search', (
+      tester,
+    ) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final client = FakeChatClient();
@@ -762,13 +864,22 @@ void main() {
       await tester.pumpWidget(screen(client));
       await tester.pumpAndSettle();
 
-      final handled =
-          await chord(tester, LogicalKeyboardKey.control, LogicalKeyboardKey.keyK);
+      final handled = await chord(
+        tester,
+        LogicalKeyboardKey.control,
+        LogicalKeyboardKey.keyK,
+      );
 
-      expect(handled, isFalse,
-          reason: 'the wrong-platform chord is not consumed');
-      expect(searchFocused(tester), isFalse,
-          reason: 'Ctrl+K is not the Apple binding');
+      expect(
+        handled,
+        isFalse,
+        reason: 'the wrong-platform chord is not consumed',
+      );
+      expect(
+        searchFocused(tester),
+        isFalse,
+        reason: 'Ctrl+K is not the Apple binding',
+      );
       expect(find.text('Search Results'), findsNothing);
     });
 
@@ -787,8 +898,9 @@ void main() {
       expect(searchFocused(tester), isFalse);
     });
 
-    testWidgets('Escape closes suggestions and clears the query',
-        (tester) async {
+    testWidgets('Escape closes suggestions and clears the query', (
+      tester,
+    ) async {
       final client = FakeChatClient();
       addTearDown(client.dispose);
       await tester.pumpWidget(screen(client));
@@ -825,14 +937,16 @@ class _FailingSettingsClient extends FakeChatClient {
     if (failingSections == null) {
       throw DaemonClientException(
         kind: DaemonFailureKind.transport,
-        message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
+        message:
+            'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
       );
     }
     if (failingSections!.contains(section)) {
       if (section == 'theme' && errorOverride != null) throw errorOverride!;
       throw DaemonClientException(
         kind: DaemonFailureKind.transport,
-        message: 'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
+        message:
+            'rpc failed at /home/user/.config/anima/token=abc123?key=secret',
       );
     }
     return super.settingsGet(section);
