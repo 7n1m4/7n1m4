@@ -2207,4 +2207,283 @@ mod tests {
             "injected apiKey must never reach the providers.models wire"
         );
     }
+
+    /// Reuse the isolated gateway helpers (fixture, allowActions gate,
+    /// dispatch + real store row assertions and the chat.history writer wait)
+    /// so this executes
+    /// the additive attachments golden through the real handler instead of
+    /// echoing a codec. Sibling-module constants are not in scope; use locals.
+    #[test]
+    fn chat_send_attachments_golden_execution_replays_through_real_handler() {
+        let fixture = isolated_gateway();
+        enable_actions(&fixture);
+
+        // A real provider-backed turn is needed so an ASSISTANT row exists;
+        // the no-provider fallback would persist only the user turn.
+        struct AssistantMock;
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for AssistantMock {
+            fn id(&self) -> &str {
+                "attachments-assistant"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                _req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                Ok(Box::pin(futures_util::stream::iter(vec![
+                    Ok(anima_llm::ChatChunk::text("acknowledged")),
+                    Ok(anima_llm::ChatChunk::finish("stop")),
+                ])))
+            }
+        }
+        fixture
+            .core
+            .chat_service()
+            .expect("chat service")
+            .register_client("attachments-assistant", Arc::new(AssistantMock));
+        call(
+            &fixture,
+            "providers.save",
+            serde_json::json!({
+                "id": "attachments-assistant",
+                "kind": "open-ai-compatible",
+                "model": "test-model",
+                "enabled": true,
+            }),
+        );
+        call(
+            &fixture,
+            "settings.set",
+            serde_json::json!({
+                "section": "chat-provider",
+                "settings": {
+                    "activeProvider": "attachments-assistant",
+                    "activeModel": "test-model",
+                }
+            }),
+        );
+
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../anima-channel/fixtures/golden/chat.send.attachments.request.json");
+        let golden_text = fs::read_to_string(&golden_path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", golden_path.display()));
+        let golden: serde_json::Value = serde_json::from_str(&golden_text)
+            .unwrap_or_else(|e| panic!("invalid attachments golden: {e}"));
+
+        // --- ACCEPT: replay the golden bytes through the real chat.send handler.
+        let ack = dispatch(&fixture, "chat.send", &golden).expect("golden chat.send must ack");
+        let mut ack_keys: Vec<&str> = ack
+            .as_object()
+            .expect("ack is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        ack_keys.sort_unstable();
+        assert_eq!(ack_keys, vec!["accepted", "messageId", "sessionId"]);
+        assert_eq!(ack["sessionId"], "sess-abc");
+        assert_eq!(ack["accepted"], true);
+        let message_id = ack["messageId"].as_str().expect("minted messageId");
+        assert!(
+            !message_id.is_empty(),
+            "ack must mint a non-empty message id"
+        );
+
+        wait_for_history(&fixture, "sess-abc", 2);
+
+        // The real store write keeps the exact descriptors in USER metadata;
+        // the plain-text content is untouched.
+        let stored = fixture.core.chat_stream("sess-abc").expect("chat_stream");
+        let user = stored
+            .iter()
+            .find(|m| m.role == "user")
+            .expect("user row persisted");
+        assert_eq!(user.content, "Hello, Anima!");
+        assert!(
+            !user.content.contains("aGVsbG8="),
+            "base64 must never leak into message text"
+        );
+        let stored_attachments = user.metadata["attachments"]
+            .as_array()
+            .expect("stored attachments array");
+        assert_eq!(stored_attachments.len(), 1);
+        let stored_descriptor = &stored_attachments[0];
+        let mut stored_keys: Vec<&str> = stored_descriptor
+            .as_object()
+            .expect("stored descriptor is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        stored_keys.sort_unstable();
+        assert_eq!(stored_keys, vec!["data", "fileName", "mimeType", "url"]);
+        assert_eq!(stored_descriptor["mimeType"], "image/png");
+        assert_eq!(stored_descriptor["fileName"], "a.png");
+        assert_eq!(stored_descriptor["url"], "https://example.com/a.png");
+        // Advisor invariants: preserved (not re-encoded) base64 and the exact
+        // DECODED byte length, never the base64 string length.
+        assert_eq!(stored_descriptor["data"], "aGVsbG8=");
+        let decoded = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            stored_descriptor["data"].as_str().unwrap(),
+        )
+        .expect("golden base64 decodes");
+        assert_eq!(decoded.len(), 5, "exact decoded byte length");
+        let assistant = stored
+            .iter()
+            .find(|m| m.role == "assistant")
+            .expect("provider-backed assistant row persisted");
+        assert_eq!(assistant.content, "acknowledged");
+        assert!(
+            assistant.metadata.get("attachments").is_none(),
+            "assistant rows carry no attachments"
+        );
+
+        // chat.history is the real write readback; its wire strips only data.
+        let history = call(
+            &fixture,
+            "chat.history",
+            serde_json::json!({ "session_id": "sess-abc", "limit": 10 }),
+        );
+        assert_eq!(history["messages"][0]["content"], "Hello, Anima!");
+        let wire_descriptor = &history["messages"][0]["metadata"]["attachments"][0];
+        let mut wire_keys: Vec<&str> = wire_descriptor
+            .as_object()
+            .expect("wire descriptor is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        wire_keys.sort_unstable();
+        assert_eq!(wire_keys, vec!["fileName", "mimeType", "url"]);
+        assert_eq!(wire_descriptor["mimeType"], "image/png");
+        assert_eq!(wire_descriptor["fileName"], "a.png");
+        let wire = serde_json::to_string(&history).expect("serialize history reply");
+        assert!(!wire.contains("aGVsbG8="), "no base64 on the history wire");
+
+        // --- REJECT: every cap fails before ensure_chat_session (atomic).
+        let descriptor = |mime: &str, data: &str, name: Option<&str>, url: Option<&str>| {
+            let mut value = serde_json::json!({ "mimeType": mime, "data": data });
+            if let Some(name) = name {
+                value["fileName"] = serde_json::json!(name);
+            }
+            if let Some(url) = url {
+                value["url"] = serde_json::json!(url);
+            }
+            value
+        };
+        let payload = |attachments: Vec<serde_json::Value>| {
+            serde_json::json!({
+                "sessionId": "reject-session",
+                "content": "must be rejected",
+                "attachments": attachments,
+            })
+        };
+        // N 'A' base64 chars decode to exactly N/4*3 zero bytes.
+        let b64_for = |decoded_len: usize| -> String { "A".repeat(((decoded_len + 2) / 3) * 4) };
+
+        let reject_cases: Vec<(&str, serde_json::Value, &str)> = vec![
+            (
+                "forbidden MIME",
+                payload(vec![descriptor("image/svg+xml", "aGVsbG8=", None, None)]),
+                "unsupported attachment MIME type",
+            ),
+            (
+                "bad base64",
+                payload(vec![descriptor("image/png", "not-base64!", None, None)]),
+                "invalid attachment data",
+            ),
+            (
+                "count > 4",
+                payload(
+                    (0..5)
+                        .map(|_| descriptor("image/png", "aGVsbG8=", None, None))
+                        .collect(),
+                ),
+                "too many attachments",
+            ),
+            (
+                "per-item > 128 KiB decoded",
+                payload(vec![descriptor("image/png", &b64_for(131073), None, None)]),
+                "attachment too large",
+            ),
+            (
+                "total > 384 KiB decoded",
+                payload(
+                    (0..4)
+                        .map(|_| descriptor("image/png", &b64_for(100000), None, None))
+                        .collect(),
+                ),
+                "attachments too large",
+            ),
+            (
+                "file name > 256 B",
+                payload(vec![descriptor(
+                    "image/png",
+                    "aGVsbG8=",
+                    Some("f".repeat(257).as_str()),
+                    None,
+                )]),
+                "attachment file name too long",
+            ),
+            (
+                "url > 2048 B",
+                payload(vec![descriptor(
+                    "image/png",
+                    "aGVsbG8=",
+                    None,
+                    Some("u".repeat(2049).as_str()),
+                )]),
+                "attachment URL too long",
+            ),
+        ];
+
+        // core.status counts are captured at open and refreshed only by
+        // sessions.delete, so they cannot prove atomicity. Read the real store.
+        let db = fixture.core.db().expect("store available");
+        let store_rows = || {
+            (
+                anima_store::SessionRepo::new(db.clone())
+                    .list()
+                    .expect("session rows")
+                    .len(),
+                anima_store::MessageRepo::new(db.clone())
+                    .list_all()
+                    .expect("message rows")
+                    .len(),
+            )
+        };
+
+        for (label, body, expected_message) in reject_cases {
+            let (sessions_before, messages_before) = store_rows();
+
+            let err = dispatch(&fixture, "chat.send", &body).expect_err(label);
+            assert_eq!(err.code(), "rpc_handler_error", "{label}");
+            assert_eq!(err.message(), expected_message, "{label}");
+
+            let (sessions_after, messages_after) = store_rows();
+            assert_eq!(
+                sessions_after, sessions_before,
+                "{label}: no session row may be created"
+            );
+            assert_eq!(
+                messages_after, messages_before,
+                "{label}: no message row may be created"
+            );
+            assert!(
+                anima_store::SessionRepo::new(db.clone())
+                    .get("reject-session")
+                    .expect("session query")
+                    .is_none(),
+                "{label}: rejected send must not create the session row"
+            );
+            assert!(
+                anima_store::MessageRepo::new(db.clone())
+                    .list("reject-session")
+                    .expect("message query")
+                    .is_empty(),
+                "{label}: rejected send must not create message rows"
+            );
+        }
+    }
 }

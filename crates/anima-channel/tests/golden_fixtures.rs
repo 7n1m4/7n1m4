@@ -300,6 +300,38 @@ mod golden_fixtures {
         );
     }
 
+    #[test]
+    fn chat_send_attachments_request_fixture_locks_descriptor_wire_shape() {
+        let value = load_json("chat.send.attachments.request");
+        round_trip::<ChatSendRequest>("chat.send.attachments.request", &value);
+
+        // Additive golden: only the three serde-emitted top-level keys, no
+        // `genUi` (serde skips the default false), camelCase descriptors.
+        let mut top_keys: Vec<&str> = value
+            .as_object()
+            .expect("request is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        top_keys.sort_unstable();
+        assert_eq!(top_keys, vec!["attachments", "content", "sessionId"]);
+        assert!(value.get("genUi").is_none(), "`genUi` must be skipped");
+
+        let attachments = value["attachments"].as_array().expect("attachments array");
+        assert_eq!(attachments.len(), 1);
+        let mut descriptor_keys: Vec<&str> = attachments[0]
+            .as_object()
+            .expect("descriptor is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        descriptor_keys.sort_unstable();
+        assert_eq!(descriptor_keys, vec!["data", "fileName", "mimeType", "url"]);
+        assert_eq!(attachments[0]["mimeType"], "image/png");
+        assert_eq!(attachments[0]["data"], "aGVsbG8=");
+        assert_eq!(attachments[0]["fileName"], "a.png");
+    }
+
     // Contract: `sessions.delete` is a write: the daemon refuses it until the
     // operator opts in, and an unknown verb must never be reported as a
     // successful delete.
