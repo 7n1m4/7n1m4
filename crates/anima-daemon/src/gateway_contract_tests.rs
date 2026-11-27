@@ -2057,4 +2057,154 @@ mod tests {
             "a rejected second fixture must not poison ENV_LOCK"
         );
     }
+
+    // v29: providers.models real-execution proof — the real, UNGATED gateway
+    // handler plus the UNCHANGED golden reply, with zero normalization.
+    // (providers_list.reply.json is deliberately NOT an oracle here: its kind
+    // is the stale 'openai' and its updatedAt is Unix seconds, not repo ms.)
+    #[test]
+    fn providers_models_golden_execution_replays_through_real_handler() {
+        use async_trait::async_trait;
+        use std::path::Path;
+
+        use anima_llm::{ChatRequest, ChatStream, LlmError, ModelInfo};
+
+        struct GoldenModelsProvider;
+
+        #[async_trait]
+        impl anima_llm::ChatProvider for GoldenModelsProvider {
+            fn id(&self) -> &str {
+                "openai"
+            }
+
+            async fn models(&self) -> Result<Vec<ModelInfo>, LlmError> {
+                Ok(vec![ModelInfo {
+                    id: "gpt-4o".to_string(),
+                    owned_by: Some("openai".to_string()),
+                }])
+            }
+
+            async fn stream(&self, _request: ChatRequest) -> Result<ChatStream, LlmError> {
+                Err(LlmError::UnsupportedProvider(
+                    "models-only proof provider".to_string(),
+                ))
+            }
+        }
+
+        /// Recursively reject secret-shaped keys anywhere in the wire value.
+        fn assert_no_secret_keys(value: &serde_json::Value, path: &str) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    for (key, child) in map {
+                        let folded = key.to_ascii_lowercase().replace('_', "");
+                        assert!(
+                            !["apikey", "secret", "token", "password", "credential"]
+                                .iter()
+                                .any(|needle| folded.contains(needle)),
+                            "secret-shaped key '{key}' on the wire at {path}"
+                        );
+                        assert_no_secret_keys(child, &format!("{path}.{key}"));
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for (index, child) in items.iter().enumerate() {
+                        assert_no_secret_keys(child, &format!("{path}[{index}]"));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // The oracle is read verbatim; it is never restated or normalized.
+        let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../anima-channel/fixtures/golden/providers.models.reply.json");
+        let golden: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&golden_path).expect("read providers.models golden"),
+        )
+        .expect("providers.models golden is JSON");
+
+        let fixture = isolated_gateway();
+        // providers.save is action-gated; providers.models itself is not.
+        enable_actions(&fixture);
+
+        const CANARY: &str = "V29-PROVIDERS-MODELS-SECRET";
+        call(
+            &fixture,
+            "providers.save",
+            serde_json::json!({
+                "id": "openai",
+                "kind": "open-ai-compatible",
+                "model": "gpt-4o",
+                "enabled": true,
+                "apiKey": CANARY,
+                "rotateSecrets": true,
+            }),
+        );
+
+        // resolve_provider returns registered clients before any HTTP build.
+        fixture
+            .core
+            .chat_service()
+            .expect("chat service")
+            .register_client("openai", Arc::new(GoldenModelsProvider));
+
+        let reply = call(
+            &fixture,
+            "providers.models",
+            serde_json::json!({ "providerId": "openai" }),
+        );
+
+        // Zero normalization: the real handler's wire value must equal the
+        // golden byte-for-field, with no reshaping or field elision.
+        assert_eq!(
+            reply, golden,
+            "real providers.models reply must equal the golden exactly"
+        );
+
+        // Advisor invariants, checked on the real serialized wire value.
+        let provider_id = reply["providerId"]
+            .as_str()
+            .expect("providerId must be a string");
+        assert!(!provider_id.is_empty(), "providerId must be non-empty");
+        assert_eq!(provider_id, "openai", "providerId must match the request");
+
+        let models = reply["models"].as_array().expect("models must be an array");
+        assert_eq!(models.len(), 1, "golden carries exactly one model");
+        let mut top_keys: Vec<&str> = reply
+            .as_object()
+            .expect("reply must be an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        top_keys.sort_unstable();
+        assert_eq!(
+            top_keys,
+            vec!["models", "providerId"],
+            "exact top-level key set"
+        );
+        for model in models {
+            let mut model_keys: Vec<&str> = model
+                .as_object()
+                .expect("each models[] element must be an object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            model_keys.sort_unstable();
+            assert_eq!(model_keys, vec!["id", "ownedBy"], "exact per-model key set");
+            let id = model["id"].as_str().expect("model id must be a string");
+            assert!(!id.is_empty(), "model id must be non-empty");
+            assert!(
+                model["ownedBy"].as_str().is_some(),
+                "ownedBy must be a string"
+            );
+        }
+
+        // Recursive secret-shape scan + exact-canary absence in the wire bytes.
+        assert_no_secret_keys(&reply, "$");
+        let wire = serde_json::to_string(&reply).expect("serialize reply");
+        assert!(
+            !wire.contains(CANARY),
+            "injected apiKey must never reach the providers.models wire"
+        );
+    }
 }
