@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 
+// ignore: deprecated_member_use — material_ui replacement is not a project dependency.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,24 +17,33 @@ import 'support/fakes.dart';
 
 void main() {
   setUp(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.implicitView!;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .implicitView!;
     view.physicalSize = const Size(1200, 12000);
     view.devicePixelRatio = 1;
   });
 
   tearDown(() {
-    final view = TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.implicitView!;
+    final view = TestWidgetsFlutterBinding.ensureInitialized()
+        .platformDispatcher
+        .implicitView!;
     view.resetPhysicalSize();
     view.resetDevicePixelRatio();
   });
 
   Widget screen(FakeChatClient client) => MaterialApp(
-        home: Scaffold(body: ModulesScreen(client: client)),
-      );
+    home: Scaffold(body: ModulesScreen(client: client)),
+  );
 
-  Widget screenWith(Map<String, Map<String, dynamic>> sections, FakeChatClient client) {
+  Widget screenWith(
+    Map<String, Map<String, dynamic>> sections,
+    FakeChatClient client,
+  ) {
     client.onCall = (action, payload) {
-      if (action != 'settings.get') throw StateError('unexpected action $action');
+      if (action != 'settings.get') {
+        throw StateError('unexpected action $action');
+      }
       final section = payload?['section'] as String;
       return RpcReply(
         action: action,
@@ -48,7 +58,8 @@ void main() {
     return screen(client);
   }
 
-  Map<String, Map<String, dynamic>> moduleSections() => <String, Map<String, dynamic>>{
+  Map<String, Map<String, dynamic>> moduleSections() =>
+      <String, Map<String, dynamic>>{
         'audio-device': <String, dynamic>{
           'selectedInputDevice': 'mic-1',
           'selectedOutputDevice': 'spk-1',
@@ -127,29 +138,32 @@ void main() {
     return sections;
   }
 
-  Future<void> saveSection(
-    WidgetTester tester,
-    String label,
-  ) async {
+  Future<void> saveSection(WidgetTester tester, String label) async {
     final button = find.widgetWithText(FilledButton, 'Save $label');
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('loads every registered section and keeps the narrow notice', (tester) async {
+  testWidgets('loads every registered section and keeps the narrow notice', (
+    tester,
+  ) async {
     final client = FakeChatClient()
       ..onCall = (action, payload) {
         final section = payload?['section'];
         if (action == 'settings.get') {
-          return RpcReply(action: action, ok: true, data: <String, dynamic>{
-            'settings': <String, dynamic>{
-              'selectedInputDevice': 'mic-1',
-              'selectedOutputDevice': 'spk-1',
-              'inputEnabled': true,
-              'unknownKey': 'preserve-me',
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{
+              'settings': <String, dynamic>{
+                'selectedInputDevice': 'mic-1',
+                'selectedOutputDevice': 'spk-1',
+                'inputEnabled': true,
+                'unknownKey': 'preserve-me',
+              },
             },
-          });
+          );
         }
         throw StateError('unexpected action $action / $section');
       };
@@ -160,27 +174,43 @@ void main() {
 
     expect(find.text('Companion Connectors'), findsOneWidget);
     for (final label in <String>[
-      'Audio device', 'Local LLM', 'Consciousness', 'Speech', 'Hearing', 'Vision',
+      'Audio device',
+      'Local LLM',
+      'Consciousness',
+      'Speech',
+      'Hearing',
+      'Vision',
     ]) {
       expect(find.widgetWithText(FilledButton, 'Save $label'), findsOneWidget);
     }
-    expect(find.textContaining('Integration modules (Discord, MCP and ACP)'),
-        findsOneWidget);
-    expect(find.textContaining('have no daemon settings section'), findsOneWidget);
+    expect(
+      find.textContaining('Integration modules (MCP and ACP)'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('have no daemon settings section'),
+      findsOneWidget,
+    );
     expect(client.settingsLoads, 6);
   });
 
-  testWidgets('saves a whole typed section and preserves unrelated keys', (tester) async {
+  testWidgets('saves a whole typed section and preserves unrelated keys', (
+    tester,
+  ) async {
     final client = FakeChatClient()
       ..onCall = (action, payload) {
         if (action == 'settings.get') {
-          return RpcReply(action: action, ok: true, data: <String, dynamic>{
-            'settings': <String, dynamic>{
-              'selectedInputDevice': 'mic-1',
-              'inputEnabled': true,
-              'futureKey': 'keep-me',
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{
+              'settings': <String, dynamic>{
+                'selectedInputDevice': 'mic-1',
+                'inputEnabled': true,
+                'futureKey': 'keep-me',
+              },
             },
-          });
+          );
         }
         throw StateError('unexpected action $action');
       };
@@ -189,23 +219,33 @@ void main() {
     await tester.pumpWidget(screen(client));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('modules-audio-device-selectedInputDevice')), 'mic-2');
+    await tester.enterText(
+      find.byKey(const Key('modules-audio-device-selectedInputDevice')),
+      'mic-2',
+    );
     await saveSection(tester, 'Audio device');
 
     expect(client.lastSettingsWritten, isNotNull);
     expect(client.lastSettingsWritten!['selectedInputDevice'], 'mic-2');
-    expect(client.lastSettingsWritten!['futureKey'], 'keep-me',
-        reason: 'untouched daemon keys round-trip');
+    expect(
+      client.lastSettingsWritten!['futureKey'],
+      'keep-me',
+      reason: 'untouched daemon keys round-trip',
+    );
     expect(find.text('Audio device settings saved.'), findsOneWidget);
   });
 
-  testWidgets('invalid local LLM numbers do not reach the daemon', (tester) async {
+  testWidgets('invalid local LLM numbers do not reach the daemon', (
+    tester,
+  ) async {
     final client = FakeChatClient()
       ..onCall = (action, payload) {
         if (action == 'settings.get') {
-          return RpcReply(action: action, ok: true, data: <String, dynamic>{
-            'settings': <String, dynamic>{},
-          });
+          return RpcReply(
+            action: action,
+            ok: true,
+            data: <String, dynamic>{'settings': <String, dynamic>{}},
+          );
         }
         throw StateError('unexpected action $action');
       };
@@ -214,15 +254,24 @@ void main() {
     await tester.pumpWidget(screen(client));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('modules-local-llm-contextSize')), 'not-a-number');
+    await tester.enterText(
+      find.byKey(const Key('modules-local-llm-contextSize')),
+      'not-a-number',
+    );
     await saveSection(tester, 'Local LLM');
 
     expect(client.lastSettingsWritten, isNull);
-    expect(find.text('Context size, max tokens, GPU layers and temperature must be numbers.'),
-        findsOneWidget);
+    expect(
+      find.text(
+        'Context size, max tokens, GPU layers and temperature must be numbers.',
+      ),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('loads and saves all four daemon-backed module sections', (tester) async {
+  testWidgets('loads and saves all four daemon-backed module sections', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     final sections = moduleSections();
@@ -245,10 +294,16 @@ void main() {
     await saveSection(tester, 'Consciousness');
     expect(savedSection, 'consciousness');
     expect(savedSettings!['activeProvider'], 'openai');
-    expect(savedSettings!['futureKey'], 'keep-consciousness',
-        reason: 'unrelated daemon keys survive the save');
+    expect(
+      savedSettings!['futureKey'],
+      'keep-consciousness',
+      reason: 'unrelated daemon keys survive the save',
+    );
 
-    await tester.enterText(find.byKey(const Key('modules-speech-voice')), 'nova');
+    await tester.enterText(
+      find.byKey(const Key('modules-speech-voice')),
+      'nova',
+    );
     await saveSection(tester, 'Speech');
     expect(savedSection, 'speech');
     expect(savedSettings!['voice'], 'nova');
@@ -280,7 +335,10 @@ void main() {
     await tester.pumpWidget(screenWith(moduleSections(), client));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byKey(const Key('modules-speech-rate')), 'fast');
+    await tester.enterText(
+      find.byKey(const Key('modules-speech-rate')),
+      'fast',
+    );
     await saveSection(tester, 'Speech');
     expect(client.lastSettingsWritten, isNull);
     expect(find.text('Speech rate must be a number.'), findsOneWidget);
@@ -291,7 +349,10 @@ void main() {
     );
     await saveSection(tester, 'Hearing');
     expect(client.lastSettingsWritten, isNull);
-    expect(find.text('Auto-send delay and VAD threshold must be numbers.'), findsOneWidget);
+    expect(
+      find.text('Auto-send delay and VAD threshold must be numbers.'),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byKey(const Key('modules-vision-contextWindow')),
@@ -302,7 +363,9 @@ void main() {
     expect(find.text('Context window must be a whole number.'), findsOneWidget);
   });
 
-  testWidgets('module load and save failures show sanitized messages', (tester) async {
+  testWidgets('module load and save failures show sanitized messages', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     // FakeChatClient.settingsSet delegates to call(): both an RPC exception
@@ -310,7 +373,7 @@ void main() {
     await tester.pumpWidget(screenWith(moduleSections(), client));
     await tester.pumpAndSettle();
     client.onSet = (section, settings) {
-      throw DaemonClientException(
+      throw const DaemonClientException(
         kind: DaemonFailureKind.rpc,
         message: 'save /tmp/config.json apiKey=leak',
         code: 'rpc_bad_payload',
@@ -321,12 +384,95 @@ void main() {
       '7',
     );
     await saveSection(tester, 'Vision');
-    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    expect(
+      find.text('The daemon could not complete the request.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('apiKey=leak'), findsNothing);
     expect(find.textContaining('/tmp/config.json'), findsNothing);
   });
 
-  testWidgets('hearing device maps use a structured editor and save typed values', (tester) async {
+  testWidgets(
+    'hearing device maps use a structured editor and save typed values',
+    (tester) async {
+      final client = FakeChatClient();
+      addTearDown(client.dispose);
+      Map<String, dynamic>? saved;
+      client.onSet = (section, settings) => saved = settings;
+
+      await tester.pumpWidget(screenWith(hearingSections(), client));
+      await tester.pumpAndSettle();
+
+      // The raw JSON editors are gone; each provider is now its own typed row.
+      expect(
+        find.byKey(const Key('modules-hearing-speechProviderSettings')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('modules-hearing-transcriptionProviderSettings')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(
+                const Key(
+                  'modules-hearing-speechProviderSettings-row-0-deviceId',
+                ),
+              ),
+            )
+            .controller!
+            .text,
+        'default',
+      );
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(
+                const Key(
+                  'modules-hearing-speechProviderSettings-row-0-sampleRate',
+                ),
+              ),
+            )
+            .controller!
+            .text,
+        '16000',
+      );
+
+      await tester.enterText(
+        find.byKey(
+          const Key('modules-hearing-speechProviderSettings-row-0-deviceId'),
+        ),
+        'mic-9',
+      );
+      await tester.enterText(
+        find.byKey(
+          const Key('modules-hearing-speechProviderSettings-row-0-sampleRate'),
+        ),
+        '22050',
+      );
+      await saveSection(tester, 'Hearing');
+
+      expect(saved, isNotNull);
+      expect(saved!['speechProviderSettings'], <String, dynamic>{
+        'app-local-audio-speech': <String, dynamic>{
+          'deviceId': 'mic-9',
+          'sampleRate': 22050,
+        },
+      });
+      expect(saved!['transcriptionProviderSettings'], <String, dynamic>{
+        'whisper-local': <String, dynamic>{
+          'deviceId': 'default',
+          'sampleRate': 16000,
+        },
+      });
+      expect(saved!['activeProvider'], 'whisper-local');
+    },
+  );
+
+  testWidgets('hearing device maps add and remove provider rows', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     Map<String, dynamic>? saved;
@@ -335,70 +481,26 @@ void main() {
     await tester.pumpWidget(screenWith(hearingSections(), client));
     await tester.pumpAndSettle();
 
-    // The raw JSON editors are gone; each provider is now its own typed row.
-    expect(find.byKey(const Key('modules-hearing-speechProviderSettings')), findsNothing);
-    expect(find.byKey(const Key('modules-hearing-transcriptionProviderSettings')),
-        findsNothing);
-    expect(
-      tester.widget<TextField>(find.byKey(
-        const Key('modules-hearing-speechProviderSettings-row-0-deviceId'),
-      )).controller!.text,
-      'default',
+    await tester.tap(
+      find.byKey(const Key('modules-hearing-speechProviderSettings-add')),
     );
-    expect(
-      tester.widget<TextField>(find.byKey(
-        const Key('modules-hearing-speechProviderSettings-row-0-sampleRate'),
-      )).controller!.text,
-      '16000',
-    );
-
-    await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-0-deviceId')),
-      'mic-9',
-    );
-    await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-0-sampleRate')),
-      '22050',
-    );
-    await saveSection(tester, 'Hearing');
-
-    expect(saved, isNotNull);
-    expect(saved!['speechProviderSettings'], <String, dynamic>{
-      'app-local-audio-speech': <String, dynamic>{
-        'deviceId': 'mic-9',
-        'sampleRate': 22050,
-      },
-    });
-    expect(saved!['transcriptionProviderSettings'], <String, dynamic>{
-      'whisper-local': <String, dynamic>{
-        'deviceId': 'default',
-        'sampleRate': 16000,
-      },
-    });
-    expect(saved!['activeProvider'], 'whisper-local');
-  });
-
-  testWidgets('hearing device maps add and remove provider rows', (tester) async {
-    final client = FakeChatClient();
-    addTearDown(client.dispose);
-    Map<String, dynamic>? saved;
-    client.onSet = (section, settings) => saved = settings;
-
-    await tester.pumpWidget(screenWith(hearingSections(), client));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('modules-hearing-speechProviderSettings-add')));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-1-provider')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-1-provider'),
+      ),
       'piper-local',
     );
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-1-deviceId')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-1-deviceId'),
+      ),
       'spk-2',
     );
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-1-sampleRate')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-1-sampleRate'),
+      ),
       '48000',
     );
     await saveSection(tester, 'Hearing');
@@ -408,11 +510,16 @@ void main() {
         'deviceId': 'default',
         'sampleRate': 16000,
       },
-      'piper-local': <String, dynamic>{'deviceId': 'spk-2', 'sampleRate': 48000},
+      'piper-local': <String, dynamic>{
+        'deviceId': 'spk-2',
+        'sampleRate': 48000,
+      },
     });
 
     await tester.tap(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-1-remove')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-1-remove'),
+      ),
     );
     await tester.pumpAndSettle();
     await saveSection(tester, 'Hearing');
@@ -425,7 +532,9 @@ void main() {
     });
   });
 
-  testWidgets('invalid hearing device sample rate never reaches the daemon', (tester) async {
+  testWidgets('invalid hearing device sample rate never reaches the daemon', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     await tester.pumpWidget(screenWith(hearingSections(), client));
@@ -433,18 +542,26 @@ void main() {
 
     await tester.enterText(
       find.byKey(
-        const Key('modules-hearing-transcriptionProviderSettings-row-0-sampleRate'),
+        const Key(
+          'modules-hearing-transcriptionProviderSettings-row-0-sampleRate',
+        ),
       ),
       'fast',
     );
     await saveSection(tester, 'Hearing');
 
     expect(client.lastSettingsWritten, isNull);
-    expect(find.text('Transcription provider settings sample rate must be a number.'),
-        findsOneWidget);
+    expect(
+      find.text(
+        'Transcription provider settings sample rate must be a number.',
+      ),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('hearing device map edits preserve unknown nested keys', (tester) async {
+  testWidgets('hearing device map edits preserve unknown nested keys', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     final sections = hearingSections();
@@ -461,20 +578,26 @@ void main() {
     await tester.pumpWidget(screenWith(sections, client));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-0-deviceId')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-0-deviceId'),
+      ),
       'mic-3',
     );
     await saveSection(tester, 'Hearing');
 
-    expect(saved!['speechProviderSettings']['app-local-audio-speech'],
-        <String, dynamic>{
-      'deviceId': 'mic-3',
-      'sampleRate': 16000,
-      'futureNestedKey': 'keep-me',
-    });
+    expect(
+      saved!['speechProviderSettings']['app-local-audio-speech'],
+      <String, dynamic>{
+        'deviceId': 'mic-3',
+        'sampleRate': 16000,
+        'futureNestedKey': 'keep-me',
+      },
+    );
   });
 
-  testWidgets('non-empty JSON fields round-trip through the editor', (tester) async {
+  testWidgets('non-empty JSON fields round-trip through the editor', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     final sections = moduleSections();
@@ -493,8 +616,12 @@ void main() {
     // Loaded JSON must be re-serialized as JSON, not Dart's toString(), or
     // jsonDecode rejects it on save and the non-empty value cannot be kept.
     expect(
-      tester.widget<TextField>(find.byKey(const Key('modules-speech-voiceProfiles')))
-          .controller!.text,
+      tester
+          .widget<TextField>(
+            find.byKey(const Key('modules-speech-voiceProfiles')),
+          )
+          .controller!
+          .text,
       jsonEncode(voiceProfiles),
     );
 
@@ -505,14 +632,18 @@ void main() {
     expect(saved!['activeAdvanced'], activeAdvanced);
   });
 
-  testWidgets('empty hearing provider ID never reaches the daemon', (tester) async {
+  testWidgets('empty hearing provider ID never reaches the daemon', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     await tester.pumpWidget(screenWith(hearingSections(), client));
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-0-provider')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-0-provider'),
+      ),
       '',
     );
     await saveSection(tester, 'Hearing');
@@ -524,17 +655,23 @@ void main() {
     );
   });
 
-  testWidgets('duplicate hearing provider IDs are rejected, not dropped', (tester) async {
+  testWidgets('duplicate hearing provider IDs are rejected, not dropped', (
+    tester,
+  ) async {
     final client = FakeChatClient();
     addTearDown(client.dispose);
     await tester.pumpWidget(screenWith(hearingSections(), client));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('modules-hearing-speechProviderSettings-add')));
+    await tester.tap(
+      find.byKey(const Key('modules-hearing-speechProviderSettings-add')),
+    );
     await tester.pumpAndSettle();
     // Same ID as the existing row: the emitted map would collapse the two.
     await tester.enterText(
-      find.byKey(const Key('modules-hearing-speechProviderSettings-row-1-provider')),
+      find.byKey(
+        const Key('modules-hearing-speechProviderSettings-row-1-provider'),
+      ),
       'app-local-audio-speech',
     );
     await saveSection(tester, 'Hearing');

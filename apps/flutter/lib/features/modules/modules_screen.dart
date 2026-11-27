@@ -9,10 +9,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+// ignore: deprecated_member_use — material_ui replacement is not a project dependency.
 import 'package:flutter/material.dart';
 
 import '../../connection/connection_error.dart';
 import '../../daemon_client/daemon_client.dart';
+import 'discord_settings_patch.dart';
 
 enum _FieldKind {
   text,
@@ -55,75 +57,187 @@ class _ModuleSection {
 /// Every key must match a registration in `settings_section()` in
 /// `crates/anima-daemon/src/core.rs`.
 const List<_ModuleSection> _sections = <_ModuleSection>[
-  _ModuleSection('audio-device', 'Audio device', Icons.hearing_outlined, <_ModuleField>[
-    _ModuleField('selectedInputDevice', 'Input device ID (empty = default)',
-        kind: _FieldKind.text),
-    _ModuleField('selectedOutputDevice', 'Output device ID (empty = default)',
-        kind: _FieldKind.text),
-    _ModuleField('inputEnabled', 'Microphone input enabled', kind: _FieldKind.boolean),
-  ]),
-  _ModuleSection('local-llm', 'Local LLM', Icons.memory_outlined, <_ModuleField>[
-    _ModuleField('modelPath', 'GGUF model path (empty = not configured)',
-        kind: _FieldKind.text),
-    _ModuleField('contextSize', 'Context size (tokens)', kind: _FieldKind.integer),
-    _ModuleField('temperature', 'Temperature', kind: _FieldKind.number),
-    _ModuleField('maxTokens', 'Max tokens', kind: _FieldKind.integer),
-    _ModuleField('gpuLayers', 'GPU layers (0 = CPU, negative = offload all)',
-        kind: _FieldKind.integer),
-  ]),
-  _ModuleSection('consciousness', 'Consciousness', Icons.psychology_outlined, <_ModuleField>[
-    _ModuleField('activeProvider', 'Active provider ID', kind: _FieldKind.text),
-    _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
-    _ModuleField('activeCustomModel', 'Custom model name', kind: _FieldKind.text),
-  ]),
-  _ModuleSection('speech', 'Speech', Icons.record_voice_over_outlined, <_ModuleField>[
-    _ModuleField('activeProvider', 'Active provider ID', kind: _FieldKind.text),
-    _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
-    _ModuleField('voice', 'Voice ID', kind: _FieldKind.text),
-    _ModuleField('outputVolume', 'Output volume', kind: _FieldKind.number),
-    _ModuleField('enabled', 'Speech enabled', kind: _FieldKind.boolean),
-    _ModuleField('pitch', 'Pitch', kind: _FieldKind.number),
-    _ModuleField('rate', 'Rate', kind: _FieldKind.number),
-    _ModuleField('ssmlEnabled', 'SSML enabled', kind: _FieldKind.boolean),
-    _ModuleField('language', 'Language', kind: _FieldKind.text),
-    _ModuleField('voiceProfiles', 'Voice profiles (JSON array)',
-        kind: _FieldKind.jsonList, maxLines: 3),
-  ]),
+  _ModuleSection(
+    'audio-device',
+    'Audio device',
+    Icons.hearing_outlined,
+    <_ModuleField>[
+      _ModuleField(
+        'selectedInputDevice',
+        'Input device ID (empty = default)',
+        kind: _FieldKind.text,
+      ),
+      _ModuleField(
+        'selectedOutputDevice',
+        'Output device ID (empty = default)',
+        kind: _FieldKind.text,
+      ),
+      _ModuleField(
+        'inputEnabled',
+        'Microphone input enabled',
+        kind: _FieldKind.boolean,
+      ),
+    ],
+  ),
+  _ModuleSection(
+    'local-llm',
+    'Local LLM',
+    Icons.memory_outlined,
+    <_ModuleField>[
+      _ModuleField(
+        'modelPath',
+        'GGUF model path (empty = not configured)',
+        kind: _FieldKind.text,
+      ),
+      _ModuleField(
+        'contextSize',
+        'Context size (tokens)',
+        kind: _FieldKind.integer,
+      ),
+      _ModuleField('temperature', 'Temperature', kind: _FieldKind.number),
+      _ModuleField('maxTokens', 'Max tokens', kind: _FieldKind.integer),
+      _ModuleField(
+        'gpuLayers',
+        'GPU layers (0 = CPU, negative = offload all)',
+        kind: _FieldKind.integer,
+      ),
+    ],
+  ),
+  _ModuleSection(
+    'consciousness',
+    'Consciousness',
+    Icons.psychology_outlined,
+    <_ModuleField>[
+      _ModuleField(
+        'activeProvider',
+        'Active provider ID',
+        kind: _FieldKind.text,
+      ),
+      _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
+      _ModuleField(
+        'activeCustomModel',
+        'Custom model name',
+        kind: _FieldKind.text,
+      ),
+    ],
+  ),
+  _ModuleSection(
+    'speech',
+    'Speech',
+    Icons.record_voice_over_outlined,
+    <_ModuleField>[
+      _ModuleField(
+        'activeProvider',
+        'Active provider ID',
+        kind: _FieldKind.text,
+      ),
+      _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
+      _ModuleField('voice', 'Voice ID', kind: _FieldKind.text),
+      _ModuleField('outputVolume', 'Output volume', kind: _FieldKind.number),
+      _ModuleField('enabled', 'Speech enabled', kind: _FieldKind.boolean),
+      _ModuleField('pitch', 'Pitch', kind: _FieldKind.number),
+      _ModuleField('rate', 'Rate', kind: _FieldKind.number),
+      _ModuleField('ssmlEnabled', 'SSML enabled', kind: _FieldKind.boolean),
+      _ModuleField('language', 'Language', kind: _FieldKind.text),
+      _ModuleField(
+        'voiceProfiles',
+        'Voice profiles (JSON array)',
+        kind: _FieldKind.jsonList,
+        maxLines: 3,
+      ),
+    ],
+  ),
   _ModuleSection('hearing', 'Hearing', Icons.hearing_outlined, <_ModuleField>[
     _ModuleField('activeProvider', 'Active provider ID', kind: _FieldKind.text),
     _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
-    _ModuleField('activeCustomModel', 'Custom model name', kind: _FieldKind.text),
-    _ModuleField('autoSendEnabled', 'Auto-send recognized speech',
-        kind: _FieldKind.boolean),
-    _ModuleField('autoSendDelay', 'Auto-send delay (ms)', kind: _FieldKind.integer),
-    _ModuleField('detectionMode', 'Detection mode',
-        kind: _FieldKind.choice, options: <String>['vad', 'manual']),
+    _ModuleField(
+      'activeCustomModel',
+      'Custom model name',
+      kind: _FieldKind.text,
+    ),
+    _ModuleField(
+      'autoSendEnabled',
+      'Auto-send recognized speech',
+      kind: _FieldKind.boolean,
+    ),
+    _ModuleField(
+      'autoSendDelay',
+      'Auto-send delay (ms)',
+      kind: _FieldKind.integer,
+    ),
+    _ModuleField(
+      'detectionMode',
+      'Detection mode',
+      kind: _FieldKind.choice,
+      options: <String>['vad', 'manual'],
+    ),
     _ModuleField('tapToTalk', 'Tap-to-talk', kind: _FieldKind.boolean),
-    _ModuleField('voiceInputMode', 'Voice input mode',
-        kind: _FieldKind.choice,
-        options: <String>['dictation', 'voice-message']),
+    _ModuleField(
+      'voiceInputMode',
+      'Voice input mode',
+      kind: _FieldKind.choice,
+      options: <String>['dictation', 'voice-message'],
+    ),
     _ModuleField('vadThreshold', 'VAD threshold', kind: _FieldKind.number),
-    _ModuleField('speechProviderSettings', 'Speech provider settings',
-        kind: _FieldKind.hearingDeviceMap),
-    _ModuleField('transcriptionProviderSettings', 'Transcription provider settings',
-        kind: _FieldKind.hearingDeviceMap),
+    _ModuleField(
+      'speechProviderSettings',
+      'Speech provider settings',
+      kind: _FieldKind.hearingDeviceMap,
+    ),
+    _ModuleField(
+      'transcriptionProviderSettings',
+      'Transcription provider settings',
+      kind: _FieldKind.hearingDeviceMap,
+    ),
   ]),
   _ModuleSection('vision', 'Vision', Icons.visibility_outlined, <_ModuleField>[
-    _ModuleField('strategy', 'Strategy',
-        kind: _FieldKind.choice, options: <String>['direct', 'forward']),
+    _ModuleField(
+      'strategy',
+      'Strategy',
+      kind: _FieldKind.choice,
+      options: <String>['direct', 'forward'],
+    ),
     _ModuleField('activeProvider', 'Active provider ID', kind: _FieldKind.text),
     _ModuleField('activeModel', 'Active model ID', kind: _FieldKind.text),
-    _ModuleField('contextWindow', 'Images in context', kind: _FieldKind.integer),
-    _ModuleField('activeAdvanced', 'Advanced options (JSON object)',
-        kind: _FieldKind.jsonMap, maxLines: 3),
-    _ModuleField('promptShim', 'Direct prompt', kind: _FieldKind.text, maxLines: 3),
-    _ModuleField('promptShimForward', 'Forward prompt',
-        kind: _FieldKind.text, maxLines: 3),
-    _ModuleField('witnessEnabled', 'Ambient vision (witness)',
-        kind: _FieldKind.boolean),
-    _ModuleField('witnessPrompt', 'Witness prompt', kind: _FieldKind.text, maxLines: 3),
-    _ModuleField('respectSchedule', 'Respect heartbeat schedule',
-        kind: _FieldKind.boolean),
+    _ModuleField(
+      'contextWindow',
+      'Images in context',
+      kind: _FieldKind.integer,
+    ),
+    _ModuleField(
+      'activeAdvanced',
+      'Advanced options (JSON object)',
+      kind: _FieldKind.jsonMap,
+      maxLines: 3,
+    ),
+    _ModuleField(
+      'promptShim',
+      'Direct prompt',
+      kind: _FieldKind.text,
+      maxLines: 3,
+    ),
+    _ModuleField(
+      'promptShimForward',
+      'Forward prompt',
+      kind: _FieldKind.text,
+      maxLines: 3,
+    ),
+    _ModuleField(
+      'witnessEnabled',
+      'Ambient vision (witness)',
+      kind: _FieldKind.boolean,
+    ),
+    _ModuleField(
+      'witnessPrompt',
+      'Witness prompt',
+      kind: _FieldKind.text,
+      maxLines: 3,
+    ),
+    _ModuleField(
+      'respectSchedule',
+      'Respect heartbeat schedule',
+      kind: _FieldKind.boolean,
+    ),
   ]),
 ];
 
@@ -134,8 +248,8 @@ class _SectionDraft {
   _SectionDraft(this.values) : loaded = true;
 
   _SectionDraft.unavailable()
-      : values = const <String, dynamic>{},
-        loaded = false;
+    : values = const <String, dynamic>{},
+      loaded = false;
 
   Map<String, dynamic> values;
   bool loaded;
@@ -159,9 +273,11 @@ class _ModulesScreenState extends State<ModulesScreen> {
   final Map<String, _SectionDraft> _drafts = <String, _SectionDraft>{
     for (final section in _sections) section.key: _SectionDraft.unavailable(),
   };
+
   /// Raw row IDs, kept so duplicate keys can be rejected before the emitted
   /// map silently collapses them and drops a user-entered row.
-  final Map<String, List<String>> _hearingProviderIds = <String, List<String>>{};
+  final Map<String, List<String>> _hearingProviderIds =
+      <String, List<String>>{};
   bool _busy = false;
   String? _error;
   String? _status;
@@ -188,10 +304,13 @@ class _ModulesScreenState extends State<ModulesScreen> {
   }
 
   static bool _isTextLike(_FieldKind kind) => switch (kind) {
-        _FieldKind.text || _FieldKind.number || _FieldKind.integer ||
-        _FieldKind.jsonList || _FieldKind.jsonMap => true,
-        _ => false,
-      };
+    _FieldKind.text ||
+    _FieldKind.number ||
+    _FieldKind.integer ||
+    _FieldKind.jsonList ||
+    _FieldKind.jsonMap => true,
+    _ => false,
+  };
 
   static String fieldId(String section, _ModuleField field) =>
       'modules-$section-${field.key}';
@@ -206,15 +325,17 @@ class _ModulesScreenState extends State<ModulesScreen> {
     // RPC handler messages can carry config paths or credential-shaped text.
     final results = await Future.wait(<Future<_LoadResult>>[
       for (final section in _sections)
-        widget.client.settingsGet(section.key).then(
+        widget.client
+            .settingsGet(section.key)
+            .then(
               (value) => _LoadResult(section.key, values: value),
               onError: (Object error) => _LoadResult(
-                    section.key,
-                    error: userSafeConnectionError(
-                      error,
-                      context: 'settings.get:${section.key}',
-                    ),
-                  ),
+                section.key,
+                error: userSafeConnectionError(
+                  error,
+                  context: 'settings.get:${section.key}',
+                ),
+              ),
             ),
     ]);
     if (!mounted) return;
@@ -233,11 +354,12 @@ class _ModulesScreenState extends State<ModulesScreen> {
           for (final field in section.fields) {
             if (_isTextLike(field.kind)) {
               final value = draft.values[field.key];
-              _controllers[fieldId(section.key, field)]!.text = switch (field.kind) {
+              _controllers[fieldId(section.key, field)]!.text = switch (field
+                  .kind) {
                 // Dart's toString() is not JSON (unquoted keys, single quotes),
                 // so a loaded non-empty container could never be re-saved.
-                _FieldKind.jsonList || _FieldKind.jsonMap =>
-                  value == null ? '' : jsonEncode(value),
+                _FieldKind.jsonList ||
+                _FieldKind.jsonMap => value == null ? '' : jsonEncode(value),
                 _ => value?.toString() ?? '',
               };
             }
@@ -335,7 +457,10 @@ class _ModulesScreenState extends State<ModulesScreen> {
     } on Object catch (error) {
       if (mounted) {
         setState(() {
-          _error = userSafeConnectionError(error, context: 'settings.set:${section.key}');
+          _error = userSafeConnectionError(
+            error,
+            context: 'settings.set:${section.key}',
+          );
           _busy = false;
         });
       }
@@ -343,16 +468,18 @@ class _ModulesScreenState extends State<ModulesScreen> {
   }
 
   String _numberError(String section, _ModuleField field) => switch (section) {
-        'local-llm' =>
-          'Context size, max tokens, GPU layers and temperature must be numbers.',
-        'hearing' => 'Auto-send delay and VAD threshold must be numbers.',
-        'vision' => 'Context window must be a whole number.',
-        'speech' => switch (field.key) {
-          'rate' || 'pitch' || 'outputVolume' => 'Speech ${field.label.toLowerCase()} must be a number.',
-          _ => '${field.label} must be a number.',
-        },
-        _ => '${field.label} must be a number.',
-      };
+    'local-llm' =>
+      'Context size, max tokens, GPU layers and temperature must be numbers.',
+    'hearing' => 'Auto-send delay and VAD threshold must be numbers.',
+    'vision' => 'Context window must be a whole number.',
+    'speech' => switch (field.key) {
+      'rate' ||
+      'pitch' ||
+      'outputVolume' => 'Speech ${field.label.toLowerCase()} must be a number.',
+      _ => '${field.label} must be a number.',
+    },
+    _ => '${field.label} must be a number.',
+  };
 
   String? _hearingDeviceMapError(
     _ModuleField field,
@@ -389,7 +516,8 @@ class _ModulesScreenState extends State<ModulesScreen> {
     final draft = _drafts[section]!;
     if (!draft.loaded) return;
     setState(() {
-      draft.values = Map<String, dynamic>.from(draft.values)..[field.key] = value;
+      draft.values = Map<String, dynamic>.from(draft.values)
+        ..[field.key] = value;
       _status = null;
     });
   }
@@ -397,7 +525,10 @@ class _ModulesScreenState extends State<ModulesScreen> {
   void _jump(GlobalKey key) {
     final context = key.currentContext;
     if (context != null) {
-      Scrollable.ensureVisible(context, duration: const Duration(milliseconds: 200));
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 200),
+      );
     }
   }
 
@@ -408,8 +539,10 @@ class _ModulesScreenState extends State<ModulesScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          const Text('Connectors configured by the daemon',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text(
+            'Connectors configured by the daemon',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
           for (final section in _sections)
             ListTile(
@@ -418,20 +551,22 @@ class _ModulesScreenState extends State<ModulesScreen> {
               subtitle: const Text('Daemon-backed settings'),
               onTap: () => _jump(_cardKeys[section.key]!),
             ),
+          DiscordSectionEditor(client: widget.client),
           const _UnavailableNotice(
-            'Integration modules (Discord, MCP and ACP) have no daemon settings '
+            'Integration modules (MCP and ACP) have no daemon settings '
             'section in this build. They cannot be configured here without '
             'client-only state that would not persist.',
           ),
           const Divider(),
           for (final section in _sections)
-            if (_drafts[section.key]!.loaded)
-              _buildCard(section),
+            if (_drafts[section.key]!.loaded) _buildCard(section),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ),
           if (_status != null)
             Padding(
@@ -452,7 +587,10 @@ class _ModulesScreenState extends State<ModulesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(section.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              section.label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             for (final field in section.fields)
               _buildField(section, field, draft),
@@ -470,7 +608,11 @@ class _ModulesScreenState extends State<ModulesScreen> {
     );
   }
 
-  Widget _buildField(_ModuleSection section, _ModuleField field, _SectionDraft draft) {
+  Widget _buildField(
+    _ModuleSection section,
+    _ModuleField field,
+    _SectionDraft draft,
+  ) {
     final enabled = !_busy;
     final id = fieldId(section.key, field);
     switch (field.kind) {
@@ -526,6 +668,7 @@ class _ModulesScreenState extends State<ModulesScreen> {
           padding: const EdgeInsets.only(bottom: 8),
           child: DropdownButtonFormField<String>(
             key: Key(id),
+            // ignore: deprecated_member_use — initialValue cannot track edits.
             value: value,
             decoration: InputDecoration(labelText: field.label),
             items: <DropdownMenuItem<String>>[
@@ -549,13 +692,14 @@ class _HearingDeviceRow {
     String deviceId = 'default',
     String sampleRate = '16000',
     this.original = const <String, dynamic>{},
-  })  : providerController = TextEditingController(text: provider),
-        deviceIdController = TextEditingController(text: deviceId),
-        sampleRateController = TextEditingController(text: sampleRate);
+  }) : providerController = TextEditingController(text: provider),
+       deviceIdController = TextEditingController(text: deviceId),
+       sampleRateController = TextEditingController(text: sampleRate);
 
   final TextEditingController providerController;
   final TextEditingController deviceIdController;
   final TextEditingController sampleRateController;
+
   /// Unknown nested keys survive a round-trip even though this editor only
   /// surfaces the two fields in the documented shape.
   final Map<String, dynamic> original;
@@ -596,7 +740,8 @@ class _HearingDeviceMapEditor extends StatefulWidget {
   final _HearingMapChanged onChanged;
 
   @override
-  State<_HearingDeviceMapEditor> createState() => _HearingDeviceMapEditorState();
+  State<_HearingDeviceMapEditor> createState() =>
+      _HearingDeviceMapEditorState();
 }
 
 class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
@@ -631,18 +776,19 @@ class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
   }
 
   Map<String, dynamic> _collect() => <String, dynamic>{
-        for (final row in _rows)
-          row.providerController.text.trim(): <String, dynamic>{
-            ...row.original,
-            'deviceId': row.deviceIdController.text.trim(),
-            'sampleRate': num.tryParse(row.sampleRateController.text.trim()) ??
-                row.sampleRateController.text.trim(),
-          },
-      };
+    for (final row in _rows)
+      row.providerController.text.trim(): <String, dynamic>{
+        ...row.original,
+        'deviceId': row.deviceIdController.text.trim(),
+        'sampleRate':
+            num.tryParse(row.sampleRateController.text.trim()) ??
+            row.sampleRateController.text.trim(),
+      },
+  };
 
   List<String> _providerIds() => <String>[
-        for (final row in _rows) row.providerController.text.trim(),
-      ];
+    for (final row in _rows) row.providerController.text.trim(),
+  ];
 
   void _changed() => widget.onChanged(_collect(), _providerIds());
 
@@ -691,7 +837,10 @@ class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
               enabled: widget.enabled,
               controller: row.providerController,
               onChanged: (_) => _changed(),
-              decoration: const InputDecoration(labelText: 'Provider ID', isDense: true),
+              decoration: const InputDecoration(
+                labelText: 'Provider ID',
+                isDense: true,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -702,7 +851,10 @@ class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
               enabled: widget.enabled,
               controller: row.deviceIdController,
               onChanged: (_) => _changed(),
-              decoration: const InputDecoration(labelText: 'Device ID', isDense: true),
+              decoration: const InputDecoration(
+                labelText: 'Device ID',
+                isDense: true,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -713,7 +865,10 @@ class _HearingDeviceMapEditorState extends State<_HearingDeviceMapEditor> {
               controller: row.sampleRateController,
               keyboardType: TextInputType.number,
               onChanged: (_) => _changed(),
-              decoration: const InputDecoration(labelText: 'Sample rate', isDense: true),
+              decoration: const InputDecoration(
+                labelText: 'Sample rate',
+                isDense: true,
+              ),
             ),
           ),
           IconButton(
@@ -745,7 +900,213 @@ class _UnavailableNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(message, style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+      child: Text(
+        message,
+        style: TextStyle(color: Theme.of(context).colorScheme.outline),
+      ),
+    );
+  }
+}
+
+/// Token-safe editor for the daemon's registered `settings/discord` section.
+///
+/// The read is lazy on purpose: opening Companion Connectors must not add a
+/// seventh `settings.get` call. The token field always starts blank because the
+/// daemon never returns the credential; saving goes exclusively through
+/// [buildDiscordPatch], so a blank field cannot wipe the stored token and a
+/// `hasToken` hint is never echoed back as a writable field.
+class DiscordSectionEditor extends StatefulWidget {
+  const DiscordSectionEditor({super.key, required this.client});
+
+  final DaemonClient client;
+
+  @override
+  State<DiscordSectionEditor> createState() => _DiscordSectionEditorState();
+}
+
+class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
+  final TextEditingController _tokenController = TextEditingController();
+  Map<String, dynamic>? _view;
+  Map<String, String> _choices = <String, String>{};
+  bool _loading = false;
+  bool _saving = false;
+  String? _status;
+  String? _error;
+
+  @override
+  void dispose() {
+    _tokenController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final view = await widget.client.settingsGet('discord');
+      if (!mounted) return;
+      setState(() {
+        _view = view;
+        _choices = <String, String>{
+          for (final entry in discordChoiceValues.entries)
+            entry.key:
+                view[entry.key] is String &&
+                    entry.value.contains(view[entry.key])
+                ? view[entry.key] as String
+                : entry.value.first,
+        };
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = userSafeConnectionError(
+            error,
+            context: 'settings.get:discord',
+          );
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final view = _view;
+    if (view == null) return;
+    final patch = buildDiscordPatch(
+      view,
+      edits: _choices,
+      typedToken: _tokenController.text,
+    );
+    setState(() {
+      _saving = true;
+      _error = null;
+      _status = null;
+    });
+    try {
+      final saved = await widget.client.settingsSet('discord', patch);
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        if (saved) {
+          _status = 'Discord settings saved.';
+          _tokenController.clear();
+          // Keep the edited values, but never retain a token locally: the next
+          // save must not re-send it just because the field was cleared.
+          _view = <String, dynamic>{...view, ...patch}..remove('token');
+        } else {
+          _status = 'Discord settings were not saved.';
+        }
+      });
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = userSafeConnectionError(
+            error,
+            context: 'settings.set:discord',
+          );
+        });
+      }
+    }
+  }
+
+  static String _label(String key) => switch (key) {
+    'executionMode' => 'Execution mode',
+    'chatMode' => 'Chat mode',
+    'voiceMode' => 'Voice mode',
+    'voiceCall' => 'Voice call',
+    _ => key,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final view = _view;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Discord',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (view == null)
+              FilledButton(
+                key: const Key('modules-discord-load'),
+                onPressed: _loading ? null : _load,
+                child: const Text('Load Discord settings'),
+              )
+            else ...<Widget>[
+              Text(
+                view['hasToken'] == true
+                    ? 'Bot token configured (leave blank to keep it).'
+                    : 'No bot token configured.',
+              ),
+              const SizedBox(height: 8),
+              for (final entry in discordChoiceValues.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DropdownButtonFormField<String>(
+                    key: Key('modules-discord-${entry.key}'),
+                    // ignore: deprecated_member_use — initialValue cannot track edits.
+                    value: _choices[entry.key],
+                    decoration: InputDecoration(labelText: _label(entry.key)),
+                    items: <DropdownMenuItem<String>>[
+                      for (final option in entry.value)
+                        DropdownMenuItem<String>(
+                          value: option,
+                          child: Text(option),
+                        ),
+                    ],
+                    onChanged: _saving
+                        ? null
+                        : (String? selected) {
+                            if (selected == null) return;
+                            setState(() => _choices[entry.key] = selected);
+                          },
+                  ),
+                ),
+              TextField(
+                key: const Key('modules-discord-token'),
+                controller: _tokenController,
+                obscureText: true,
+                enabled: !_saving,
+                decoration: const InputDecoration(
+                  labelText: 'New bot token (blank = keep existing)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  key: const Key('modules-discord-save'),
+                  onPressed: _saving ? null : _save,
+                  child: const Text('Save Discord'),
+                ),
+              ),
+            ],
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            if (_status != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_status!),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
