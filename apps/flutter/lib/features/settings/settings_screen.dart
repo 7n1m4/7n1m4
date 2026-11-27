@@ -15,6 +15,7 @@ import '../modules/modules_screen.dart';
 import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
 import '../stage/stage_control_strip_state.dart';
+import 'captions_values.dart';
 import 'memory_signals_screen.dart';
 import 'settings_catalog.dart';
 import 'settings_search.dart';
@@ -64,12 +65,11 @@ enum _SettingsSection {
 /// screen does not edit; the daemon's typed deserializer keeps unknown fields
 /// out of the blob, but nothing this client knows about is dropped.
 class _SectionDraft {
-  _SectionDraft(this.values)
-      : loaded = true;
+  _SectionDraft(this.values) : loaded = true;
 
   _SectionDraft.unavailable()
-      : values = const <String, dynamic>{},
-        loaded = false;
+    : values = const <String, dynamic>{},
+      loaded = false;
 
   Map<String, dynamic> values;
   bool loaded;
@@ -82,14 +82,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _tint = TextEditingController();
   final Map<_SettingsSection, GlobalKey> _cardKeys =
       <_SettingsSection, GlobalKey>{
-    for (final section in _SettingsSection.values) section: GlobalKey(),
-  };
+        for (final section in _SettingsSection.values) section: GlobalKey(),
+      };
   final GlobalKey _statusKey = GlobalKey();
   final Map<_SettingsSection, _SectionDraft> _drafts =
       <_SettingsSection, _SectionDraft>{
-    for (final section in _SettingsSection.values)
-      section: _SectionDraft.unavailable(),
-  };
+        for (final section in _SettingsSection.values)
+          section: _SectionDraft.unavailable(),
+      };
   Map<String, dynamic>? _runtimeStatus;
   List<Map<String, dynamic>> _providers = const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
@@ -157,9 +157,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// The current result slice, shared by the dropdown and key handling so a
   /// keyboard selection resolves against exactly what the user can see.
   List<SettingsSearchItem> _currentResults() => SettingsSearchIndex.build(
-        providers: _providers,
-        cards: _cards,
-      ).search(_searchQuery);
+    providers: _providers,
+    cards: _cards,
+  ).search(_searchQuery);
 
   /// Local key handling while the search field is focused: Enter selects the
   /// first visible result. Ctrl/Cmd+K and Escape are app-global (owned by the
@@ -222,6 +222,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'hueDynamic': theme.hueDynamic,
               'chromaMultiplier': theme.chromaMultiplier,
             };
+          } else if (section == _SettingsSection.captions) {
+            // Legacy blobs omit the follow/layout/head-tether fields: fill
+            // only the absent ones. Present values stay as loaded so a
+            // malformed one fails closed at Save instead of being rewritten.
+            draft.values = normalizeCaptions(values);
           }
         });
       } on Object catch (e) {
@@ -268,7 +273,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? runtime.data as Map<String, dynamic>
             : null;
         _providers = providerList is List
-            ? providerList.whereType<Map<String, dynamic>>().toList(growable: false)
+            ? providerList.whereType<Map<String, dynamic>>().toList(
+                growable: false,
+              )
             : const <Map<String, dynamic>>[];
       });
     } catch (_) {
@@ -324,7 +331,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       draft.values = Map<String, dynamic>.from(draft.values)
         ..['backgroundTint'] = _tint.text.trim();
       if (draft.values.containsKey('buttons')) {
-        draft.values['buttons'] = _completeStripButtons(draft.values['buttons']);
+        draft.values['buttons'] = _completeStripButtons(
+          draft.values['buttons'],
+        );
+      }
+    }
+    if (section == _SettingsSection.captions) {
+      final validation = validateCaptions(draft.values);
+      if (!validation.isValid) {
+        setState(() {
+          _settingsError = validation.error;
+          _settingsStatus = null;
+        });
+        return;
       }
     }
     final updated = Map<String, dynamic>.from(draft.values);
@@ -385,9 +404,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _push(Widget screen) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => screen),
-    );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
   }
 
   void _openSearchResult(SettingsSearchItem item) {
@@ -399,15 +416,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final node = item.node;
         if (node != null) _openCatalogNode(node);
       case SettingsSearchKind.provider:
-        _push(ProvidersScreen(
-          client: widget.client,
-          initialProviderId: _providerIdFromRoute(item.route),
-        ));
+        _push(
+          ProvidersScreen(
+            client: widget.client,
+            initialProviderId: _providerIdFromRoute(item.route),
+          ),
+        );
       case SettingsSearchKind.card:
-        _push(CardsScreen(
-          client: widget.client,
-          initialCardId: _cardIdFromRoute(item.route),
-        ));
+        _push(
+          CardsScreen(
+            client: widget.client,
+            initialCardId: _cardIdFromRoute(item.route),
+          ),
+        );
     }
   }
 
@@ -425,11 +446,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   IconData _iconForSearchItem(SettingsSearchItem item) => switch (item.kind) {
-        SettingsSearchKind.provider => Icons.extension_outlined,
-        SettingsSearchKind.card => Icons.person_outline,
-        SettingsSearchKind.catalog =>
-          item.node == null ? Icons.settings_outlined : _iconForNode(item.node!),
-      };
+    SettingsSearchKind.provider => Icons.extension_outlined,
+    SettingsSearchKind.card => Icons.person_outline,
+    SettingsSearchKind.catalog =>
+      item.node == null ? Icons.settings_outlined : _iconForNode(item.node!),
+  };
 
   /// Bring a section's editor into view. The hub is one scrolling page, so the
   /// catalog entry scrolls to the card instead of pushing an empty route.
@@ -462,8 +483,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (_searchFocused) ...<Widget>[
         const Padding(
           padding: EdgeInsets.only(bottom: 4),
-          child: Text('Search Results',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            'Search Results',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         if (results.isEmpty)
           const Padding(
@@ -480,7 +503,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         const Divider(),
       ],
-      const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+      const Text(
+        'Settings',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+      ),
       const SizedBox(height: 8),
       if (_runtimeStatus != null)
         Text('Runtime: ${_runtimeStatus!['app']} ${_runtimeStatus!['version']}')
@@ -500,15 +526,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ListTile(
               leading: Icon(_iconForNode(node)),
               title: Text(node.label),
-              subtitle: node.description == null ? null : Text(node.description!),
+              subtitle: node.description == null
+                  ? null
+                  : Text(node.description!),
               onTap: () => _openCatalogNode(node),
             ),
       _buildCaptionsCard(context),
       if (_settingsError != null)
         Padding(
           padding: const EdgeInsets.only(top: 8),
-          child: Text(_settingsError!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          child: Text(
+            _settingsError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         ),
       if (_settingsStatus != null)
         Padding(
@@ -523,9 +553,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // IndexedStack, and stealing focus there would make key handling act on
       // an invisible field. The app-level chord focuses the field on demand.
       onKeyEvent: _handleSettingsKey,
-      child: ListView(
+      // All children stay in the tree: the status/error row sits below the
+      // cards, and a lazy ListView would leave it unbuilt when Save is tapped
+      // from a scrolled position.
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        children: children,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
       ),
     );
   }
@@ -555,7 +591,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: values['disableTransitions'] != false,
           onChanged: enabled
               ? (value) =>
-                  _edit(_SettingsSection.general, 'disableTransitions', value)
+                    _edit(_SettingsSection.general, 'disableTransitions', value)
               : null,
           title: const Text('Disable page transitions'),
         ),
@@ -564,7 +600,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: values['usePageSpecificTransitions'] != false,
           onChanged: enabled
               ? (value) => _edit(
-                  _SettingsSection.general, 'usePageSpecificTransitions', value)
+                  _SettingsSection.general,
+                  'usePageSpecificTransitions',
+                  value,
+                )
               : null,
           title: const Text('Use page-specific transitions'),
         ),
@@ -573,7 +612,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           value: values['websocketSecureEnabled'] == true,
           onChanged: enabled
               ? (value) => _edit(
-                  _SettingsSection.general, 'websocketSecureEnabled', value)
+                  _SettingsSection.general,
+                  'websocketSecureEnabled',
+                  value,
+                )
               : null,
           title: const Text('Secure websocket (wss://)'),
         ),
@@ -614,7 +656,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Dynamic hue'),
         ),
         const SizedBox(height: 4),
-        const Text('Preset hues', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Preset hues',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         for (final group in _themeHueGroups) ...<Widget>[
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -630,10 +675,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: <Widget>[
               for (final swatch in group.swatches)
                 TextButton(
-                  key: ValueKey<String>('theme-swatch-${group.key}-${swatch.key}'),
-                  onPressed: enabled
-                      ? () => _applyThemeHue(swatch.hue)
-                      : null,
+                  key: ValueKey<String>(
+                    'theme-swatch-${group.key}-${swatch.key}',
+                  ),
+                  onPressed: enabled ? () => _applyThemeHue(swatch.hue) : null,
                   child: Text(swatch.label),
                 ),
             ],
@@ -724,7 +769,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             final draft = _drafts[_SettingsSection.captions]!;
             final current = draft.values;
             if (current['fontSize'] == null && current['font_size'] != null) {
-              draft.values = Map<String, dynamic>.from(current)..remove('font_size');
+              draft.values = Map<String, dynamic>.from(current)
+                ..remove('font_size');
             }
             _edit(_SettingsSection.captions, 'fontSize', value);
           },
@@ -744,15 +790,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
           items: const <DropdownMenuItem<String>>[
             DropdownMenuItem<String>(value: 'top', child: Text('Top')),
             DropdownMenuItem<String>(value: 'bottom', child: Text('Bottom')),
-            DropdownMenuItem<String>(value: 'head', child: Text('Head (bottom alias)')),
+            DropdownMenuItem<String>(
+              value: 'head',
+              child: Text('Head (bottom alias)'),
+            ),
             DropdownMenuItem<String>(value: 'none', child: Text('Hidden')),
           ],
           onChanged: enabled
               ? (value) => _edit(_SettingsSection.captions, 'docking', value)
               : null,
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['followStageVisibility'] != false,
+          onChanged: enabled
+              ? (value) => _edit(
+                  _SettingsSection.captions,
+                  'followStageVisibility',
+                  value,
+                )
+              : null,
+          title: const Text('Follow stage visibility'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['followStagePosition'] != false,
+          onChanged: enabled
+              ? (value) => _edit(
+                  _SettingsSection.captions,
+                  'followStagePosition',
+                  value,
+                )
+              : null,
+          title: const Text('Follow stage position'),
+        ),
+        DropdownButtonFormField<String>(
+          initialValue: _layoutModeValue(values['layoutMode']),
+          decoration: const InputDecoration(labelText: 'Layout mode'),
+          items: const <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(
+              value: 'single',
+              child: Text('Active sentence only'),
+            ),
+            DropdownMenuItem<String>(
+              value: 'multi',
+              child: Text('Full dialog block'),
+            ),
+          ],
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.captions, 'layoutMode', value)
+              : null,
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: values['headTetheredCaptionEnabled'] == true,
+          onChanged: enabled
+              ? (value) => _edit(
+                  _SettingsSection.captions,
+                  'headTetheredCaptionEnabled',
+                  value,
+                )
+              : null,
+          title: const Text('In-scene head-tethered caption (Live2D)'),
+        ),
+        _percentField(
+          label: 'Head tether strength (%)',
+          value: values['headTetheredCaptionFollowStrength'],
+          min: 0,
+          max: 100,
+          enabled: enabled,
+          onChanged: (value) => _edit(
+            _SettingsSection.captions,
+            'headTetheredCaptionFollowStrength',
+            value,
+          ),
+        ),
+        for (final axis in const <String>['x', 'y'])
+          TextFormField(
+            key: ValueKey<String>('Head offset $axis (px)'),
+            enabled: enabled,
+            initialValue: _formatNumber(
+              _captionOffsetValue(values['headTetheredCaptionOffset'], axis),
+            ),
+            keyboardType: const TextInputType.numberWithOptions(
+              signed: true,
+              decimal: true,
+            ),
+            decoration: InputDecoration(labelText: 'Head offset $axis (px)'),
+            onChanged: (text) {
+              final parsed = double.tryParse(text);
+              if (parsed != null && parsed.isFinite) {
+                _editCaptionOffset(axis, parsed);
+              }
+            },
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: enabled
+                ? () => _edit(
+                    _SettingsSection.captions,
+                    'resetTrigger',
+                    ((values['resetTrigger'] is int
+                            ? values['resetTrigger'] as int
+                            : 0) +
+                        1),
+                  )
+                : null,
+            child: const Text('Reset caption panel'),
+          ),
+        ),
       ],
     );
+  }
+
+  /// Increment the monotonic reset trigger without dropping the nested
+  /// offset's other axis or any unknown key in the section.
+  void _editCaptionOffset(String axis, double value) {
+    final draft = _drafts[_SettingsSection.captions]!;
+    if (!draft.loaded) return;
+    final raw = draft.values['headTetheredCaptionOffset'];
+    final offset = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    offset[axis] = value;
+    setState(() {
+      draft.values = Map<String, dynamic>.from(draft.values)
+        ..['headTetheredCaptionOffset'] = offset;
+      _settingsStatus = null;
+    });
   }
 
   Widget _buildControlStripCard(BuildContext context) {
@@ -778,14 +944,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             DropdownMenuItem<String>(value: 'bottom', child: Text('Bottom')),
           ],
           onChanged: enabled
-              ? (value) => _edit(_SettingsSection.controlStrip, 'dockedEdge', value)
+              ? (value) =>
+                    _edit(_SettingsSection.controlStrip, 'dockedEdge', value)
               : null,
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: values['collapsed'] == true,
           onChanged: enabled
-              ? (value) => _edit(_SettingsSection.controlStrip, 'collapsed', value)
+              ? (value) =>
+                    _edit(_SettingsSection.controlStrip, 'collapsed', value)
               : null,
           title: const Text('Collapsed to the docked edge'),
         ),
@@ -793,7 +961,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           contentPadding: EdgeInsets.zero,
           value: values['captionOpen'] == true,
           onChanged: enabled
-              ? (value) => _edit(_SettingsSection.controlStrip, 'captionOpen', value)
+              ? (value) =>
+                    _edit(_SettingsSection.controlStrip, 'captionOpen', value)
               : null,
           title: const Text('Caption overlay open'),
         ),
@@ -812,11 +981,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: Text(_stripButtonLabel(id)),
             onChanged: enabled
                 ? (value) => _edit(
-                      _SettingsSection.controlStrip,
-                      'buttons',
-                      _toggleStripButton(
-                          values['buttons'], enabledButtons, id, value ?? false),
-                    )
+                    _SettingsSection.controlStrip,
+                    'buttons',
+                    _toggleStripButton(
+                      values['buttons'],
+                      enabledButtons,
+                      id,
+                      value ?? false,
+                    ),
+                  )
                 : null,
           ),
       ],
@@ -870,7 +1043,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: InputDecoration(labelText: label),
       onChanged: (text) {
         final parsed = double.tryParse(text);
-        if (parsed != null && parsed != value) onChanged(parsed.clamp(min, max));
+        if (parsed != null && parsed != value)
+          onChanged(parsed.clamp(min, max));
       },
     );
   }
@@ -887,8 +1061,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(section.label,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              section.label,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             ...children,
             const SizedBox(height: 8),
@@ -941,11 +1117,7 @@ typedef _HueSwatch = ({String key, String label, double hue});
 
 /// One row of the 24-colour spectrum, in the order of
 /// `packages/stage-pages/src/pages/settings/system/color-presets.json`.
-typedef _HueGroup = ({
-  String key,
-  String title,
-  List<_HueSwatch> swatches,
-});
+typedef _HueGroup = ({String key, String title, List<_HueSwatch> swatches});
 
 /// All 24 grouped swatches from `color-presets.json`: four groups of six.
 /// The swatch labelled with the group's short name is that group's
@@ -1013,21 +1185,40 @@ bool _isValidLocale(String value) =>
 /// Wire value of a stored caption docking (`top`/`bottom`/`head`/`none`);
 /// anything unrecognized reads as the daemon's own default, `none`.
 String _dockingValue(Object? value) => switch (value) {
-      'top' => 'top',
-      'bottom' => 'bottom',
-      'head' => 'head',
-      'none' => 'none',
-      _ => 'none',
-    };
+  'top' => 'top',
+  'bottom' => 'bottom',
+  'head' => 'head',
+  'none' => 'none',
+  _ => 'none',
+};
+
+/// Display value of a stored caption layout mode; anything unrecognized reads
+/// as the daemon default, `single`. The raw value is kept in the draft so Save
+/// still fails closed on a malformed blob.
+String _layoutModeValue(Object? value) => switch (value) {
+  'single' => 'single',
+  'multi' => 'multi',
+  _ => 'single',
+};
+
+/// Display value of one axis of the head-tethered plank offset; the daemon
+/// defaults are x=0, y=-15.
+double _captionOffsetValue(Object? raw, String axis) {
+  if (raw is Map) {
+    final value = raw[axis];
+    if (value is num && value.isFinite) return value.toDouble();
+  }
+  return axis == 'x' ? 0.0 : -15.0;
+}
 
 /// Wire value of a stored docked edge (`ControlStripDockedEdge`); anything
 /// unrecognized reads as the daemon default, `right`.
 String _edgeWire(Object? value) => switch (value) {
-      'left' => 'left',
-      'top' => 'top',
-      'bottom' => 'bottom',
-      _ => 'right',
-    };
+  'left' => 'left',
+  'top' => 'top',
+  'bottom' => 'bottom',
+  _ => 'right',
+};
 
 /// The daemon's `buttons` array as a list of entries in stored order. A
 /// missing or malformed list falls back to the daemon's own default set
@@ -1104,14 +1295,14 @@ List<Map<String, dynamic>> _toggleStripButton(
 }
 
 String _stripButtonLabel(String id) => switch (id) {
-      'chat' => 'Chat toggle',
-      'actor-characters' => 'Characters',
-      'mic' => 'Microphone',
-      'stage' => 'Actor stage',
-      'stage-atmosphere' => 'Stage & chat theme',
-      'caption' => 'Captions',
-      _ => id,
-    };
+  'chat' => 'Chat toggle',
+  'actor-characters' => 'Characters',
+  'mic' => 'Microphone',
+  'stage' => 'Actor stage',
+  'stage-atmosphere' => 'Stage & chat theme',
+  'caption' => 'Captions',
+  _ => id,
+};
 
 String _formatNumber(double value) => value == value.roundToDouble()
     ? value.toStringAsFixed(0)
