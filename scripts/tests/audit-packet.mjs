@@ -4,7 +4,7 @@
  * Round-17 audit-packet validator.
  *
  * A packet carries both pinned expectations and observed state so the same
- * pure validator can check committed fixtures offline and live state on disk.
+ * pure core can check committed fixtures offline and live state on disk.
  * Self-tests always run before live validation; a broken fixture stops the
  * run before any live check is attempted. Guard SHAs are observed from the
  * git index and compared to `state/pinned-guards.sha`, never to file bytes.
@@ -12,6 +12,10 @@
  * Exit codes:
  *   0 pass, 2 schema/fixture, 3 unknowns, 4 guard drift,
  *   5 chain/replay mismatch, 6 scope/lease collision (1 = unexpected error).
+ *
+ * Usage:
+ *   node scripts/tests/audit-packet.mjs
+ *   node scripts/tests/audit-packet.mjs --packet <path.json>
  */
 
 import fs from 'node:fs'
@@ -20,29 +24,8 @@ import process from 'node:process'
 
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import {
-  BINDINGS_KEYS,
-  buildAllState,
-  checkClosedSchema,
-  deriveHead,
-  detectLeaseCollision,
-  GENESIS_KEYS,
-  guardPinsFromIndex,
-  ingestReceipts,
-  INVARIANTS,
-  loadGuardPins,
-  readBindings,
-  readEvents,
-  RECEIPT_MANIFEST,
-  resolveEffectiveHeadSha,
-  resolveHeadSha,
-  scanWave0Receipts,
-  SCHEMA_PACKET,
-  verifyEventChain,
-  verifyEventProjection,
-  verifyReplay,
-  WAVE,
-} from '../sm.mjs'
+import { SCHEMA_PACKET, verifyStateSnapshot } from '../lib/state-verifier.mjs'
+import { buildAuditSnapshot, loadGuardPins } from '../sm.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'audit-packet')
@@ -76,9 +59,23 @@ const REQUIRED_KEYS = [
 
 const PLACEHOLDERS = ['TODO', 'TBD', 'FIXME', 'PLACEHOLDER', 'CHANGEME', 'XXX', '??']
 
-function isSha(value, length = 40) {
-  return typeof value === 'string' && new RegExp(`^[0-9a-f]{${length}}$`).test(value)
-}
+/** Packet fields that must be real arrays — never coerced from a scalar. */
+const ARRAY_KEYS = [
+  'schema_issues',
+  'unknowns',
+  'unknowns_from_genesis',
+  'unknowns_from_bindings',
+  'invariants',
+  'chain_issues',
+  'projection_issues',
+  'receipts',
+  'replay_mismatches',
+  'lease_collisions',
+  'unanchored_receipts',
+]
+
+/** Packet flags that must be real booleans — never read by truthiness. */
+const BOOLEAN_KEYS = ['chain_intact', 'replay_identical', 'lease_collision', 'head_matches']
 
 function placeholderAt(value, trail = '$') {
   if (typeof value === 'string') {
@@ -102,119 +99,94 @@ function placeholderAt(value, trail = '$') {
   return null
 }
 
-function result(code, diagnostic) {
-  return { code, diagnostic }
+function asArray(value) {
+  return Array.isArray(value) ? [...value] : []
 }
 
-/** Pure validation: never reads disk, never uses a clock. */
-export function validateAuditPacket(packet, { pinnedGuards = loadGuardPins() } = {}) {
+/**
+ * Adapt a packet to the shared snapshot. Wave is a family (`r\d+`), so an
+ * r18 packet validates here without editing this file or frozen state.
+ * Boundary shapes are checked strictly here (the core stays pure).
+ */
+export function snapshotFromPacket(packet, { pinnedGuards } = {}) {
   if (!packet || typeof packet !== 'object' || Array.isArray(packet))
-    return result(2, 'SCHEMA_NOT_OBJECT')
-  for (const key of REQUIRED_KEYS) {
-    if (!(key in packet))
-      return result(2, `SCHEMA_MISSING_${key}`)
-  }
+    return { schemaIssues: ['SCHEMA_NOT_OBJECT'] }
+
+  const missing = REQUIRED_KEYS.filter(key => !(key in packet)).map(key => `SCHEMA_MISSING_${key}`)
   const extras = Object.keys(packet).filter(key => !REQUIRED_KEYS.includes(key)).sort()
-  if (extras.length > 0)
-    return result(2, `SCHEMA_EXTRA_FIELDS:${extras.join(',')}`)
-
-  // Diagnose placeholders by name before shape checks so a stub such as
-  // `PLACEHOLDER` is not mislabelled as a generic malformed SHA.
   const placeholder = placeholderAt(packet)
-  if (placeholder)
-    return result(2, `PLACEHOLDER_TOKEN:${placeholder}`)
-  if (packet.schema_issues.length > 0)
-    return result(2, `SCHEMA_LIVE_FIELDS:${packet.schema_issues.join(',')}`)
-
-  if (packet.schema !== SCHEMA_PACKET)
-    return result(2, 'SCHEMA_VERSION')
-  if (packet.wave !== WAVE)
-    return result(2, 'SCHEMA_WAVE')
-  if (!isSha(packet.base_sha))
-    return result(2, 'SCHEMA_BASE_SHA')
-  if (packet.beads_mode !== 'PAUSED')
-    return result(2, 'SCHEMA_BEADS_MODE')
-  for (const key of ['unknowns', 'unknowns_from_genesis', 'unknowns_from_bindings', 'chain_issues', 'projection_issues', 'replay_mismatches', 'lease_collisions', 'unanchored_receipts']) {
-    if (!Array.isArray(packet[key]))
-      return result(2, `SCHEMA_ARRAY:${key}`)
-  }
-  if (!Array.isArray(packet.invariants) || !INVARIANTS.every(i => packet.invariants.includes(i)))
-    return result(2, 'SCHEMA_INVARIANTS')
-  if (packet.genesis_count !== 1 || packet.genesis_seq !== 1)
-    return result(2, `SCHEMA_GENESIS:${packet.genesis_count}:${packet.genesis_seq}`)
-  if (packet.receipts_present !== true)
-    return result(2, 'SCHEMA_RECEIPTS_ABSENT')
-  if (!Array.isArray(packet.receipts) || packet.receipts.length !== RECEIPT_MANIFEST.length)
-    return result(2, 'SCHEMA_RECEIPT_COUNT')
-
-  for (const receipt of packet.receipts) {
-    if (!receipt || typeof receipt !== 'object')
-      return result(2, 'SCHEMA_RECEIPT_TYPE')
-    for (const key of ['id', 'path', 'base_sha', 'head_sha', 'diff_hash', 'sha256']) {
-      if (!(key in receipt))
-        return result(2, `SCHEMA_RECEIPT_MISSING_${key}`)
-    }
-    const manifest = RECEIPT_MANIFEST.find(item => item.id === receipt.id)
-    if (!manifest || !isSha(receipt.base_sha) || !isSha(receipt.head_sha))
-      return result(2, `SCHEMA_RECEIPT_SHA:${receipt.id}`)
-    if (receipt.diff_hash !== null && !isSha(receipt.diff_hash, 64))
-      return result(2, `SCHEMA_RECEIPT_DIFF_HASH:${receipt.id}`)
-    if (!isSha(receipt.sha256, 64))
-      return result(2, `SCHEMA_RECEIPT_SHA256:${receipt.id}`)
-    if (receipt.base_sha !== manifest.base_sha || receipt.head_sha !== manifest.head_sha
-      || receipt.diff_hash !== manifest.diff_hash || receipt.sha256 !== manifest.sha256) {
-      return result(2, `RECEIPT_ANCHOR_DRIFT:${receipt.id}`)
-    }
-  }
-
-  for (const key of ['pinned_guard_blobs', 'observed_guard_blobs']) {
-    const blobs = packet[key]
-    if (!blobs || typeof blobs !== 'object' || Array.isArray(blobs))
-      return result(2, `SCHEMA_${key.toUpperCase()}`)
-    for (const [relPath, sha] of Object.entries(blobs)) {
-      if (!isSha(sha))
-        return result(2, `SCHEMA_GUARD_SHA:${relPath}`)
-    }
-  }
-  for (const key of ['chain_intact', 'replay_identical', 'lease_collision', 'head_matches']) {
-    if (typeof packet[key] !== 'boolean')
-      return result(2, `SCHEMA_FLAG:${key}`)
-  }
-
-  const allUnknowns = [
-    ...packet.unknowns_from_genesis,
-    ...packet.unknowns_from_bindings,
-    ...packet.unknowns,
+  const schemaIssues = [
+    ...missing,
+    ...(extras.length > 0 ? [`SCHEMA_EXTRA_FIELDS:${extras.join(',')}`] : []),
+    ...(placeholder ? [`PLACEHOLDER_TOKEN:${placeholder}`] : []),
+    ...(packet.schema === SCHEMA_PACKET ? [] : ['SCHEMA_VERSION']),
+    ...ARRAY_KEYS.filter(key => !Array.isArray(packet[key])).map(key => `SCHEMA_ARRAY:${key}`),
+    ...BOOLEAN_KEYS.filter(key => typeof packet[key] !== 'boolean').map(key => `SCHEMA_FLAG:${key}`),
+    ...asArray(packet.schema_issues),
   ]
-  if (allUnknowns.length > 0)
-    return result(3, `UNKNOWNS_UNRESOLVED:${allUnknowns.join(',')}`)
 
-  if (JSON.stringify(packet.pinned_guard_blobs) !== JSON.stringify(pinnedGuards)
-    || JSON.stringify(packet.observed_guard_blobs) !== JSON.stringify(pinnedGuards)) {
-    return result(4, `GUARD_DRIFT:${JSON.stringify(pinnedGuards)}`)
+  // Old validator required BOTH blobs to match the real pin set. Collapse that
+  // third-value constraint onto the core's two-way guard comparison: pin the
+  // expected side to the real pins and feed back whichever packet blob drifts.
+  const realPins = pinnedGuards ?? loadGuardPins()
+  const matchesPins = blobs => blobs && typeof blobs === 'object' && !Array.isArray(blobs)
+    && JSON.stringify(blobs) === JSON.stringify(realPins)
+  const pinnedMatches = matchesPins(packet.pinned_guard_blobs)
+  const observedMatches = matchesPins(packet.observed_guard_blobs)
+  const guardPins = realPins
+  const observedGuardBlobs = pinnedMatches && observedMatches
+    ? realPins
+    : pinnedMatches ? packet.observed_guard_blobs : packet.pinned_guard_blobs
+
+  return {
+    wave: packet.wave,
+    expectedWave: packet.wave,
+    baseSha: packet.base_sha,
+    beadsMode: packet.beads_mode,
+    bindings: null,
+    events: null,
+    receipts: asArray(packet.receipts),
+    receiptsPresent: packet.receipts_present,
+    guardPins,
+    observedGuardBlobs,
+    wave0Scan: { known: [], unanchored: asArray(packet.unanchored_receipts) },
+    effectiveHead: null,
+    headMatches: packet.head_matches,
+    schemaIssues,
+    chainIssues: [
+      ...asArray(packet.chain_issues),
+      ...(packet.chain_intact === true ? [] : ['chain_intact_false']),
+    ],
+    projectionIssues: asArray(packet.projection_issues),
+    leaseCollisions: [
+      ...asArray(packet.lease_collisions),
+      ...(packet.lease_collision === true ? ['lease_collision_flag'] : []),
+    ],
+    replayMismatches: [
+      ...asArray(packet.replay_mismatches),
+      ...(packet.replay_identical === true ? [] : ['flag']),
+    ],
+    genesisCount: packet.genesis_count,
+    genesisSeq: packet.genesis_seq,
+    invariants: asArray(packet.invariants),
+    unknowns: [
+      ...asArray(packet.unknowns_from_genesis),
+      ...asArray(packet.unknowns_from_bindings),
+      ...asArray(packet.unknowns),
+    ],
   }
+}
 
-  const chainIssues = [
-    ...packet.chain_issues,
-    ...(packet.chain_intact ? [] : ['chain_intact_false']),
-    ...(packet.head_matches ? [] : ['head_mismatch']),
-  ]
-  if (chainIssues.length > 0)
-    return result(5, `HASH_CHAIN:${chainIssues.join(',')}`)
-  if (packet.projection_issues.length > 0)
-    return result(5, `GENESIS_PROJECTION:${packet.projection_issues.join(',')}`)
+/** Packet-level compatibility entry point; all decisions live in the core. */
+export function validateAuditPacket(packet, options = {}) {
+  return verifyStateSnapshot(snapshotFromPacket(packet, options))
+}
 
-  const leaseIssues = [
-    ...packet.lease_collisions,
-    ...(packet.lease_collision ? ['lease_collision_flag'] : []),
-  ]
-  if (leaseIssues.length > 0)
-    return result(6, `LEASE_COLLISION:${leaseIssues.join(',')}`)
-
-  if (!packet.replay_identical || packet.replay_mismatches.length > 0)
-    return result(5, `REPLAY_MISMATCH:${packet.replay_mismatches.join(',') || 'flag'}`)
-
-  return result(0, 'OK')
+/** Thin CLI wrapper: log in the packet-validator format, decide in the core. */
+export function auditSnapshot(snapshot, { logger = () => {} } = {}) {
+  const observed = verifyStateSnapshot(snapshot)
+  logger(`[LIVE] exit ${observed.code} ${observed.diagnostic}`)
+  return observed
 }
 
 function readFixture(name) {
@@ -264,72 +236,33 @@ export function runSelfTest({ logger = () => {} } = {}) {
   })
 }
 
-/** Assemble the live packet from live state, the receipts and the git index. */
-export function buildLivePacket() {
-  const bindings = readBindings()
-  const events = readEvents()
-  const genesis = events.find(event => event?.type === 'genesis') ?? {}
-  const receipts = ingestReceipts()
-  const unanchored = scanWave0Receipts().unanchored
-  const guardPins = loadGuardPins()
-  const indexPins = guardPinsFromIndex().pins
-  const head = deriveHead(events)
-  let headMatches = false
-  try {
-    // Exact match first: offline repos can have a raw HEAD with no commit object.
-    headMatches = resolveHeadSha() === head || resolveEffectiveHeadSha() === head
-  }
-  catch {
-    headMatches = false
-  }
-  const chain = verifyEventChain(events)
-  const files = buildAllState({ bindings, events, receipts, unanchored, guardPins, headSha: head })
-  const replayMismatches = verifyReplay(files)
-  const collisions = detectLeaseCollision(bindings.lane_leases, Object.keys(guardPins))
-  return {
-    schema: SCHEMA_PACKET,
-    wave: WAVE,
-    base_sha: bindings.base_sha,
-    beads_mode: bindings.beads_mode,
-    unknowns: [
-      ...(Array.isArray(genesis.unknowns) ? genesis.unknowns : ['malformed']),
-      ...(Array.isArray(bindings.unknowns) ? bindings.unknowns : ['malformed']),
-    ],
-    unknowns_from_genesis: Array.isArray(genesis.unknowns) ? [...genesis.unknowns] : ['malformed'],
-    unknowns_from_bindings: Array.isArray(bindings.unknowns) ? [...bindings.unknowns] : ['malformed'],
-    invariants: [...INVARIANTS],
-    genesis_count: events.filter(event => event?.type === 'genesis').length,
-    genesis_seq: genesis.seq,
-    schema_issues: [
-      ...checkClosedSchema(bindings, BINDINGS_KEYS, 'bindings'),
-      ...checkClosedSchema(genesis, GENESIS_KEYS, 'genesis'),
-    ],
-    chain_intact: chain.length === 0,
-    chain_issues: chain,
-    projection_issues: verifyEventProjection(events, { receipts, unanchored, guardPins }),
-    receipts_present: receipts.length === RECEIPT_MANIFEST.length,
-    receipts: receipts.map(receipt => ({ ...receipt })),
-    pinned_guard_blobs: { ...guardPins },
-    observed_guard_blobs: { ...indexPins },
-    replay_identical: replayMismatches.length === 0,
-    replay_mismatches: replayMismatches,
-    lease_collision: collisions.length > 0,
-    lease_collisions: collisions,
-    unanchored_receipts: unanchored.map(entry => ({ ...entry })),
-    head_matches: headMatches,
-  }
-}
-
-function main() {
-  const cases = runSelfTest({ logger: message => console.error(message) })
-  const broken = cases.filter(testCase => !testCase.ok)
+function main(args) {
+  const self = runSelfTest({ logger: message => console.error(message) })
+  const broken = self.filter(testCase => !testCase.ok)
   if (broken.length > 0)
     return 2
 
-  const live = validateAuditPacket(buildLivePacket())
-  console.error(`[LIVE] exit ${live.code} ${live.diagnostic}`)
-  // Propagate the live code verbatim: never turn a failing live audit into 0.
-  return live.code
+  const packetIndex = args.indexOf('--packet')
+  if (packetIndex !== -1) {
+    const packetPath = args[packetIndex + 1]
+    if (!packetPath) {
+      console.error('[PACKET] exit 2 SCHEMA_PACKET_PATH')
+      return 2
+    }
+    let packet
+    try {
+      packet = JSON.parse(fs.readFileSync(packetPath, 'utf8'))
+    }
+    catch (error) {
+      console.error(`[PACKET] exit 2 FIXTURE_UNREADABLE:${error.message}`)
+      return 2
+    }
+    const observed = verifyStateSnapshot(snapshotFromPacket(packet))
+    console.error(`[PACKET] exit ${observed.code} ${observed.diagnostic}`)
+    return observed.code
+  }
+
+  return auditSnapshot(buildAuditSnapshot(), { logger: message => console.error(message) }).code
 }
 
 const isMain = process.argv[1]
@@ -338,7 +271,7 @@ const isMain = process.argv[1]
 
 if (isMain) {
   try {
-    process.exit(main())
+    process.exit(main(process.argv.slice(2)))
   }
   catch (error) {
     console.error(`[AUDIT_PACKET_ERROR] ${error.message}`)

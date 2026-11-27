@@ -26,60 +26,40 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import {
+  BASE_SHA,
+  BINDINGS_KEYS,
+  checkClosed,
+  deriveHead,
+  GENESIS_KEYS,
+  INVARIANTS,
+  RECEIPT_MANIFEST,
+  SCHEMA_BINDINGS,
+  verifyEventChain,
+  verifyStateSnapshot,
+  WAVE,
+  ZERO_HASH,
+} from './lib/state-verifier.mjs'
+
+export {
+  BASE_SHA,
+  BINDINGS_KEYS,
+  deriveHead,
+  GENESIS_KEYS,
+  INVARIANTS,
+  RECEIPT_MANIFEST,
+  SCHEMA_BINDINGS,
+  SCHEMA_PACKET,
+  verifyEventChain,
+  WAVE,
+  ZERO_HASH,
+} from './lib/state-verifier.mjs'
+export { checkClosed as checkClosedSchema } from './lib/state-verifier.mjs'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = path.resolve(__dirname, '..')
 export const STATE_DIR = path.join(REPO_ROOT, 'state')
 export const WAVE0_DIR = path.join(REPO_ROOT, '.wave0')
-
-export const WAVE = 'r17'
-export const BASE_SHA = '38613b6ebc36ec59dd4687b5b5895dc469b84dc5'
-export const ZERO_HASH = '0'.repeat(64)
-export const SCHEMA_BINDINGS = 'airi-state-bindings/v1'
-export const SCHEMA_PACKET = 'airi-audit-packet/v1'
-
-/** Each receipt is pinned by base/head/diff hash AND the sha256 of its bytes. */
-export const RECEIPT_MANIFEST = [
-  {
-    id: 'airi-n90x',
-    path: '.wave0/lane-airi-n90x/receipt.json',
-    base_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    head_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    diff_hash: 'fccb761403a45cf6344e8376d4e127a4cfb7040667cc0c8a304fb746060e164b',
-    sha256: 'a312cf55d41972af1ce2eecf003ce75c56a87de11c260dfa56bbfbaab2e0f414',
-  },
-  {
-    id: 'airi-3jea',
-    path: '.wave0/lane-airi-3jea/receipt.json',
-    base_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    head_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    diff_hash: '2ff730d25f8d31bcf719d6c0b8955d0f9253f734e2e8750c06ef2ac67950cb3c',
-    sha256: '9cc4d6786c5d32d7c7b36e60a07008e113c9b537f35b0d1c5e88218fc6f639a5',
-  },
-  {
-    id: 'airi-4boj',
-    path: '.wave0/lane-airi-4boj/receipt.json',
-    base_sha: '85b9237e41ad584ce41e37de9776634c89ace0f2',
-    head_sha: '85b9237e41ad584ce41e37de9776634c89ace0f2',
-    diff_hash: null,
-    sha256: '66cf28f6897170715f4800dc5a3bf46fae8f269aee354eba0f9360161c660c06',
-  },
-  {
-    id: 'airi-3c7w',
-    path: '.wave0/lane-airi-3c7w/receipt.json',
-    base_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    head_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    diff_hash: '3c2ee6cec44a6a253f088441a53531bf71317e80dc76b666982d6a97eef5ff68',
-    sha256: '90544aae3de2fb4a72e61a60279de37d9fcf787087d8036fb49be2895feb3d60',
-  },
-  {
-    id: 'airi-tan6',
-    path: '.wave0/lane-airi-tan6/receipt.json',
-    base_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    head_sha: '31295343c20dad066b38265837e8ff58391ca680',
-    diff_hash: 'c94fe786d7a6ff0961db2dd59e527e9166b10baa22d37eedf8f748270ede55be',
-    sha256: '702fa0a5bdd05be722d0e2361b0cb52d866fdae9831a8bf10295f2d5de905cb6',
-  },
-]
 
 /** The 14 paths this lane owns. No other lane may lease any of them. */
 export const L0_OWNED = [
@@ -124,43 +104,6 @@ export const LANE_LEASES = {
     ],
   },
 }
-
-export const INVARIANTS = [
-  'single_genesis',
-  'beads_paused',
-  'unknowns_empty',
-  'receipts_present',
-  'guards_pinned',
-  'leases_disjoint',
-  'hash_chain_intact',
-  'replay_identical',
-]
-
-export const BINDINGS_KEYS = [
-  'schema',
-  'wave',
-  'base_sha',
-  'beads_mode',
-  'unknowns',
-  'receipts',
-  'pinned_guard_blobs',
-  'lane_leases',
-  'unanchored_receipts',
-]
-export const GENESIS_KEYS = [
-  'seq',
-  'type',
-  'prev_hash',
-  'wave',
-  'base_sha',
-  'beads_mode',
-  'unknowns',
-  'receipts',
-  'pinned_guard_blobs',
-  'lane_leases',
-  'unanchored_receipts',
-  'red_evidence',
-]
 
 /**
  * RED evidence captured before any file was written, at base 38613b6e.
@@ -491,60 +434,6 @@ export function buildUnanchoredEvents(unanchored, prevHash) {
   })
 }
 
-export function checkClosedSchema(value, allowed, label) {
-  return checkClosed(value, allowed, label)
-}
-
-function checkClosed(value, allowed, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return [`${label}:not_object`]
-  const extras = Object.keys(value).filter(key => !allowed.includes(key)).sort()
-  const missing = allowed.filter(key => !(key in value)).sort()
-  return [
-    ...extras.map(key => `${label}:extra_field:${key}`),
-    ...missing.map(key => `${label}:missing_field:${key}`),
-  ]
-}
-
-export function verifyEventChain(events) {
-  if (!Array.isArray(events) || events.length === 0)
-    return ['empty_event_log']
-  const issues = []
-  events.forEach((event, index) => {
-    if (event?.seq !== index + 1)
-      issues.push(`seq:${index}:${event?.seq}`)
-    if (!event || typeof event !== 'object' || Array.isArray(event)) {
-      issues.push(`malformed:${index}`)
-      return
-    }
-    if (index === 0) {
-      if (event.type !== 'genesis')
-        issues.push('genesis_not_first')
-      if (event.prev_hash !== ZERO_HASH)
-        issues.push('genesis_prev_hash')
-      issues.push(...checkClosed(event, GENESIS_KEYS, 'genesis'))
-      return
-    }
-    if (event.prev_hash !== hashEvent(events[index - 1]))
-      issues.push(`prev_hash:${index}`)
-    const allowed = event.type === 'WAVE0_RECEIPT_INGESTED'
-      ? ['seq', 'type', 'prev_hash', 'path', 'sha256', 'anchor_status', 'commit_sha']
-      : event.type === 'head_advanced'
-        ? ['seq', 'type', 'prev_hash', 'sha']
-        : []
-    if (allowed.length === 0) {
-      issues.push(`type:${index}:${event.type}`)
-      return
-    }
-    issues.push(...checkClosed(event, allowed, `event_${index}`))
-    if (event.type === 'head_advanced' && !isSha(event.sha))
-      issues.push(`head_sha:${index}`)
-  })
-  if (events.filter(event => event?.type === 'genesis').length !== 1)
-    issues.push('genesis_count')
-  return issues
-}
-
 function normalizeLease(value, guardRelPaths) {
   if (typeof value !== 'string' || value.length === 0)
     return { error: 'not_a_string' }
@@ -608,15 +497,6 @@ export function detectLeaseCollision(leases, guardRelPaths = []) {
   if (JSON.stringify(owned) !== JSON.stringify(l0Claims))
     collisions.push('L0_owned_set_mismatch')
   return [...new Set(collisions)].sort()
-}
-
-export function deriveHead(events) {
-  let head = BASE_SHA
-  for (const event of events) {
-    if (event?.type === 'head_advanced')
-      head = event.sha
-  }
-  return head
 }
 
 /**
@@ -807,94 +687,96 @@ export function verifyReplay(files) {
   return mismatches.sort()
 }
 
-function finish(logger, code, diagnostic) {
-  logger(`[SM_AUDIT] exit ${code} ${diagnostic}`)
-  return code
-}
-
-/** Full audit. Returns 0 or the r17 taxonomy code; never throws on bad input. */
-export function verifyState({ logger = () => {} } = {}) {
-  let receipts, bindings, events, scan, guardPins, unanchored
+/**
+ * Observe live state into a plain in-memory snapshot. This is the only
+ * disk-aware half of the audit; `verifyStateSnapshot` owns every decision.
+ */
+export function buildAuditSnapshot() {
+  const schemaIssues = []
+  let receipts = []
   try {
     receipts = ingestReceipts()
   }
   catch (error) {
-    return finish(logger, 2, `RECEIPT_INGEST:${error.message}`)
+    schemaIssues.push(`RECEIPT_INGEST:${error.message}`)
   }
+  let bindings = null
+  let events = null
   try {
     bindings = readBindings()
     events = readEvents()
   }
   catch (error) {
-    return finish(logger, 2, `SCHEMA_INPUT:${error.message}`)
+    schemaIssues.push(`SCHEMA_INPUT:${error.message}`)
   }
-  const bindingIssues = checkClosed(bindings, BINDINGS_KEYS, 'bindings')
-  if (bindingIssues.length > 0)
-    return finish(logger, 2, `SCHEMA_BINDINGS:${bindingIssues.join(',')}`)
-
-  const genesisEvents = events.filter(event => event?.type === 'genesis')
-  if (genesisEvents.length !== 1)
-    return finish(logger, 2, `SCHEMA_GENESIS_COUNT_${genesisEvents.length}`)
-  const genesis = genesisEvents[0]
-  const genesisIssues = checkClosed(genesis, GENESIS_KEYS, 'genesis')
-  if (genesisIssues.length > 0)
-    return finish(logger, 2, `SCHEMA_GENESIS:${genesisIssues.join(',')}`)
-  if (genesis.seq !== 1)
-    return finish(logger, 2, `SCHEMA_GENESIS_SEQ_${genesis.seq}`)
-
-  const unknowns = [
-    ...(Array.isArray(genesis.unknowns) ? genesis.unknowns : ['malformed']),
-    ...(Array.isArray(bindings.unknowns) ? bindings.unknowns : ['malformed']),
-  ]
-  if (unknowns.length > 0)
-    return finish(logger, 3, `UNKNOWNS_UNRESOLVED:${unknowns.join(',')}`)
-  if (genesis.beads_mode !== 'PAUSED' || bindings.beads_mode !== 'PAUSED')
-    return finish(logger, 2, 'SCHEMA_BEADS_MODE')
-  if (genesis.base_sha !== BASE_SHA || bindings.base_sha !== BASE_SHA || bindings.wave !== WAVE || genesis.wave !== WAVE)
-    return finish(logger, 2, 'SCHEMA_ANCHORS')
-
+  let guardPins = {}
+  let observedGuardBlobs = {}
+  let unanchored = []
   try {
-    scan = scanWave0Receipts()
-    unanchored = scan.unanchored
+    unanchored = scanWave0Receipts().unanchored
     guardPins = loadGuardPins()
+    observedGuardBlobs = guardPinsFromIndex().pins
   }
   catch (error) {
-    return finish(logger, 2, `SCHEMA_SCAN:${error.message}`)
+    schemaIssues.push(`SCHEMA_SCAN:${error.message}`)
   }
 
-  const drift = verifyGuardPins()
-  if (drift.length > 0)
-    return finish(logger, 4, `GUARD_DRIFT:${drift.join(',')}`)
-
-  const collisions = detectLeaseCollision(bindings.lane_leases, Object.keys(guardPins))
-  if (collisions.length > 0)
-    return finish(logger, 6, `LEASE_COLLISION:${collisions.join(',')}`)
-
-  const chain = verifyEventChain(events)
-  if (chain.length > 0)
-    return finish(logger, 5, `HASH_CHAIN:${chain.join(',')}`)
-
-  const projection = verifyEventProjection(events, { receipts, unanchored, guardPins })
-  if (projection.length > 0)
-    return finish(logger, 5, projection.join(','))
-
-  let headSha
-  try {
-    headSha = deriveHead(events)
-    const gitHead = resolveHeadSha()
-    const effectiveHead = gitHead === headSha ? gitHead : resolveEffectiveHeadSha()
-    if (effectiveHead !== headSha)
-      return finish(logger, 5, `HEAD_DRIFT:${gitHead}`)
+  const genesis = events ? events.find(event => event?.type === 'genesis') : null
+  const headSha = events ? deriveHead(events) : BASE_SHA
+  let effectiveHead = null
+  let leaseCollisions = []
+  let chainIssues = []
+  let projectionIssues = []
+  let replayMismatches = []
+  if (events && bindings && genesis) {
+    leaseCollisions = detectLeaseCollision(bindings.lane_leases, Object.keys(guardPins))
+    chainIssues = verifyEventChain(events)
+    projectionIssues = verifyEventProjection(events, { receipts, unanchored, guardPins })
+    try {
+      const gitHead = resolveHeadSha()
+      effectiveHead = gitHead === headSha ? gitHead : resolveEffectiveHeadSha()
+    }
+    catch {
+      // Head drift is decided by the core, not by the observer.
+    }
+    replayMismatches = verifyReplay(buildAllState({ bindings, events, receipts, unanchored, guardPins, headSha }))
   }
-  catch (error) {
-    return finish(logger, 5, `HEAD_DRIFT:${error.message}`)
+  return {
+    wave: bindings?.wave ?? WAVE,
+    expectedWave: WAVE,
+    baseSha: bindings?.base_sha ?? BASE_SHA,
+    beadsMode: bindings?.beads_mode ?? 'PAUSED',
+    bindings,
+    events,
+    receipts,
+    guardPins,
+    observedGuardBlobs,
+    wave0Scan: { known: [], unanchored },
+    effectiveHead,
+    headMatches: effectiveHead === null ? undefined : effectiveHead === headSha,
+    schemaIssues,
+    chainIssues,
+    projectionIssues,
+    leaseCollisions,
+    replayMismatches,
+    genesisCount: events ? events.filter(event => event?.type === 'genesis').length : 0,
+    genesisSeq: genesis?.seq,
+    receiptsPresent: receipts.length === RECEIPT_MANIFEST.length,
+    invariants: [...INVARIANTS],
+    unknowns: null,
   }
-  const files = buildAllState({ bindings, events, receipts, unanchored, guardPins, headSha })
-  const replay = verifyReplay(files)
-  if (replay.length > 0)
-    return finish(logger, 5, `REPLAY_MISMATCH:${replay.join(',')}`)
+}
 
-  return finish(logger, 0, 'OK')
+/** Thin CLI wrapper: log in the sm.mjs format, decide in the shared core. */
+export function auditSnapshot(snapshot, { logger = () => {} } = {}) {
+  const observed = verifyStateSnapshot(snapshot)
+  logger(`[SM_AUDIT] exit ${observed.code} ${observed.diagnostic}`)
+  return observed
+}
+
+/** Full audit. Returns 0 or the r1x taxonomy code; never throws on bad input. */
+export function verifyState({ logger = () => {} } = {}) {
+  return auditSnapshot(buildAuditSnapshot(), { logger }).code
 }
 
 /** HEAD is an explicit replay input: `git rev-parse HEAD`, no expected value. */
