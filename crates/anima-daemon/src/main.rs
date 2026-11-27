@@ -27,6 +27,8 @@ mod events;
 mod gateway;
 #[cfg(test)]
 mod gateway_contract_tests;
+#[cfg(test)]
+mod journal_retrieval_execution_tests;
 mod logging;
 mod observe;
 mod provider_validation;

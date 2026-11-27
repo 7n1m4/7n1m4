@@ -1,0 +1,85 @@
+{
+  "schema": "airi-channel-trace-v1",
+  "path": "retrieval.status/journal.append/journal.search/retrieval.status",
+  "frames": [
+    {
+      "type": "rpc",
+      "action": "retrieval.status",
+      "id": "r1",
+      "payload": {}
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "retrieval.status",
+      "ok": true,
+      "id": "r1",
+      "data": {
+        "available": true
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "journal.append",
+      "id": "j1",
+      "payload": {
+        "content": "round v31 journal retrieval golden seed",
+        "kind": "note"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "journal.append",
+      "ok": true,
+      "id": "j1",
+      "data": {
+        "id": "journal-minted-id-sentinel"
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "journal.search",
+      "id": "j2",
+      "payload": {
+        "query": "retrieval golden",
+        "limit": 50
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "journal.search",
+      "ok": true,
+      "id": "j2",
+      "data": {
+        "entries": [
+          {
+            "id": "journal-minted-id-sentinel",
+            "kind": "note",
+            "content": "round v31 journal retrieval golden seed",
+            "created_at": 1764000000000,
+            "updated_at": 1764000000000
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "retrieval.status",
+      "id": "r2",
+      "payload": {}
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "retrieval.status",
+      "ok": true,
+      "id": "r2",
+      "data": {
+        "available": false
+      }
+    }
+  ]
+}
