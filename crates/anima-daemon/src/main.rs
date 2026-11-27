@@ -38,6 +38,8 @@ mod session_execution_tests;
 mod state;
 #[cfg(test)]
 mod stmm_upsert_tests;
+#[cfg(test)]
+mod vault_execution_tests;
 mod wake_facts;
 
 use std::collections::HashMap;
