@@ -68,6 +68,7 @@ void main() {
     'theme',
     'captions',
     'user-profile',
+    'chat',
     'control-strip',
   ];
 

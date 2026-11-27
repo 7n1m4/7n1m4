@@ -16,6 +16,7 @@ import '../providers/providers_screen.dart';
 import '../sessions/sessions_screen.dart';
 import '../stage/stage_control_strip_state.dart';
 import 'captions_values.dart';
+import 'chat_values.dart';
 import 'memory_signals_screen.dart';
 import 'settings_catalog.dart';
 import 'settings_search.dart';
@@ -52,6 +53,7 @@ enum _SettingsSection {
   theme('theme', 'Theme', 'Save theme'),
   captions('captions', 'Captions', 'Save captions'),
   userProfile('user-profile', 'User Profile', 'Save user profile'),
+  chat('chat', 'Chat', 'Save chat'),
   controlStrip('control-strip', 'Floating Controls', 'Save floating controls');
 
   const _SettingsSection(this.key, this.label, this.saveLabel);
@@ -86,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _userDescription = TextEditingController();
   final TextEditingController _userPrompt = TextEditingController();
   final TextEditingController _userVoiceProfileId = TextEditingController();
+  final TextEditingController _chatTimeout = TextEditingController();
   final Map<_SettingsSection, GlobalKey> _cardKeys =
       <_SettingsSection, GlobalKey>{
         for (final section in _SettingsSection.values) section: GlobalKey(),
@@ -172,6 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _userDescription.dispose();
     _userPrompt.dispose();
     _userVoiceProfileId.dispose();
+    _chatTimeout.dispose();
     super.dispose();
   }
 
@@ -272,6 +276,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _userVoiceProfileId.text = _userProfileText(
               draft.values['voiceProfileId'],
             );
+          } else if (section == _SettingsSection.chat) {
+            // Fill only absent fields; a present malformed value stays in the
+            // draft (and the controller reads as empty) so Save fails closed.
+            draft.values = normalizeChat(values);
+            _chatTimeout.text = _chatTimeoutText(
+              draft.values['streamIdleTimeoutMs'],
+            );
           }
         });
       } on Object catch (e) {
@@ -290,6 +301,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _userDescription.text = '';
             _userPrompt.text = '';
             _userVoiceProfileId.text = '';
+          } else if (section == _SettingsSection.chat) {
+            _chatTimeout.text = '';
           }
           _settingsError = e is DaemonClientException
               ? userSafeConnectionError(
@@ -409,6 +422,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // malformed persisted value the user never touched still fails closed
         // before settingsSet is called.
         final validation = validateUserProfile(draft.values);
+        if (!validation.isValid) {
+          setState(() {
+            _settingsError = validation.error;
+            _settingsStatus = null;
+          });
+          return;
+        }
+      }
+      if (section == _SettingsSection.chat) {
+        // Same rule as user profile: the draft carries both edits and any
+        // malformed persisted value, so nothing unsafe reaches settingsSet.
+        final validation = validateChat(draft.values);
         if (!validation.isValid) {
           setState(() {
             _settingsError = validation.error;
@@ -602,6 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
       _buildCaptionsCard(context),
       _buildUserProfileCard(context),
+      _buildChatCard(context),
       if (_settingsError != null)
         Padding(
           padding: const EdgeInsets.only(top: 8),
@@ -1029,6 +1055,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildChatCard(BuildContext context) {
+    final draft = _drafts[_SettingsSection.chat]!;
+    final values = draft.values;
+    final enabled = draft.loaded && !_settingsBusy;
+    return _buildCard(
+      _SettingsSection.chat,
+      children: <Widget>[
+        DropdownButtonFormField<String>(
+          key: const Key('chat-send-mode'),
+          initialValue: _chatModeValue(
+            values['sendMode'],
+            chatSendModes,
+            'enter',
+          ),
+          decoration: const InputDecoration(labelText: 'Send shortcut'),
+          items: const <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(value: 'enter', child: Text('Enter')),
+            DropdownMenuItem<String>(
+              value: 'ctrl-enter',
+              child: Text('Ctrl+Enter'),
+            ),
+            DropdownMenuItem<String>(
+              value: 'double-enter',
+              child: Text('Double Enter'),
+            ),
+          ],
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.chat, 'sendMode', value)
+              : null,
+        ),
+        DropdownButtonFormField<String>(
+          key: const Key('chat-suggest-mode'),
+          initialValue: _chatModeValue(
+            values['suggestMode'],
+            chatSuggestModes,
+            'double-enter',
+          ),
+          decoration: const InputDecoration(labelText: 'Suggestion shortcut'),
+          items: const <DropdownMenuItem<String>>[
+            DropdownMenuItem<String>(value: 'enter', child: Text('Enter')),
+            DropdownMenuItem<String>(
+              value: 'ctrl-enter',
+              child: Text('Ctrl+Enter'),
+            ),
+            DropdownMenuItem<String>(
+              value: 'double-enter',
+              child: Text('Double Enter'),
+            ),
+            DropdownMenuItem<String>(
+              value: 'disabled',
+              child: Text('Disabled'),
+            ),
+          ],
+          onChanged: enabled
+              ? (value) => _edit(_SettingsSection.chat, 'suggestMode', value)
+              : null,
+        ),
+        TextField(
+          key: const Key('chat-stream-idle-timeout-ms'),
+          controller: _chatTimeout,
+          enabled: enabled,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Stream idle timeout (ms)',
+          ),
+          // Keep a non-numeric draft string so Save fails closed on it; a
+          // valid decimal lands in the draft as the u64 the daemon expects.
+          onChanged: (text) => _edit(
+            _SettingsSection.chat,
+            'streamIdleTimeoutMs',
+            int.tryParse(text) ?? text,
+          ),
+        ),
+        SwitchListTile(
+          key: const Key('chat-show-director-notes'),
+          contentPadding: EdgeInsets.zero,
+          value: values['showDirectorNotes'] == true,
+          onChanged: enabled
+              ? (value) =>
+                    _edit(_SettingsSection.chat, 'showDirectorNotes', value)
+              : null,
+          title: const Text('Show director notes'),
+        ),
+        SwitchListTile(
+          key: const Key('chat-combine-system-messages'),
+          contentPadding: EdgeInsets.zero,
+          value: values['combineSystemMessages'] == true,
+          onChanged: enabled
+              ? (value) =>
+                    _edit(_SettingsSection.chat, 'combineSystemMessages', value)
+              : null,
+          title: const Text('Combine system messages'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildControlStripCard(BuildContext context) {
     final draft = _drafts[_SettingsSection.controlStrip]!;
     final values = draft.values;
@@ -1295,6 +1418,15 @@ bool _isValidLocale(String value) =>
 /// Display text for a persisted user-profile field. A non-string blob value is
 /// shown as empty but kept in the draft, so Save still fails closed on it.
 String _userProfileText(Object? value) => value is String ? value : '';
+
+/// Display value of a stored chat shortcut. An unrecognized value reads as
+/// the daemon default; the raw value stays in the draft so Save fails closed.
+String _chatModeValue(Object? value, Set<String> allowed, String fallback) =>
+    value is String && allowed.contains(value) ? value : fallback;
+
+/// Display text for the persisted idle timeout. A malformed value reads as
+/// empty but stays in the draft, so Save still fails closed on it.
+String _chatTimeoutText(Object? value) => value is int ? '$value' : '';
 
 /// Wire value of a stored caption docking (`top`/`bottom`/`head`/`none`);
 /// anything unrecognized reads as the daemon's own default, `none`.
