@@ -1038,6 +1038,27 @@ impl CoreService {
             .map_err(|_| "message append failed".to_string())
     }
 
+    /// Persist a user turn with validated attachment descriptors through the
+    /// daemon-owned store (single writer), emitting core events on the SHARED
+    /// bus. Creates the session on demand.
+    ///
+    /// A throwaway `AppCore::new(db)` would emit `MessageAppended` on a private
+    /// bus that dies with it, hiding the turn from gateway subscribers.
+    pub fn chat_send_with_attachments(
+        &self,
+        session_id: &str,
+        content: &str,
+        attachments: &[anima_channel::wire::AttachmentDescriptor],
+    ) -> Result<anima_store::StoredMessage, String> {
+        let guard = self.inner.lock().map_err(|_| "lock poisoned".to_string())?;
+        let core = guard
+            .core
+            .as_ref()
+            .ok_or_else(|| "store unavailable".to_string())?;
+        core.append_user_turn_with_attachments(session_id, content, attachments)
+            .map_err(|_| "message append failed".to_string())
+    }
+
     /// Ensure the requested session row exists before `send_message` runs.
     ///
     /// `ChatService::ensure_session` only honours an explicit id when that row

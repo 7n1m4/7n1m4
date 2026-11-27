@@ -1320,9 +1320,11 @@ impl Gateway {
                                     // The ack already validated the attachments;
                                     // persist them with the turn instead of
                                     // writing metadata `{}` and losing them.
-                                    if let Some(db) = core_for_send.db() {
-                                        let app_core = anima_core::AppCore::new(db);
-                                        let _ = app_core.append_user_turn_with_attachments(
+                                    // Persist through the gateway's CoreService so
+                                    // MessageAppended reaches the SHARED core bus,
+                                    // not a throwaway AppCore's private bus.
+                                    if core_for_send.db().is_some() {
+                                        let _ = core_for_send.chat_send_with_attachments(
                                             &sid,
                                             &content_clone,
                                             &attachments,
@@ -4460,6 +4462,13 @@ mod tests {
     #[test]
     fn chat_send_without_provider_persists_attachments() {
         let (gateway, _tmp) = isolated_gateway();
+        // Subscribe before send: the no-provider fallback must emit on the
+        // gateway CoreService's SHARED bus, not a throwaway AppCore's private
+        // bus that is dropped as soon as the fallback returns.
+        let mut core_events = gateway
+            .core
+            .subscribe_core_events()
+            .expect("isolated core must expose its event bus");
         let handlers = handlers(&gateway);
         enable_actions(&gateway);
         let send = handlers.get("chat.send").unwrap();
@@ -4498,6 +4507,47 @@ mod tests {
         assert_eq!(msg.metadata["attachments"][0]["data"], "aGVsbG8=");
         assert_eq!(msg.metadata["attachments"][0]["fileName"], "shot.png");
         assert_eq!(msg.metadata["attachments"][0]["url"], "file:///shot.png");
+
+        // Shared-bus contract: the append that wrote the attachment-bearing
+        // turn must be visible to subscribers of the daemon-owned core.
+        // (`append_user_turn_with_attachments` emits `MessageAppended` only;
+        // `SessionCreated` comes from `AppCore::create_session`, a different
+        // path, so it is not expected for this turn.)
+        let mut appended_id = None;
+        for _ in 0..100 {
+            while let Ok(event) = core_events.try_recv() {
+                if let anima_core::CoreEvent::MessageAppended { session_id, id } = event {
+                    if session_id == "no-provider-attachments" {
+                        appended_id = Some(id);
+                    }
+                }
+            }
+            if appended_id.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let appended_id =
+            appended_id.expect("no-provider append must reach the shared core event bus");
+        // The shared-bus event's message id names the persisted turn whose
+        // metadata carries the validated attachment descriptors.
+        let persisted_by_event = gateway
+            .core
+            .chat_stream("no-provider-attachments")
+            .unwrap()
+            .into_iter()
+            .find(|m| m.id == appended_id)
+            .expect("shared-bus MessageAppended id must name the persisted turn");
+        assert_eq!(persisted_by_event.role, "user");
+        assert_eq!(persisted_by_event.content, "look");
+        assert_eq!(
+            persisted_by_event.metadata["attachments"][0]["mimeType"],
+            "image/png"
+        );
+        assert_eq!(
+            persisted_by_event.metadata["attachments"][0]["data"],
+            "aGVsbG8="
+        );
     }
 
     #[test]
