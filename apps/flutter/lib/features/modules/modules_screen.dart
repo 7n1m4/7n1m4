@@ -932,9 +932,23 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
   bool _saving = false;
   String? _status;
   String? _error;
+  void Function()? _unsubscribeEvents;
+
+  @override
+  void initState() {
+    super.initState();
+    // The daemon owns the section; another client can change it while this
+    // editor is open. Re-read the masked view instead of keeping a stale draft.
+    _unsubscribeEvents = widget.client.onEvent((event) {
+      if (event.topic != EventTopic.settingsChanged) return;
+      if (event.data['section'] != 'discord') return;
+      unawaited(_load());
+    });
+  }
 
   @override
   void dispose() {
+    _unsubscribeEvents?.call();
     _tokenController.dispose();
     super.dispose();
   }
@@ -975,12 +989,15 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
 
   Future<void> _save() async {
     final view = _view;
-    if (view == null) return;
+    // A stale callback from a control that was enabled before the first PATCH
+    // must not start an overlapping write.
+    if (view == null || _saving) return;
     final patch = buildDiscordPatch(
       view,
       edits: _choices,
       typedToken: _tokenController.text,
     );
+    final tokenSaved = patch.containsKey('token');
     setState(() {
       _saving = true;
       _error = null;
@@ -995,8 +1012,13 @@ class _DiscordSectionEditorState extends State<DiscordSectionEditor> {
           _status = 'Discord settings saved.';
           _tokenController.clear();
           // Keep the edited values, but never retain a token locally: the next
-          // save must not re-send it just because the field was cleared.
-          _view = <String, dynamic>{...view, ...patch}..remove('token');
+          // save must not re-send it just because the field was cleared. A
+          // freshly saved token flips the read hint immediately; the credential
+          // itself is never held or rendered.
+          final nextView = <String, dynamic>{...view, ...patch}
+            ..remove('token');
+          if (tokenSaved) nextView['hasToken'] = true;
+          _view = nextView;
         } else {
           _status = 'Discord settings were not saved.';
         }
