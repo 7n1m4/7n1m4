@@ -226,3 +226,149 @@ async fn act_marker_stream_drives_real_chat_send_to_golden_emotion_tag() {
         "the real handler's cue equals the unchanged golden event after projecting process-minted fields"
     );
 }
+
+/// Presence/status reuse the same untagged `event` frame schema as the ACT cue
+/// above (topic + flat data + bus-minted seq/ts_ms), so the identical
+/// real-handler → real-bus → golden-frame proof applies to them unchanged.
+#[test]
+fn presence_status_golden_events_replay_through_real_publisher() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../anima-channel/fixtures/golden");
+    let load = |name: &str| -> serde_json::Value {
+        serde_json::from_str(
+            &fs::read_to_string(dir.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}")),
+        )
+        .unwrap_or_else(|e| panic!("parse {name}: {e}"))
+    };
+    let healthy = load("event.status_changed.healthy.json");
+    let unhealthy = load("event.status_changed.unhealthy.json");
+    let online = load("event.presence_changed.online.json");
+    let offline = load("event.presence_changed.offline.json");
+    let core_reply = load("core_status.reply.json");
+
+    for (golden, topic) in [
+        (&healthy, "status.changed"),
+        (&unhealthy, "status.changed"),
+        (&online, "presence.changed"),
+        (&offline, "presence.changed"),
+    ] {
+        assert_eq!(golden["type"], "event");
+        assert_eq!(golden["topic"], topic);
+    }
+
+    // Same explicit tempdir config + renderer_handlers gate as the ACT proof:
+    // no process-global AIRI_SERVER_CHANNEL_CONFIG env var is touched.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let config_dir = tmp.path().join("server-channel");
+    fs::create_dir_all(&config_dir).expect("config dir");
+    let config_path = config_dir.join("config.json");
+    let mut config = anima_channel::ChannelConfig::healed();
+    config.allow_actions = Some(true);
+    fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).expect("config.json");
+    let core = CoreService::open(Some(tmp.path().to_path_buf()));
+    assert!(core.available(), "isolated core must be available");
+    let publisher = EventPublisher::new(anima_channel::EventBus::with_defaults());
+    let handlers = Gateway::renderer_handlers(&core, &publisher, &config_path, "127.0.0.1");
+
+    // Subscribe BEFORE publishing so no real event races past the lane.
+    let lane = publisher.bus().new_lane();
+    lane.subscribe(EventTopic::ALL);
+    publisher.bus().register_lane(&lane);
+
+    // (a) Healthy health comes from the REAL `core.status` handler, which
+    // drives the real publisher.status_changed on this bus.
+    let reply = handlers
+        .get("core.status")
+        .expect("core.status handler registered")("core.status", &json!({}))
+    .expect("real core.status must ack");
+    // core.rs:538 mints CARGO_PKG_NAME ('anima-daemon') while
+    // core_status.reply.json and runtime_status.reply.json say 'airi-daemon'.
+    // This test compares only the health fields that feed status.changed; the
+    // identity drift is unowned and tracked by follow-up bead airi-ib4p.
+    assert_eq!(reply["coreAvailable"], core_reply["coreAvailable"]);
+    assert_eq!(reply["storeAvailable"], core_reply["storeAvailable"]);
+    assert_eq!(reply["storeHealth"], core_reply["storeHealth"]);
+
+    let mut events = lane.drain();
+    assert_eq!(events.len(), 1, "one status.changed per health change");
+    assert_eq!(events[0].topic, EventTopic::StatusChanged);
+
+    // (b) An identical repeat returns false and emits NOTHING at all.
+    assert!(
+        !publisher.status_changed(true, true, "ok", None),
+        "an unchanged health snapshot must be deduped"
+    );
+    assert_eq!(lane.len(), 0, "a deduped snapshot publishes no frame");
+
+    // (c) Distinct health + two real presence transitions on the same bus.
+    assert!(publisher.status_changed(false, false, "unavailable", None));
+    publisher.presence_changed("user-42", "online", None);
+    publisher.presence_changed("user-42", "offline", None);
+    events.extend(lane.drain());
+    assert_eq!(
+        events.len(),
+        4,
+        "unhealthy status + online + offline presence"
+    );
+
+    // Assert LIVE invariants before projecting anything onto fixture sentinels.
+    let mut seqs = Vec::new();
+    for event in &events {
+        let (seq, ts_ms) = match &event.data {
+            EventPayload::StatusChanged(d) => (d.seq, d.ts_ms),
+            EventPayload::PresenceChanged(d) => (d.seq, d.ts_ms),
+            other => panic!("unexpected event on lane: {other:?}"),
+        };
+        assert!(ts_ms > 0, "bus must stamp a real wall clock: {event:?}");
+        seqs.push(seq);
+        let obj = serde_json::to_value(&event.data).expect("data serializes");
+        let obj = obj.as_object().expect("data object");
+        for forbidden in [
+            "authToken",
+            "auth_token",
+            "dbusToken",
+            "apiKey",
+            "api_key",
+            "secret",
+            "prompt",
+            "config",
+            "token",
+            "path",
+            "password",
+        ] {
+            assert!(
+                !obj.contains_key(forbidden),
+                "forbidden field {forbidden} on {event:?}"
+            );
+        }
+    }
+    assert!(
+        seqs.windows(2).all(|pair| pair[0] < pair[1]),
+        "bus seq must be strictly monotonic in publication order: {seqs:?}"
+    );
+
+    // Each live frame, after projecting ONLY the process-minted seq/ts_ms, is
+    // byte-for-byte the unchanged golden event frame.
+    for (event, golden) in events.iter().zip([&healthy, &unhealthy, &online, &offline]) {
+        let golden_seq = golden["data"]["seq"].as_u64().expect("golden seq");
+        let golden_ts = golden["data"]["ts_ms"].as_u64().expect("golden ts");
+        let mut projected = serde_json::to_value(&event.data).expect("data serializes");
+        let data = projected.as_object_mut().expect("data object");
+        for (key, value) in golden["data"].as_object().expect("golden data") {
+            if key == "seq" || key == "ts_ms" {
+                continue;
+            }
+            assert_eq!(
+                &data[key], value,
+                "live {key} must match the golden before projection"
+            );
+        }
+        data["seq"] = json!(golden_seq);
+        data["ts_ms"] = json!(golden_ts);
+        let topic = serde_json::to_value(event.topic).expect("topic serializes");
+        let frame = json!({ "type": "event", "topic": topic, "data": projected });
+        assert_eq!(
+            frame, *golden,
+            "real published frame equals the unchanged golden after projecting seq/ts_ms"
+        );
+    }
+}
