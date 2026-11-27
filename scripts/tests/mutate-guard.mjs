@@ -4,6 +4,7 @@
 // invoked as real child processes, and the temp root is removed in `finally`.
 import process from 'node:process'
 
+import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -130,11 +131,14 @@ function locateTarget(content, needle) {
 
 function normalizeText(text, root) {
   return String(text ?? '')
-    .split(root).join(DETACHED_ROOT)
-    .replace(/\/tmp\/[^\s'"\n]+/g, '<TMP_PATH>')
-    .replace(/\/home\/[^\s'"\n]+/g, '<HOME_PATH>')
+    .split(root)
+    .join(DETACHED_ROOT)
+    .replace(/\/tmp\/[^\s'"]+/g, '<TMP_PATH>')
+    .replace(/\/home\/[^\s'"]+/g, '<HOME_PATH>')
     .replace(/\r/g, '')
-    .split('\n').map(line => line.trimEnd()).join('\n')
+    .split('\n')
+    .map(line => line.trimEnd())
+    .join('\n')
     .replace(/^\n+|\n+$/g, '')
 }
 
