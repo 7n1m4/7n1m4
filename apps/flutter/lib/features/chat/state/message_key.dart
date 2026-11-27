@@ -72,8 +72,9 @@ class MessageKey {
     for (final unit in _foldDigitsToAscii(raw.trim()).codeUnits) {
       if (unit >= _asciiDigitZero && unit <= _asciiDigitZero + 9) {
         run++;
-        if (run >= _epochPrefixLength)
+        if (run >= _epochPrefixLength) {
           return 'id must not carry an epoch prefix';
+        }
       } else {
         run = 0;
       }

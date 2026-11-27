@@ -261,11 +261,31 @@ class _StageScreenState extends State<StageScreen> {
   }
 
   void _onStripAction(StageStripAction action) {
-    // Only the expand notch has a local effect; the rest is reported intent
-    // for a future daemon-owned panel dispatch.
-    if (action.buttonId == '__expand') {
-      _strip.setCollapsed(false);
-      setState(() {});
+    switch (action.buttonId) {
+      case '__expand':
+        _strip.setCollapsed(false);
+        setState(() {});
+      case 'stage':
+        _strip.togglePanel('stage');
+        setState(() {});
+      case 'caption':
+        _strip.togglePanel('caption');
+        final open = _strip.openPanel == 'caption';
+        final current = _render.captionStyle;
+        _render.setCaptionStyle(
+          StageCaptionStyle(
+            enabled: current.enabled,
+            docking: open
+                ? StageCaptionDocking.bottom
+                : StageCaptionDocking.none,
+            fontSize: current.fontSize,
+            opacity: current.opacity,
+          ),
+        );
+        setState(() {});
+      default:
+        // Unknown ids are reported intent only; nothing to apply locally.
+        break;
     }
   }
 

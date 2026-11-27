@@ -520,6 +520,18 @@ pub struct ChatSendReply {
     pub accepted: bool,
 }
 
+/// Stream cursor for daemon-authoritative gap detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamCursor {
+    /// Epoch; increments on server restart / session reset.
+    #[specta(type = specta_typescript::Number)]
+    pub epoch: u64,
+    /// Strictly monotonic seq within an epoch.
+    #[specta(type = specta_typescript::Number)]
+    pub seq: u64,
+}
+
 /// A streamed chat delta (transport-level, distinct from token.delta event).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -536,6 +548,9 @@ pub struct ChatDelta {
     /// True on final.
     #[serde(rename = "final")]
     pub final_: bool,
+    /// Optional stream cursor (daemon-authoritative).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<StreamCursor>,
 }
 
 /// Request payload for `chat.cancel`.
@@ -573,6 +588,9 @@ pub struct ChatMessage {
     #[specta(type = specta_typescript::Unknown)]
     /// Metadata JSON.
     pub metadata: Value,
+    /// Optional stream cursor (daemon-authoritative).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<StreamCursor>,
 }
 
 /// A short-term-memory daily summary surfaced to thin clients.
@@ -2120,5 +2138,29 @@ mod tests {
         );
         let decoded: ChatSendRequest = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, request);
+    }
+    #[test]
+    fn stream_cursor_roundtrip_and_none_omission() {
+        let c = StreamCursor { epoch: 7, seq: 42 };
+        let v = serde_json::to_value(&c).unwrap();
+        let dec: StreamCursor = serde_json::from_value(v).unwrap();
+        assert_eq!(dec, c);
+        let d = ChatDelta {
+            session_id: "s".into(),
+            message_id: "m".into(),
+            delta: "hi".into(),
+            index: 0,
+            final_: false,
+            cursor: None,
+        };
+        let dv = serde_json::to_value(&d).unwrap();
+        assert!(dv.get("cursor").is_none());
+        let dd: ChatDelta = serde_json::from_value(dv).unwrap();
+        assert_eq!(dd, d);
+        let d2 = ChatDelta { cursor: Some(c), ..d };
+        let dv2 = serde_json::to_value(&d2).unwrap();
+        assert_eq!(dv2["cursor"], json!({"epoch": 7, "seq": 42}));
+        let dd2: ChatDelta = serde_json::from_value(dv2).unwrap();
+        assert_eq!(dd2, d2);
     }
 }
