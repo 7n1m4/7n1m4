@@ -4,10 +4,10 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { verifyStateSnapshot } from '../lib/state-verifier.mjs'
+import { hashEvent, verifyStateSnapshot } from '../lib/state-verifier.mjs'
 import { auditSnapshot, buildAuditSnapshot } from '../sm.mjs'
 import { auditSnapshot as packetAuditSnapshot, snapshotFromPacket, validateAuditPacket } from './audit-packet.mjs'
 
@@ -136,6 +136,218 @@ test('r18 packet validates without editing frozen state', (t) => {
   })
   assert.equal(cli.status, 0, cli.stderr)
   assert.match(cli.stderr, /\[PACKET\] exit 0 OK/)
+})
+
+/** Throwaway repo with a real history whose trailing seal records its parent's head. */
+function makeHistoryRepo(t) {
+  const dir = mkdtempSync(path.join('/tmp/opencode', 'verify-head-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  for (const rel of ['scripts', 'state', '.wave0'])
+    cpSync(path.join(repoRoot, rel), path.join(dir, rel), { recursive: true })
+
+  const git = args => spawnSync('git', args, {
+    cwd: dir,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      LC_ALL: 'C',
+      GIT_AUTHOR_NAME: 'Parity Test',
+      GIT_AUTHOR_EMAIL: 'parity@example.invalid',
+      GIT_COMMITTER_NAME: 'Parity Test',
+      GIT_COMMITTER_EMAIL: 'parity@example.invalid',
+    },
+  })
+  const ok = (args) => {
+    const result = git(args)
+    assert.equal(result.status, 0, `git ${args.join(' ')}: ${result.stderr}`)
+    return result.stdout.trim()
+  }
+  ok(['init', '-q'])
+  ok(['config', 'commit.gpgsign', 'false'])
+  ok(['config', 'core.hooksPath', '/dev/null'])
+  ok(['add', '-A'])
+  ok(['commit', '-q', '-m', 'genesis'])
+
+  writeFileSync(path.join(dir, 'feature.txt'), 'feature\n')
+  ok(['add', 'feature.txt'])
+  ok(['commit', '-q', '-m', 'feature'])
+  const featureSha = ok(['rev-parse', 'HEAD'])
+  const advanced = spawnSync(process.execPath, [path.join(dir, 'scripts', 'sm.mjs'), 'head:advance', '--sha', featureSha], { cwd: dir, encoding: 'utf8' })
+  assert.equal(advanced.status, 0, advanced.stderr)
+  ok(['add', '--', 'state/events.ndjson', 'state/index.json', 'state/bindings.json'])
+  ok(['commit', '-q', '-m', 'state seal'])
+  return { dir, git, ok, featureSha, sealSha: ok(['rev-parse', 'HEAD']) }
+}
+
+test('self-certified packet cannot certify a stale live HEAD (F10)', (t) => {
+  const { dir, ok } = makeHistoryRepo(t)
+  writeFileSync(path.join(dir, 'drift.js'), 'export {}\n')
+  ok(['add', 'drift.js'])
+  ok(['commit', '-q', '-m', 'code drift'])
+
+  const packetPath = path.join(dir, 'packet.json')
+  writeFileSync(packetPath, requireFixture('valid.json'))
+  const run = extra => spawnSync(process.execPath, [path.join(dir, 'scripts', 'tests', 'audit-packet.mjs'), '--packet', packetPath, ...extra], { cwd: dir, encoding: 'utf8' })
+  const online = run([])
+  assert.equal(online.status, 5, online.stderr)
+  assert.match(online.stderr, /\[LIVE\] exit 5 HEAD_DRIFT/)
+  const offline = run(['--offline'])
+  assert.equal(offline.status, 0, offline.stderr)
+  assert.doesNotMatch(offline.stderr, /\[LIVE\]/)
+})
+
+test('red_evidence drift fails closed even after the chain is rebuilt (F11)', () => {
+  const snapshot = structuredClone(baseline)
+  snapshot.events[0].red_evidence.commands[0].exit_code = 0
+  for (let index = 1; index < snapshot.events.length; index++)
+    snapshot.events[index].prev_hash = hashEvent(snapshot.events[index - 1])
+
+  const core = verifyStateSnapshot(snapshot)
+  assert.equal(core.code, 5, core.diagnostic)
+  assert.match(core.diagnostic, /GENESIS_PROJECTION:GENESIS_CONTENT_DRIFT/)
+  assert.deepEqual(auditSnapshot(structuredClone(snapshot), { logger: () => {} }), core)
+  assert.deepEqual(packetAuditSnapshot(structuredClone(snapshot), { logger: () => {} }), core)
+})
+
+test('packet base SHA is compared with the live base (F10)', (t) => {
+  const dir = mkdtempSync(path.join('/tmp/opencode', 'verify-base-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const packet = { ...JSON.parse(requireFixture('valid.json')), base_sha: 'a'.repeat(40) }
+  const packetPath = path.join(dir, 'base-drift.json')
+  writeFileSync(packetPath, JSON.stringify(packet))
+  const cli = spawnSync(process.execPath, [path.join(repoRoot, 'scripts', 'tests', 'audit-packet.mjs'), '--packet', packetPath], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+  assert.equal(cli.status, 2, cli.stderr)
+  assert.match(cli.stderr, /\[PACKET\] exit 2 PACKET_BASE_DRIFT/)
+})
+
+test('fixtures follow the guard pins while a blob mismatch still fails closed (F13)', (t) => {
+  const dir = mkdtempSync(path.join('/tmp/opencode', 'verify-pins-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  for (const rel of ['scripts', 'state', '.wave0'])
+    cpSync(path.join(repoRoot, rel), path.join(dir, rel), { recursive: true })
+
+  const pinFile = path.join(dir, 'state', 'pinned-guards.sha')
+  const changedPins = readFileSync(pinFile, 'utf8').trim().split('\n').map(line => `${'1'.repeat(40)} ${line.split(' ')[1]}`).join('\n')
+  writeFileSync(pinFile, `${changedPins}\n`)
+
+  const script = `
+    import { loadGuardPins } from ${JSON.stringify(path.join(dir, 'scripts', 'sm.mjs'))}
+    import { runSelfTest, validateAuditPacket } from ${JSON.stringify(path.join(dir, 'scripts', 'tests', 'audit-packet.mjs'))}
+    const pins = loadGuardPins()
+    const packet = {
+      ...JSON.parse(${JSON.stringify(readFileSync(path.join(dir, 'scripts', 'tests', 'fixtures', 'audit-packet', 'valid.json'), 'utf8'))}),
+      pinned_guard_blobs: { ...pins },
+      observed_guard_blobs: { ...pins },
+    }
+    const cases = runSelfTest({ logger: () => {} })
+    const drift = structuredClone(packet)
+    drift.observed_guard_blobs[Object.keys(drift.observed_guard_blobs).sort()[0]] = '0'.repeat(40)
+    console.log(JSON.stringify({ codes: cases.map(item => item.code), drift: validateAuditPacket(drift) }))
+  `
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  const observed = JSON.parse(result.stdout.trim())
+  assert.deepEqual(observed.codes, [0, 2, 2, 3, 4, 5, 5, 6], result.stdout)
+  assert.equal(observed.drift.code, 4, result.stdout)
+  assert.match(observed.drift.diagnostic, /GUARD_DRIFT/)
+})
+
+test('a trust-anchor commit is never skipped as state bookkeeping (F14)', (t) => {
+  const { dir, git, ok } = makeHistoryRepo(t)
+  assert.equal(git(['update-index', '--chmod=+x', 'state/pinned-guards.sha']).status, 0)
+  ok(['commit', '-q', '-m', 'touch trust anchor'])
+  assert.match(git(['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).stdout, /state\/pinned-guards\.sha/)
+
+  const audit = spawnSync(process.execPath, [path.join(dir, 'scripts', 'sm.mjs'), 'audit'], { cwd: dir, encoding: 'utf8' })
+  assert.equal(audit.status, 5, audit.stderr)
+  assert.match(audit.stderr, /HEAD_DRIFT/)
+})
+
+test('a merge commit at HEAD is never treated as a transparent seal (F14)', (t) => {
+  const { dir, ok } = makeHistoryRepo(t)
+  ok(['checkout', '-q', '-b', 'side'])
+  writeFileSync(path.join(dir, 'side.txt'), 'side\n')
+  ok(['add', 'side.txt'])
+  ok(['commit', '-q', '-m', 'side'])
+  ok(['checkout', '-q', '-'])
+  ok(['merge', '--no-ff', '-q', '-m', 'merge side', 'side'])
+
+  const audit = spawnSync(process.execPath, [path.join(dir, 'scripts', 'sm.mjs'), 'audit'], { cwd: dir, encoding: 'utf8' })
+  assert.equal(audit.status, 5, audit.stderr)
+  assert.match(audit.stderr, /HEAD_DRIFT/)
+})
+
+test('AUDIT_TARGET_SHA cannot bless a single-parent code drift', (t) => {
+  const { dir, ok, featureSha } = makeHistoryRepo(t)
+  writeFileSync(path.join(dir, 'drift.js'), 'export {}\n')
+  ok(['add', 'drift.js'])
+  ok(['commit', '-q', '-m', 'code drift'])
+
+  const env = { ...process.env, AUDIT_TARGET_SHA: featureSha }
+  const run = (script, args) => spawnSync(process.execPath, [path.join(dir, 'scripts', script), ...args], { cwd: dir, encoding: 'utf8', env })
+  const sm = run('sm.mjs', ['audit'])
+  assert.equal(sm.status, 5, sm.stderr)
+  assert.match(sm.stderr, /HEAD_DRIFT/)
+
+  const packetPath = path.join(dir, 'packet.json')
+  writeFileSync(packetPath, requireFixture('valid.json'))
+  const packet = run('tests/audit-packet.mjs', ['--packet', packetPath])
+  assert.equal(packet.status, 5, packet.stderr)
+  assert.match(packet.stderr, /\[LIVE\] exit 5 HEAD_DRIFT/)
+})
+
+test('AUDIT_TARGET_SHA only applies to a merge whose parent is the PR head', (t) => {
+  const valid = makeHistoryRepo(t)
+  const stateNames = ['events.ndjson', 'bindings.json', 'index.json', 'SUMMARY.md', 'current_wave.json', 'pinned-guards.sha']
+  const stateBytes = stateNames.map(name => [name, readFileSync(path.join(valid.dir, 'state', name))])
+  valid.ok(['checkout', '-q', '-b', 'side', valid.featureSha])
+  writeFileSync(path.join(valid.dir, 'side.txt'), 'side\n')
+  valid.ok(['add', 'side.txt'])
+  valid.ok(['commit', '-q', '-m', 'side'])
+  valid.ok(['checkout', '-q', valid.featureSha])
+  valid.ok(['merge', '--no-ff', '-q', '-m', 'merge side', 'side'])
+  for (const [name, bytes] of stateBytes)
+    writeFileSync(path.join(valid.dir, 'state', name), bytes)
+  assert.ok(valid.ok(['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').slice(1).includes(valid.featureSha))
+  const green = spawnSync(process.execPath, [path.join(valid.dir, 'scripts', 'sm.mjs'), 'audit'], {
+    cwd: valid.dir,
+    encoding: 'utf8',
+    env: { ...process.env, AUDIT_TARGET_SHA: valid.featureSha },
+  })
+  assert.equal(green.status, 0, green.stderr)
+
+  const invalid = makeHistoryRepo(t)
+  invalid.ok(['checkout', '-q', '-b', 'side'])
+  writeFileSync(path.join(invalid.dir, 'side.txt'), 'side\n')
+  invalid.ok(['add', 'side.txt'])
+  invalid.ok(['commit', '-q', '-m', 'side'])
+  invalid.ok(['checkout', '-q', '-'])
+  invalid.ok(['merge', '--no-ff', '-q', '-m', 'merge side', 'side'])
+  assert.ok(!invalid.ok(['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ').slice(1).includes(invalid.featureSha))
+  const red = spawnSync(process.execPath, [path.join(invalid.dir, 'scripts', 'sm.mjs'), 'audit'], {
+    cwd: invalid.dir,
+    encoding: 'utf8',
+    env: { ...process.env, AUDIT_TARGET_SHA: invalid.featureSha },
+  })
+  assert.equal(red.status, 5, red.stderr)
+  assert.match(red.stderr, /HEAD_DRIFT/)
+})
+
+test('the pure core ignores AUDIT_TARGET_SHA', () => {
+  const previous = process.env.AUDIT_TARGET_SHA
+  process.env.AUDIT_TARGET_SHA = 'f'.repeat(40)
+  try {
+    assert.deepEqual(verifyStateSnapshot(structuredClone(baseline)), { code: 0, diagnostic: 'OK' })
+  }
+  finally {
+    if (previous === undefined)
+      delete process.env.AUDIT_TARGET_SHA
+    else
+      process.env.AUDIT_TARGET_SHA = previous
+  }
 })
 
 function requireFixture(name) {

@@ -17,7 +17,14 @@ const fixtureDir = path.join(__dirname, 'fixtures', 'audit-packet')
 const pins = loadGuardPins()
 
 function fixture(name) {
-  return JSON.parse(readFileSync(path.join(fixtureDir, name), 'utf8'))
+  const packet = JSON.parse(readFileSync(path.join(fixtureDir, name), 'utf8'))
+  // Keep the snapshot's guard blobs tied to the authoritative pin file; the
+  // code4() mutation below still injects a mismatch to prove fail-closed.
+  return {
+    ...packet,
+    pinned_guard_blobs: { ...pins },
+    observed_guard_blobs: { ...pins },
+  }
 }
 
 function runCli(dir) {

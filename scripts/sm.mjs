@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   BASE_SHA,
   BINDINGS_KEYS,
+  canonicalJson,
   checkClosed,
   deriveHead,
   GENESIS_KEYS,
@@ -499,27 +500,6 @@ export function detectLeaseCollision(leases, guardRelPaths = []) {
   return [...new Set(collisions)].sort()
 }
 
-/**
- * Shared projection check: the committed genesis and its unanchored-receipt
- * events must match a fresh build from the pinned receipts, live .wave0 scan
- * and pinned guards. Both `sm audit` and the audit-packet validator use it so
- * neither can pass while the other fails closed.
- */
-export function verifyEventProjection(events, { receipts, unanchored, guardPins }) {
-  const issues = []
-  const genesis = events.find(event => event?.type === 'genesis')
-  if (!genesis)
-    return ['genesis_missing']
-  const expectedGenesis = buildGenesis(receipts, unanchored, guardPins)
-  if (JSON.stringify(genesis) !== JSON.stringify(expectedGenesis))
-    issues.push('GENESIS_CONTENT_DRIFT')
-  const expectedUnanchored = buildUnanchoredEvents(unanchored, hashEvent(expectedGenesis))
-  const actualUnanchored = events.filter(event => event?.type === 'WAVE0_RECEIPT_INGESTED')
-  if (JSON.stringify(actualUnanchored) !== JSON.stringify(expectedUnanchored))
-    issues.push('UNANCHORED_EVENT_DRIFT')
-  return issues
-}
-
 function buildSummary({ bindings, receipts, guardPins, unanchored, headSha }) {
   const guardLines = Object.entries(guardPins)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -724,17 +704,27 @@ export function buildAuditSnapshot() {
   const genesis = events ? events.find(event => event?.type === 'genesis') : null
   const headSha = events ? deriveHead(events) : BASE_SHA
   let effectiveHead = null
+  let expectedGenesis = null
   let leaseCollisions = []
   let chainIssues = []
-  let projectionIssues = []
+  const projectionIssues = []
   let replayMismatches = []
   if (events && bindings && genesis) {
     leaseCollisions = detectLeaseCollision(bindings.lane_leases, Object.keys(guardPins))
     chainIssues = verifyEventChain(events)
-    projectionIssues = verifyEventProjection(events, { receipts, unanchored, guardPins })
+    expectedGenesis = buildGenesis(receipts, unanchored, guardPins)
     try {
       const gitHead = resolveHeadSha()
-      effectiveHead = gitHead === headSha ? gitHead : resolveEffectiveHeadSha()
+      const auditTargetSha = process.env.AUDIT_TARGET_SHA
+      let prHead = null
+      // Only GitHub's ephemeral PR merge commit may use the override: the
+      // env SHA must be a parent of that merge, never an arbitrary ledger sha.
+      if (auditTargetSha && isSha(auditTargetSha) && gitHead !== headSha) {
+        const parents = commitParents(gitHead)
+        if (parents.length > 1 && parents.includes(auditTargetSha))
+          prHead = auditTargetSha
+      }
+      effectiveHead = prHead ?? (gitHead === headSha ? gitHead : resolveEffectiveHeadSha())
     }
     catch {
       // Head drift is decided by the core, not by the observer.
@@ -748,6 +738,7 @@ export function buildAuditSnapshot() {
     beadsMode: bindings?.beads_mode ?? 'PAUSED',
     bindings,
     events,
+    expectedGenesis,
     receipts,
     guardPins,
     observedGuardBlobs,
@@ -804,48 +795,81 @@ function commitPaths(sha) {
   return result.stdout.split('\n').map(rel => rel.trim()).filter(Boolean)
 }
 
-/** First parent of a commit, or null at the root. */
-function firstParentSha(sha) {
-  const result = spawnSync('git', ['rev-parse', `${sha}^`], {
+/** State files that `recover` rebuilds byte-for-byte from the event log. */
+const DERIVABLE_SEAL_PATHS = new Set([
+  'state/events.ndjson',
+  'state/index.json',
+  'state/bindings.json',
+  'state/SUMMARY.md',
+  'state/current_wave.json',
+  // NOTICE: state/pinned-guards.sha is the trust anchor, never a derivable seal.
+])
+
+/** Parents of one commit from real ancestry, not a raw HEAD text file. */
+function commitParents(sha) {
+  const result = spawnSync('git', ['rev-list', '--parents', '-n', '1', sha], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
+    env: { ...process.env, LC_ALL: 'C' },
+  })
+  if (result.status !== 0)
+    fail(`cannot inspect parents of ${sha}: ${result.stderr?.trim() ?? 'git failed'}`)
+  const parents = result.stdout.trim().split(/\s+/).slice(1).filter(Boolean)
+  if (parents.some(parent => !isSha(parent)))
+    fail(`invalid parent sha for ${sha}`)
+  return parents
+}
+
+/** Event log as recorded in a commit, used to verify append-only seals. */
+function commitEventLog(sha) {
+  const result = spawnSync('git', ['show', `${sha}:state/events.ndjson`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, LC_ALL: 'C' },
   })
   if (result.status !== 0)
     return null
-  const parent = result.stdout.trim()
-  if (!isSha(parent))
-    fail(`invalid parent sha for ${sha}: ${parent}`)
-  return parent
+  try {
+    return result.stdout.split('\n').filter(Boolean).map(line => JSON.parse(line))
+  }
+  catch {
+    return null
+  }
 }
 
 /**
- * A commit that only rewrites state/* is ledger bookkeeping, not a new head:
- * `head:advance` followed by committing the rewritten state leaves HEAD past
- * the head recorded in the event log. Walk back over those commits to the
- * first one that touched anything else and compare that to deriveHead(events).
+ * One trailing state-only commit is transparent bookkeeping only when it is a
+ * seal: it rewrites recover-derived artifacts and strictly appends one
+ * head_advanced event naming its parent. Trust anchors, merges, empty commits
+ * and chain rewrites are never skipped. At most one commit may be transparent.
  */
 export function resolveEffectiveHeadSha() {
-  let current = resolveHeadSha()
-  const seen = new Set()
-  let done = false
-  while (!done) {
-    if (seen.has(current))
-      fail(`HEAD ancestry cycle at ${current}`)
-    seen.add(current)
-    const paths = commitPaths(current)
-    // An empty (or unexpanded merge) commit changes nothing: never skip it, so
-    // code drift hid behind one still fails closed.
-    const stateOnly = paths.length > 0 && paths.every(rel => rel.startsWith('state/'))
-    if (!stateOnly) {
-      done = true
-      continue
-    }
-    const parent = firstParentSha(current)
-    if (!parent)
-      fail(`state-only history has no non-state commit (root ${current})`)
-    current = parent
+  const head = resolveHeadSha()
+  const parents = commitParents(head)
+  if (parents.length > 1)
+    fail(`merge commit cannot be state bookkeeping: ${head}`)
+  const paths = commitPaths(head)
+  // An empty commit changes nothing: never skip it, so code drift hidden
+  // behind one still fails closed.
+  if (paths.length === 0 || paths.some(rel => !DERIVABLE_SEAL_PATHS.has(rel)))
+    return head
+  if (!paths.includes('state/events.ndjson'))
+    return head
+  const parent = parents[0]
+  if (!parent)
+    fail(`state-only history has no non-state commit (root ${head})`)
+  const currentEvents = commitEventLog(head)
+  const parentEvents = commitEventLog(parent)
+  if (!currentEvents || !parentEvents)
+    fail(`seal commit has no readable event log (${head} or ${parent})`)
+  if (currentEvents.length !== parentEvents.length + 1
+    || parentEvents.some((event, index) => canonicalJson(event) !== canonicalJson(currentEvents[index]))) {
+    fail(`seal commit rewrote history instead of appending: ${head}`)
   }
-  return current
+  const appended = currentEvents.at(-1)
+  if (appended?.type !== 'head_advanced' || appended.sha !== parent)
+    fail(`seal commit does not record its parent as head: ${head}`)
+  return parent
 }
 
 /** Preflight for `recover`: fail closed on guards, unknowns, leases and chain. */

@@ -15,7 +15,10 @@
  *
  * Usage:
  *   node scripts/tests/audit-packet.mjs
- *   node scripts/tests/audit-packet.mjs --packet <path.json>
+ *   node scripts/tests/audit-packet.mjs --packet <path.json> [--offline]
+ *
+ * `--packet` is checked against a fresh live audit unless `--offline` is given:
+ * self-certified packet flags must never outrank current HEAD or guard state.
  */
 
 import fs from 'node:fs'
@@ -128,9 +131,15 @@ export function snapshotFromPacket(packet, { pinnedGuards } = {}) {
   // Old validator required BOTH blobs to match the real pin set. Collapse that
   // third-value constraint onto the core's two-way guard comparison: pin the
   // expected side to the real pins and feed back whichever packet blob drifts.
+  // Compare by key count and per-key value, not by JSON key order.
   const realPins = pinnedGuards ?? loadGuardPins()
-  const matchesPins = blobs => blobs && typeof blobs === 'object' && !Array.isArray(blobs)
-    && JSON.stringify(blobs) === JSON.stringify(realPins)
+  const matchesPins = (blobs) => {
+    if (!blobs || typeof blobs !== 'object' || Array.isArray(blobs))
+      return false
+    const keys = Object.keys(blobs)
+    return keys.length === Object.keys(realPins).length
+      && keys.every(key => Object.hasOwn(realPins, key) && blobs[key] === realPins[key])
+  }
   const pinnedMatches = matchesPins(packet.pinned_guard_blobs)
   const observedMatches = matchesPins(packet.observed_guard_blobs)
   const guardPins = realPins
@@ -193,7 +202,15 @@ function readFixture(name) {
   const file = path.join(FIXTURE_DIR, name)
   if (!fs.existsSync(file))
     throw new Error(`missing audit-packet fixture: ${name}`)
-  return JSON.parse(fs.readFileSync(file, 'utf8'))
+  const packet = JSON.parse(fs.readFileSync(file, 'utf8'))
+  // Guard blobs are live observations from state/pinned-guards.sha, never
+  // fixture assertions that can silently go stale.
+  const pins = loadGuardPins()
+  return {
+    ...packet,
+    pinned_guard_blobs: { ...pins },
+    observed_guard_blobs: { ...pins },
+  }
 }
 
 function mutate(base, changes) {
@@ -256,6 +273,16 @@ function main(args) {
     catch (error) {
       console.error(`[PACKET] exit 2 FIXTURE_UNREADABLE:${error.message}`)
       return 2
+    }
+    if (!args.includes('--offline')) {
+      const liveSnapshot = buildAuditSnapshot()
+      const live = auditSnapshot(liveSnapshot, { logger: message => console.error(message) })
+      if (live.code !== 0)
+        return live.code
+      if (packet?.base_sha !== liveSnapshot.baseSha) {
+        console.error(`[PACKET] exit 2 PACKET_BASE_DRIFT:${String(packet?.base_sha)}:${liveSnapshot.baseSha}`)
+        return 2
+      }
     }
     const observed = verifyStateSnapshot(snapshotFromPacket(packet))
     console.error(`[PACKET] exit ${observed.code} ${observed.diagnostic}`)

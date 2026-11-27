@@ -120,6 +120,15 @@ export function hashEvent(event) {
   return createHash('sha256').update(Buffer.from(JSON.stringify(event), 'utf8')).digest('hex')
 }
 
+/** Deep-stable JSON: object keys sorted at every level, arrays kept in order. */
+export function canonicalJson(value) {
+  if (Array.isArray(value))
+    return `[${value.map(canonicalJson).join(',')}]`
+  if (value && typeof value === 'object')
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
+}
+
 export function deriveHead(events) {
   let head = BASE_SHA
   for (const event of events) {
@@ -148,25 +157,25 @@ export function buildUnanchoredEvents(unanchored, prevHash) {
 }
 
 /**
- * Differential projection check against the committed genesis. It avoids
- * recreating RED_EVIDENCE here: the genesis's own pinned fields are compared
- * to the observed snapshot, which is enough to fail closed on content drift.
+ * Differential projection against a freshly built full genesis supplied by the
+ * observer. Canonical JSON (sorted keys at every level) makes the comparison
+ * independent of key order while still covering every field — including
+ * `red_evidence`, which a short whitelist would let drift unnoticed.
  */
-function verifyGenesisProjection(events, genesis, snapshot, receipts, guardPins, unanchored) {
-  const issues = []
-  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+function verifyGenesisProjection(events, genesis, snapshot, unanchored) {
   if (!genesis)
     return ['genesis_missing']
-  if (genesis.wave !== WAVE || genesis.base_sha !== BASE_SHA || genesis.beads_mode !== 'PAUSED'
-    || !same(genesis.receipts, receipts)
-    || !same(genesis.pinned_guard_blobs, guardPins)
-    || (snapshot.bindings && !same(genesis.lane_leases, snapshot.bindings.lane_leases))
-    || !same(genesis.unanchored_receipts, unanchored)) {
+  const issues = []
+  const expectedGenesis = snapshot.expectedGenesis
+  if (!expectedGenesis || canonicalJson(genesis) !== canonicalJson(expectedGenesis))
     issues.push('GENESIS_CONTENT_DRIFT')
-  }
-  const expectedUnanchored = buildUnanchoredEvents(unanchored, hashEvent(genesis))
+  // The observer's bindings must agree with genesis even when no full genesis
+  // was supplied; this check is deliberately not delegated to the observer.
+  if (snapshot.bindings && canonicalJson(genesis.lane_leases) !== canonicalJson(snapshot.bindings.lane_leases))
+    issues.push('GENESIS_CONTENT_DRIFT')
+  const expectedUnanchored = buildUnanchoredEvents(unanchored, hashEvent(expectedGenesis ?? genesis))
   const actualUnanchored = events.filter(event => event?.type === 'WAVE0_RECEIPT_INGESTED')
-  if (!same(actualUnanchored, expectedUnanchored))
+  if (canonicalJson(actualUnanchored) !== canonicalJson(expectedUnanchored))
     issues.push('UNANCHORED_EVENT_DRIFT')
   return [...new Set(issues)].sort()
 }
@@ -326,7 +335,7 @@ export function verifyStateSnapshot(snapshot) {
     ? snapshot.wave0Scan.unanchored
     : []
   const projectionIssues = events
-    ? verifyGenesisProjection(events, genesis, snapshot, receipts, guardPins, unanchored)
+    ? verifyGenesisProjection(events, genesis, snapshot, unanchored)
     : (Array.isArray(snapshot.projectionIssues) ? snapshot.projectionIssues : [])
   if (projectionIssues.length > 0)
     return result(5, `GENESIS_PROJECTION:${projectionIssues.join(',')}`)
