@@ -2,7 +2,7 @@
 
 One wave = one port/parity push. Steps run in order; the coordinator owns the wave.
 
-Hard boundaries: obey AGENTS.md; this doc adds none.
+Hard boundaries: obey AGENTS.md. `AGENTS.md` and harness docs (`docs/agents/**`) are coordinator-owned only (never assigned to lane writers) and may be edited mid-wave only after a pre-edit Google AI Mode Senior Architect consult in a fresh thread (never reuse a thread), logged with `[ARCH-CONSULT-NEW-THREAD]` and the verbatim resolution on the active wave bead and carried into the successor brief.
 
 ## 1. Cartographer audit
 A single cartographer reviews closed beads and the last 20 commits inside ~30 seconds. Classify each candidate slice as landed, duplicate, or open. Drop landed and duplicate slices, recording the reason (bead ID plus commit or duplicate-of ID) where the matrix will read it.

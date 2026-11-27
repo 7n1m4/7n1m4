@@ -7,6 +7,8 @@ This runbook is the executable contract. [hillclimb-cycle.md](./hillclimb-cycle.
 
 Scope holds port/parity slices only. Gateway trust gates and `airi-3cp` stay closed. Work stays on the current branch; pushes, rebases, and upstream writes belong to the user.
 
+Mid-wave edits to `AGENTS.md` or `docs/agents/**` are coordinator-owned only and require the pre-edit Senior Architect consult gate defined in `hillclimb-cycle.md` (`Hard boundaries`).
+
 Run the steps in order. Each ends on a checkable completion criterion.
 
 ## 1. Audit
