@@ -1,0 +1,96 @@
+{
+  "schema": "airi-channel-trace-v1",
+  "path": "stmm.list/upsert/delete",
+  "frames": [
+    {
+      "type": "rpc",
+      "action": "stmm.list",
+      "id": "m1",
+      "payload": {
+        "limit": 50
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "stmm.list",
+      "ok": true,
+      "id": "m1",
+      "data": {
+        "summaries": [
+          {
+            "id": "summary-1",
+            "day": "2026-11-25",
+            "content": "A summary",
+            "source_session_ids": ["s1"],
+            "token_estimate": 3,
+            "created_at": 1764000000000000
+          }
+        ]
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "stmm.upsert",
+      "id": "m2",
+      "payload": {
+        "blocks": [
+          {
+            "id": "summary-1",
+            "day": "2026-11-25",
+            "content": "A summary",
+            "tokenEstimate": 3,
+            "sourceSessionIds": ["s1"],
+            "createdAt": 1764000000000000
+          }
+        ]
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "stmm.upsert",
+      "ok": true,
+      "id": "m2",
+      "data": {
+        "upserted": 1
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "stmm.delete",
+      "id": "m3",
+      "payload": {
+        "id": "summary-1"
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "stmm.delete",
+      "ok": true,
+      "id": "m3",
+      "data": {
+        "deleted": true
+      }
+    },
+    {
+      "type": "rpc",
+      "action": "stmm.list",
+      "id": "m4",
+      "payload": {
+        "limit": 50
+      }
+    },
+    {
+      "type": "rpc",
+      "reply": true,
+      "action": "stmm.list",
+      "ok": true,
+      "id": "m4",
+      "data": {
+        "summaries": []
+      }
+    }
+  ]
+}
