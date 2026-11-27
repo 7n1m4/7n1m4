@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-
+// ignore: deprecated_member_use — material_ui replacement is not a project dependency.
 import 'package:flutter/material.dart';
 
 import '../../daemon_client/daemon_client.dart';

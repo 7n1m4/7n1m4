@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import 'dart:math' show max;
-
 /// Immutable position in a chat event stream, per ratified wire decisions:
 /// daemon-authoritative epoch (u64, increments on restart/session reset) and
 /// seq (u64, strictly +1). Epoch mismatch => wipe buffer + full snapshot.
