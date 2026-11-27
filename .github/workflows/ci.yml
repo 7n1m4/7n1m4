@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -24,7 +26,17 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Pre-push SHA on push, PR base on pull_request; the guard fails closed
+      # if that base is not resolvable in the checkout.
+      - name: ESLint guard (touched .mjs)
+        id: guard-eslint-mjs
+        run: pnpm guard:eslint-mjs -- --base=${{ github.event.before || github.event.pull_request.base.sha || github.sha }}
+
       - run: pnpm run lint
+      - name: Boundary graph guard
+        id: guard-boundary-graph
+        run: node scripts/tests/flutter_boundary_graph.mjs && pnpm run test:boundary-graph-wiring
 
   wire-types:
     name: Wire Types Drift Check

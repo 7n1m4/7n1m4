@@ -7,7 +7,9 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -157,29 +159,75 @@ function resolveLocal(fromRel, uri, files) {
 
 function loadGraph(root) {
   const files = new Map()
+  const escapes = []
   const base = join(root, ...ZONE_ROOT.split('/'))
   if (!existsSync(base))
-    return files
+    return { files, escapes }
 
+  const rootReal = realpathSync(root)
+  function withinRoot(target) {
+    const rel = relative(rootReal, target)
+    return rel === '' || (!rel.startsWith('..') && !posix.isAbsolute(rel))
+  }
+
+  const visitedDirs = new Set([rootReal])
   function walk(dir) {
+    let realDir
+    try {
+      realDir = realpathSync(dir)
+    }
+    catch {
+      return
+    }
+    if (visitedDirs.has(realDir))
+      return
+    visitedDirs.add(realDir)
+
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
       const abs = join(dir, entry.name)
-      if (entry.isDirectory()) {
+      const rel = relative(root, abs).split(sep).join('/')
+      if (entry.isSymbolicLink()) {
+        let real
+        try {
+          real = realpathSync(abs)
+          if (!withinRoot(real)) {
+            escapes.push(`${VIOLATION} symlink escapes root: ${rel} -> ${relative(rootReal, real).split(sep).join('/')}`)
+            continue
+          }
+        }
+        catch {
+          escapes.push(`${VIOLATION} symlink target unresolvable: ${rel}`)
+          continue
+        }
+      }
+
+      let st
+      try {
+        st = statSync(abs)
+      }
+      catch {
+        escapes.push(`${VIOLATION} target unresolvable: ${rel}`)
+        continue
+      }
+      if (st.isDirectory()) {
         walk(abs)
+        continue
       }
-      else if (entry.isFile() && entry.name.endsWith('.dart')) {
-        const rel = relative(root, abs).split(sep).join('/')
-        const { noComments, code } = lexDart(readFileSync(abs, 'utf8'))
-        files.set(rel, {
-          rel,
-          zone: zoneOf(rel),
-          directives: extractDirectives(noComments, code),
-          directCaps: new Set(),
-          exportTargets: new Set(),
-          importTargets: new Set(),
-          partTargets: new Set(),
-        })
-      }
+      if (!st.isFile() || !entry.name.endsWith('.dart'))
+        continue
+
+      // NOTICE: symlinks are followed, never skipped — a link back into the
+      // tree carries the target's capabilities into the linking zone.
+      const { noComments, code } = lexDart(readFileSync(abs, 'utf8'))
+      files.set(rel, {
+        rel,
+        zone: zoneOf(rel),
+        directives: extractDirectives(noComments, code),
+        directCaps: new Set(),
+        exportTargets: new Set(),
+        importTargets: new Set(),
+        partTargets: new Set(),
+      })
     }
   }
   walk(base)
@@ -207,7 +255,7 @@ function loadGraph(root) {
       }
     }
   }
-  return files
+  return { files, escapes }
 }
 
 function exportedCapabilities(files) {
@@ -260,9 +308,9 @@ function format(zone, capability, chain) {
 // set contains a banned capability is the leak; ordinary import chains
 // (ui -> state -> data) stay clean because imports are not transitive.
 export function audit(root = REPO_ROOT) {
-  const files = loadGraph(root)
+  const { files, escapes } = loadGraph(root)
   const caps = exportedCapabilities(files)
-  const lines = new Set()
+  const lines = new Set(escapes)
 
   for (const info of files.values()) {
     if (!RESTRICTED_ZONES.has(info.zone))
@@ -384,7 +432,7 @@ function main(argv) {
     process.stderr.write('[BOUNDARY_GRAPH_ERROR] --root requires a directory\n')
     return 2
   }
-  if (explicitRoot && !existsSync(join(root, ...ZONE_ROOT.split('/')))) {
+  if (!existsSync(join(root, ...ZONE_ROOT.split('/')))) {
     process.stderr.write(`[BOUNDARY_GRAPH_ERROR] --root has no ${ZONE_ROOT}: ${root}\n`)
     return 1
   }

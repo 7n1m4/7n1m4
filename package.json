@@ -56,6 +56,7 @@
     "test:nano-staged-scope": "node scripts/tests/check-nano-staged-scope.mjs",
     "test:write-shrink-guard": "node --test scripts/tests/test-write-shrink-guard.mjs",
     "test:ci-repo-selection": "node --test scripts/tests/test-ci-repo-selection.mjs",
+    "test:boundary-graph-wiring": "node --test scripts/tests/flutter_boundary_graph.test.mjs",
     "free-ai:sync-platforms": "tsx scripts/sync-free-ai-platforms.ts",
     "i18n:audit": "node scripts/audit-i18n.mjs",
     "lint": "eslint .",
@@ -67,7 +68,9 @@
     "typecheck": "pnpm -rF=\"./packages/*\" -F=\"./apps/*\" --parallel typecheck",
     "up": "taze -w -r -I && pnpm prune && pnpm dedupe",
     "nolyfill": "pnpm dlx nolyfill",
-    "knip": "knip"
+    "knip": "knip",
+    "guard:boundary-graph": "node scripts/tests/flutter_boundary_graph.mjs",
+    "guard:eslint-mjs": "node scripts/tests/guard-eslint-mjs.mjs"
   },
   "dependencies": {
     "puppeteer-core": "catalog:",

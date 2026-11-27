@@ -9,6 +9,12 @@ if [ -f "$SIMPLE_GIT_HOOKS_RC" ]; then
     . "$SIMPLE_GIT_HOOKS_RC"
 fi
 
+# >>> guard:boundary-graph >>>
+set -e
+pnpm run guard:boundary-graph
+set +e
+# <<< guard:boundary-graph <<<
+
 pnpm nano-staged
 
 # --- BEGIN BEADS INTEGRATION v1.3.4 ---
