@@ -4282,6 +4282,218 @@ mod tests {
         assert_eq!(b_deltas, 1, "B's pump must not relay A's delta");
     }
 
+    /// Turn the shared codec fixture into an execution proof: replay its
+    /// request through the REAL `chat.send` handler and compare the handler's
+    /// reply plus the REAL published token deltas against the golden frames.
+    /// Only process-minted fields (uuid message id, bus seq, wall-clock ts)
+    /// and the handler's separate terminal marker are projected onto the
+    /// fixture sentinels; every semantic field is asserted on live frames.
+    #[tokio::test]
+    async fn chat_send_golden_trace_executes_real_handler() {
+        // This turn takes a permit from the process-global CHAT_TURNS semaphore.
+        static TURN_GUARD: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+            std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+        let _guard = TURN_GUARD.lock().await;
+
+        use anima_channel::wire::{
+            ChatSendReply, ChatSendRequest, EventPayload, EventTopic, GatewayClientFrame,
+            TokenDeltaData,
+        };
+
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../anima-channel/fixtures/golden/trace.chat.send.token_delta.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&fixture_path).expect("read golden chat trace fixture"),
+        )
+        .expect("golden chat trace is JSON");
+        assert_eq!(fixture["schema"], "airi-channel-trace-v1");
+        assert_eq!(fixture["path"], "chat.send");
+        let frames = fixture["frames"].as_array().expect("frames array");
+        assert_eq!(frames.len(), 4);
+
+        // Frame 0 is dispatched verbatim, not a hand-written stand-in.
+        let GatewayClientFrame::Rpc {
+            action,
+            payload,
+            id,
+        } = serde_json::from_value::<GatewayClientFrame>(frames[0].clone()).expect("frame 0")
+        else {
+            panic!("frame 0 must be an rpc request");
+        };
+        assert_eq!(action, "chat.send");
+        assert_eq!(id, Some(serde_json::json!("t1")));
+        let payload = payload.expect("frame 0 payload");
+        let request: ChatSendRequest = serde_json::from_value(payload.clone()).unwrap();
+        assert_eq!(request.session_id, "sess-abc");
+        assert_eq!(request.content, "Hello, Anima!");
+
+        // Chunks travel through a channel: no sleeps, no timing assumptions.
+        struct TraceProvider {
+            chunks: Vec<anima_llm::ChatChunk>,
+        }
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for TraceProvider {
+            fn id(&self) -> &str {
+                "golden-trace"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                _req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                for chunk in self.chunks.clone() {
+                    let _ = tx.send(chunk);
+                }
+                drop(tx);
+                Ok(Box::pin(futures_util::stream::unfold(
+                    rx,
+                    |mut rx| async move { rx.recv().await.map(|chunk| (Ok(chunk), rx)) },
+                )))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        // Seed the exact session id so the handler cannot mint a different one.
+        gateway
+            .core
+            .ensure_chat_session(&request.session_id)
+            .unwrap();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "golden-trace".to_string(),
+            Arc::new(TraceProvider {
+                chunks: vec![
+                    anima_llm::ChatChunk::text("Hello"),
+                    anima_llm::ChatChunk::text(" world"),
+                    anima_llm::ChatChunk::finish("stop"),
+                ],
+            }),
+        );
+        anima_store::ProviderRepo::new(gateway.core.db().unwrap())
+            .upsert(&anima_store::StoredProvider {
+                id: "golden-trace".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "trace-model" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        // Subscribe before sending: no delta may race past the lane.
+        let lane = gateway.publisher().bus().new_lane();
+        lane.subscribe(EventTopic::ALL);
+        gateway.publisher().bus().register_lane(&lane);
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get(action.as_str()).unwrap();
+        let reply_value = send(&action, &payload).expect("real chat.send must ack");
+
+        // Bounded event barrier: drain until the real terminal marker lands.
+        let mut captured: Vec<TokenDeltaData> = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                for event in lane.drain() {
+                    if event.topic == EventTopic::TokenDelta {
+                        if let EventPayload::TokenDelta(d) = event.data {
+                            captured.push(d);
+                        }
+                    }
+                }
+                if captured.iter().any(|d| d.final_) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("real handler must publish a terminal token.delta within 2s");
+
+        let reply: ChatSendReply = serde_json::from_value(reply_value.clone()).unwrap();
+        assert!(reply.accepted);
+        assert_eq!(reply.session_id, "sess-abc");
+        assert!(
+            !reply.message_id.is_empty(),
+            "handler must mint a message id"
+        );
+
+        // Assert the REAL frames before projecting anything.
+        assert_eq!(captured.len(), 3, "two text deltas + one terminal marker");
+        for (i, d) in captured.iter().enumerate() {
+            assert_eq!(d.session_id, "sess-abc", "real delta {i}");
+            assert_eq!(d.message_id, reply.message_id, "real delta {i}");
+            assert!(d.ts_ms > 0, "real delta {i}");
+        }
+        let tss: Vec<u64> = captured.iter().map(|d| d.ts_ms).collect();
+        assert!(
+            tss.windows(2).all(|p| p[0] <= p[1]),
+            "real ts_ms must be non-decreasing: {tss:?}"
+        );
+        assert_eq!(captured[0].delta, "Hello");
+        assert_eq!(captured[1].delta, " world");
+        assert_eq!(captured[2].delta, "");
+        assert_eq!(
+            captured.iter().map(|d| d.index).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(
+            captured.iter().map(|d| d.final_).collect::<Vec<_>>(),
+            vec![false, false, true]
+        );
+        assert_eq!(captured[0].reason, None);
+        assert_eq!(captured[1].reason, None);
+        assert_eq!(captured[2].reason.as_deref(), Some("complete"));
+        let seqs: Vec<u64> = captured.iter().map(|d| d.seq).collect();
+        assert!(
+            seqs.windows(2).all(|p| p[0] < p[1]),
+            "bus seq must be monotonic: {seqs:?}"
+        );
+
+        // Project only the non-deterministic fields + terminal-marker shape.
+        let mut ack = reply_value.clone();
+        ack["messageId"] = serde_json::json!("msg-1");
+        let mut partial = captured[0].clone();
+        partial.message_id = "msg-1".into();
+        partial.seq = 5;
+        partial.ts_ms = 1700000000900;
+        let mut terminal = captured[1].clone();
+        terminal.message_id = "msg-1".into();
+        terminal.final_ = captured[2].final_;
+        terminal.reason = captured[2].reason.clone();
+        terminal.seq = 6;
+        terminal.ts_ms = 1700000001000;
+
+        let event_frame = |data: &TokenDeltaData| serde_json::json!({ "type": "event", "topic": "token.delta", "data": data });
+        assert_eq!(
+            frames[0],
+            serde_json::json!({
+                "type": "rpc", "action": "chat.send", "id": "t1", "payload": payload,
+            }),
+            "the real request is replayed verbatim from frame 0"
+        );
+        assert_eq!(
+            frames[1],
+            serde_json::json!({
+                "type": "rpc", "reply": true, "action": "chat.send", "ok": true,
+                "id": "t1", "data": ack,
+            }),
+            "real handler ack matches the golden reply"
+        );
+        assert_eq!(
+            event_frame(&partial),
+            frames[2],
+            "first real delta matches golden frame 2"
+        );
+        assert_eq!(
+            event_frame(&terminal),
+            frames[3],
+            "last real delta + terminal marker match golden frame 3"
+        );
+    }
+
     #[test]
     fn chat_cancel_accepts_camel_case_request_ids() {
         // ROOT CAUSE: the handler reads only `session_id`, while `ChatCancelRequest`
