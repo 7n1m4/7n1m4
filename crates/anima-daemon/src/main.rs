@@ -33,6 +33,8 @@ mod provider_validation;
 mod redact;
 mod ring;
 mod screen;
+#[cfg(test)]
+mod session_execution_tests;
 mod state;
 #[cfg(test)]
 mod stmm_upsert_tests;
