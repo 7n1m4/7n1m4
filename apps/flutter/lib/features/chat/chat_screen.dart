@@ -74,6 +74,11 @@ class ChatScreenState extends State<ChatScreen> {
   Object? _historyCursor;
   bool _historyLoading = false;
   final ScrollController _scrollController = ScrollController();
+  static const double _bottomSlop = 16.0;
+  // Sampled before a transcript mutation: by the time the post-frame callback
+  // runs the content has grown, so geometry can no longer tell us whether the
+  // user was pinned to the bottom when the append began.
+  bool _isAtBottom = true;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   int _contextReadGeneration = 0;
@@ -104,11 +109,16 @@ class ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _composer = ChatComposerController(
       client: widget.client,
       sessionId: widget.initialSessionId,
       onMessageCommitted: (text) {
-        if (mounted) setState(() => _messages.add(_ChatMessage.user(text)));
+        if (mounted) {
+          final pinned = _isAtBottom;
+          _followBottomIfPinned(pinned);
+          setState(() => _messages.add(_ChatMessage.user(text)));
+        }
       },
     );
     _unsubscribeEvent = widget.client.onEvent(_onEvent);
@@ -142,8 +152,30 @@ class ChatScreenState extends State<ChatScreen> {
     _requestEventRpc('event.unsubscribe');
     _composer.dispose();
     _genUi.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final p = _scrollController.position;
+    _isAtBottom =
+        p.pixels + p.viewportDimension >= p.maxScrollExtent - _bottomSlop;
+  }
+
+  /// Follow new content only when the user was pinned to the bottom when the
+  /// append/finish began. [pinned] is sampled before the rebuild; re-deriving
+  /// it from geometry here would see the already-grown content. Recheck the
+  /// listener-driven flag instead: a scroll delivered before this callback
+  /// clears it and cancels the follow.
+  void _followBottomIfPinned(bool pinned) {
+    if (!pinned) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (!_isAtBottom || !pinned) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
   }
 
   /// Best-effort topic opt-in on the authenticated socket. A daemon without
@@ -237,14 +269,17 @@ class ChatScreenState extends State<ChatScreen> {
     if (index != null) _lastTokenIndex[mid] = index;
     if (terminal && mid.isNotEmpty) _rememberFinalizedMessage(mid);
 
+    // The delta always lands on the open bubble: a genuinely new turn starts
+    // a new assistant bubble, a terminal frame finishes the visible turn.
+    // Sample the pin before the rebuild grows/changes the transcript.
+    final newTurn =
+        mid.isNotEmpty && _activeMessageId != null && _activeMessageId != mid;
+    final firstTurn = !_assistantStreaming;
+    final pinned = _isAtBottom;
+    if (firstTurn || newTurn || terminal) _followBottomIfPinned(pinned);
     setState(() {
-      // The delta always lands on the open bubble: a genuinely new turn
-      // starts a new assistant bubble; otherwise the delta appends to it.
       // _messages.last is the open assistant bubble (the chat.send ack never
       // appends a message), so the delta text is written there.
-      final newTurn =
-          mid.isNotEmpty && _activeMessageId != null && _activeMessageId != mid;
-      final firstTurn = !_assistantStreaming;
       if (firstTurn || newTurn) {
         _messages.add(_ChatMessage.assistant(''));
         _deltaBuffer.clear();
@@ -387,6 +422,8 @@ class ChatScreenState extends State<ChatScreen> {
     if (hasHistoryId && !_finalizedMessageIds.contains(historyId)) {
       _rememberFinalizedMessage(historyId);
     }
+    final pinned = _isAtBottom;
+    _followBottomIfPinned(pinned);
     setState(() {
       if (!unchanged || (startedStreaming && openIndex >= 0)) {
         // Replace the partial (or replay-opened blank) bubble in place.
@@ -509,6 +546,8 @@ class ChatScreenState extends State<ChatScreen> {
   Future<void> _stop() async {
     final cancelled = await _composer.stopGeneration();
     if (!mounted || !cancelled) return;
+    final pinned = _isAtBottom;
+    _followBottomIfPinned(pinned);
     setState(() {
       _assistantStreaming = false;
       _activeMessageId = null;
