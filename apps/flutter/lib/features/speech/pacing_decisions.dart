@@ -66,12 +66,16 @@ int msOr(double? value, double fallback) =>
 
 int _toU64(double value) {
   if (value.isNaN) return 0;
-  final rounded = value.round();
+  // round() would clamp to Dart's signed 64-bit int before the u64 checks.
+  // roundToDouble() keeps the full magnitude, and BigInt.from preserves it
+  // exactly, matching Rust's `round() as u64` saturation.
+  final rounded = value.roundToDouble();
   if (rounded <= 0) return 0;
+  if (rounded.isInfinite) return maxU64;
   final big = BigInt.from(rounded);
   if (big > _u64Mask) return maxU64;
   if (big > _signedMax) return (big - (BigInt.one << 64)).toInt();
-  return rounded;
+  return big.toInt();
 }
 
 BigInt _unsigned(int value) => BigInt.from(value) & _u64Mask;

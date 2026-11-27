@@ -401,6 +401,24 @@ void main() {
     });
   });
 
+  group('u64 ms conversion matches Rust saturating cast', () {
+    test('large finite doubles keep their exact u64 bit pattern or saturate', () {
+      // Rust: finite_or(v, default).max(0.0).round() as u64.
+      // 1e19 = 10000000000000000000 -> signed bit pattern -8446744073709551616.
+      expect(msOr(1e19, 0), -8446744073709551616);
+      // 1.5e19 = 15000000000000000000 -> signed bit pattern -3446744073709551616.
+      expect(msOr(1.5e19, 0), -3446744073709551616);
+      // 1e30 exceeds u64::MAX -> saturates to the -1 bit pattern.
+      expect(msOr(1e30, 0), -1);
+    });
+
+    test('NaN, negative and sub-one inputs return zero', () {
+      expect(msOr(double.nan, 0), 0);
+      expect(msOr(-1.0, 0), 0);
+      expect(msOr(0.4, 0), 0);
+    });
+  });
+
   group('ttft preset boundaries', () {
     test('799 / 800 / 2500 / 2501 match the frozen onboarding rule', () {
       const cases = <(int, String)>[
