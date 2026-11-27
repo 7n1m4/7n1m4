@@ -8,7 +8,8 @@
 //!
 //! The same JSON envelope is replayed by
 //! `apps/flutter/test/chat_golden_trace_test.dart`, so both codecs must derive
-//! identical values from the same bytes: request -> ack -> two token deltas.
+//! identical values from the same bytes: request -> ack -> two text token
+//! deltas followed by a distinct empty-delta terminal frame.
 
 use anima_channel::wire::{
     ChatSendReply, ChatSendRequest, EventPayload, EventTopic, GatewayClientFrame,
@@ -38,7 +39,7 @@ fn interaction_chat_trace_matches_shared_fixture() {
     let frames = fixture["frames"]
         .as_array()
         .expect("trace fixture: `frames` must be an array");
-    assert_eq!(frames.len(), 4, "trace fixture must hold exactly 4 frames");
+    assert_eq!(frames.len(), 5, "trace fixture must hold exactly 5 frames");
 
     // Frame 0: client -> server `chat.send` request, echo id `t1`.
     let request_frame: GatewayClientFrame =
@@ -83,7 +84,9 @@ fn interaction_chat_trace_matches_shared_fixture() {
     assert_eq!(reply.message_id, "msg-1");
     assert!(reply.accepted);
 
-    // Frames 2/3: token.delta events on the message declared by the ack.
+    // Frames 2/3/4: token.delta events on the message declared by the ack.
+    // The real daemon emits a distinct EMPTY-delta terminal frame, so the
+    // terminal is frame 4 — not the last text delta at frame 3.
     let mut deltas = Vec::new();
     for (i, frame) in frames.iter().enumerate().skip(2) {
         let event_frame: GatewayServerFrame =
@@ -98,14 +101,23 @@ fn interaction_chat_trace_matches_shared_fixture() {
         };
         deltas.push(delta);
     }
-    assert_eq!(deltas.len(), 2);
+    assert_eq!(deltas.len(), 3);
 
-    let (partial, terminal) = (&deltas[0], &deltas[1]);
+    let (partial, middle, terminal) = (&deltas[0], &deltas[1], &deltas[2]);
     for (i, delta) in deltas.iter().enumerate() {
         assert_eq!(delta.session_id, request.session_id, "delta {i}");
         assert_eq!(delta.message_id, reply.message_id, "delta {i}");
-        assert!(!delta.delta.is_empty(), "delta {i}");
     }
+    assert_eq!(
+        deltas.iter().filter(|d| d.final_).count(),
+        1,
+        "exactly one terminal token.delta frame"
+    );
+    for delta in &deltas[..2] {
+        assert!(!delta.delta.is_empty(), "text deltas must carry text");
+    }
+    assert!(terminal.delta.is_empty(), "terminal delta must be empty");
+
     assert_eq!(partial.delta, "Hello");
     assert_eq!(partial.index, 0);
     assert_eq!(partial.seq, 5);
@@ -113,9 +125,16 @@ fn interaction_chat_trace_matches_shared_fixture() {
     assert!(!partial.final_);
     assert_eq!(partial.reason, None);
 
-    assert_eq!(terminal.delta, " world");
-    assert_eq!(terminal.index, partial.index + 1);
-    assert_eq!(terminal.seq, partial.seq + 1);
+    assert_eq!(middle.delta, " world");
+    assert_eq!(middle.index, 1);
+    assert_eq!(middle.seq, 6);
+    assert_eq!(middle.ts_ms, 1700000000950);
+    assert!(!middle.final_, "the middle frame must not be final");
+    assert_eq!(middle.reason, None);
+
+    assert_eq!(terminal.delta, "");
+    assert_eq!(terminal.index, 2);
+    assert_eq!(terminal.seq, 7);
     assert_eq!(terminal.ts_ms, 1700000001000);
     assert!(terminal.final_, "the terminal frame must be last");
     assert_eq!(terminal.reason.as_deref(), Some("complete"));
@@ -124,7 +143,7 @@ fn interaction_chat_trace_matches_shared_fixture() {
     // byte-identical field names (including `final` and `reason`).
     assert_eq!(
         serde_json::to_value(terminal).unwrap(),
-        frames[3]["data"],
+        frames[4]["data"],
         "terminal token.delta must round-trip unchanged"
     );
 }

@@ -44,9 +44,22 @@
         "message_id": "msg-1",
         "delta": " world",
         "index": 1,
+        "final": false,
+        "seq": 6,
+        "ts_ms": 1700000000950
+      }
+    },
+    {
+      "type": "event",
+      "topic": "token.delta",
+      "data": {
+        "session_id": "sess-abc",
+        "message_id": "msg-1",
+        "delta": "",
+        "index": 2,
         "final": true,
         "reason": "complete",
-        "seq": 6,
+        "seq": 7,
         "ts_ms": 1700000001000
       }
     }

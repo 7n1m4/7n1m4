@@ -4309,7 +4309,11 @@ mod tests {
         assert_eq!(fixture["schema"], "airi-channel-trace-v1");
         assert_eq!(fixture["path"], "chat.send");
         let frames = fixture["frames"].as_array().expect("frames array");
-        assert_eq!(frames.len(), 4);
+        assert_eq!(
+            frames.len(),
+            5,
+            "request + ack + two text deltas + terminal"
+        );
 
         // Frame 0 is dispatched verbatim, not a hand-written stand-in.
         let GatewayClientFrame::Rpc {
@@ -4452,18 +4456,23 @@ mod tests {
             "bus seq must be monotonic: {seqs:?}"
         );
 
-        // Project only the non-deterministic fields + terminal-marker shape.
+        // Normalize PROCESS-MINTED fields only (message id, bus seq, wall
+        // clock). The real handler already emits all three semantic frames —
+        // including the empty-delta final:true terminal — so nothing is
+        // projected or folded across frames here.
         let mut ack = reply_value.clone();
         ack["messageId"] = serde_json::json!("msg-1");
-        let mut partial = captured[0].clone();
-        partial.message_id = "msg-1".into();
-        partial.seq = 5;
-        partial.ts_ms = 1700000000900;
-        let mut terminal = captured[1].clone();
+        let mut first = captured[0].clone();
+        first.message_id = "msg-1".into();
+        first.seq = 5;
+        first.ts_ms = 1700000000900;
+        let mut middle = captured[1].clone();
+        middle.message_id = "msg-1".into();
+        middle.seq = 6;
+        middle.ts_ms = 1700000000950;
+        let mut terminal = captured[2].clone();
         terminal.message_id = "msg-1".into();
-        terminal.final_ = captured[2].final_;
-        terminal.reason = captured[2].reason.clone();
-        terminal.seq = 6;
+        terminal.seq = 7;
         terminal.ts_ms = 1700000001000;
 
         let event_frame = |data: &TokenDeltaData| serde_json::json!({ "type": "event", "topic": "token.delta", "data": data });
@@ -4482,16 +4491,37 @@ mod tests {
             }),
             "real handler ack matches the golden reply"
         );
+        // All three event frames map 1:1 to the real handler's output. Only
+        // message_id/seq/ts_ms were normalized above; delta/index/final/reason
+        // are asserted verbatim by this full-frame equality.
         assert_eq!(
-            event_frame(&partial),
+            event_frame(&first),
             frames[2],
             "first real delta matches golden frame 2"
         );
         assert_eq!(
-            event_frame(&terminal),
+            event_frame(&middle),
             frames[3],
-            "last real delta + terminal marker match golden frame 3"
+            "middle real delta matches golden frame 3"
         );
+        assert_eq!(
+            event_frame(&terminal),
+            frames[4],
+            "empty-delta terminal matches golden frame 4"
+        );
+
+        // Post-terminal discriminator (Rust leg): the real handler must not
+        // publish any token.delta after its terminal marker. The stronger
+        // replay check — a forged higher-seq/index non-final frame with the
+        // same message id must not reopen a finalized UI bubble — is a
+        // ChatScreen concern and lives in chat_golden_trace_test.dart.
+        for event in lane.drain() {
+            if event.topic == EventTopic::TokenDelta {
+                if let EventPayload::TokenDelta(d) = event.data {
+                    panic!("handler published a post-terminal delta: {d:?}");
+                }
+            }
+        }
     }
 
     #[test]
