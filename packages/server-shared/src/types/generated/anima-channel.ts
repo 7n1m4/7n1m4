@@ -291,6 +291,8 @@ export type ChatMessage = {
 	created_at: number,
 	/**  Metadata JSON. */
 	metadata: unknown,
+	/**  Optional stream cursor (daemon-authoritative). */
+	cursor?: StreamCursor | null,
 };
 
 /**  Request payload for `chat.send`. */
@@ -969,6 +971,14 @@ export type StmmSummary = {
 	token_estimate: number,
 	/**  Created timestamp. */
 	created_at: number,
+};
+
+/**  Stream cursor for daemon-authoritative gap detection. */
+export type StreamCursor = {
+	/**  Epoch; increments on server restart / session reset. */
+	epoch: number,
+	/**  Strictly monotonic seq within an epoch. */
+	seq: number,
 };
 
 /**  Payload of a `token.delta` event: one streamed LLM token. */
