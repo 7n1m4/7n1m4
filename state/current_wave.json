@@ -1,0 +1,53 @@
+{
+  "schema": "airi-current-wave/v1",
+  "wave": "r17",
+  "base_sha": "38613b6ebc36ec59dd4687b5b5895dc469b84dc5",
+  "head_sha": "38613b6ebc36ec59dd4687b5b5895dc469b84dc5",
+  "beads_mode": "PAUSED",
+  "lane_count": 3,
+  "lanes": [
+    {
+      "id": "L0",
+      "owner": "L0",
+      "role": "state-system bootstrap",
+      "owned_paths": [
+        "scripts/bootstrap-state.mjs",
+        "scripts/sm.mjs",
+        "scripts/tests/audit-packet.mjs",
+        "scripts/tests/audit-packet.test.mjs",
+        "scripts/tests/fixtures/audit-packet/valid.json",
+        "scripts/tests/fixtures/audit-packet/invalid-missing-invariant.json",
+        "scripts/tests/fixtures/audit-packet/invalid-placeholder.json",
+        "state/events.ndjson",
+        "state/bindings.json",
+        "state/index.json",
+        "state/SUMMARY.md",
+        "state/current_wave.json",
+        "state/pinned-guards.sha",
+        "docs/coordinator-boot.md"
+      ]
+    },
+    {
+      "id": "S2",
+      "owner": "S2",
+      "role": "chat stream cursor",
+      "owned_paths": [
+        "apps/flutter/lib/features/chat/state/stream_cursor.dart",
+        "apps/flutter/lib/features/chat/state/chat_transport.dart",
+        "apps/flutter/test/chat_stream_cursor_test.dart"
+      ]
+    },
+    {
+      "id": "S3",
+      "owner": "S3",
+      "role": "peer predicates",
+      "owned_paths": [
+        "apps/flutter/lib/features/peers/peer_predicates.dart",
+        "apps/flutter/test/peer_predicates_test.dart"
+      ]
+    }
+  ],
+  "no_s4": true,
+  "unanchored_receipts": [],
+  "needs_reconciliation": false
+}
