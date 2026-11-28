@@ -289,8 +289,8 @@ void main() {
       });
       addTearDown(off);
 
-      // (a) Draft/wire hydration via the Save payload (the visible percent
-      // fields keep their mount-time controller: see the skipped test below).
+      // (a) Draft/wire hydration via the Save payload (on a clean load the
+      // generation key refreshes the percent fields from the hydrated draft).
       expect(_switchOf(tester, 'Show captions'), isFalse);
       final before = peer.captionsGets();
       expect(before, 1, reason: 'initial load reads captions exactly once');
@@ -403,9 +403,8 @@ void main() {
     },
   );
 
-  // Widget-level gap: the golden draft reaches Save (see the test above), but
-  // the percent fields keep the controller created at mount from min values.
-  // These are the assertions that should hold once the widget refreshes them.
+  // Widget-level check: the golden draft must be reflected in the percent
+  // fields, not just in the Save payload, after the async load lands.
   testWidgets(
     'captions fields display the golden values after the async load',
     (tester) async {
@@ -421,9 +420,59 @@ void main() {
       expect(_dockingShownOf(tester), 'head');
       expect(_switchOf(tester, 'Show captions'), isFalse);
     },
-    // Skip reason (this Flutter's testWidgets.skip is bool?, not String):
-    // settings_screen.dart percent fields keep stale controller after async
-    // reload — tracked by follow-up bead airi-0614.
-    skip: true,
   );
+
+  // A captions edit must survive a settings.changed event from another client:
+  // the reload skips a dirty section, so Save still writes the typed offset and
+  // the original opacity 70 — not the merged golden's 55. Tracks airi-b6cn.
+  testWidgets('a captions offset edit survives a settings.changed reload', (
+    tester,
+  ) async {
+    final frames = (_readJson(_traceFile)['frames'] as List)
+        .cast<Map<String, dynamic>>();
+    final harness = await _bootReplay(
+      tester,
+      captionsReply: jsonEncode(frames[1]),
+    );
+    final transport = harness.transport;
+    final peer = harness.peer;
+
+    final offsetField = find.descendant(
+      of: find.byKey(const ValueKey<String>('Head offset x (px)')),
+      matching: find.byType(EditableText),
+    );
+    await tester.ensureVisible(offsetField);
+    await tester.pumpAndSettle();
+    await tester.enterText(offsetField, '123');
+    await peer.drain(() => tester.pump());
+    await tester.pumpAndSettle();
+
+    // Another client patches captions; the re-read answers with the merged
+    // golden (opacity 55), which must not replace this in-progress edit.
+    peer.captionsReply = jsonEncode(frames[6]);
+    transport.receive(jsonEncode(_readJson(_eventFile)));
+    await peer.drain(() => tester.pump());
+    await tester.pumpAndSettle();
+
+    final save = find.widgetWithText(FilledButton, 'Save captions');
+    expect(save, findsOneWidget);
+    await tester.ensureVisible(save);
+    await tester.pumpAndSettle();
+    await tester.tap(save);
+    await peer.drain(() => tester.pump());
+    await tester.pumpAndSettle();
+
+    // Assert on the outbound wire, not the UI text.
+    expect(peer.settingsSets, hasLength(1));
+    final request = peer.settingsSets.last;
+    final args = request['payload'] as Map<String, dynamic>;
+    final payload = args['settings'] is String
+        ? jsonDecode(args['settings'] as String) as Map<String, dynamic>
+        : Map<String, dynamic>.from(args['settings'] as Map);
+    expect(payload['opacity'], 70);
+    final offset = payload['headTetheredCaptionOffset'] as Map<String, dynamic>;
+    expect(offset['x'], 123.0);
+    expect(offset['y'], -15.0);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -126,6 +126,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String? _settingsError;
   String? _settingsStatus;
+
+  /// Bumped when a clean captions draft is committed by a load. Keying the
+  /// captions value fields with it forces a fresh controller — `initialValue`
+  /// is ignored after mount — so an async draft is actually displayed.
+  int _captionsLoadGeneration = 0;
+
   String? _languageError;
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvents;
@@ -263,6 +269,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // only the absent ones. Present values stay as loaded so a
             // malformed one fails closed at Save instead of being rewritten.
             draft.values = normalizeCaptions(values);
+            // Only a clean (non-dirty, non-saving) section reaches this branch,
+            // so an in-progress edit keeps its controller and survives reloads.
+            _captionsLoadGeneration++;
           } else if (section == _SettingsSection.userProfile) {
             // Same rule as captions: fill only absent fields. A present
             // malformed value stays in the draft so Save fails closed; the
@@ -956,23 +965,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         for (final axis in const <String>['x', 'y'])
-          TextFormField(
-            key: ValueKey<String>('Head offset $axis (px)'),
-            enabled: enabled,
-            initialValue: _formatNumber(
-              _captionOffsetValue(values['headTetheredCaptionOffset'], axis),
+          KeyedSubtree(
+            key: ValueKey<String>(
+              'Head offset $axis (px)-$_captionsLoadGeneration',
             ),
-            keyboardType: const TextInputType.numberWithOptions(
-              signed: true,
-              decimal: true,
+            child: TextFormField(
+              key: ValueKey<String>('Head offset $axis (px)'),
+              enabled: enabled,
+              initialValue: _formatNumber(
+                _captionOffsetValue(values['headTetheredCaptionOffset'], axis),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: true,
+                decimal: true,
+              ),
+              decoration: InputDecoration(labelText: 'Head offset $axis (px)'),
+              onChanged: (text) {
+                final parsed = double.tryParse(text);
+                if (parsed != null && parsed.isFinite) {
+                  _editCaptionOffset(axis, parsed);
+                }
+              },
             ),
-            decoration: InputDecoration(labelText: 'Head offset $axis (px)'),
-            onChanged: (text) {
-              final parsed = double.tryParse(text);
-              if (parsed != null && parsed.isFinite) {
-                _editCaptionOffset(axis, parsed);
-              }
-            },
           ),
         Align(
           alignment: Alignment.centerLeft,
@@ -1007,6 +1021,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       draft.values = Map<String, dynamic>.from(draft.values)
         ..['headTetheredCaptionOffset'] = offset;
+      _dirtySections.add(_SettingsSection.captions);
       _settingsStatus = null;
     });
   }
@@ -1262,23 +1277,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool enabled,
     required ValueChanged<double> onChanged,
   }) {
-    return TextFormField(
-      key: ValueKey<String>(label),
-      enabled: enabled,
-      initialValue: value is num && value.isFinite
-          ? _formatNumber(value.toDouble())
-          : _formatNumber(min),
-      keyboardType: TextInputType.number,
-      inputFormatters: <TextInputFormatter>[
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-      ],
-      decoration: InputDecoration(labelText: label),
-      onChanged: (text) {
-        final parsed = double.tryParse(text);
-        if (parsed != null && parsed != value) {
-          onChanged(parsed.clamp(min, max));
-        }
-      },
+    return KeyedSubtree(
+      key: ValueKey<String>('$label-$_captionsLoadGeneration'),
+      child: TextFormField(
+        key: ValueKey<String>(label),
+        enabled: enabled,
+        initialValue: value is num && value.isFinite
+            ? _formatNumber(value.toDouble())
+            : _formatNumber(min),
+        keyboardType: TextInputType.number,
+        inputFormatters: <TextInputFormatter>[
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+        ],
+        decoration: InputDecoration(labelText: label),
+        onChanged: (text) {
+          final parsed = double.tryParse(text);
+          if (parsed != null && parsed != value) {
+            onChanged(parsed.clamp(min, max));
+          }
+        },
+      ),
     );
   }
 
