@@ -59,14 +59,11 @@ String _replyFrame(String action, Object id, Object? data) =>
     });
 
 Object? _dataFor(String action) => switch (action) {
-  // The golden is the source of truth. Its app='airi-daemon' is used
-  // verbatim; the old inline 'anima-daemon' expectation is not restated.
   'core.status' => _readJson(_coreReplyFile),
   'event.subscribe' => <String, dynamic>{'subscribed': true},
   'event.unsubscribe' => <String, dynamic>{'subscribed': false},
-  // Mirrors the stale golden identity; unused for this boot path.
   'runtime.status' => <String, dynamic>{
-    'app': 'airi-daemon',
+    'app': 'airi-slint',
     'version': '0.1.0',
   },
   'providers.list' => <String, dynamic>{'providers': <dynamic>[]},

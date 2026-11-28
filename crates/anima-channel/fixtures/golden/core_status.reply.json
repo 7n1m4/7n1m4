@@ -1,5 +1,5 @@
 {
-  "app": "airi-daemon",
+  "app": "anima-daemon",
   "coreAvailable": true,
   "messageCount": 42,
   "protocol": "airi-channel/1",

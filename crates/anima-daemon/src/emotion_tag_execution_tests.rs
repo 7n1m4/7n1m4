@@ -280,10 +280,7 @@ fn presence_status_golden_events_replay_through_real_publisher() {
         .get("core.status")
         .expect("core.status handler registered")("core.status", &json!({}))
     .expect("real core.status must ack");
-    // core.rs:538 mints CARGO_PKG_NAME ('anima-daemon') while
-    // core_status.reply.json and runtime_status.reply.json say 'airi-daemon'.
-    // This test compares only the health fields that feed status.changed; the
-    // identity drift is unowned and tracked by follow-up bead airi-ib4p.
+    assert_eq!(reply["app"], "anima-daemon");
     assert_eq!(reply["coreAvailable"], core_reply["coreAvailable"]);
     assert_eq!(reply["storeAvailable"], core_reply["storeAvailable"]);
     assert_eq!(reply["storeHealth"], core_reply["storeHealth"]);

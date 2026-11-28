@@ -203,7 +203,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "core_status.reply",
             serde_json::to_value(CoreStatusReply {
-                app: "airi-daemon".into(),
+                app: "anima-daemon".into(),
                 version: "0.1.0".into(),
                 core_available: true,
                 store_available: true,
@@ -224,7 +224,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
         (
             "runtime_status.reply",
             serde_json::to_value(RuntimeStatusReply {
-                app: "airi-daemon".into(),
+                app: "airi-slint".into(),
                 version: "0.1.0".into(),
                 pid: 1234,
                 uptime_seconds: 3600,
@@ -236,11 +236,11 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
             serde_json::to_value(ProvidersListReply {
                 providers: vec![ProviderInfo {
                     id: "openai".into(),
-                    kind: "openai".into(),
+                    kind: "open-ai-compatible".into(),
                     model: "gpt-4o".into(),
                     base_url: "https://api.openai.com/v1".into(),
                     enabled: true,
-                    updated_at: 1_700_000_000,
+                    updated_at: 1_700_000_000_000,
                 }],
             })?,
         ),

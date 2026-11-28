@@ -145,7 +145,9 @@ void main() {
     });
 
     test('token_delta.partial has no terminal reason', () {
-      final frame = ServerFrame.parse(_loadFixture('event.token_delta.partial'));
+      final frame = ServerFrame.parse(
+        _loadFixture('event.token_delta.partial'),
+      );
       final data = frame.event!.data;
       expect(data['final'], isFalse);
       expect(data.containsKey('reason'), isFalse);
@@ -171,7 +173,7 @@ void main() {
       final json = jsonDecode(text) as Map<String, dynamic>;
       final status = CoreStatus.fromJson(json);
 
-      expect(status.app, 'airi-daemon');
+      expect(status.app, 'anima-daemon');
       expect(status.version, '0.1.0');
       expect(status.coreAvailable, isTrue);
       expect(status.storeAvailable, isTrue);

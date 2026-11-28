@@ -1,5 +1,5 @@
 {
-  "app": "airi-daemon",
+  "app": "airi-slint",
   "pid": 1234,
   "protocol": "airi-channel/1",
   "uptimeSeconds": 3600,

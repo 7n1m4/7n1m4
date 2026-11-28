@@ -127,6 +127,7 @@ mod golden_fixtures {
     fn core_status_reply_fixture() {
         let value = load_json("core_status.reply");
         round_trip::<CoreStatusReply>("core_status.reply", &value);
+        assert_eq!(value["app"], "anima-daemon");
     }
 
     #[test]
@@ -139,12 +140,16 @@ mod golden_fixtures {
     fn runtime_status_reply_fixture() {
         let value = load_json("runtime_status.reply");
         round_trip::<RuntimeStatusReply>("runtime_status.reply", &value);
+        assert_eq!(value["app"], "airi-slint");
     }
 
     #[test]
     fn providers_list_reply_fixture() {
         let value = load_json("providers_list.reply");
         round_trip::<ProvidersListReply>("providers_list.reply", &value);
+        let decoded: ProvidersListReply = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.providers[0].kind, "open-ai-compatible");
+        assert_eq!(decoded.providers[0].updated_at, 1_700_000_000_000);
     }
 
     #[test]
