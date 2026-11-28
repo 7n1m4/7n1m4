@@ -6,7 +6,7 @@ wave: `r17`
 
 base_sha: `38613b6ebc36ec59dd4687b5b5895dc469b84dc5` (immutable genesis anchor)
 
-head_sha: `69a9e9d69f7550e4870222ac05eac4824f2fadf2`
+head_sha: `e66b277cf875f4c5616a3e7d6383efc26e43e1ed`
 
 beads_mode: `PAUSED` (no Beads reads or writes during this wave)
 
