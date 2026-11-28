@@ -74,6 +74,25 @@ const Map<String, ArchetypeStyle> _styles = <String, ArchetypeStyle>{
 /// no new wire field is invented (airi-6anh froze the schema).
 ArchetypeStyle styleFor(String? key) => _styles[key] ?? _neutral;
 
+/// Navigate both the bare and `data`-wrapped card envelopes to
+/// `extensions.airi.rwkv.archetype`. Anything not a non-empty String is
+/// rejected; unknown keys are left for `styleFor` to resolve as neutral.
+String? archetypeKeyFromCard(Map<String, dynamic>? card) {
+  if (card == null) return null;
+  for (final root in <Object?>[card, card['data']]) {
+    if (root is! Map<String, dynamic>) continue;
+    final extensions = root['extensions'];
+    if (extensions is! Map<String, dynamic>) continue;
+    final airi = extensions['airi'];
+    if (airi is! Map<String, dynamic>) continue;
+    final rwkv = airi['rwkv'];
+    if (rwkv is! Map<String, dynamic>) continue;
+    final value = rwkv['archetype'];
+    if (value is String && value.isNotEmpty) return value;
+  }
+  return null;
+}
+
 Color _colorFromHex(String hex) {
   final digits = hex.replaceFirst('#', '');
   final r = int.parse(digits.substring(0, 2), radix: 16);

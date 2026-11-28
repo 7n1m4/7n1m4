@@ -11,6 +11,7 @@ import 'package:markdown/markdown.dart' as md;
 
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
+import 'chat_archetype_style.dart';
 import 'chat_composer_controller.dart';
 import 'chat_fence_balancer.dart';
 import 'chat_message_display.dart';
@@ -768,31 +769,12 @@ class ChatScreenState extends State<ChatScreen> {
     if (id == null || id.isEmpty) return;
     String? key;
     try {
-      key = _archetypeKeyFromCard(await widget.client.cardsGet(id));
+      key = archetypeKeyFromCard(await widget.client.cardsGet(id));
     } on Object {
       key = null;
     }
     if (!mounted || generation != _archetypeReadGeneration) return;
     setState(() => _cardArchetypeKey = key);
-  }
-
-  /// Navigate both the bare and `data`-wrapped card envelopes to
-  /// `extensions.airi.rwkv.archetype`. Anything not a non-empty String is
-  /// rejected; unknown keys are left for `styleFor` to resolve as neutral.
-  static String? _archetypeKeyFromCard(Map<String, dynamic>? card) {
-    if (card == null) return null;
-    for (final root in <Object?>[card, card['data']]) {
-      if (root is! Map<String, dynamic>) continue;
-      final extensions = root['extensions'];
-      if (extensions is! Map<String, dynamic>) continue;
-      final airi = extensions['airi'];
-      if (airi is! Map<String, dynamic>) continue;
-      final rwkv = airi['rwkv'];
-      if (rwkv is! Map<String, dynamic>) continue;
-      final value = rwkv['archetype'];
-      if (value is String && value.isNotEmpty) return value;
-    }
-    return null;
   }
 
   Future<void> _loadCardMetadata(String? id) async {

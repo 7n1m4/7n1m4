@@ -105,6 +105,122 @@ void main() {
     });
   });
 
+  group('archetypeKeyFromCard (pure card-envelope parser)', () {
+    test('reads a bare card envelope', () {
+      expect(
+        archetypeKeyFromCard(<String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{
+              'rwkv': <String, dynamic>{'archetype': 'happy'},
+            },
+          },
+        }),
+        'happy',
+      );
+    });
+
+    test('reads a CCv2 data-wrapped card envelope', () {
+      expect(
+        archetypeKeyFromCard(<String, dynamic>{
+          'spec': 'chara_card_v2',
+          'data': <String, dynamic>{
+            'extensions': <String, dynamic>{
+              'airi': <String, dynamic>{
+                'rwkv': <String, dynamic>{'archetype': 'sad'},
+              },
+            },
+          },
+        }),
+        'sad',
+      );
+    });
+
+    test('null, empty and missing envelopes fail closed to null', () {
+      expect(archetypeKeyFromCard(null), isNull);
+      expect(archetypeKeyFromCard(<String, dynamic>{}), isNull);
+      expect(
+        archetypeKeyFromCard(<String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{'rwkv': <String, dynamic>{}},
+          },
+        }),
+        isNull,
+      );
+    });
+
+    test('non-map envelope levels fail closed to null', () {
+      for (final card in <Map<String, dynamic>?>[
+        <String, dynamic>{'data': 'not a map'},
+        <String, dynamic>{'extensions': 'not a map'},
+        <String, dynamic>{
+          'extensions': <String, dynamic>{'airi': 42},
+        },
+        <String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{'rwkv': <String>[]},
+          },
+        },
+      ]) {
+        expect(archetypeKeyFromCard(card), isNull);
+      }
+    });
+
+    test('non-string and empty archetype values fail closed to null', () {
+      for (final value in <Object?>[
+        '',
+        42,
+        null,
+        <String>[],
+        <String, dynamic>{},
+      ]) {
+        expect(
+          archetypeKeyFromCard(<String, dynamic>{
+            'extensions': <String, dynamic>{
+              'airi': <String, dynamic>{
+                'rwkv': <String, dynamic>{'archetype': value},
+              },
+            },
+          }),
+          isNull,
+          reason: 'value: $value',
+        );
+      }
+    });
+
+    test('bare root wins when both envelopes carry a key', () {
+      expect(
+        archetypeKeyFromCard(<String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{
+              'rwkv': <String, dynamic>{'archetype': 'angry'},
+            },
+          },
+          'data': <String, dynamic>{
+            'extensions': <String, dynamic>{
+              'airi': <String, dynamic>{
+                'rwkv': <String, dynamic>{'archetype': 'sad'},
+              },
+            },
+          },
+        }),
+        'angry',
+      );
+    });
+
+    test('unknown non-empty strings are returned verbatim', () {
+      expect(
+        archetypeKeyFromCard(<String, dynamic>{
+          'extensions': <String, dynamic>{
+            'airi': <String, dynamic>{
+              'rwkv': <String, dynamic>{'archetype': 'not-an-archetype'},
+            },
+          },
+        }),
+        'not-an-archetype',
+      );
+    });
+  });
+
   group('bubbleDecorationFor', () {
     test(
       'null and unrecognized keys give byte-identical neutral decoration',
