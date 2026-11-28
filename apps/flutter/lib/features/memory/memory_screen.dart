@@ -63,7 +63,7 @@ class _MemoryScreenState extends State<MemoryScreen> {
     try {
       final vault = await widget.client.vaultStatus();
       if (vault == null) {
-        setState(() => _error = 'vault.status failed');
+        if (mounted) setState(() => _error = 'vault.status failed');
         return;
       }
       // Each read is a real daemon verb; no data is fabricated client-side.
@@ -81,17 +81,17 @@ class _MemoryScreenState extends State<MemoryScreen> {
           _manifestStatus =
               'Display model manifest is not available from the daemon.';
         });
+        setState(() {
+          _stats = data;
+          _summaries = summaries;
+          _entries = entries;
+          _retrievalAvailable = retrieval;
+        });
       }
-      setState(() {
-        _stats = data;
-        _summaries = summaries;
-        _entries = entries;
-        _retrievalAvailable = retrieval;
-      });
     } on DaemonClientException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 

@@ -31,6 +31,17 @@ class _RecordingMemoryClient extends FakeChatClient {
   final List<({String action, Map<String, dynamic>? payload})> deletes =
       <({String action, Map<String, dynamic>? payload})>[];
 
+  // settingsGet is overridden by FakeChatClient, so record the verb here too;
+  // the super call still honors deferredSettings for held-reply tests.
+  @override
+  Future<Map<String, dynamic>> settingsGet(String section) async {
+    calls.add((
+      action: 'settings.get',
+      payload: <String, dynamic>{'section': section},
+    ));
+    return super.settingsGet(section);
+  }
+
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     calls.add((action: action, payload: payload));
@@ -729,5 +740,71 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.textContaining('FRESH_BETA beta'), findsOneWidget);
+  });
+
+  testWidgets('dispose during initial load does not setState after dispose', (
+    tester,
+  ) async {
+    final client = _RecordingMemoryClient();
+    addTearDown(client.dispose);
+
+    // Hold settings.get open so _load() parks on its last read. Releasing it
+    // after dispose forces every post-await setState onto a dead State.
+    final held = Completer<Map<String, dynamic>>();
+    client.deferredSettings = held;
+    addTearDown(() {
+      if (!held.isCompleted) {
+        held.complete(<String, dynamic>{'remoteSyncEnabled': false});
+      }
+    });
+
+    final previousOnError = FlutterError.onError;
+    final errors = <FlutterErrorDetails>[];
+    FlutterError.onError = (details) {
+      errors.add(details);
+      // Keep the binding's own handler in the chain: it tracks pending
+      // exceptions, and dropping it trips an unrelated framework assertion.
+      previousOnError?.call(details);
+    };
+    addTearDown(() => FlutterError.onError = previousOnError);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MemoryScreen(client: client)),
+      ),
+    );
+    await tester.pump();
+
+    // All five thin-client reads were issued, and the held reply proves
+    // _load() is suspended at settings.get rather than skipping a read.
+    expect(
+      client.calls.map((c) => c.action).toList(),
+      containsAllInOrder(<String>[
+        'vault.status',
+        'stmm.list',
+        'journal.search',
+        'retrieval.status',
+        'settings.get',
+      ]),
+    );
+    expect(held.isCompleted, isFalse);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    held.complete(<String, dynamic>{'remoteSyncEnabled': false});
+    await tester.pump();
+    await tester.pump();
+
+    // Restore before asserting: flutter_test routes a failed expect() through
+    // the binding's own onError handler, which must be active at that point.
+    FlutterError.onError = previousOnError;
+
+    expect(
+      errors.where(
+        (details) => details.exception.toString().contains(
+          'setState() called after dispose',
+        ),
+      ),
+      isEmpty,
+    );
   });
 }
