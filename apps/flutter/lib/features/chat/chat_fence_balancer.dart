@@ -45,11 +45,21 @@ String balanceChatCodeFences(String text) {
   // Dart's RegExp `.` and `$` do not see a trailing `\r`, so normalize before
   // matching: a `\r\n` fence would otherwise never be recognized.
   final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-  final lines = normalized.split('\n');
+  var lines = normalized.split('\n');
 
-  // Hard bounds for pathological pastes: return normalized text untouched.
-  if (lines.length > 2000 || normalized.length > 256 * 1024) {
-    return normalized;
+  // Clamp pathological pastes to a bounded preview instead of failing open:
+  // the same loop balances the preview, then a visible marker records the cut.
+  // A single trailing newline is a terminator, not an extra content line:
+  // 2000 lines joined with '\n' and ending in '\n' must not be "truncated".
+  final contentLines = normalized.endsWith('\n')
+      ? lines.length - 1
+      : lines.length;
+  final truncated = contentLines > 2000 || normalized.length > 256 * 1024;
+  if (truncated) {
+    final charCap = normalized.length > 256 * 1024
+        ? 256 * 1024
+        : normalized.length;
+    lines = normalized.substring(0, charCap).split('\n').take(2000).toList();
   }
 
   final out = <String>[];
@@ -88,5 +98,6 @@ String balanceChatCodeFences(String text) {
       closersAdded++;
     }
   }
-  return out.join('\n');
+  final balanced = out.join('\n');
+  return truncated ? '$balanced\n\n… (truncated)' : balanced;
 }

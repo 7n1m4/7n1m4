@@ -516,4 +516,64 @@ void main() {
     );
     expect(balanced, '```dart\n  let x = 1;\n ```\nafter');
   });
+
+  test('helper allows exactly 2000 lines and inserts a closer', () {
+    final input = List<String>.generate(
+      2000,
+      (i) => i == 0 ? '```dart' : 'line $i',
+    ).join('\n');
+    final balanced = balanceChatCodeFences(input);
+    expect(balanced, startsWith('```dart\n```\nline 1'));
+    expect(balanced, isNot(contains('truncated')));
+    expect(balanced.split('\n').length, 2001);
+  });
+
+  test('helper fallback balances a 2001-line preview and marks truncation', () {
+    final oversized = List<String>.generate(
+      2001,
+      (i) => i == 0
+          ? '```dart'
+          : i == 2000
+          ? 'tail sentinel'
+          : 'line $i',
+    ).join('\r\n');
+    final balanced = balanceChatCodeFences(oversized);
+    expect(balanced, isNot(contains('\r')));
+    expect(balanced, startsWith('```dart\n```\nline 1'));
+    expect(balanced, contains('… (truncated)'));
+    expect(balanced, isNot(contains('tail sentinel')));
+    expect(balanced.split('\n').length, lessThanOrEqualTo(2003));
+    expect(balanced.split('\n').length, greaterThanOrEqualTo(2002));
+  });
+
+  test('helper fallback keeps a newline-terminated 2000-line document intact', () {
+    final input =
+        '${List<String>.generate(2000, (i) => i == 0 ? '```dart' : 'line $i').join('\n')}\n';
+    final balanced = balanceChatCodeFences(input);
+    expect(balanced, startsWith('```dart\n```\nline 1'));
+    expect(balanced, isNot(contains('truncated')));
+  });
+
+  test('helper inserts 256 closers and caps the 257th', () {
+    final buffer = StringBuffer();
+    for (var i = 0; i < 257; i++) {
+      buffer.writeln('```lang$i');
+      buffer.writeln('body $i');
+    }
+    buffer.write('tail after 257');
+    final balanced = balanceChatCodeFences(buffer.toString());
+    expect(balanced.split('\n').where((line) => line == '```').length, 256);
+    expect(balanced, contains('```lang256\nbody 256'));
+  });
+
+  test('helper fallback balances a >256 KiB preview and marks truncation', () {
+    final padding = 'x' * (257 * 1024);
+    final oversized = '```dart\r\n$padding\r\ntail sentinel';
+    final balanced = balanceChatCodeFences(oversized);
+    expect(balanced, isNot(contains('\r')));
+    expect(balanced, startsWith('```dart\n```\n'));
+    expect(balanced, contains('… (truncated)'));
+    expect(balanced, isNot(contains('tail sentinel')));
+    expect(balanced.length, lessThan(256 * 1024 + 64));
+  });
 }
