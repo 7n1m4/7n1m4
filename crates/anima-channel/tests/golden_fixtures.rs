@@ -18,14 +18,13 @@ mod golden_fixtures {
     use anima_channel::provider::ProviderValidationState;
     use anima_channel::wire::{
         CapabilitiesReply, CardCreateReply, CardCreateRequest, CardDeleteReply, CardDeleteRequest,
-        CardGetReply, CardImportReply, CardImportRequest, CardInfo, CardListReply,
-        CardMetadataReply, CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest,
-        ChatSendRequest, CoreStatusReply, DiscordStatusReply, EmotionTagData, EventPayload,
-        EventSubscriptionReply, GatewayAuthReply, GatewayConfigReply, GatewayEvent,
-        GatewayServerFrame, HeartbeatData, ProvidersListReply, ProvidersModelsReply,
-        RpcErrorObject, RuntimePingReply, RuntimeStatusReply, SessionDeleteReply,
-        SessionDeleteRequest, SessionImportReply, SettingsGetReply, SettingsSetReply,
-        VaultStatusReply,
+        CardGetReply, CardImportReply, CardImportRequest, CardListReply, CardMetadataReply,
+        CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest,
+        CoreStatusReply, DiscordStatusReply, EventSubscriptionReply, GatewayAuthReply,
+        GatewayConfigReply, GatewayServerFrame, HeartbeatData, ProvidersListReply,
+        ProvidersModelsReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
+        SessionDeleteReply, SessionDeleteRequest, SessionImportReply, SettingsGetReply,
+        SettingsSetReply, VaultStatusReply,
     };
     use serde::de::DeserializeOwned;
     use serde::Serialize;

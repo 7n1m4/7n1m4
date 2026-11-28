@@ -341,18 +341,12 @@ impl GatewayClient {
         if let Some(event) = self.pending_events.pop_front() {
             return Ok(event);
         }
-        loop {
-            match self.read_json_frame()? {
-                GatewayServerFrame::Event { topic, data, id } => {
-                    return Ok(GatewayEvent { topic, data, id });
-                }
-                frame => {
-                    return Err(GatewayClientError::UnexpectedFrame(format!(
-                        "expected event frame, got {:?}",
-                        std::mem::discriminant(&frame)
-                    )));
-                }
-            }
+        match self.read_json_frame()? {
+            GatewayServerFrame::Event { topic, data, id } => Ok(GatewayEvent { topic, data, id }),
+            frame => Err(GatewayClientError::UnexpectedFrame(format!(
+                "expected event frame, got {:?}",
+                std::mem::discriminant(&frame)
+            ))),
         }
     }
 

@@ -12,8 +12,7 @@ use std::time::Duration;
 
 use anima_channel::ws::MAX_WS_PAYLOAD_BYTES;
 use anima_channel::{
-    accept_key, encode_frame, ChannelConfig, ChannelServer, Frame, FrameDecoder, RendererHandlers,
-    OP_TEXT,
+    encode_frame, ChannelConfig, ChannelServer, Frame, FrameDecoder, RendererHandlers, OP_TEXT,
 };
 
 const CLIENT_KEY: &str = "dGhlIHNhbXBsZSBub25jZQ==";

@@ -2196,6 +2196,7 @@ mod tests {
         assert_eq!(repo.list_recent(10).unwrap()[0].id, kept);
     }
 
+    #[test]
     fn summary_repo_prune_keeps_newest_365_distinct_days() {
         let db = test_db();
         let repo = SummaryRepo::new(db);
@@ -2587,8 +2588,8 @@ mod tests {
         // Row is preserved with updated_at = 0.
         let repo = CardMetadataRepo::new(db.clone());
         let metadata = repo.get("legacy-card").expect("get legacy card");
-        assert_eq!(metadata.liked, true);
-        assert_eq!(metadata.bookmarked, false);
+        assert!(metadata.liked);
+        assert!(!metadata.bookmarked);
 
         // Verify updated_at is 0.
         let updated_at: i64 = db
@@ -2659,8 +2660,8 @@ mod tests {
         let db = Database::open(&path).expect("reopen and migrate");
         let repo = CardMetadataRepo::new(db.clone());
         let metadata = repo.get("legacy-card").expect("get legacy card");
-        assert_eq!(metadata.liked, false, "missing flag defaults to false");
-        assert_eq!(metadata.bookmarked, true, "surviving flag is preserved");
+        assert!(!metadata.liked, "missing flag defaults to false");
+        assert!(metadata.bookmarked, "surviving flag is preserved");
 
         // The preserved timestamp still participates in the LWW guard.
         let err = repo
@@ -2833,7 +2834,7 @@ mod tests {
             .list_recent(10)
             .unwrap()
             .is_empty());
-        assert_eq!(CardMetadataRepo::new(db).get("c1").unwrap().liked, true);
+        assert!(CardMetadataRepo::new(db).get("c1").unwrap().liked);
     }
 
     #[test]

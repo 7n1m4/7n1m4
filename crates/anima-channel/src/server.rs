@@ -68,7 +68,7 @@ pub const DEAD_PEER_TTL: Duration = Duration::from_secs(75);
 /// completes.
 enum ConnectionStream {
     Plain(TcpStream),
-    Tls(rustls::StreamOwned<rustls::ServerConnection, TcpStream>),
+    Tls(Box<rustls::StreamOwned<rustls::ServerConnection, TcpStream>>),
 }
 
 impl ConnectionStream {
@@ -113,13 +113,9 @@ impl Write for ConnectionStream {
     }
 }
 
-/// The bound, not-yet-running channel server.
-pub struct ChannelServer {
-    listener: TcpListener,
-    token: Arc<str>,
-    rpc: RpcContext,
-    renderer_handlers: Arc<RendererHandlers>,
-    tls: Option<Arc<rustls::ServerConfig>>,
+/// Timing and event-fanout settings handed to every accepted connection.
+#[derive(Clone)]
+struct ConnectionConfig {
     dead_peer_ttl: Duration,
     handler_deadline: Duration,
     write_timeout: Duration,
@@ -127,6 +123,16 @@ pub struct ChannelServer {
     /// [`ChannelServer::event_bus`] so daemon services can publish events
     /// without touching sessions or sockets.
     event_bus: EventBus,
+}
+
+/// The bound, not-yet-running channel server.
+pub struct ChannelServer {
+    listener: TcpListener,
+    token: Arc<str>,
+    rpc: RpcContext,
+    renderer_handlers: Arc<RendererHandlers>,
+    tls: Option<Arc<rustls::ServerConfig>>,
+    conn: ConnectionConfig,
 }
 
 impl ChannelServer {
@@ -192,31 +198,33 @@ impl ChannelServer {
             rpc: RpcContext::new(hostname.to_string(), bound_port),
             renderer_handlers: Arc::new(handlers),
             tls,
-            dead_peer_ttl: DEAD_PEER_TTL,
-            handler_deadline: HANDLER_DEADLINE,
-            write_timeout: WRITE_TIMEOUT,
-            event_bus: EventBus::with_defaults(),
+            conn: ConnectionConfig {
+                dead_peer_ttl: DEAD_PEER_TTL,
+                handler_deadline: HANDLER_DEADLINE,
+                write_timeout: WRITE_TIMEOUT,
+                event_bus: EventBus::with_defaults(),
+            },
         })
     }
 
     /// Override the dead-peer TTL. Exists so tests can use a short TTL;
     /// production keeps [`DEAD_PEER_TTL`].
     pub fn with_dead_peer_ttl(mut self, ttl: Duration) -> Self {
-        self.dead_peer_ttl = ttl;
+        self.conn.dead_peer_ttl = ttl;
         self
     }
 
     /// Override the registered-handler deadline. Exists so tests can use a
     /// short deadline; production keeps [`HANDLER_DEADLINE`].
     pub fn with_handler_deadline(mut self, deadline: Duration) -> Self {
-        self.handler_deadline = deadline;
+        self.conn.handler_deadline = deadline;
         self
     }
 
     /// Override the post-upgrade write timeout. Exists so tests can use a
     /// short timeout; production keeps [`WRITE_TIMEOUT`].
     pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
-        self.write_timeout = timeout;
+        self.conn.write_timeout = timeout;
         self
     }
 
@@ -224,7 +232,7 @@ impl ChannelServer {
     /// share it across servers or publish from services before the server
     /// starts. By default each server owns a fresh bus.
     pub fn with_event_bus(mut self, bus: EventBus) -> Self {
-        self.event_bus = bus;
+        self.conn.event_bus = bus;
         self
     }
 
@@ -232,7 +240,7 @@ impl ChannelServer {
     /// Future daemon services (pipeline, chat) hold this and call
     /// [`EventBus::publish`]; they never write to a client socket.
     pub fn event_bus(&self) -> EventBus {
-        self.event_bus.clone()
+        self.conn.event_bus.clone()
     }
 
     /// The local address the socket is bound to (useful with port `0`).
@@ -255,10 +263,7 @@ impl ChannelServer {
             self.rpc,
             self.renderer_handlers,
             self.tls,
-            self.dead_peer_ttl,
-            self.handler_deadline,
-            self.write_timeout,
-            self.event_bus,
+            self.conn,
             stop,
         )
     }
@@ -273,10 +278,7 @@ impl ChannelServer {
         let rpc = self.rpc;
         let renderer_handlers = self.renderer_handlers;
         let tls = self.tls;
-        let dead_peer_ttl = self.dead_peer_ttl;
-        let handler_deadline = self.handler_deadline;
-        let write_timeout = self.write_timeout;
-        let event_bus = self.event_bus;
+        let conn = self.conn;
         let join = std::thread::Builder::new()
             .name("airi-channel-accept".to_string())
             .spawn(move || {
@@ -286,10 +288,7 @@ impl ChannelServer {
                     rpc,
                     renderer_handlers,
                     tls,
-                    dead_peer_ttl,
-                    handler_deadline,
-                    write_timeout,
-                    event_bus,
+                    conn,
                     thread_stop,
                 )
             })?;
@@ -330,10 +329,7 @@ fn serve(
     rpc: RpcContext,
     renderer_handlers: Arc<RendererHandlers>,
     tls: Option<Arc<rustls::ServerConfig>>,
-    dead_peer_ttl: Duration,
-    handler_deadline: Duration,
-    write_timeout: Duration,
-    event_bus: EventBus,
+    conn: ConnectionConfig,
     stop: Arc<AtomicBool>,
 ) -> io::Result<()> {
     listener.set_nonblocking(true)?;
@@ -346,7 +342,7 @@ fn serve(
                 let token = Arc::clone(&token);
                 let rpc = rpc.for_session();
                 let renderer_handlers = Arc::clone(&renderer_handlers);
-                let event_bus = event_bus.clone();
+                let conn = conn.clone();
                 // Configure the socket *before* any TLS wrapping: the
                 // handshake deadline applies to the raw TCP stream, and the
                 // HTTP upgrade phase must complete within it.
@@ -360,7 +356,9 @@ fn serve(
                 }
                 let stream = match &tls {
                     Some(config) => match rustls::ServerConnection::new(Arc::clone(config)) {
-                        Ok(conn) => ConnectionStream::Tls(rustls::StreamOwned::new(conn, tcp)),
+                        Ok(tls_conn) => {
+                            ConnectionStream::Tls(Box::new(rustls::StreamOwned::new(tls_conn, tcp)))
+                        }
                         Err(err) => {
                             tracing::warn!(%peer, %err, "TLS connection setup failed");
                             continue;
@@ -371,17 +369,9 @@ fn serve(
                 if let Err(err) = std::thread::Builder::new()
                     .name(format!("airi-channel-conn-{peer}"))
                     .spawn(move || {
-                        if let Err(err) = handle_connection(
-                            stream,
-                            peer,
-                            &token,
-                            rpc,
-                            &renderer_handlers,
-                            dead_peer_ttl,
-                            handler_deadline,
-                            write_timeout,
-                            event_bus,
-                        ) {
+                        if let Err(err) =
+                            handle_connection(stream, peer, &token, rpc, &renderer_handlers, &conn)
+                        {
                             tracing::debug!(%peer, %err, "channel connection ended with error");
                         }
                     })
@@ -408,10 +398,7 @@ fn handle_connection(
     token: &str,
     rpc: RpcContext,
     renderer_handlers: &Arc<RendererHandlers>,
-    dead_peer_ttl: Duration,
-    handler_deadline: Duration,
-    write_timeout: Duration,
-    event_bus: EventBus,
+    cfg: &ConnectionConfig,
 ) -> io::Result<()> {
     // --- HTTP Upgrade phase -------------------------------------------------
     let mut header_buf = Vec::with_capacity(1024);
@@ -463,14 +450,14 @@ fn handle_connection(
     // nothing. The dead-peer TTL is still measured against `last_seen`, which
     // only refreshes on inbound frames — event writes never keep a silent
     // peer alive. This is a byte-silence rule, not a TCP-liveness probe.
-    let read_timeout = dead_peer_ttl.min(DEFAULT_EVENT_POLL_INTERVAL);
-    stream.set_timeouts(Some(read_timeout), write_timeout)?;
+    let read_timeout = cfg.dead_peer_ttl.min(DEFAULT_EVENT_POLL_INTERVAL);
+    stream.set_timeouts(Some(read_timeout), cfg.write_timeout)?;
     let mut session = Session::with_renderer(token.to_string(), rpc, Arc::clone(renderer_handlers))
-        .with_handler_deadline(handler_deadline);
+        .with_handler_deadline(cfg.handler_deadline);
     // Register this connection's lane with the shared bus *before* any frames
     // are read; unsubscribe (the lane's default) means no events until the
     // client authenticates and calls `event.subscribe`.
-    event_bus.register_lane(session.event_lane());
+    cfg.event_bus.register_lane(session.event_lane());
     let mut decoder = FrameDecoder::new(MAX_WS_PAYLOAD_BYTES);
     let mut fragments: Option<(u8, Vec<u8>)> = None;
     let mut last_seen = Instant::now();
@@ -497,8 +484,8 @@ fn handle_connection(
                     }
                     Err(err) => return Err(err),
                 }
-                if last_seen.elapsed() >= dead_peer_ttl {
-                    tracing::info!(%peer, ttl_ms = dead_peer_ttl.as_millis() as u64, "closing connection: no frames within dead-peer TTL");
+                if last_seen.elapsed() >= cfg.dead_peer_ttl {
+                    tracing::info!(%peer, ttl_ms = cfg.dead_peer_ttl.as_millis() as u64, "closing connection: no frames within dead-peer TTL");
                     send_close(&mut stream, CLOSE_GOING_AWAY, "going away (dead peer)");
                     return Ok(());
                 }

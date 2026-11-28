@@ -1054,7 +1054,7 @@ pub enum CueKind {
 /// [`CueKind::Emotion`]. Renderers share the first nine; `cool` is in the
 /// canonical union but is not implemented by every renderer. Raw,
 /// model-specific pass-through tags are allowed for card-specific cues.
-pub const CANONICAL_EMOTION_KEYS: &'static [&'static str] = &[
+pub const CANONICAL_EMOTION_KEYS: &[&str] = &[
     "happy",
     "sad",
     "angry",
@@ -1874,6 +1874,7 @@ mod tests {
         assert!(value.get("settings").is_none());
     }
 
+    #[test]
     fn status_changed_payload_has_no_secret_bearing_fields() {
         let payload = EventPayload::StatusChanged(StatusChangedData {
             core_available: true,
@@ -2146,7 +2147,7 @@ mod tests {
     #[test]
     fn stream_cursor_roundtrip_and_none_omission() {
         let c = StreamCursor { epoch: 7, seq: 42 };
-        let v = serde_json::to_value(&c).unwrap();
+        let v = serde_json::to_value(c).unwrap();
         let dec: StreamCursor = serde_json::from_value(v).unwrap();
         assert_eq!(dec, c);
         let d = ChatDelta {
