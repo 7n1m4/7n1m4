@@ -34,6 +34,11 @@ class _MemoryScreenState extends State<MemoryScreen> {
   bool _searchInFlight = false;
   bool _pendingSearch = false;
 
+  /// Bumped for every newly requested search. Replies from an older
+  /// generation are stale and must not write into a view driven by a newer
+  /// query (or a view that has already been disposed).
+  int _searchGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -253,6 +258,9 @@ class _MemoryScreenState extends State<MemoryScreen> {
   /// Trailing-debounce the search field: typing issues one `journal.search`
   /// with the trimmed query instead of one verb per keystroke.
   void _onSearchChanged(String _) {
+    // The typed query is already newer than any in-flight reply, even before
+    // the debounce timer issues the next `journal.search`.
+    _searchGeneration++;
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
       _searchDebounce = null;
@@ -262,12 +270,16 @@ class _MemoryScreenState extends State<MemoryScreen> {
   }
 
   Future<void> _search() async {
+    // A newer search supersedes any in-flight reply, including on the
+    // queued/in-flight path where this call only arms a replay.
+    _searchGeneration++;
     // The timer callback and an explicit submit can land in the same turn.
     // Remember the request so a newer query is replayed once this one ends.
     if (_searchInFlight) {
       _pendingSearch = true;
       return;
     }
+    final generation = _searchGeneration;
     _searchInFlight = true;
     // A pending debounce is superseded by this explicit search.
     _searchDebounce?.cancel();
@@ -280,14 +292,16 @@ class _MemoryScreenState extends State<MemoryScreen> {
       final entries = await widget.client.journalSearch(
         query: _searchController.text.trim(),
       );
-      if (mounted) {
+      if (mounted && generation == _searchGeneration) {
         setState(() {
           _entries = entries;
           _status = 'Search complete';
         });
       }
     } on DaemonClientException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted && generation == _searchGeneration) {
+        setState(() => _error = e.message);
+      }
     } finally {
       _searchInFlight = false;
       if (mounted) setState(() => _busy = false);

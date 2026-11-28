@@ -5,6 +5,8 @@
 // default-off account/manifest surfaces must never fabricate data from a
 // daemon that has no auth or manifest RPC.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,6 +22,12 @@ class _RecordingMemoryClient extends FakeChatClient {
   bool searchFails = false;
   bool echoSearchQuery = false;
   Duration? searchDelay;
+
+  /// Query-keyed held replies. A `journal.search` for a keyed query returns
+  /// that future, letting a test complete stale/fresh replies in any order.
+  /// The empty-query load passes through the normal fake path unchanged.
+  final Map<String, Completer<RpcReply>> heldSearches =
+      <String, Completer<RpcReply>>{};
   final List<({String action, Map<String, dynamic>? payload})> deletes =
       <({String action, Map<String, dynamic>? payload})>[];
 
@@ -70,6 +78,8 @@ class _RecordingMemoryClient extends FakeChatClient {
       );
     }
     if (action == 'journal.search') {
+      final held = heldSearches[payload?['query'] as String? ?? ''];
+      if (held != null) return held.future;
       // Hold the call open so tests can observe the in-flight `_busy` UI.
       if (searchDelay != null) await Future<void>.delayed(searchDelay!);
       if (echoSearchQuery) {
@@ -530,4 +540,194 @@ void main() {
       expect(find.text('echo-milestones'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'stale search replies and a reply after dispose cannot overwrite the view',
+    (tester) async {
+      // A tall surface keeps the whole ListView built, so entry assertions
+      // never depend on lazy-build viewport position.
+      tester.view.physicalSize = const Size(1000, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final client = _RecordingMemoryClient();
+      addTearDown(client.dispose);
+      final alpha = Completer<RpcReply>();
+      final beta = Completer<RpcReply>();
+      final gamma = Completer<RpcReply>();
+      client.heldSearches
+        ..['alpha'] = alpha
+        ..['beta'] = beta
+        ..['gamma'] = gamma;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MemoryScreen(client: client)),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await _scrollTo(tester, const Key('memory-search'));
+      final field = find.byKey(const Key('memory-search'));
+      int searchesFor(String query) => client.calls
+          .where(
+            (c) => c.action == 'journal.search' && c.payload?['query'] == query,
+          )
+          .length;
+
+      // (1) alpha is dispatched and held in flight.
+      await tester.enterText(field, 'alpha');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(searchesFor('alpha'), 1);
+      expect(alpha.isCompleted, isFalse);
+
+      // (2) beta is typed while alpha is still in flight: it is queued as a
+      // pending replay, with no second `journal.search` issued yet.
+      await tester.enterText(field, 'beta');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(searchesFor('beta'), isZero);
+
+      // (3) alpha's late reply must be dropped. Its content contains 'beta'
+      // so the `_visibleEntries` filter cannot hide it — this assertion is
+      // only green if the reply is genuinely discarded.
+      alpha.complete(
+        RpcReply(
+          action: 'journal.search',
+          ok: true,
+          data: <String, dynamic>{
+            'entries': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'stale',
+                'kind': 'note',
+                'content': 'STALE_ALPHA beta',
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('STALE_ALPHA'), findsNothing);
+
+      // (4) the replayed beta reply is fresh and is shown.
+      expect(searchesFor('beta'), 1);
+      beta.complete(
+        RpcReply(
+          action: 'journal.search',
+          ok: true,
+          data: <String, dynamic>{
+            'entries': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'fresh',
+                'kind': 'note',
+                'content': 'FRESH_BETA beta',
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('FRESH_BETA beta'), findsOneWidget);
+
+      // (5) a reply completing after dispose must not setState.
+      await tester.enterText(field, 'gamma');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(searchesFor('gamma'), 1);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      gamma.complete(
+        RpcReply(
+          action: 'journal.search',
+          ok: true,
+          data: <String, dynamic>{
+            'entries': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'gamma',
+                'kind': 'note',
+                'content': 'GAMMA_AFTER_DISPOSE',
+              },
+            ],
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+    },
+  );
+
+  testWidgets('stale search errors are dropped for a newer query', (
+    tester,
+  ) async {
+    // Tall surface keeps the (top-of-list) error row built, so the stale
+    // error assertion cannot pass just because the row was never laid out.
+    tester.view.physicalSize = const Size(1000, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _RecordingMemoryClient();
+    addTearDown(client.dispose);
+    final alpha = Completer<RpcReply>();
+    final beta = Completer<RpcReply>();
+    client.heldSearches
+      ..['alpha'] = alpha
+      ..['beta'] = beta;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MemoryScreen(client: client)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await _scrollTo(tester, const Key('memory-search'));
+    final field = find.byKey(const Key('memory-search'));
+
+    // alpha is in flight and held.
+    await tester.enterText(field, 'alpha');
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // beta is typed (pre-debounce): `_onSearchChanged` already bumped the
+    // generation, but no queued replay exists yet to clear the error row.
+    await tester.enterText(field, 'beta');
+    await tester.pump();
+
+    // alpha fails after beta made it stale. The error must not reach the view.
+    alpha.completeError(
+      const DaemonClientException(
+        kind: DaemonFailureKind.rpc,
+        message: 'STALE_ALPHA_ERROR',
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('STALE_ALPHA_ERROR'), findsNothing);
+
+    // The still-pending beta debounce issues a fresh, successful search.
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(
+      client.calls.where(
+        (c) => c.action == 'journal.search' && c.payload?['query'] == 'beta',
+      ),
+      hasLength(1),
+    );
+    beta.complete(
+      RpcReply(
+        action: 'journal.search',
+        ok: true,
+        data: <String, dynamic>{
+          'entries': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'fresh',
+              'kind': 'note',
+              'content': 'FRESH_BETA beta',
+            },
+          ],
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('FRESH_BETA beta'), findsOneWidget);
+  });
 }
