@@ -67,8 +67,8 @@ activeModel: string }` — the provider/model selection used by daemon
 payloads (not persisted keys and no `local:*` mirror): `PresenceChangedData`
 `{ subject, state, seq, ts_ms }` and secret-free `StatusChangedData`
 `{ core_available, store_available, store_health, seq, ts_ms }` in
-`crates/anima-channel/src/wire.rs:1125,1144` (`PresenceChangedData`,
-`StatusChangedData`). Flutter decodes them in
+`crates/anima-channel/src/wire.rs` (`PresenceChangedData` and `StatusChangedData`
+structs, registered in `type_collection()`). Flutter decodes them in
 `apps/flutter/lib/daemon_client/protocol.dart:110,144`, registers typed hooks at
 `daemon_client.dart:274,283`, and renders them through
 `apps/flutter/lib/features/stage/presence_event_state.dart` + `presence_status_chip.dart`
@@ -77,13 +77,13 @@ client may fabricate these values when a frame is missing.
 
 `discord.status` is likewise a wire-only reply, not a persisted key and with no
 `local:*` mirror: `DiscordStatusReply` `{ running, hasToken }`
-(`crates/anima-channel/src/wire.rs:288`, registered via
-`.register::<DiscordStatusReply>()` at `wire.rs:1431`) reports only
+(`DiscordStatusReply` struct in `crates/anima-channel/src/wire.rs`, registered via
+`.register::<DiscordStatusReply>()` in `type_collection()`) reports only
 lifecycle state plus a bot-token presence bit — no token value and no config
-echo. `CoreService::discord_status` (`crates/anima-daemon/src/core.rs:859`) builds
+echo. `CoreService::discord_status` (`crates/anima-daemon/src/core.rs`) builds
 the projection; the status handler stays ungated because the reply is
-secret-free (`crates/anima-daemon/src/gateway.rs:2566`), while `discord.start`
-and `discord.stop` are registered through `gated()` at `gateway.rs:2576,2590`
+secret-free (`"discord.status"` handler in `crates/anima-daemon/src/gateway.rs`), while `discord.start`
+and `discord.stop` are registered through `gated()` (`"discord.start"` / `"discord.stop"` handlers in `crates/anima-daemon/src/gateway.rs`)
 (`airi-ro6o`, commit `bbdf37fa`). The stored credential itself remains the
 write-only `settings/discord` field inventoried in §4.7.
 
@@ -373,8 +373,8 @@ interface ChatHistoryItem {
 
 Daemon-persisted user turns may carry `metadata.attachments`: an array of
 `AttachmentDescriptor` (`mimeType`, base64 `data`, optional `fileName` / `url`)
-written by `append_user_turn_with_attachments`
-(`crates/anima-core/src/lib.rs:194-205`, `crates/anima-core/src/chat.rs:388,434-437`,
+written by `AppCore::append_user_turn_with_attachments`
+(`crates/anima-core/src/lib.rs`, `crates/anima-core/src/chat.rs:388,434-437`,
 `crates/anima-daemon/src/gateway.rs:1325`). Bounds are at most 4 descriptors,
 128 KiB decoded each, 384 KiB total, with an image-MIME allowlist
 (`gateway.rs:87-140`); `chat.history` strips only `attachments[].data` before
@@ -1028,7 +1028,8 @@ interface StoredCustomVrmAnimation {
 
 The daemon also owns a typed `settings/faculties` section
 (`FacultiesSettings`, `crates/anima-core/src/settings.rs:1764`, key at `:1790`,
-registered in `crates/anima-daemon/src/core.rs:309`, read/written by
+registered in `settings_sections!` (`faculties` entry, `FacultiesSettings`) in
+`crates/anima-daemon/src/core.rs`, read/written by
 `settings.get`/`settings.set` at `gateway.rs:966,1027`). It mirrors the four
 live faculties — `consciousness`, `speech`, `hearing`, `vision` — each a
 `FacultyConfig` (`settings.rs:1656`) with `primaryProvider`, `primaryModel`,
@@ -1220,8 +1221,9 @@ metadata are plain refs, not durable settings.
 | `settings/discord/dmsEnabled` | `boolean` | `false` | `stores/modules/discord.ts` |
 
 The daemon also owns a typed `settings/discord` section (`DiscordSettings`,
-`crates/anima-core/src/settings.rs:1876`, key at `:1930`, registered in
-`crates/anima-daemon/src/core.rs:311`; reads at `gateway.rs:966` (Discord projection at `:986-992`) and
+`crates/anima-core/src/settings.rs:1876`, key at `:1930`, registered in the
+`settings_sections!` `discord` entry (`DiscordSettings`) in `crates/anima-daemon/src/core.rs`;
+reads at `gateway.rs:966` (Discord projection at `:986-992`) and
 `core.rs:331-335,733-758`). It mirrors the typed fields above except
 `cloudRelayInstances`, which stays client-local; camelCase names are used on the
 daemon wire. `token` is **write-only**: no read reply contains it. The read
@@ -1527,8 +1529,8 @@ Disposition note: the V3 draft and completion/skip flags are now daemon-backed t
 
 The daemon also owns a typed `settings/mcp` section keyed by server name
 (`McpSettings = HashMap<String, McpServerSettings>` at
-`crates/anima-core/src/settings.rs:1839`, registered in
-`crates/anima-daemon/src/core.rs:310`; verbs `mcp.config.get`/`.set` at
+`crates/anima-core/src/settings.rs:1839`, registered in the `settings_sections!`
+`mcp` entry in `crates/anima-daemon/src/core.rs`; verbs `mcp.config.get`/`.set` at
 `crates/anima-daemon/src/gateway.rs:2528-2548`). Each server carries `transport`
 (`stdio` default or `http`), `command`, `cwd`, `url`, `args`, `env`, `headers`,
 `token` and `enabled`. `env`, `headers` and credential-shaped fields including
@@ -1872,10 +1874,10 @@ When implementing MOSS-TTS-Nano voice cloning, the voice profile store should fo
 ### Daemon RPC / event wire sources (not persisted keys)
 | File | Role |
 | :--- | :--- |
-| `crates/anima-channel/src/wire.rs:1125,1144` | `PresenceChangedData` / `StatusChangedData` presence/health payloads; `CueKind` at `:982-989` |
-| `crates/anima-channel/src/wire.rs:288,1431` | `DiscordStatusReply` `{running, hasToken}` struct and its `.register::<DiscordStatusReply>()` entry; wire-only, no `local:*` mirror |
-| `crates/anima-daemon/src/core.rs:859,878` | `CoreService::discord_status` token-free projection and `discord_set_running` state write |
-| `crates/anima-daemon/src/gateway.rs:2566,2576,2590` | Ungated `discord.status` read; gated `discord.start` / `discord.stop` handlers |
+| `crates/anima-channel/src/wire.rs` | `PresenceChangedData` / `StatusChangedData` structs (registered in `type_collection()`); `CueKind` enum (registered in `type_collection()`) |
+| `crates/anima-channel/src/wire.rs` | `DiscordStatusReply` `{running, hasToken}` struct and its `.register::<DiscordStatusReply>()` entry in `type_collection()`; wire-only, no `local:*` mirror |
+| `crates/anima-daemon/src/core.rs` | `CoreService::discord_status` token-free projection and `CoreService::discord_set_running` state write |
+| `crates/anima-daemon/src/gateway.rs` | Ungated `"discord.status"` read; `gated()` `"discord.start"` / `"discord.stop"` handlers |
 | `crates/anima-daemon/src/gateway.rs:1608-1609,1975,2204` | Keyset cursors for `chat.history`, `cards.list`, `sessions.list` (`list_cursor` at `:3292`); `stmm.upsert` handler at `:1652-1665` |
 | `apps/flutter/lib/daemon_client/daemon_client.dart:36-49,267-288,732-745` | `ListPage.nextCursor` verbatim cursor forwarding, typed presence/status hooks, `stmmUpsert` at `:1003-1065` |
 | `apps/flutter/lib/features/stage/presence_event_state.dart:65-173` | Seq-deduped presence/health snapshot and typed hook binding |
