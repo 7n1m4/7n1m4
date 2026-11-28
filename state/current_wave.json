@@ -2,7 +2,7 @@
   "schema": "airi-current-wave/v1",
   "wave": "r17",
   "base_sha": "38613b6ebc36ec59dd4687b5b5895dc469b84dc5",
-  "head_sha": "478fc73bc40e2d801f33100d99ddbc18a7d463a2",
+  "head_sha": "1a5d6928aebc18b431a88fadcef1f65020ee1cff",
   "beads_mode": "PAUSED",
   "lane_count": 3,
   "lanes": [

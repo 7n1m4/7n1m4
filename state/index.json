@@ -2,11 +2,11 @@
   "schema": "airi-state-index/v1",
   "wave": "r17",
   "base_sha": "38613b6ebc36ec59dd4687b5b5895dc469b84dc5",
-  "head_sha": "478fc73bc40e2d801f33100d99ddbc18a7d463a2",
+  "head_sha": "1a5d6928aebc18b431a88fadcef1f65020ee1cff",
   "artifacts": [
     {
       "path": "state/SUMMARY.md",
-      "sha256": "ac23451adbf56906ced5a04a9f708b267f2ce542060846a9333fc200d53995e0"
+      "sha256": "989cb1561c35572412ee939c2e3187041c003009a6d208ec3c82175e0e227ef8"
     },
     {
       "path": "state/bindings.json",
@@ -14,11 +14,11 @@
     },
     {
       "path": "state/current_wave.json",
-      "sha256": "5f2f805d94216653f8d7aa42b038542cd89e44ca8b193a617014b05a41ec9c38"
+      "sha256": "480718f5b9d0e5b4afb3bd3f9c454707a0612519bc5f4a6e59b1c0a15829cf6a"
     },
     {
       "path": "state/events.ndjson",
-      "sha256": "02b26ba9decdeaaf319075bf2e803446d1ccd71d871d93af6921f6c1d74c993f"
+      "sha256": "ec20a762a030569f25e94628f09371fb9717fbc554e36ab9197f0797d0105694"
     },
     {
       "path": "state/pinned-guards.sha",
