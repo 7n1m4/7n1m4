@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 // Guard: keep the daemon RPC handler count in docs/ in sync with gateway.rs.
 // Structural source check + exact current-claim checks against the five docs.
 // Historical/dated counts in feature-parity-checklist.md are intentionally kept.
-import test from 'vitest'
+import test from 'node:test'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const read = rel => readFileSync(join(root, rel), 'utf8')
