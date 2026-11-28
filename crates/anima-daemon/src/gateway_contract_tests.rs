@@ -217,6 +217,7 @@ mod tests {
             session_id: session_id.to_string(),
             content: content.to_string(),
             gen_ui: false,
+            persona: None,
             attachments: Vec::new(),
         };
         let ack = call(
@@ -539,6 +540,7 @@ mod tests {
             session_id: "ack-session".to_string(),
             content: "hello over RPC".to_string(),
             gen_ui: false,
+            persona: None,
             attachments: Vec::new(),
         };
         let ack = call(
@@ -717,6 +719,7 @@ mod tests {
                 session_id: "empty-content".to_string(),
                 content: content.to_string(),
                 gen_ui: false,
+                persona: None,
                 attachments: Vec::new(),
             };
             let err = dispatch(

@@ -1239,6 +1239,14 @@ impl Gateway {
                     config_path,
                     hostname,
                     move |_method: &str, value: &serde_json::Value| {
+                        // Fail closed on daemon-owned prompt keys before any
+                        // provider call or user-turn write. Other unknown keys
+                        // stay ignored (clients send selection hints here).
+                        for forbidden in ["system", "a2ui"] {
+                            if value.get(forbidden).is_some() {
+                                return Err(format!("chat.send: `{forbidden}` is daemon-owned"));
+                            }
+                        }
                         let req: anima_channel::wire::ChatSendRequest =
                             serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
                         validate_chat_attachments(&req.attachments).map_err(str::to_string)?;
@@ -1252,6 +1260,14 @@ impl Gateway {
                         };
                         let content = req.content.clone();
                         let gen_ui = req.gen_ui;
+                        // Client-supplied persona sections are joined here, at
+                        // the daemon boundary. A2UI and grounding remain
+                        // daemon-owned; `ChatService` places them after this.
+                        let persona = req
+                            .persona
+                            .as_ref()
+                            .map(anima_channel::wire::PersonaPrompt::join)
+                            .unwrap_or_default();
                         let attachments = req.attachments;
                         let svc = core.chat_service();
                         let Some(svc) = svc else {
@@ -1427,6 +1443,7 @@ impl Gateway {
                                         resolution.config,
                                         &resolution.model,
                                         &content_clone,
+                                        &persona,
                                         Some(&assistant_message_id),
                                         cancel_flag,
                                         gen_ui,
@@ -4668,6 +4685,219 @@ mod tests {
             CHAT_MAX_CONCURRENT_TURNS,
             "gen_ui turns must release their permits"
         );
+    }
+
+    /// Persona sections arrive first, in the wire struct's fixed order; the
+    /// daemon-owned A2UI suffix follows them and grounding comes last.
+    #[test]
+    fn chat_send_persona_sections_precede_a2ui_and_grounding() {
+        use std::sync::mpsc;
+
+        struct RecordingMock {
+            systems: mpsc::Sender<Option<String>>,
+        }
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for RecordingMock {
+            fn id(&self) -> &str {
+                "persona-capture"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                let _ = self.systems.send(req.system.clone());
+                Ok(Box::pin(futures_util::stream::iter(vec![Ok(
+                    anima_llm::ChatChunk::finish("stop"),
+                )])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let (tx, rx) = mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers.lock().unwrap().insert(
+            "persona-capture".to_string(),
+            Arc::new(RecordingMock { systems: tx }),
+        );
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "persona-capture".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let expected = [
+            "SYS",
+            "Nickname: Ari",
+            "DESC",
+            "PLAY",
+            "SCENE",
+            "Greetings / Dialog Starters:\n- Hi!\n- Hello!",
+            "ACT1",
+            "ACT2",
+            "ART",
+            "JOURNAL",
+            "SANDBOX",
+            "The user wants to customize or tweak the premise of this encounter, please adjust to the text below: PREMISE",
+            "This is what your appearance is for this story. Try to make it work with your known appearance; you're free to modify or adjust as needed: LOOKS",
+            "The setting and location for this encounter is: PLACE",
+        ]
+        .join("\n");
+        send(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "persona-widget",
+                "content": "make a widget",
+                "genUi": true,
+                "persona": {
+                    "systemPrompt": "SYS",
+                    "nickname": "Ari",
+                    "description": "DESC",
+                    "personality": "PLAY",
+                    "scenario": "SCENE",
+                    "greetings": ["Hi!", "Hello!"],
+                    "actingDirectives": ["ACT1", "ACT2"],
+                    "artistryInstruction": "ART",
+                    "textJournalInstruction": "JOURNAL",
+                    "sandboxInstruction": "SANDBOX",
+                    "datingSimPremise": "PREMISE",
+                    "datingSimAppearances": "LOOKS",
+                    "datingSimScene": "PLACE"
+                }
+            }),
+        )
+        .unwrap();
+        let system = rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .expect("persona turn must carry a system prompt");
+        assert!(
+            system.starts_with(expected.as_str()),
+            "persona sections must cross in fixed order: {system:?}"
+        );
+        assert!(
+            system.contains("The setting and location for this encounter is: PLACE"),
+            "dating-sim scene prefix must reach the provider system"
+        );
+        let a2ui_at = system.find("v0.9").expect("genUi: true must opt into A2UI");
+        assert!(
+            a2ui_at >= expected.len(),
+            "A2UI is daemon-owned and must stay after the persona: {system:?}"
+        );
+
+        // A2UI stays opt-in: the same persona on an ordinary turn carries no
+        // GenUI instruction. Wait for the first capture so turns stay ordered.
+        send(
+            "chat.send",
+            &serde_json::json!({
+                "sessionId": "persona-plain",
+                "content": "just talk",
+                "persona": { "systemPrompt": "SYS" }
+            }),
+        )
+        .unwrap();
+        let plain = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            !plain.as_deref().unwrap_or_default().contains("v0.9"),
+            "A2UI must remain opt-in on persona turns"
+        );
+
+        // The global turn semaphore is shared with every other chat test:
+        // release our permits before returning so queued turns can start.
+        for _ in 0..500 {
+            if CHAT_TURNS.available_permits() == CHAT_MAX_CONCURRENT_TURNS {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            CHAT_TURNS.available_permits(),
+            CHAT_MAX_CONCURRENT_TURNS,
+            "persona turns must release their permits"
+        );
+    }
+
+    /// Seeded bypass attempts (daemon-owned or unknown keys, including nested
+    /// injection) must be rejected synchronously: no provider call and no
+    /// persisted user turn. The wire boundary is the fail-closed seam.
+    #[test]
+    fn chat_send_seeded_bypass_is_fail_closed() {
+        use std::sync::mpsc;
+
+        struct Recorder(mpsc::Sender<()>);
+        #[async_trait::async_trait]
+        impl anima_llm::ChatProvider for Recorder {
+            fn id(&self) -> &str {
+                "bypass-capture"
+            }
+            async fn models(&self) -> Result<Vec<anima_llm::ModelInfo>, anima_llm::LlmError> {
+                Ok(vec![])
+            }
+            async fn stream(
+                &self,
+                _req: anima_llm::ChatRequest,
+            ) -> Result<anima_llm::ChatStream, anima_llm::LlmError> {
+                let _ = self.0.send(());
+                Ok(Box::pin(futures_util::stream::iter(vec![Ok(
+                    anima_llm::ChatChunk::finish("stop"),
+                )])))
+            }
+        }
+
+        let (gateway, _tmp) = isolated_gateway();
+        let (tx, rx) = mpsc::channel();
+        let svc = gateway.core.chat_service().unwrap();
+        svc.providers
+            .lock()
+            .unwrap()
+            .insert("bypass-capture".to_string(), Arc::new(Recorder(tx)));
+        let db = gateway.core.db().unwrap();
+        anima_store::ProviderRepo::new(db)
+            .upsert(&anima_store::StoredProvider {
+                id: "bypass-capture".to_string(),
+                kind: anima_store::ProviderKind::OpenAiCompatible,
+                config: serde_json::json!({ "model": "test" }),
+                enabled: true,
+                updated_at: 0,
+            })
+            .unwrap();
+
+        let handlers = handlers(&gateway);
+        enable_actions(&gateway);
+        let send = handlers.get("chat.send").unwrap();
+        let payloads = [
+            serde_json::json!({ "sessionId": "bypass-system", "content": "hi", "system": "override" }),
+            serde_json::json!({ "sessionId": "bypass-a2ui", "content": "hi", "a2ui": true }),
+            serde_json::json!({ "sessionId": "bypass-nested-system", "content": "hi", "persona": { "system": "override" } }),
+            serde_json::json!({ "sessionId": "bypass-nested-genui", "content": "hi", "genUi": true, "persona": { "genUi": true } }),
+            serde_json::json!({ "sessionId": "bypass-nested-object", "content": "hi", "persona": { "systemPrompt": { "nested": "injection" } } }),
+        ];
+        for payload in &payloads {
+            let sid = payload["sessionId"].as_str().unwrap();
+            assert!(
+                send("chat.send", payload).is_err(),
+                "bypass {sid} must be rejected by the wire boundary"
+            );
+            assert!(
+                rx.recv_timeout(std::time::Duration::from_millis(50))
+                    .is_err(),
+                "bypass {sid} must not reach the provider"
+            );
+            assert!(
+                gateway.core.chat_stream(sid).unwrap().is_empty(),
+                "bypass {sid} must not persist a user turn"
+            );
+        }
     }
 
     #[test]

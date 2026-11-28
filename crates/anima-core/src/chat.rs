@@ -345,6 +345,7 @@ impl ChatService {
             config,
             model,
             text,
+            "",
             assistant_message_id,
             cancel,
             false,
@@ -371,6 +372,7 @@ impl ChatService {
             config,
             model,
             text,
+            "",
             assistant_message_id,
             cancel,
             true,
@@ -381,9 +383,10 @@ impl ChatService {
 
     /// Like [`Self::send_message_with_assistant_id`], but persists bounded
     /// attachment descriptors in the user message's `attachments` metadata.
-    /// `a2ui` opts into the same GenUI system instruction as
-    /// [`Self::send_message_with_a2ui`]. Attachments are stored, not forwarded
-    /// to the model — the VLM hop is a separate decision.
+    /// `persona` is the client-supplied joined persona prompt; it precedes the
+    /// daemon-owned A2UI and grounding suffixes. `a2ui` opts into the same GenUI
+    /// system instruction as [`Self::send_message_with_a2ui`]. Attachments are
+    /// stored, not forwarded to the model — the VLM hop is a separate decision.
     #[allow(clippy::too_many_arguments)]
     pub async fn send_message_with_attachments(
         &self,
@@ -392,6 +395,7 @@ impl ChatService {
         config: ProviderConfig,
         model: &str,
         text: &str,
+        persona: &str,
         assistant_message_id: Option<&str>,
         cancel: Arc<AtomicBool>,
         a2ui: bool,
@@ -403,6 +407,7 @@ impl ChatService {
             config,
             model,
             text,
+            persona,
             assistant_message_id,
             cancel,
             a2ui,
@@ -411,6 +416,7 @@ impl ChatService {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn send_message_inner(
         &self,
         session_id: Option<&str>,
@@ -418,6 +424,7 @@ impl ChatService {
         config: ProviderConfig,
         model: &str,
         text: &str,
+        persona: &str,
         assistant_message_id: Option<&str>,
         cancel: Arc<AtomicBool>,
         a2ui: bool,
@@ -444,7 +451,9 @@ impl ChatService {
         // so this never aborts the turn, and `history` is borrowed, never
         // mutated — every persisted row stays exactly where it was.
         let messages = cap_prompt_history(&history);
-        let system = self.build_system_prompt(&session_id, text, a2ui).await?;
+        let system = self
+            .build_system_prompt_with_persona(&session_id, text, a2ui, persona)
+            .await?;
         self.run_stream(
             session_id,
             assistant_message_id.map(str::to_string),
@@ -542,6 +551,21 @@ impl ChatService {
         // rather than inventing a dedicated settings section.
         let client = EmbeddingClient::from_provider_config(&resolution.config, "").ok()?;
         Some(Arc::new(client))
+    }
+
+    /// Assemble the full provider system: the client's joined persona first,
+    /// then the daemon-owned A2UI instruction (when requested) and grounding.
+    /// `build_system_prompt` stays the pure grounding builder so continuity
+    /// tests exercise it unchanged.
+    async fn build_system_prompt_with_persona(
+        &self,
+        session_id: &str,
+        query: &str,
+        a2ui: bool,
+        persona: &str,
+    ) -> Result<Option<String>> {
+        let grounding = self.build_system_prompt(session_id, query, a2ui).await?;
+        Ok(join_system_sections(persona, grounding.as_deref()))
     }
 
     /// Assemble the turn's system prompt: the A2UI instruction when requested,
@@ -1040,6 +1064,27 @@ impl ChatService {
             return Ok(false);
         }
         self.sessions.update(session_id, Some(&title), None)
+    }
+}
+
+/// Prepend the client's persona to the daemon-owned system tail (A2UI +
+/// grounding), separated by one newline. An empty persona leaves the tail
+/// byte-identical to the legacy prompt; an empty tail leaves just the persona.
+fn join_system_sections(persona: &str, tail: Option<&str>) -> Option<String> {
+    let mut system = String::new();
+    if !persona.is_empty() {
+        system.push_str(persona);
+    }
+    if let Some(tail) = tail.filter(|t| !t.is_empty()) {
+        if !system.is_empty() {
+            system.push('\n');
+        }
+        system.push_str(tail);
+    }
+    if system.is_empty() {
+        None
+    } else {
+        Some(system)
     }
 }
 
@@ -2534,6 +2579,7 @@ mod tests {
                 ProviderConfig::default(),
                 "mock-model",
                 "look",
+                "",
                 None,
                 Arc::new(AtomicBool::new(false)),
                 false,
@@ -2559,6 +2605,46 @@ mod tests {
         assert!(
             assistant.metadata.get("attachments").is_none(),
             "attachments belong to the user turn only"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_attachments_prepends_persona_before_a2ui() {
+        let (_dir, db) = test_db();
+        let service = ChatService::new(db);
+        let (client, requests) = MockChatClient::recording(&["reply"]);
+        service.register_client("mock", Arc::new(client));
+        let session = service.new_session_with_title("Custom title").unwrap();
+        let persona = "PERSONA-ONE\nNickname: Ari";
+        service
+            .send_message_with_attachments(
+                Some(&session.id),
+                "mock",
+                ProviderConfig::default(),
+                "mock-model",
+                "persona check",
+                persona,
+                None,
+                Arc::new(AtomicBool::new(false)),
+                true,
+                &[],
+            )
+            .await
+            .unwrap();
+
+        let recorded = requests.lock().unwrap();
+        let system = recorded
+            .iter()
+            .find(|req| req.messages.iter().any(|m| m.content == "persona check"))
+            .and_then(|req| req.system.clone())
+            .expect("persona turn must reach the provider");
+        assert!(
+            system.starts_with(&format!("{persona}\n")),
+            "persona must be the first system section: {system:?}"
+        );
+        assert!(
+            system.find("v0.9").is_some_and(|i| i > persona.len()),
+            "daemon A2UI suffix must follow the persona: {system:?}"
         );
     }
 

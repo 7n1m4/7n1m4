@@ -1,0 +1,25 @@
+{
+  "content": "Hello with persona!",
+  "persona": {
+    "actingDirectives": [
+      "ACT1",
+      "ACT2"
+    ],
+    "artistryInstruction": "ART",
+    "datingSimAppearances": "LOOKS",
+    "datingSimPremise": "PREMISE",
+    "datingSimScene": "PLACE",
+    "description": "A curious companion",
+    "greetings": [
+      "Hi!",
+      "Hello!"
+    ],
+    "nickname": "Ari",
+    "personality": "Playful",
+    "sandboxInstruction": "SANDBOX",
+    "scenario": "A sunny balcony",
+    "systemPrompt": "SYS",
+    "textJournalInstruction": "JOURNAL"
+  },
+  "sessionId": "sess-persona"
+}

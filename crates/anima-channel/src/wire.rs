@@ -482,7 +482,119 @@ where
     Ok(Option::<Vec<AttachmentDescriptor>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+/// Ordered persona sections for a `chat.send` turn, mirroring the TS
+/// `buildSystemPrompt` composition (`airi-card.ts`).
+///
+/// Every field is optional and omitted when absent, so a client can send only
+/// the sections it has. `deny_unknown_fields` makes prompt injection by extra
+/// keys fail at the wire boundary: the daemon owns `system`, `a2ui` and all
+/// grounding/A2UI instruction text, and only these declared sections cross.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PersonaPrompt {
+    /// Character card's own system prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    /// Nickname, emitted as the `Nickname: …` prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nickname: Option<String>,
+    /// Character description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Personality description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub personality: Option<String>,
+    /// Scenario (the dating-sim storyline disables this in TS).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
+    /// Greeting/dialog starters, emitted as `- …` bullets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub greetings: Option<Vec<String>>,
+    /// Acting directives (`modelExpression`, `speechExpression`, …) in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acting_directives: Option<Vec<String>>,
+    /// Artistry widget-spawning instruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artistry_instruction: Option<String>,
+    /// Text-journal widget instruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_journal_instruction: Option<String>,
+    /// Sandbox workstation instruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_instruction: Option<String>,
+    /// Dating-sim customized premise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dating_sim_premise: Option<String>,
+    /// Dating-sim character appearance for this story.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dating_sim_appearances: Option<String>,
+    /// Dating-sim setting/location for this encounter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dating_sim_scene: Option<String>,
+}
+
+impl PersonaPrompt {
+    /// Join the declared sections with `\n`, skipping empty ones, in the same
+    /// fixed order as the TS `buildSystemPrompt`. Nicknames get their prefix
+    /// and greetings their bullet header here so the wire stays section-shaped.
+    pub fn join(&self) -> String {
+        let mut sections: Vec<String> = Vec::new();
+        push_section(&mut sections, self.system_prompt.as_deref());
+        if let Some(nickname) = self.nickname.as_deref().filter(|s| !s.is_empty()) {
+            sections.push(format!("Nickname: {nickname}"));
+        }
+        push_section(&mut sections, self.description.as_deref());
+        push_section(&mut sections, self.personality.as_deref());
+        push_section(&mut sections, self.scenario.as_deref());
+        // TS emits the section whenever the vector is non-empty and does not
+        // filter individual entries, so an empty entry becomes a `- ` bullet.
+        if let Some(greetings) = self.greetings.as_ref().filter(|g| !g.is_empty()) {
+            let bullets = greetings
+                .iter()
+                .map(|g| format!("- {g}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            sections.push(format!("Greetings / Dialog Starters:\n{bullets}"));
+        }
+        if let Some(directives) = &self.acting_directives {
+            for directive in directives.iter().filter(|d| !d.is_empty()) {
+                sections.push(directive.clone());
+            }
+        }
+        push_section(&mut sections, self.artistry_instruction.as_deref());
+        push_section(&mut sections, self.text_journal_instruction.as_deref());
+        push_section(&mut sections, self.sandbox_instruction.as_deref());
+        // Dating-sim sections carry the exact TS buildSystemPrompt prefixes.
+        if let Some(premise) = self.dating_sim_premise.as_deref().filter(|s| !s.is_empty()) {
+            sections.push(format!("The user wants to customize or tweak the premise of this encounter, please adjust to the text below: {premise}"));
+        }
+        if let Some(appearances) = self
+            .dating_sim_appearances
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        {
+            sections.push(format!("This is what your appearance is for this story. Try to make it work with your known appearance; you're free to modify or adjust as needed: {appearances}"));
+        }
+        if let Some(scene) = self.dating_sim_scene.as_deref().filter(|s| !s.is_empty()) {
+            sections.push(format!(
+                "The setting and location for this encounter is: {scene}"
+            ));
+        }
+        sections.join("\n")
+    }
+}
+
+fn push_section(sections: &mut Vec<String>, section: Option<&str>) {
+    if let Some(section) = section.filter(|s| !s.is_empty()) {
+        sections.push(section.to_string());
+    }
+}
+
 /// Request payload for `chat.send`.
+///
+/// Unknown top-level keys stay ignored (clients historically send selection
+/// hints the daemon deliberately drops); the gateway rejects daemon-owned
+/// prompt keys explicitly, while [`PersonaPrompt`] denies nested injection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatSendRequest {
@@ -495,6 +607,11 @@ pub struct ChatSendRequest {
     /// Defaults to `false` so older clients keep plain-text turns.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub gen_ui: bool,
+    /// Ordered character-persona sections supplied by the client. The daemon
+    /// still owns the A2UI and grounding suffixes; this is additive and
+    /// absent on legacy requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona: Option<PersonaPrompt>,
     /// Bounded media attachments persisted with the user turn.
     ///
     /// Defaults to empty and is omitted when empty so the legacy text-only
@@ -1461,6 +1578,7 @@ pub fn type_collection() -> specta::Types {
         .register::<SessionMediaScrubRequest>()
         .register::<SessionMediaScrubReply>()
         .register::<ChatSendRequest>()
+        .register::<PersonaPrompt>()
         .register::<AttachmentDescriptor>()
         .register::<ChatMessage>()
         .register::<StmmSummary>()
@@ -2094,12 +2212,12 @@ mod tests {
         assert_eq!(decoded.session_id, "s1");
         assert_eq!(decoded.content, "hi");
         assert!(!decoded.gen_ui);
+        assert!(decoded.persona.is_none());
         assert!(decoded.attachments.is_empty());
         // Legacy text-only requests stay byte-identical on the wire.
-        assert!(serde_json::to_value(&decoded)
-            .unwrap()
-            .get("attachments")
-            .is_none());
+        let value = serde_json::to_value(&decoded).unwrap();
+        assert!(value.get("attachments").is_none());
+        assert!(value.get("persona").is_none());
     }
 
     #[test]
@@ -2124,6 +2242,7 @@ mod tests {
             session_id: "s1".into(),
             content: "look".into(),
             gen_ui: false,
+            persona: None,
             attachments: vec![AttachmentDescriptor {
                 mime_type: "image/png".into(),
                 data: "aGVsbG8=".into(),
@@ -2144,6 +2263,92 @@ mod tests {
         let decoded: ChatSendRequest = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, request);
     }
+
+    #[test]
+    fn persona_prompt_join_uses_fixed_section_order() {
+        let persona = PersonaPrompt {
+            system_prompt: Some("SYS".into()),
+            nickname: Some("Ari".into()),
+            description: Some("DESC".into()),
+            personality: Some("PLAY".into()),
+            scenario: Some("SCENE".into()),
+            greetings: Some(vec!["Hi!".into(), "Hello!".into()]),
+            acting_directives: Some(vec!["ACT1".into(), "ACT2".into()]),
+            artistry_instruction: Some("ART".into()),
+            text_journal_instruction: Some("JOURNAL".into()),
+            sandbox_instruction: Some("SANDBOX".into()),
+            dating_sim_premise: Some("PREMISE".into()),
+            dating_sim_appearances: Some("LOOKS".into()),
+            dating_sim_scene: Some("PLACE".into()),
+        };
+        let expected = [
+            "SYS",
+            "Nickname: Ari",
+            "DESC",
+            "PLAY",
+            "SCENE",
+            "Greetings / Dialog Starters:\n- Hi!\n- Hello!",
+            "ACT1",
+            "ACT2",
+            "ART",
+            "JOURNAL",
+            "SANDBOX",
+            "The user wants to customize or tweak the premise of this encounter, please adjust to the text below: PREMISE",
+            "This is what your appearance is for this story. Try to make it work with your known appearance; you're free to modify or adjust as needed: LOOKS",
+            "The setting and location for this encounter is: PLACE",
+        ]
+        .join("\n");
+        assert_eq!(persona.join(), expected);
+        assert!(
+            expected.contains("The setting and location for this encounter is: PLACE"),
+            "scene prefix must mirror TS buildSystemPrompt"
+        );
+
+        // Empty and absent sections are skipped; the order never changes.
+        let blank = PersonaPrompt {
+            system_prompt: None,
+            nickname: None,
+            description: None,
+            personality: None,
+            scenario: None,
+            greetings: None,
+            acting_directives: None,
+            artistry_instruction: None,
+            text_journal_instruction: None,
+            sandbox_instruction: None,
+            dating_sim_premise: None,
+            dating_sim_appearances: None,
+            dating_sim_scene: None,
+        };
+        assert_eq!(blank.join(), "");
+        let sparse = PersonaPrompt {
+            nickname: Some("".into()),
+            greetings: Some(vec![String::new(), "Hey".into()]),
+            acting_directives: Some(vec![String::new(), "DIRECTIVE".into()]),
+            dating_sim_scene: Some("ONLY".into()),
+            ..blank
+        };
+        assert_eq!(
+            sparse.join(),
+            "Greetings / Dialog Starters:\n- \n- Hey\nDIRECTIVE\nThe setting and location for this encounter is: ONLY"
+        );
+    }
+
+    #[test]
+    fn persona_prompt_denies_unknown_fields_at_the_wire_boundary() {
+        for payload in [
+            json!({ "system": "override" }),
+            json!({ "a2ui": true }),
+            json!({ "genUi": true }),
+            json!({ "systemPrompt": { "nested": "injection" } }),
+        ] {
+            assert!(
+                serde_json::from_value::<PersonaPrompt>(payload.clone()).is_err(),
+                "persona must reject unknown/mistyped key: {payload}"
+            );
+        }
+    }
+
     #[test]
     fn stream_cursor_roundtrip_and_none_omission() {
         let c = StreamCursor { epoch: 7, seq: 42 };

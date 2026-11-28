@@ -21,7 +21,7 @@ mod golden_fixtures {
         CardGetReply, CardImportReply, CardImportRequest, CardListReply, CardMetadataReply,
         CardMetadataSetRequest, CardUpdateReply, CardUpdateRequest, ChatSendRequest,
         CoreStatusReply, DiscordStatusReply, EventSubscriptionReply, GatewayAuthReply,
-        GatewayConfigReply, GatewayServerFrame, HeartbeatData, ProvidersListReply,
+        GatewayConfigReply, GatewayServerFrame, HeartbeatData, PersonaPrompt, ProvidersListReply,
         ProvidersModelsReply, RpcErrorObject, RuntimePingReply, RuntimeStatusReply,
         SessionDeleteReply, SessionDeleteRequest, SessionImportReply, SettingsGetReply,
         SettingsSetReply, VaultStatusReply,
@@ -310,6 +310,73 @@ mod golden_fixtures {
         assert!(
             value.get("session_id").is_none(),
             "chat.send.request: snake_case `session_id` is not the wire shape"
+        );
+    }
+
+    #[test]
+    fn chat_send_persona_request_fixture_round_trips_in_camel_case() {
+        let legacy = load_json("chat.send.request");
+        assert!(
+            legacy.get("persona").is_none(),
+            "legacy chat.send.request must stay byte-identical (no persona key)"
+        );
+        let value = load_json("chat.send.persona.request");
+        round_trip::<ChatSendRequest>("chat.send.persona.request", &value);
+        assert_eq!(value["sessionId"], "sess-persona");
+
+        let persona = value["persona"].as_object().expect("persona object");
+        for snake in [
+            "system_prompt",
+            "text_journal_instruction",
+            "acting_directives",
+            "dating_sim_premise",
+        ] {
+            assert!(
+                persona.get(snake).is_none(),
+                "persona wire shape must be camelCase, found `{snake}`"
+            );
+        }
+        for camel in ["systemPrompt", "nickname", "greetings", "actingDirectives"] {
+            assert!(
+                persona.get(camel).is_some(),
+                "persona fixture must carry `{camel}`"
+            );
+        }
+
+        let request: ChatSendRequest = serde_json::from_value(value).unwrap();
+        let joined = request.persona.expect("fixture persona").join();
+        let expected = [
+            "SYS",
+            "Nickname: Ari",
+            "A curious companion",
+            "Playful",
+            "A sunny balcony",
+            "Greetings / Dialog Starters:\n- Hi!\n- Hello!",
+            "ACT1",
+            "ACT2",
+            "ART",
+            "JOURNAL",
+            "SANDBOX",
+            "The user wants to customize or tweak the premise of this encounter, please adjust to the text below: PREMISE",
+            "This is what your appearance is for this story. Try to make it work with your known appearance; you're free to modify or adjust as needed: LOOKS",
+            "The setting and location for this encounter is: PLACE",
+        ]
+        .join("\n");
+        assert_eq!(joined, expected);
+    }
+
+    #[test]
+    fn persona_prompt_join_skips_empty_sections_without_reordering() {
+        let persona: PersonaPrompt = serde_json::from_value(serde_json::json!({
+            "nickname": "",
+            "greetings": ["", "Hey"],
+            "actingDirectives": ["", "DIRECTIVE"],
+            "datingSimScene": "PLACE",
+        }))
+        .unwrap();
+        assert_eq!(
+            persona.join(),
+            "Greetings / Dialog Starters:\n- \n- Hey\nDIRECTIVE\nThe setting and location for this encounter is: PLACE"
         );
     }
 

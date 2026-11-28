@@ -297,7 +297,13 @@ export type ChatMessage = {
 	cursor?: StreamCursor | null,
 };
 
-/**  Request payload for `chat.send`. */
+/**
+ *  Request payload for `chat.send`.
+ *
+ *  Unknown top-level keys stay ignored (clients historically send selection
+ *  hints the daemon deliberately drops); the gateway rejects daemon-owned
+ *  prompt keys explicitly, while [`PersonaPrompt`] denies nested injection.
+ */
 export type ChatSendRequest = {
 	/**  Session id (created on demand when empty/unknown). */
 	sessionId: string,
@@ -309,6 +315,12 @@ export type ChatSendRequest = {
 	 *  Defaults to `false` so older clients keep plain-text turns.
 	 */
 	genUi?: boolean,
+	/**
+	 *  Ordered character-persona sections supplied by the client. The daemon
+	 *  still owns the A2UI and grounding suffixes; this is additive and
+	 *  absent on legacy requests.
+	 */
+	persona?: PersonaPrompt | null,
 	/**
 	 *  Bounded media attachments persisted with the user turn.
 	 *
@@ -699,6 +711,44 @@ export type MemoryStatsData = {
 export type ModuleAuthData = {
 	/**  The shared gateway auth token. */
 	token: string,
+};
+
+/**
+ *  Ordered persona sections for a `chat.send` turn, mirroring the TS
+ *  `buildSystemPrompt` composition (`airi-card.ts`).
+ *
+ *  Every field is optional and omitted when absent, so a client can send only
+ *  the sections it has. `deny_unknown_fields` makes prompt injection by extra
+ *  keys fail at the wire boundary: the daemon owns `system`, `a2ui` and all
+ *  grounding/A2UI instruction text, and only these declared sections cross.
+ */
+export type PersonaPrompt = {
+	/**  Character card's own system prompt. */
+	systemPrompt?: string | null,
+	/**  Nickname, emitted as the `Nickname: …` prefix. */
+	nickname?: string | null,
+	/**  Character description. */
+	description?: string | null,
+	/**  Personality description. */
+	personality?: string | null,
+	/**  Scenario (the dating-sim storyline disables this in TS). */
+	scenario?: string | null,
+	/**  Greeting/dialog starters, emitted as `- …` bullets. */
+	greetings?: string[] | null,
+	/**  Acting directives (`modelExpression`, `speechExpression`, …) in order. */
+	actingDirectives?: string[] | null,
+	/**  Artistry widget-spawning instruction. */
+	artistryInstruction?: string | null,
+	/**  Text-journal widget instruction. */
+	textJournalInstruction?: string | null,
+	/**  Sandbox workstation instruction. */
+	sandboxInstruction?: string | null,
+	/**  Dating-sim customized premise. */
+	datingSimPremise?: string | null,
+	/**  Dating-sim character appearance for this story. */
+	datingSimAppearances?: string | null,
+	/**  Dating-sim setting/location for this encounter. */
+	datingSimScene?: string | null,
 };
 
 /**  Payload of a `presence.changed` event: a connectivity/availability change. */
