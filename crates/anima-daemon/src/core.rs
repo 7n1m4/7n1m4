@@ -241,7 +241,7 @@ fn merged_section<S: anima_core::settings::SettingsSection>(
         if fields
             .get("token")
             .and_then(|v| v.as_str())
-            .map_or(true, |token| token == MCP_SECRET_MASK)
+            .is_none_or(|token| token == MCP_SECRET_MASK)
         {
             fields.remove("token");
         }
@@ -679,7 +679,7 @@ impl CoreService {
                 .map_err(|_| format!("unknown provider kind: {text}"))?,
             None => existing
                 .as_ref()
-                .map(|p| p.kind.clone())
+                .map(|p| p.kind)
                 .ok_or_else(|| "missing kind".to_string())?,
         };
         let rotate_secrets = payload
@@ -698,7 +698,7 @@ impl CoreService {
         let enabled = payload
             .get("enabled")
             .and_then(|v| v.as_bool())
-            .unwrap_or_else(|| existing.as_ref().map_or(true, |p| p.enabled));
+            .unwrap_or_else(|| existing.as_ref().is_none_or(|p| p.enabled));
         // `ProviderConfig` stores snake_case; clients speak the wire's
         // camelCase. Accept both spellings on input. Start from the stored
         // config so a PATCH preserves non-secret extras it does not mention.
@@ -1990,8 +1990,8 @@ mod tests {
 
         assert_eq!(written.id, "card-1");
         assert_eq!(read.id, "card-1");
-        assert_eq!(read.liked, true);
-        assert_eq!(read.bookmarked, false);
+        assert!(read.liked);
+        assert!(!read.bookmarked);
         assert!(read.liked);
         assert!(!read.bookmarked);
 
