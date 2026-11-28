@@ -3,7 +3,7 @@
 One trigger — **Use** when a port/parity wave must run with only a shell, git, the repo's package scripts, and any ordinary subagent mechanism.
 
 Required: shell, git, `pnpm`, `flutter`, `cargo`, and a way to dispatch read-only helpers.
-This runbook is the executable contract. [hillclimb-cycle.md](./hillclimb-cycle.md) is background and history only; follow the steps here.
+This runbook is the shell execution checklist. [hillclimb-cycle.md](./hillclimb-cycle.md) remains the wave contract: its Step 3 (Wave-0 schema freeze) and Step 9 (Architecture checkup) are mandatory coordinator steps, and §5 below is the shell subset of Step 3 — not a separate gate. Follow the steps here.
 
 Scope holds port/parity slices only. Gateway trust gates and `airi-3cp` stay closed. Work stays on the current branch; pushes, rebases, and upstream writes belong to the user.
 
@@ -37,9 +37,12 @@ Done when — the log shows the red command and its verbatim output dated before
 
 ## 5. Wave-0 gate
 
-Run the scoped formatter, lint, test, and drift commands in the checklist below. Every command exits 0 before review starts. Self-fix at most twice; on a third failure, block the lane and record the blocker in the ledger.
+Run two tiers of checks from the checklist below before review starts.
 
-Done when — every scoped command exited 0 before review began, blockers after two self-fixes are recorded, and no lane entered review on a red gate.
+- **Tier 1 — Strict Scoped Gates (blocking):** every applicable command must exit 0 on the touched path set. Skip a command when its input type was not touched; run scoped variants (`cargo test -p <touched_crate>`, `node --test <touched>.test.mjs`) rather than workspace-wide ones. Self-fix at most twice; on a third failure, block the lane and record the blocker in the ledger.
+- **Tier 2 — Repo-Wide Health Audits (informational):** run once per wave at wave end for visibility (`flutter analyze lib`, `audit-doc-citations.mjs --all-docs`). Compare against the previous wave's recorded count in the active Beads ledger, record this wave's count with `bd --sandbox update <id> --append-notes ...`, and block only if the count increases above that baseline. On the first wave, record the baseline without blocking.
+
+Done when — all applicable Tier 1 commands exited 0 before review began, every skipped Tier 1 command carries a matrix-backed reason in the active Beads ledger note (or the fallback receipt when `bd` is unavailable), any lane failing a Tier 1 command after two self-fixes is blocked in the ledger, each Tier 2 audit has a prior-wave baseline plus this wave's recorded count, and zero Tier 2 audits regressed above baseline.
 
 ## 6. Review
 
@@ -49,7 +52,7 @@ Done when — the reviewer count matches the risk tier, every `Must` has a fix p
 
 ## 7. Verification
 
-Run the full test set in parallel or in the background, and run `gate_check` concurrently with review. Commit requires the gate to exit 0 and the `Must` count to be zero.
+Run the full test set in parallel or in the background — including `cargo test --workspace --locked -- --test-threads=1` — and run `gate_check` concurrently with review. Keep workspace-wide tests here so §5 stays fast and scoped. Commit requires the gate to exit 0 and the `Must` count to be zero.
 
 Done when — all parallel test runs finished green, the gate exited 0, the `Must` count is zero, and the commit gate is satisfied.
 
@@ -78,31 +81,33 @@ Done when — exactly one successor automation exists with no `to`, its trigger 
 
 ## Shell checklist
 
-Curated gate commands across four toolchains. Run from the repo root; a Flutter `cd` is shown where needed. Every line must exit 0.
+Curated gate commands across four toolchains. Run from the repo root; a Flutter `cd` is shown where needed. Skip any Tier 1 command whose input type was not touched.
 
 ```sh
-# Format + lint
+# Tier 1: Strict Scoped Gates — every applicable line must exit 0 before review
 pnpm test:nano-staged-scope
-pnpm exec eslint --no-warn-ignored scripts/tests/<touched>.mjs
+pnpm exec eslint --no-warn-ignored scripts/tests/<touched>.mjs          # skip if no .mjs touched
 cargo fmt -p anima-core -p anima-daemon -p anima-channel --check
-(cd apps/flutter && flutter analyze lib/<touched>.dart)
-
-# Tests
-cargo test --workspace --locked -- --test-threads=1
-(cd apps/flutter && flutter test test/<file>_test.dart)
-node --test scripts/tests/audit-packet.test.mjs
-
-# Drift + guards
+(cd apps/flutter && flutter analyze lib/<touched>.dart)                 # skip if no lib/**.dart touched
+(cd apps/flutter && flutter test test/<touched>_test.dart)              # skip if no .dart touched
+cargo test -p <touched_crate> --locked                                  # workspace-wide tests belong in §7
+node --test scripts/tests/<touched>.test.mjs                            # skip if no .mjs test touched
 pnpm check:wire-types
 cargo run -p anima-channel --example export-golden-fixtures -- --check
-node scripts/tests/audit-doc-citations.mjs --all-docs
+node scripts/tests/audit-doc-citations.mjs <touched>.md                 # NO --all-docs here
 node scripts/tests/flutter_boundary_graph.mjs
 node scripts/sm.mjs audit
 node scripts/tests/audit-packet.mjs
+
+# Tier 2: Repo-Wide Health Audits — compare to prior-wave count; record this wave's count; block only on increase
+(cd apps/flutter && flutter analyze lib)
+node scripts/tests/audit-doc-citations.mjs --all-docs
 ```
 
-## State ledger without Beads
+## State ledger
 
-Append evidence to `state/events.ndjson`, `state/SUMMARY.md`, and `.waves/<wave>/*.receipt.json`. Treat hash-chained events as append-only; regenerate them with `node scripts/bootstrap-state.mjs` (`--dry-run` previews) rather than editing them by hand. When those files are unavailable, a plain text log under `/tmp` carries the same evidence and is acceptable.
+Beads (`bd --sandbox`, no `bd sync`) is the canonical mission ledger per `AGENTS.md` §10. Use `state/events.ndjson`, `state/SUMMARY.md`, and `.waves/<wave>/*.receipt.json` **only when `bd` is unavailable** in the environment, and never split the same wave's evidence across both ledgers.
 
-Done when — each step's evidence is in one of those ledgers, and hash-chained events were appended or regenerated rather than hand-edited.
+In the fallback ledger, append evidence to those files. Treat hash-chained events as append-only; regenerate them with `node scripts/bootstrap-state.mjs` (`--dry-run` previews) rather than editing them by hand. When those files are unavailable, a plain text log under `/tmp` carries the same evidence and is acceptable.
+
+Done when — each step's evidence is in exactly one ledger, and hash-chained events were appended or regenerated rather than hand-edited.
