@@ -2060,8 +2060,6 @@ mod tests {
 
     // v29: providers.models real-execution proof — the real, UNGATED gateway
     // handler plus the UNCHANGED golden reply, with zero normalization.
-    // (providers_list.reply.json is deliberately NOT an oracle here: its kind
-    // is the stale 'openai' and its updatedAt is Unix seconds, not repo ms.)
     #[test]
     fn providers_models_golden_execution_replays_through_real_handler() {
         use async_trait::async_trait;

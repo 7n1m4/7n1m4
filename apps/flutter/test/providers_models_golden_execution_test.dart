@@ -58,10 +58,8 @@ String _replyFrame(String action, Object id, Object? data) =>
       'data': data,
     });
 
-/// providers_list.reply.json is scaffolding only (its `kind: openai` is stale
-/// versus the real `open-ai-compatible`, and its `updatedAt` is seconds while
-/// the repo uses ms). Inject a non-rendered `apiKey` canary onto that row so the
-/// "no secret in the widget tree" assertion is meaningful, not vacuous.
+/// Inject a non-rendered `apiKey` canary onto the providers_list golden row so
+/// the "no secret in the widget tree" assertion is meaningful, not vacuous.
 Map<String, dynamic> _listWithCanary(Map<String, dynamic> golden) {
   final row = (golden['providers'] as List).first as Map<String, dynamic>;
   return <String, dynamic>{

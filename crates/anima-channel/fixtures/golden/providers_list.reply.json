@@ -4,9 +4,9 @@
       "baseUrl": "https://api.openai.com/v1",
       "enabled": true,
       "id": "openai",
-      "kind": "openai",
+      "kind": "open-ai-compatible",
       "model": "gpt-4o",
-      "updatedAt": 1700000000
+      "updatedAt": 1700000000000
     }
   ]
 }
