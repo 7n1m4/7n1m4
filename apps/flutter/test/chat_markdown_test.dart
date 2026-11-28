@@ -10,6 +10,7 @@ import 'package:genui/genui.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'package:anima_control/daemon_client/daemon_client.dart';
+import 'package:anima_control/features/chat/chat_fence_balancer.dart';
 import 'package:anima_control/features/chat/chat_screen.dart';
 
 import 'support/fakes.dart';
@@ -459,5 +460,60 @@ void main() {
     final source = _bubbleSource(tester);
     expect(_tagContaining(source, 'let x = 1;'), 'code');
     expect(_tagContaining(source, 'after'), 'p');
+  });
+
+  test(
+    '200 interleaved quote-depth fences balance within the frame budget',
+    () {
+      final buffer = StringBuffer();
+      for (var i = 0; i < 100; i++) {
+        final quote = '> ' * (i % 5 + 1);
+        final marker = i.isEven ? '```' : '~~~';
+        buffer.writeln('$quote${marker}lang$i');
+        buffer.writeln('$quote body $i');
+      }
+      final input = buffer.toString().trimRight();
+
+      final stopwatch = Stopwatch()..start();
+      final balanced = balanceChatCodeFences(input);
+      stopwatch.stop();
+      expect(stopwatch.elapsed.inMicroseconds, lessThan(50000));
+
+      final html = md.markdownToHtml(
+        balanced,
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+      );
+      expect(html, isNot(contains('```')));
+      expect(html, isNot(contains('~~~')));
+    },
+  );
+
+  test('helper normalizes CRLF and inserts a bare closer after the opener', () {
+    final balanced = balanceChatCodeFences(
+      'before\r\n```python\r\nprint(1)\r\nafter',
+    );
+    expect(balanced, 'before\n```python\n```\nprint(1)\nafter');
+  });
+
+  test('helper does not treat a backtick in the info string as a fence', () {
+    final balanced = balanceChatCodeFences(
+      '``` foo`bar\nnot a fence\n````\ntrailing secret prose',
+    );
+    expect(
+      balanced,
+      '``` foo`bar\nnot a fence\n````\n````\ntrailing secret prose',
+    );
+  });
+
+  test('helper pairs a quoted opener with a closer at the same depth', () {
+    final balanced = balanceChatCodeFences('> ```js\n> code\n> after');
+    expect(balanced.split('\n')[1], '> ```');
+  });
+
+  test('helper accepts a one-space closer without injecting another', () {
+    final balanced = balanceChatCodeFences(
+      '```dart\n  let x = 1;\n ```\nafter',
+    );
+    expect(balanced, '```dart\n  let x = 1;\n ```\nafter');
   });
 }

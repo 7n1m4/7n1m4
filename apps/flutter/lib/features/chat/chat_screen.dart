@@ -12,76 +12,10 @@ import 'package:markdown/markdown.dart' as md;
 import '../../daemon_client/daemon_client.dart';
 import '../../theme/app_theme.dart';
 import 'chat_composer_controller.dart';
+import 'chat_fence_balancer.dart';
 import 'chat_message_display.dart';
 import 'genui_surface_controller.dart';
 import '../sessions/sessions_screen.dart';
-
-/// A live turn or a user paste can end with an unterminated code fence.
-/// GitHub-flavored markdown would render every following line as code, hiding
-/// trailing prose. Close such a fence right after its opener so only genuinely
-/// fenced content is treated as code.
-String _balanceCodeFences(String text) {
-  // Dart's RegExp `.` and `$` do not see a trailing `\r`, so normalize before
-  // matching: a `\r\n` fence would otherwise never be recognized.
-  var lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-  // One pass closes a single unterminated fence; a later stray fence only
-  // becomes visible once the earlier one is closed. Each pass inserts one
-  // line, so the number of passes is bounded by the number of lines.
-  for (var pass = 0; pass <= lines.length; pass++) {
-    final balanced = _closeFirstUnterminatedFence(lines);
-    if (balanced == null) break;
-    lines = balanced;
-  }
-  return lines.join('\n');
-}
-
-/// Markdown permits 0-3 leading spaces on any fence line, so only the number
-/// of blockquote markers has to match between an opener and its closer.
-int _quoteDepth(String prefix) => prefix.split('>').length - 1;
-
-/// Returns [lines] with one synthetic closer inserted, or `null` when every
-/// fence is already matched.
-List<String>? _closeFirstUnterminatedFence(List<String> lines) {
-  // Mirrors markdown 7.3.1's `codeFencePattern`: a backtick info string may
-  // not contain backticks, while a tilde info string may contain anything.
-  // Leading blockquote markers are part of the prefix so a quoted fence gets
-  // a quoted closer.
-  final fence = RegExp(
-    r'^((?:[ ]{0,3}>[ ]?)*[ ]{0,3})(?:(`{3,})([^`]*)|(~{3,})(.*))$',
-  );
-  String? opener;
-  String? quote;
-  var openerLine = -1;
-
-  for (var i = 0; i < lines.length; i++) {
-    final match = fence.firstMatch(lines[i]);
-    if (match == null) continue;
-    final prefix = match.group(1)!;
-    final backticks = match.group(2);
-    final marker = backticks ?? match.group(4)!;
-    final info = (backticks != null ? match.group(3)! : match.group(5)!).trim();
-    if (opener == null) {
-      opener = marker;
-      quote = prefix;
-      openerLine = i;
-      continue;
-    }
-    // The parser closes a fence with a bare marker of the same character and
-    // at least the opener's length, at the same blockquote depth. Leading
-    // spaces are allowed on the closer and must not break the pairing.
-    if (info.isEmpty &&
-        _quoteDepth(prefix) == _quoteDepth(quote!) &&
-        marker.startsWith(opener)) {
-      opener = null;
-      quote = null;
-      openerLine = -1;
-    }
-  }
-  if (opener == null) return null;
-  final out = List<String>.of(lines);
-  out.insert(openerLine + 1, '$quote$opener');
-  return out;
-}
 
 /// Minimal chat surface: sends `chat.send` RPCs and renders streamed
 /// `token.delta` events. View state only; the daemon owns sessions.
@@ -1199,7 +1133,7 @@ class ChatScreenState extends State<ChatScreen> {
                 // stays raw so GenUI parsing in `_finishGenUiTurn` sees the
                 // full turn. Both sides get display-only fence balancing;
                 // literally typed user text is never rewritten in storage.
-                final displayed = _balanceCodeFences(
+                final displayed = balanceChatCodeFences(
                   m.isUser ? m.text : stripMarkers(m.text),
                 );
                 return Align(
