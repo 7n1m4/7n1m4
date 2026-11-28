@@ -253,15 +253,20 @@ void main() {
         .where((frame) => frame['action'] == 'event.subscribe')
         .toList();
     expect(subscriptions, hasLength(4));
-    expect(
-      subscriptions.map((frame) => frame['payload']).toList(),
-      <Object>[
-        <String, dynamic>{'topics': <String>['token.delta']},
-        <String, dynamic>{'topics': <String>['settings.changed']},
-        <String, dynamic>{'topics': <String>['presence.changed']},
-        <String, dynamic>{'topics': <String>['status.changed']},
-      ],
-    );
+    expect(subscriptions.map((frame) => frame['payload']).toList(), <Object>[
+      <String, dynamic>{
+        'topics': <String>['token.delta'],
+      },
+      <String, dynamic>{
+        'topics': <String>['settings.changed'],
+      },
+      <String, dynamic>{
+        'topics': <String>['presence.changed'],
+      },
+      <String, dynamic>{
+        'topics': <String>['status.changed'],
+      },
+    ]);
   });
 
   test('a reconnect re-subscribes on the fresh authenticated socket', () async {
@@ -327,16 +332,20 @@ void main() {
           .map((frame) => jsonDecode(frame) as Map<String, dynamic>)
           .where((frame) => frame['action'] == 'event.subscribe')
           .toList();
-      expect(
-        subscriptions.map((frame) => frame['payload']).toList(),
-        <Object>[
-          <String, dynamic>{'topics': <String>['token.delta']},
-          <String, dynamic>{'topics': <String>['settings.changed']},
-          <String, dynamic>{'topics': <String>['presence.changed']},
-          <String, dynamic>{'topics': <String>['status.changed']},
-        ],
-        reason: 'every authenticated socket re-subscribes to all four topics',
-      );
+      expect(subscriptions.map((frame) => frame['payload']).toList(), <Object>[
+        <String, dynamic>{
+          'topics': <String>['token.delta'],
+        },
+        <String, dynamic>{
+          'topics': <String>['settings.changed'],
+        },
+        <String, dynamic>{
+          'topics': <String>['presence.changed'],
+        },
+        <String, dynamic>{
+          'topics': <String>['status.changed'],
+        },
+      ], reason: 'every authenticated socket re-subscribes to all four topics');
     }
 
     // An event on the fresh socket must reach a hook registered before it.
@@ -608,7 +617,10 @@ void main() {
     expect(cardPage.truncated, isTrue);
     expect(cardPage.nextCursor, cardCursor);
 
-    final moreCards = client.cardsListPage(limit: 1, cursor: cardPage.nextCursor);
+    final moreCards = client.cardsListPage(
+      limit: 1,
+      cursor: cardPage.nextCursor,
+    );
     expect(lastRequest(fake)['payload'], <String, dynamic>{
       'limit': 1,
       'cursor': cardCursor,
@@ -737,35 +749,38 @@ void main() {
     );
   });
 
-  test('stmmUpsert sends the wire payload and returns the upserted count', () async {
-    final (client, fake) = await connectedClient();
-    addTearDown(client.dispose);
+  test(
+    'stmmUpsert sends the wire payload and returns the upserted count',
+    () async {
+      final (client, fake) = await connectedClient();
+      addTearDown(client.dispose);
 
-    final block = <String, dynamic>{
-      'id': 'summary-1',
-      'day': '2026-11-25',
-      'content': 'A summary',
-      'tokenEstimate': 3,
-      'sourceSessionIds': <String>['s1'],
-      'createdAt': 1764000000000000,
-    };
-    final pending = client.stmmUpsert(<Map<String, dynamic>>[block]);
-    final request = lastRequest(fake);
-    expect(request['action'], 'stmm.upsert');
-    expect(request['payload'], <String, dynamic>{
-      'blocks': <Map<String, dynamic>>[block],
-    });
-    reply(fake, request, <String, dynamic>{'upserted': 1});
-    expect(await pending, 1);
+      final block = <String, dynamic>{
+        'id': 'summary-1',
+        'day': '2026-11-25',
+        'content': 'A summary',
+        'tokenEstimate': 3,
+        'sourceSessionIds': <String>['s1'],
+        'createdAt': 1764000000000000,
+      };
+      final pending = client.stmmUpsert(<Map<String, dynamic>>[block]);
+      final request = lastRequest(fake);
+      expect(request['action'], 'stmm.upsert');
+      expect(request['payload'], <String, dynamic>{
+        'blocks': <Map<String, dynamic>>[block],
+      });
+      reply(fake, request, <String, dynamic>{'upserted': 1});
+      expect(await pending, 1);
 
-    final sentBeforeEmpty = fake.sent.length;
-    expect(await client.stmmUpsert(const <Map<String, dynamic>>[]), 0);
-    expect(
-      fake.sent.length,
-      sentBeforeEmpty,
-      reason: 'an empty batch must not reach the wire',
-    );
-  });
+      final sentBeforeEmpty = fake.sent.length;
+      expect(await client.stmmUpsert(const <Map<String, dynamic>>[]), 0);
+      expect(
+        fake.sent.length,
+        sentBeforeEmpty,
+        reason: 'an empty batch must not reach the wire',
+      );
+    },
+  );
 
   test('stmmUpsert chunks at the daemon cap and sums replies', () async {
     final (client, fake) = await connectedClient();
@@ -810,8 +825,9 @@ void main() {
     ]);
     final request = lastRequest(fake);
     expect(request['action'], 'stmm.upsert');
-    final sent = (request['payload']!['blocks'] as List<dynamic>).single
-        as Map<String, dynamic>;
+    final sent =
+        (request['payload']!['blocks'] as List<dynamic>).single
+            as Map<String, dynamic>;
     expect(sent, <String, dynamic>{
       'id': 'b1',
       'day': '2026-11-25',
@@ -824,34 +840,36 @@ void main() {
     expect(await pending, 1);
   });
 
-  test('stmmUpsert rejects blocks missing required fields before any RPC', () async {
-    final (client, fake) = await connectedClient();
-    addTearDown(client.dispose);
-    final base = <String, dynamic>{
-      'id': 'b1',
-      'day': '2026-11-25',
-      'content': 'A summary',
-    };
-    final sentBefore = fake.sent.length;
-    for (final bad in <Map<String, dynamic>>[
-      <String, dynamic>{...base, 'id': ''},
-      <String, dynamic>{...base, 'day': '25-11-2026'},
-      <String, dynamic>{...base, 'content': '  '},
-    ]) {
-      await expectLater(
-        client.stmmUpsert(<Map<String, dynamic>>[bad]),
-        throwsA(
-          isA<DaemonClientException>().having(
-            (e) => e.kind,
-            'kind',
-            DaemonFailureKind.protocol,
+  test(
+    'stmmUpsert rejects blocks missing required fields before any RPC',
+    () async {
+      final (client, fake) = await connectedClient();
+      addTearDown(client.dispose);
+      final base = <String, dynamic>{
+        'id': 'b1',
+        'day': '2026-11-25',
+        'content': 'A summary',
+      };
+      final sentBefore = fake.sent.length;
+      for (final bad in <Map<String, dynamic>>[
+        <String, dynamic>{...base, 'id': ''},
+        <String, dynamic>{...base, 'day': '25-11-2026'},
+        <String, dynamic>{...base, 'content': '  '},
+      ]) {
+        await expectLater(
+          client.stmmUpsert(<Map<String, dynamic>>[bad]),
+          throwsA(
+            isA<DaemonClientException>().having(
+              (e) => e.kind,
+              'kind',
+              DaemonFailureKind.protocol,
+            ),
           ),
-        ),
-      );
-    }
-    expect(fake.sent.length, sentBefore);
-  });
-
+        );
+      }
+      expect(fake.sent.length, sentBefore);
+    },
+  );
 
   test(
     'cancelChat sends chat.cancel with session_id and reads cancelled',
@@ -944,13 +962,22 @@ void main() {
     await run('retrieval.status', client.retrievalStatus, <String, dynamic>{
       'available': true,
     }, true);
-    await run('vault.status', client.vaultStatus, <String, dynamic>{
-      'available': true,
-      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
-    }, <String, dynamic>{
-      'available': true,
-      'stats': <String, dynamic>{'memory': <String, dynamic>{'summaries': 1}},
-    });
+    await run(
+      'vault.status',
+      client.vaultStatus,
+      <String, dynamic>{
+        'available': true,
+        'stats': <String, dynamic>{
+          'memory': <String, dynamic>{'summaries': 1},
+        },
+      },
+      <String, dynamic>{
+        'available': true,
+        'stats': <String, dynamic>{
+          'memory': <String, dynamic>{'summaries': 1},
+        },
+      },
+    );
     await run(
       'sessions.export',
       () => client.sessionsExport('s1'),
@@ -1029,7 +1056,7 @@ void main() {
       'spec': 'chara_card_v2',
       'data': <String, dynamic>{'description': 'first'},
     };
-    final creating = client.cardsCreate(document);
+    final creating = client.cardsCreate(name: 'One', document: document);
     final createRequest = lastRequest(fake);
     expect(createRequest['action'], 'cards.create');
     expect(createRequest['payload'], <String, dynamic>{
@@ -1042,15 +1069,20 @@ void main() {
     expect(created.name, 'One');
     expect(created.updated, isFalse);
 
-    // cards.update sends {id, document} and requires updated:true.
-    final updating = client.cardsUpdate('c1', <String, dynamic>{
-      ...document,
-      'data': <String, dynamic>{'description': 'second'},
-    });
+    // cards.update sends {id, name, document} and requires updated:true.
+    final updating = client.cardsUpdate(
+      id: 'c1',
+      name: null,
+      document: <String, dynamic>{
+        ...document,
+        'data': <String, dynamic>{'description': 'second'},
+      },
+    );
     final updateRequest = lastRequest(fake);
     expect(updateRequest['action'], 'cards.update');
     expect(updateRequest['payload'], <String, dynamic>{
       'id': 'c1',
+      'name': null,
       'document': <String, dynamic>{
         ...document,
         'data': <String, dynamic>{'description': 'second'},
@@ -1066,7 +1098,7 @@ void main() {
     expect(updated.id, 'c1');
 
     // cards.update without updated:true is a protocol error, not a false save.
-    final lying = client.cardsUpdate('c1', document);
+    final lying = client.cardsUpdate(id: 'c1', name: null, document: document);
     reply(fake, lastRequest(fake), <String, dynamic>{
       'id': 'c1',
       'name': 'One',
@@ -1207,37 +1239,42 @@ void main() {
     expect(await writing, isTrue);
   });
 
-  test('providersModels decodes the reply and rejects a non-map payload', () async {
-    final (client, fake) = await connectedClient();
-    addTearDown(client.dispose);
+  test(
+    'providersModels decodes the reply and rejects a non-map payload',
+    () async {
+      final (client, fake) = await connectedClient();
+      addTearDown(client.dispose);
 
-    final ok = client.providersModels('p1');
-    final okRequest = lastRequest(fake);
-    expect(okRequest['action'], 'providers.models');
-    expect(okRequest['payload'], <String, dynamic>{'providerId': 'p1'});
-    reply(fake, okRequest, <String, dynamic>{
-      'providerId': 'p1',
-      'models': <Map<String, dynamic>>[<String, dynamic>{'id': 'm1'}],
-    });
-    final decoded = await ok;
-    expect(decoded.$1, 'p1');
-    expect(decoded.$2, hasLength(1));
-    expect(decoded.$2.first['id'], 'm1');
+      final ok = client.providersModels('p1');
+      final okRequest = lastRequest(fake);
+      expect(okRequest['action'], 'providers.models');
+      expect(okRequest['payload'], <String, dynamic>{'providerId': 'p1'});
+      reply(fake, okRequest, <String, dynamic>{
+        'providerId': 'p1',
+        'models': <Map<String, dynamic>>[
+          <String, dynamic>{'id': 'm1'},
+        ],
+      });
+      final decoded = await ok;
+      expect(decoded.$1, 'p1');
+      expect(decoded.$2, hasLength(1));
+      expect(decoded.$2.first['id'], 'm1');
 
-    // A non-map data payload is a protocol error, not a cast crash.
-    final malformed = client.providersModels('p1');
-    reply(fake, lastRequest(fake), <Object>['not', 'a', 'map']);
-    await expectLater(
-      malformed,
-      throwsA(
-        isA<DaemonClientException>().having(
-          (e) => e.kind,
-          'kind',
-          DaemonFailureKind.protocol,
+      // A non-map data payload is a protocol error, not a cast crash.
+      final malformed = client.providersModels('p1');
+      reply(fake, lastRequest(fake), <Object>['not', 'a', 'map']);
+      await expectLater(
+        malformed,
+        throwsA(
+          isA<DaemonClientException>().having(
+            (e) => e.kind,
+            'kind',
+            DaemonFailureKind.protocol,
+          ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   // --- Vault archive and history media scrub verbs -------------------------
 
@@ -1248,7 +1285,9 @@ void main() {
     final pending = client.vaultArchiveCollect(<String>['chats', 'memory']);
     final request = lastRequest(fake);
     expect(request['action'], 'vault.archive.collect');
-    expect(request['payload'], <String, dynamic>{'domains': <String>['chats', 'memory']});
+    expect(request['payload'], <String, dynamic>{
+      'domains': <String>['chats', 'memory'],
+    });
     reply(fake, request, <String, dynamic>{
       'archive': 'YWJj',
       'bytes': 3,
@@ -1265,57 +1304,61 @@ void main() {
       throwsA(isA<DaemonClientException>()),
     );
     expect(
-      fake.sent.map((f) => jsonDecode(f) as Map<String, dynamic>).where(
-        (f) => f['action'] == 'vault.archive.collect',
-      ).length,
+      fake.sent
+          .map((f) => jsonDecode(f) as Map<String, dynamic>)
+          .where((f) => f['action'] == 'vault.archive.collect')
+          .length,
       1,
       reason: 'no request reached the socket',
     );
   });
 
-  test('vaultArchiveInspect decodes metadata only and refuses failed replies', () async {
-    final (client, fake) = await connectedClient();
-    addTearDown(client.dispose);
+  test(
+    'vaultArchiveInspect decodes metadata only and refuses failed replies',
+    () async {
+      final (client, fake) = await connectedClient();
+      addTearDown(client.dispose);
 
-    final pending = client.vaultArchiveInspect('YWJj');
-    final request = lastRequest(fake);
-    expect(request['action'], 'vault.archive.inspect');
-    expect(request['payload'], <String, dynamic>{'archive': 'YWJj'});
-    reply(fake, request, <String, dynamic>{
-      'format': 'airi-vault',
-      'version': 1,
-      'createdAt': 1700000000000,
-      'includesSecrets': false,
-      'domains': <Map<String, dynamic>>[
-        <String, dynamic>{'domain': 'chats', 'sessions': 1},
-      ],
-      'sessionCount': 1,
-      'messageCount': 2,
-      'companionNames': <String>['no-name-should-be-rendered'],
-    });
-    final report = await pending;
-    expect(report.format, 'airi-vault');
-    expect(report.version, 1);
-    expect(report.createdAt, 1700000000000);
-    expect(report.includesSecrets, isFalse);
-    expect(report.sessionCount, 1);
-    expect(report.messageCount, 2);
-    expect(report.companionCount, 1);
-    expect(report.domains.single['domain'], 'chats');
+      final pending = client.vaultArchiveInspect('YWJj');
+      final request = lastRequest(fake);
+      expect(request['action'], 'vault.archive.inspect');
+      expect(request['payload'], <String, dynamic>{'archive': 'YWJj'});
+      reply(fake, request, <String, dynamic>{
+        'format': 'airi-vault',
+        'version': 1,
+        'createdAt': 1700000000000,
+        'includesSecrets': false,
+        'domains': <Map<String, dynamic>>[
+          <String, dynamic>{'domain': 'chats', 'sessions': 1},
+        ],
+        'sessionCount': 1,
+        'messageCount': 2,
+        'companionNames': <String>['no-name-should-be-rendered'],
+      });
+      final report = await pending;
+      expect(report.format, 'airi-vault');
+      expect(report.version, 1);
+      expect(report.createdAt, 1700000000000);
+      expect(report.includesSecrets, isFalse);
+      expect(report.sessionCount, 1);
+      expect(report.messageCount, 2);
+      expect(report.companionCount, 1);
+      expect(report.domains.single['domain'], 'chats');
 
-    final failing = client.vaultArchiveInspect('YWJj');
-    reply(fake, lastRequest(fake), null, ok: false);
-    await expectLater(
-      failing,
-      throwsA(
-        isA<DaemonClientException>().having(
-          (e) => e.kind,
-          'kind',
-          DaemonFailureKind.rpc,
+      final failing = client.vaultArchiveInspect('YWJj');
+      reply(fake, lastRequest(fake), null, ok: false);
+      await expectLater(
+        failing,
+        throwsA(
+          isA<DaemonClientException>().having(
+            (e) => e.kind,
+            'kind',
+            DaemonFailureKind.rpc,
+          ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   test('vaultArchiveApply and sessionsMediaScrub decode gated replies', () async {
     final (client, fake) = await connectedClient();

@@ -3,7 +3,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart'
@@ -81,7 +82,8 @@ Map<String, dynamic> withCardActiveField(
       updated['data'] as Map<String, dynamic>,
   ]) {
     final extensions = entry['extensions'];
-    final airi = extensions is Map<String, dynamic> &&
+    final airi =
+        extensions is Map<String, dynamic> &&
             extensions['airi'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(extensions['airi'] as Map<String, dynamic>)
         : <String, dynamic>{};
@@ -93,7 +95,9 @@ Map<String, dynamic> withCardActiveField(
       };
     }
     entry['extensions'] = <String, dynamic>{
-      ...(extensions is Map<String, dynamic> ? extensions : const <String, dynamic>{}),
+      ...(extensions is Map<String, dynamic>
+          ? extensions
+          : const <String, dynamic>{}),
       'airi': airi,
     };
   }
@@ -156,10 +160,7 @@ class SettingsSearchShortcut {
   FocusNode? _previousFocus;
 
   /// Called by the mounted settings screen; it owns the field and its query.
-  void bindSearch({
-    required FocusNode focus,
-    required void Function() close,
-  }) {
+  void bindSearch({required FocusNode focus, required void Function() close}) {
     searchFocus = focus;
     clearSearch = close;
   }
@@ -185,8 +186,7 @@ class SettingsSearchShortcut {
     // A held key is a repeat, not a fresh chord press.
     if (event is! KeyDownEvent) return false;
     final field = searchFocus;
-    if (field == null ||
-        activeDestinationIndex != settingsDestinationIndex) {
+    if (field == null || activeDestinationIndex != settingsDestinationIndex) {
       return false;
     }
     // A sub-route pushed from settings (providers, cards, ...) obscures the
@@ -276,7 +276,9 @@ class _NavigationShellState extends State<NavigationShell> {
   int _cardReadGeneration = 0;
   bool _backdropRestored = false;
   String? _savedBackgroundId;
-  StageCaptionStyle _captionStyle = const StageCaptionStyle(docking: StageCaptionDocking.none);
+  StageCaptionStyle _captionStyle = const StageCaptionStyle(
+    docking: StageCaptionDocking.none,
+  );
   int _captionReadGeneration = 0;
   final _chatKey = GlobalKey<ChatScreenState>();
   void Function()? _unsubscribeSettingsEvents;
@@ -399,8 +401,7 @@ class _NavigationShellState extends State<NavigationShell> {
     String? persistedId,
   ) {
     if (cards.isEmpty || _noCardExplicitlySelected) return null;
-    if (persistedId != null &&
-        cards.any((card) => card['id'] == persistedId)) {
+    if (persistedId != null && cards.any((card) => card['id'] == persistedId)) {
       return persistedId;
     }
     final current = _selectedCardId;
@@ -447,13 +448,14 @@ class _NavigationShellState extends State<NavigationShell> {
       if (mounted) setState(() => _writeError = null);
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _writeError = userSafeConnectionError(
-            error,
-            context: 'stage:persist:',
-          ));
+      setState(
+        () => _writeError = userSafeConnectionError(
+          error,
+          context: 'stage:persist:',
+        ),
+      );
     }
   }
-
 
   /// Persist a backdrop choice on the card and in this client's library.
   Future<void> _activateBackdrop(String cardId, String backgroundId) async {
@@ -467,14 +469,21 @@ class _NavigationShellState extends State<NavigationShell> {
           message: 'That card is no longer available.',
         );
       }
-      final updated = withCardActiveField(card, 'activeBackgroundId', backgroundId);
-      await widget.client.cardsUpdate(cardId, updated);
+      final updated = withCardActiveField(
+        card,
+        'activeBackgroundId',
+        backgroundId,
+      );
+      await widget.client.cardsUpdate(
+        id: cardId,
+        name: null,
+        document: updated,
+      );
       await store.activateForCard(cardId, backgroundId);
       if (!mounted) return;
       setState(() {
         _cards = <Map<String, dynamic>>[
-          for (final entry in _cards)
-            entry['id'] == cardId ? updated : entry,
+          for (final entry in _cards) entry['id'] == cardId ? updated : entry,
         ];
       });
     });
@@ -495,7 +504,9 @@ class _NavigationShellState extends State<NavigationShell> {
     final generation = ++_captionReadGeneration;
     try {
       final settings = await widget.client.settingsGet('captions');
-      if (!mounted || generation != _captionReadGeneration || settings.isEmpty) {
+      if (!mounted ||
+          generation != _captionReadGeneration ||
+          settings.isEmpty) {
         return;
       }
       setState(() => _captionStyle = StageCaptionStyle.fromSettings(settings));
@@ -532,8 +543,8 @@ class _NavigationShellState extends State<NavigationShell> {
       SettingsScreen(
         client: widget.client,
         onOpenConnections: () => _setIndex(3),
-        onSearchReady: (focus, close) =>
-            SettingsSearchShortcut.instance.bindSearch(focus: focus, close: close),
+        onSearchReady: (focus, close) => SettingsSearchShortcut.instance
+            .bindSearch(focus: focus, close: close),
         onSearchDisposed: SettingsSearchShortcut.instance.unbindSearch,
       ),
       ConnectionsScreen(client: widget.client),
@@ -682,24 +693,28 @@ class _NavigationShellState extends State<NavigationShell> {
                                 if (current != saved) {
                                   activated = true;
                                   _savedBackgroundId = current;
-                                  unawaited(_activateBackdrop(
-                                    cardId,
-                                    current ?? 'none',
-                                  ));
+                                  unawaited(
+                                    _activateBackdrop(
+                                      cardId,
+                                      current ?? 'none',
+                                    ),
+                                  );
                                 }
                               },
                             ),
                           ),
                         );
-                        unawaited(route.whenComplete(() {
-                          if (!mounted) return;
-                          if (activated) {
-                            setState(() {});
-                            return;
-                          }
-                          setState(() => _backdropRestored = false);
-                          unawaited(_restoreBackdropForSelectedCard());
-                        }));
+                        unawaited(
+                          route.whenComplete(() {
+                            if (!mounted) return;
+                            if (activated) {
+                              setState(() {});
+                              return;
+                            }
+                            setState(() => _backdropRestored = false);
+                            unawaited(_restoreBackdropForSelectedCard());
+                          }),
+                        );
                       },
               ),
             ],
@@ -711,7 +726,8 @@ class _NavigationShellState extends State<NavigationShell> {
             frames: widget.lipSyncFrames,
             cardId: _selectedCardId,
             boundSessionId: _chatKey.currentState?.activeSessionId,
-            background: store?.activeBackgroundFor(_selectedCardId) ??
+            background:
+                store?.activeBackgroundFor(_selectedCardId) ??
                 StageBackground.none,
             captionStyle: _captionStyle,
             render: _stageRender,

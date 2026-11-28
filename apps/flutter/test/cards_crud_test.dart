@@ -33,7 +33,6 @@ class _RecordingCardsClient extends FakeChatClient {
   bool updateLies = false;
   bool truncatedList = false;
 
-
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
     final handler = onCall;
@@ -83,9 +82,7 @@ class _RecordingCardsClient extends FakeChatClient {
       case 'cards.get':
         final id = (p?['id'] as String?) ?? '';
         final found = cards.where((c) => c['id'] == id);
-        return <String, dynamic>{
-          'card': found.isEmpty ? null : found.first,
-        };
+        return <String, dynamic>{'card': found.isEmpty ? null : found.first};
       case 'cards.metadata':
       case 'cards.metadata.set':
         return <String, dynamic>{
@@ -168,41 +165,41 @@ Finder _importField() =>
 /// finder is ambiguous; this keys the create form via its ancestor card
 /// (ancestor of the Create button).
 Finder _createNameField() => find.descendant(
-      of: find.ancestor(
-        of: find.widgetWithText(FilledButton, 'Create'),
-        matching: find.byType(Card),
-      ),
-      matching: find.widgetWithText(TextField, 'Name'),
-    );
+  of: find.ancestor(
+    of: find.widgetWithText(FilledButton, 'Create'),
+    matching: find.byType(Card),
+  ),
+  matching: find.widgetWithText(TextField, 'Name'),
+);
 
 /// The create form's document field, scoped the same way.
 Finder _createDocumentField() => find.descendant(
-      of: find.ancestor(
-        of: find.widgetWithText(FilledButton, 'Create'),
-        matching: find.byType(Card),
-      ),
-      matching: find.widgetWithText(TextField, 'Card JSON document'),
-    );
+  of: find.ancestor(
+    of: find.widgetWithText(FilledButton, 'Create'),
+    matching: find.byType(Card),
+  ),
+  matching: find.widgetWithText(TextField, 'Card JSON document'),
+);
 
 /// The open detail form's name field. Scoped by the detail card's Save
 /// button's ancestor card so the create form's shared-controller Name field
 /// is excluded.
 Finder _detailNameField() => find.descendant(
-      of: find.ancestor(
-        of: find.widgetWithText(FilledButton, 'Save'),
-        matching: find.byType(Card),
-      ),
-      matching: find.widgetWithText(TextField, 'Name'),
-    );
+  of: find.ancestor(
+    of: find.widgetWithText(FilledButton, 'Save'),
+    matching: find.byType(Card),
+  ),
+  matching: find.widgetWithText(TextField, 'Name'),
+);
 
 /// The open detail form's document field.
 Finder _detailDocumentField() => find.descendant(
-      of: find.ancestor(
-        of: find.widgetWithText(FilledButton, 'Save'),
-        matching: find.byType(Card),
-      ),
-      matching: find.widgetWithText(TextField, 'Card JSON document'),
-    );
+  of: find.ancestor(
+    of: find.widgetWithText(FilledButton, 'Save'),
+    matching: find.byType(Card),
+  ),
+  matching: find.widgetWithText(TextField, 'Card JSON document'),
+);
 
 /// Brings [finder] into view (scrolling the cards list if needed) and pumps a
 /// frame so a following tap/enterText lands on a laid-out, on-screen widget.
@@ -256,7 +253,6 @@ void main() {
         'document': <String, dynamic>{
           'spec': 'chara_card_v2',
           'data': <String, dynamic>{'description': 'hi'},
-          'name': 'Card Two',
         },
       },
     ]);
@@ -328,7 +324,10 @@ void main() {
     await tester.pump();
 
     expect(client.payloadsFor('cards.import'), isEmpty);
-    await _scrollToTop(tester, find.text('Paste a JSON card object to import.'));
+    await _scrollToTop(
+      tester,
+      find.text('Paste a JSON card object to import.'),
+    );
     expect(find.text('Paste a JSON card object to import.'), findsOneWidget);
   });
 
@@ -344,11 +343,16 @@ void main() {
     await tester.pump();
 
     expect(client.payloadsFor('cards.create'), isEmpty);
-    await _scrollToTop(tester, find.text('The document must be a JSON object.'));
+    await _scrollToTop(
+      tester,
+      find.text('The document must be a JSON object.'),
+    );
     expect(find.text('The document must be a JSON object.'), findsOneWidget);
   });
 
-  testWidgets('update sends {id, document} for the open card', (tester) async {
+  testWidgets('update sends {id, name, document} for the open card', (
+    tester,
+  ) async {
     final client = await _pump(tester);
     await _openCard(tester);
 
@@ -364,6 +368,7 @@ void main() {
     expect(client.payloadsFor('cards.update'), <Map<String, dynamic>?>[
       <String, dynamic>{
         'id': 'card-1',
+        'name': 'Card One',
         'document': <String, dynamic>{
           'name': 'Card One',
           'data': <String, dynamic>{'description': 'updated'},
@@ -486,9 +491,9 @@ void main() {
   testWidgets('a failed refresh surfaces the daemon error', (tester) async {
     final client = await _pump(tester);
     client.onCall = (action, payload) => throw const DaemonClientException(
-          kind: DaemonFailureKind.notConnected,
-          message: 'Not connected to the daemon.',
-        );
+      kind: DaemonFailureKind.notConnected,
+      message: 'Not connected to the daemon.',
+    );
 
     await tester.tap(find.byIcon(Icons.refresh));
     await tester.pumpAndSettle();
@@ -505,9 +510,9 @@ void main() {
   ) async {
     final client = _RecordingCardsClient();
     client.onCall = (action, payload) => throw const DaemonClientException(
-          kind: DaemonFailureKind.notConnected,
-          message: 'Not connected to the daemon.',
-        );
+      kind: DaemonFailureKind.notConnected,
+      message: 'Not connected to the daemon.',
+    );
     addTearDown(client.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -564,7 +569,9 @@ void main() {
     final client = _RecordingCardsClient()..truncatedList = true;
     addTearDown(client.dispose);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+      MaterialApp(
+        home: Scaffold(body: CardsScreen(client: client)),
+      ),
     );
     await tester.pump();
     await tester.pump();
@@ -577,8 +584,10 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(client.payloadsFor('cards.list').last?['cursor'],
-        <String, dynamic>{'updatedAt': 100, 'rowId': 9});
+    expect(client.payloadsFor('cards.list').last?['cursor'], <String, dynamic>{
+      'updatedAt': 100,
+      'rowId': 9,
+    });
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump(const Duration(milliseconds: 1));
     await tester.drag(find.byType(ListView), const Offset(0, -600));
@@ -590,19 +599,24 @@ void main() {
     final client = _RecordingCardsClient()..truncatedList = true;
     addTearDown(client.dispose);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+      MaterialApp(
+        home: Scaffold(body: CardsScreen(client: client)),
+      ),
     );
     await tester.pump();
     await tester.pump();
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    tester
+        .widget<TextButton>(find.byKey(const Key('cards-load-more')))
+        .onPressed!();
     await tester.pump();
     await tester.pump();
     await tester.pump();
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-    final loaded = tester.widgetList<ListTile>(find.byType(ListTile))
+    final loaded = tester
+        .widgetList<ListTile>(find.byType(ListTile))
         .map((tile) => (tile.title as Text).data)
         .toList();
     expect(loaded.indexOf('Card One'), lessThan(loaded.indexOf('Card Two')));
@@ -626,35 +640,52 @@ void main() {
       );
     };
     addTearDown(() {
-      if (!oldPage.isCompleted) oldPage.complete(const RpcReply(action: 'cards.list', ok: true, data: <String, dynamic>{}));
+      if (!oldPage.isCompleted)
+        oldPage.complete(
+          const RpcReply(
+            action: 'cards.list',
+            ok: true,
+            data: <String, dynamic>{},
+          ),
+        );
     });
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+      MaterialApp(
+        home: Scaffold(body: CardsScreen(client: client)),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
     await tester.pump(const Duration(milliseconds: 1));
     await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
-    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    tester
+        .widget<TextButton>(find.byKey(const Key('cards-load-more')))
+        .onPressed!();
     await tester.pump();
 
-    tester.widget<IconButton>(find.descendant(
-      of: find.byType(AppBar),
-      matching: find.byType(IconButton),
-    )).onPressed!();
+    tester
+        .widget<IconButton>(
+          find.descendant(
+            of: find.byType(AppBar),
+            matching: find.byType(IconButton),
+          ),
+        )
+        .onPressed!();
     await tester.pump();
     await tester.pump();
-    oldPage.complete(RpcReply(
-      action: 'cards.list',
-      ok: true,
-      data: <String, dynamic>{
-        'cards': <Map<String, dynamic>>[
-          <String, dynamic>{'id': 'card-2', 'name': 'Card Two'},
-        ],
-        'truncated': false,
-      },
-    ));
+    oldPage.complete(
+      RpcReply(
+        action: 'cards.list',
+        ok: true,
+        data: <String, dynamic>{
+          'cards': <Map<String, dynamic>>[
+            <String, dynamic>{'id': 'card-2', 'name': 'Card Two'},
+          ],
+          'truncated': false,
+        },
+      ),
+    );
     await tester.pump();
     await tester.pump();
 
@@ -668,7 +699,9 @@ void main() {
     final client = _RecordingCardsClient()..truncatedList = true;
     addTearDown(client.dispose);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CardsScreen(client: client))),
+      MaterialApp(
+        home: Scaffold(body: CardsScreen(client: client)),
+      ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -678,7 +711,9 @@ void main() {
     // With tied timestamps the daemon's cursor carries rowId; forwarding it
     // verbatim (rather than synthesizing an int offset) is what keeps later
     // pages correct even when rows are inserted between pages.
-    tester.widget<TextButton>(find.byKey(const Key('cards-load-more'))).onPressed!();
+    tester
+        .widget<TextButton>(find.byKey(const Key('cards-load-more')))
+        .onPressed!();
     await tester.pumpAndSettle();
     final sent = client.payloadsFor('cards.list').last?['cursor'];
     expect(sent, isA<Map<String, dynamic>>());

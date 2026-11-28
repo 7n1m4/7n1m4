@@ -228,10 +228,7 @@ class _CardsScreenState extends State<CardsScreen> {
     if (selection == null || !mounted) return;
     final ({Map<String, dynamic>? card, String? pngBase64}) parsed;
     if (selection.name.toLowerCase().endsWith('.png')) {
-      parsed = (
-        card: null,
-        pngBase64: base64Encode(selection.bytes),
-      );
+      parsed = (card: null, pngBase64: base64Encode(selection.bytes));
     } else {
       final Object? decoded;
       try {
@@ -328,10 +325,10 @@ class _CardsScreenState extends State<CardsScreen> {
       _status = null;
     });
     try {
-      final result = await widget.client.cardsCreate(<String, dynamic>{
-        ...decoded,
-        'name': name,
-      });
+      final result = await widget.client.cardsCreate(
+        name: name,
+        document: decoded,
+      );
       if (!mounted) return;
       setState(() {
         _status = 'Created "${result.name}" as ${result.id}';
@@ -368,10 +365,11 @@ class _CardsScreenState extends State<CardsScreen> {
       _status = null;
     });
     try {
-      final result = await widget.client.cardsUpdate(id, <String, dynamic>{
-        ...document,
-        'name': name,
-      });
+      final result = await widget.client.cardsUpdate(
+        id: id,
+        name: name,
+        document: document,
+      );
       if (!mounted) return;
       setState(() => _status = 'Saved "${result.name}" (${result.id})');
       await _load();
@@ -557,8 +555,7 @@ class _CardsScreenState extends State<CardsScreen> {
                 if (_cards.isEmpty)
                   const ListTile(title: Text('No cards available'), dense: true)
                 else
-                  for (final c in _cards)
-                    _cardRow(c),
+                  for (final c in _cards) _cardRow(c),
                 if (detail != null)
                   Card(
                     key: ValueKey<String>('card-detail-${detail['id'] ?? ''}'),

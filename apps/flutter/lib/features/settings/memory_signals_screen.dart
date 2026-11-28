@@ -155,7 +155,11 @@ class _MemorySignalsScreenState extends State<MemorySignalsScreen> {
           },
         },
       };
-      await widget.client.cardsUpdate(cardId, updated);
+      await widget.client.cardsUpdate(
+        id: cardId,
+        name: null,
+        document: updated,
+      );
       // The save succeeded: commit locally before the best-effort refresh. A
       // failed refresh is only a sync warning, never a save error.
       if (_disposing || !mounted) return;

@@ -45,6 +45,7 @@ class ListPage<T> {
 
   final List<T> items;
   final bool truncated;
+
   /// Forward verbatim as the next request's `cursor`; never synthesize one.
   final Object? nextCursor;
 }
@@ -70,7 +71,6 @@ class CardImportResult {
   final String name;
   final bool renamed;
 }
-
 
 /// Metadata of `vault.archive.collect`: a base64 ZIP and the domains the daemon
 /// actually included. Never contains provider credentials.
@@ -145,6 +145,7 @@ class SessionMediaScrubResult {
   final int sessionsScanned;
   final String? backupPath;
 }
+
 enum DaemonConnectionState {
   disconnected,
   connecting,
@@ -465,7 +466,9 @@ class DaemonClient {
     try {
       final reply = await call(
         'event.subscribe',
-        payload: <String, dynamic>{'topics': <String>[topic]},
+        payload: <String, dynamic>{
+          'topics': <String>[topic],
+        },
       );
       if (!reply.ok && _wantsConnection) {
         _emit(
@@ -789,7 +792,10 @@ class DaemonClient {
     return raw.cast<String>().toList(growable: false);
   }
 
-  static List<Map<String, dynamic>> _requiredObjects(RpcReply reply, String key) {
+  static List<Map<String, dynamic>> _requiredObjects(
+    RpcReply reply,
+    String key,
+  ) {
     final raw = _field(reply, key);
     if (raw is! List || raw.any((item) => item is! Map<String, dynamic>)) {
       throw DaemonClientException(
@@ -908,9 +914,8 @@ class DaemonClient {
   }
 
   /// List models for a provider (`providers.models`).
-  Future<(String providerId, List<Map<String, dynamic>> models)> providersModels(
-    String providerId,
-  ) async {
+  Future<(String providerId, List<Map<String, dynamic>> models)>
+  providersModels(String providerId) async {
     final reply = await _callOk(
       'providers.models',
       payload: <String, dynamic>{'providerId': providerId},
@@ -930,10 +935,7 @@ class DaemonClient {
         message: 'providers.models returned invalid shape',
       );
     }
-    return (
-      id,
-      models.whereType<Map<String, dynamic>>().toList(),
-    );
+    return (id, models.whereType<Map<String, dynamic>>().toList());
   }
 
   /// List provider metadata (`providers.list`). The daemon never puts
@@ -1018,14 +1020,17 @@ class DaemonClient {
       final id = block['id'];
       final day = block['day'];
       final content = block['content'];
-      final validDay = day is String &&
-          RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(day);
-      if (id is! String || id.trim().isEmpty ||
+      final validDay =
+          day is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(day);
+      if (id is! String ||
+          id.trim().isEmpty ||
           !validDay ||
-          content is! String || content.trim().isEmpty) {
+          content is! String ||
+          content.trim().isEmpty) {
         throw const DaemonClientException(
           kind: DaemonFailureKind.protocol,
-          message: 'Invalid stmm.upsert block: id, day and content are required.',
+          message:
+              'Invalid stmm.upsert block: id, day and content are required.',
         );
       }
       // Only the fields the daemon persists go on the wire; caller-supplied
@@ -1050,7 +1055,11 @@ class DaemonClient {
       });
     }
     var upserted = 0;
-    for (var offset = 0; offset < wireBlocks.length; offset += stmmUpsertChunkSize) {
+    for (
+      var offset = 0;
+      offset < wireBlocks.length;
+      offset += stmmUpsertChunkSize
+    ) {
       final chunk = wireBlocks.sublist(
         offset,
         (offset + stmmUpsertChunkSize).clamp(0, wireBlocks.length),
@@ -1133,7 +1142,8 @@ class DaemonClient {
   /// itself refuses unknown domains, and the client rejects them before the
   /// request reaches the socket.
   Future<VaultArchive> vaultArchiveCollect(List<String> domains) async {
-    if (domains.isEmpty || domains.any((d) => !vaultArchiveDomains.contains(d))) {
+    if (domains.isEmpty ||
+        domains.any((d) => !vaultArchiveDomains.contains(d))) {
       throw const DaemonClientException(
         kind: DaemonFailureKind.protocol,
         message: 'Unsupported vault archive domains.',
@@ -1174,7 +1184,9 @@ class DaemonClient {
     }
     final createdAt = _field(reply, 'createdAt');
     if (createdAt != null &&
-        !(createdAt is num && createdAt.isFinite && createdAt.truncate() == createdAt)) {
+        !(createdAt is num &&
+            createdAt.isFinite &&
+            createdAt.truncate() == createdAt)) {
       throw DaemonClientException(
         kind: DaemonFailureKind.protocol,
         message: 'Invalid createdAt in ${reply.action} reply.',
@@ -1252,11 +1264,7 @@ class DaemonClient {
     final items = _objects(reply, 'cards');
     final truncated = _field(reply, 'truncated') == true;
     final nextCursor = _listPageCursor(reply, items.length, cursor, truncated);
-    return ListPage(
-      items: items,
-      truncated: truncated,
-      nextCursor: nextCursor,
-    );
+    return ListPage(items: items, truncated: truncated, nextCursor: nextCursor);
   }
 
   /// Bare-list view of [cardsListPage].
@@ -1276,37 +1284,40 @@ class DaemonClient {
   }
 
   /// Create a character card (`cards.create`).
-  Future<CardWriteResult> cardsCreate(Map<String, dynamic> document) async {
+  Future<CardWriteResult> cardsCreate({
+    required String name,
+    required Map<String, dynamic> document,
+  }) async {
     final reply = await _callOk(
       'cards.create',
-      payload: <String, dynamic>{
-        'name': document['name'],
-        'document': document,
-      },
+      payload: <String, dynamic>{'name': name, 'document': document},
     );
-    return _cardWriteResult(
-      reply,
-      fallbackName: document['name'] is String
-          ? document['name'] as String
-          : '',
-    );
+    return _cardWriteResult(reply, fallbackName: name);
   }
 
   /// Update a character card (`cards.update`).
-  Future<CardWriteResult> cardsUpdate(
-    String id,
-    Map<String, dynamic> document,
-  ) async {
+  Future<CardWriteResult> cardsUpdate({
+    required String id,
+    required String? name,
+    required Map<String, dynamic> document,
+  }) async {
     final reply = await _callOk(
       'cards.update',
-      payload: <String, dynamic>{'id': id, 'document': document},
+      payload: <String, dynamic>{'id': id, 'name': name, 'document': document},
     );
-    return _cardWriteResult(
-      reply,
-      fallbackName: document['name'] is String
-          ? document['name'] as String
-          : '',
-      requireUpdated: true,
+    final updated = _field(reply, 'updated') == true;
+    if (!updated) {
+      throw const DaemonClientException(
+        kind: DaemonFailureKind.protocol,
+        message: 'Invalid cards.update reply.',
+      );
+    }
+    return CardWriteResult(
+      id: id,
+      name:
+          name ??
+          (document['name'] is String ? document['name'] as String : ''),
+      updated: true,
     );
   }
 
@@ -1413,16 +1424,9 @@ class DaemonClient {
   static CardWriteResult _cardWriteResult(
     RpcReply reply, {
     required String fallbackName,
-    bool requireUpdated = false,
   }) {
     final rawUpdated = _field(reply, 'updated');
     final updated = rawUpdated is bool ? rawUpdated : false;
-    if (requireUpdated && !updated) {
-      throw const DaemonClientException(
-        kind: DaemonFailureKind.protocol,
-        message: 'Invalid cards.update reply.',
-      );
-    }
     return CardWriteResult(
       id: _requiredString(reply, 'id'),
       name: _field(reply, 'name') is String

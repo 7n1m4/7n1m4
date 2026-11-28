@@ -236,9 +236,8 @@ void main() {
 
       // One id derivation, sourced from the golden create reply (card-7):
       // cards.get.reply.json carries no id, but CardsScreen._saveDetail needs
-      // current['id'], and production DaemonClient._cardWriteResult also needs
-      // an id in the cards.update reply. This only supplies the client-side
-      // join key; the Rust leg asserts the stored document byte-for-byte.
+      // current['id'] as a client-side join key. The Rust leg asserts the
+      // stored document byte-for-byte; cards.update.reply.json is {updated:true}.
       final cardId = createReply['id'] as String;
       expect(cardId, 'card-7');
       final getAfterCreate = <String, dynamic>{
@@ -264,7 +263,6 @@ void main() {
         'cards': <dynamic>[],
         'truncated': false,
       };
-      final updateWithId = <String, dynamic>{...updateGolden, 'id': cardId};
 
       final transport = ScriptedTransport();
       final peer = _CardsGoldenPeer(
@@ -275,7 +273,7 @@ void main() {
         listGolden: listGolden,
         listAfterUpdate: listAfterUpdate,
         emptyList: emptyList,
-        updateReply: updateWithId,
+        updateReply: updateGolden,
         deleteReply: deleteGolden,
       );
       final client = DaemonClient(
@@ -364,26 +362,26 @@ void main() {
       await tester.pump();
       expect(find.text('No cards available'), findsOneWidget);
 
-      // Wire requests emitted by the screen. The production wrappers reshape
-      // create/update: CardsScreen._create adds a document-level `name`
-      // (cards_screen.dart:331-334) and cardsUpdate emits only {id, document},
-      // never the golden's top-level `name: null`
-      // (daemon_client.dart:1296-1304). The update reply also needs an `id`
-      // (daemon_client.dart:1427), injected in the test above. The golden
-      // payloads themselves are emitted verbatim by the real client below.
+      // Wire requests emitted by the screen. A UI tap must go through the
+      // typed wrappers and emit the canonical shape, not a reshaped payload.
       final createCall = peer.requests.firstWhere(
         (frame) => frame['action'] == 'cards.create',
       );
-      final createPayload = createCall['payload'] as Map<String, dynamic>;
-      expect(createPayload['name'], 'Aria');
       expect(
-        (createPayload['document'] as Map<String, dynamic>)['data']['name'],
-        'Aria',
+        createCall['payload'],
+        _read('cards.create.request.json'),
+        reason: 'a UI tap must emit the exact cards.create golden payload',
       );
       final updateCall = peer.requests.firstWhere(
         (frame) => frame['action'] == 'cards.update',
       );
-      expect((updateCall['payload'] as Map<String, dynamic>)['id'], 'card-7');
+      final updatePayload = updateCall['payload'] as Map<String, dynamic>;
+      expect(
+        updatePayload.keys,
+        unorderedEquals(<String>{'id', 'name', 'document'}),
+        reason: 'cards.update must emit {id, name, document}',
+      );
+      expect(updatePayload['id'], 'card-7');
       final deleteCall = peer.requests.firstWhere(
         (frame) => frame['action'] == 'cards.delete',
       );
@@ -464,4 +462,99 @@ void main() {
       }
     },
   );
+
+  test('typed cards wrappers emit the golden request payloads', () async {
+    final createGolden = _read('cards.create.request.json');
+    final updateGolden = _read('cards.update.request.json');
+    final goldenDoc = createGolden['document'] as Map<String, dynamic>;
+
+    final transport = ScriptedTransport();
+    final client = DaemonClient(
+      transportFactory: () => transport,
+      authTimeout: const Duration(seconds: 5),
+      rpcTimeout: const Duration(seconds: 5),
+      heartbeatInterval: const Duration(hours: 1),
+    );
+    addTearDown(client.dispose);
+    Future<void> flush() => Future<void>.delayed(Duration.zero);
+
+    final connecting = client.connect(
+      const ConnectionSettings(authToken: 'tok'),
+    );
+    await flush();
+    transport.receive('{"type":"auth","ok":true}');
+    await flush();
+    var handled = 0;
+    for (var pass = 0; pass < 8; pass++) {
+      while (handled < transport.sent.length) {
+        final request =
+            jsonDecode(transport.sent[handled++]) as Map<String, dynamic>;
+        if (request['type'] != 'rpc') continue;
+        final action = request['action'] as String;
+        transport.receive(
+          _replyFrame(
+            action,
+            request['id'],
+            action == 'core.status'
+                ? _healthyCore
+                : <String, dynamic>{'subscribed': true},
+          ),
+        );
+      }
+      await flush();
+      if (handled >= transport.sent.length) {
+        await flush();
+        if (handled >= transport.sent.length) break;
+      }
+    }
+    await connecting;
+
+    final createPending = client.cardsCreate(name: 'Aria', document: goldenDoc);
+    await flush();
+    final createSent = jsonDecode(transport.sent.last) as Map<String, dynamic>;
+    expect(createSent['action'], 'cards.create');
+    expect(
+      createSent['payload'],
+      createGolden,
+      reason: 'cardsCreate must emit the exact golden create payload',
+    );
+    transport.receive(
+      jsonEncode(
+        ServerFrame.parse(
+          _replyFrame(
+            'cards.create',
+            createSent['id'],
+            _read('cards.create.reply.json'),
+          ),
+        ).raw,
+      ),
+    );
+    await createPending;
+
+    final updatePending = client.cardsUpdate(
+      id: 'card-7',
+      name: null,
+      document: goldenDoc,
+    );
+    await flush();
+    final updateSent = jsonDecode(transport.sent.last) as Map<String, dynamic>;
+    expect(updateSent['action'], 'cards.update');
+    expect(
+      updateSent['payload'],
+      updateGolden,
+      reason: 'cardsUpdate must emit the exact golden update payload',
+    );
+    transport.receive(
+      jsonEncode(
+        ServerFrame.parse(
+          _replyFrame(
+            'cards.update',
+            updateSent['id'],
+            _read('cards.update.reply.json'),
+          ),
+        ).raw,
+      ),
+    );
+    await updatePending;
+  });
 }
