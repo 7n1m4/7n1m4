@@ -16,4 +16,12 @@ Guardrails:
 3. Check the committed baseline plus the live worktree before choosing a gap; stale review advisories are treated as untrusted.
 4. Each round ends with a checkpoint comment and an updated wiki log; the loop stays open until the maintainer calls it done.
 
+## Blocked-Surface Quarantine
+
+A blocked slice is quarantined, not retried. Beads in `ready-for-human` state or with an expired lease are invisible to the cartographer's candidate pool in every later round. Log a blocked bead once in the quarantine ledger with its blocker ID; later rounds neither re-audit nor re-file it unless its status changes. The "largest useful gap" is the highest-impact delta among unquarantined slices — quarantine never counts as remaining progress and never terminates the loop.
+
+## Quarantine Ledger Rule
+
+The ledger records each blocked bead exactly once: bead ID, blocker ID, timestamp, and the state that quarantined it (`ready-for-human` or expired lease). A status change is the only event that lifts quarantine; on lift, the bead re-enters the candidate pool with a fresh evidence comment. Absence of unquarantined work sends the loop into dormant fast-path backoff (`docs/agents/hillclimb-cycle.md` §11), not into termination.
+
 Sources: maintainer message 2026-11-26; `AGENTS.md` §0; `docs/feature-parity-checklist.md:1-16`.

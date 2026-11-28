@@ -50,11 +50,16 @@ Run a mandatory architecture checkup in a NEW Google AI Mode tab/thread, distinc
 Done when — the checkup comment is on the round bead and any accepted items are filed as beads with their `--skills`, with architectural deltas in the successor brief; or, when no browser connects, the blocker is recorded on the round bead.
 
 ## 10. Chain
-Chain only after the architecture checkup closes. Keep the chain single-flight: call `automation.list`, then create at most one successor with `automation.create` — no `to` field, trigger `{ type: 'at', at: 'in 10 seconds' }`. Never duplicate an active automation.
+Chain unconditionally at the end of every wave; the architecture checkup never gates chaining. Keep the chain single-flight: call `automation.list`, then create at most one successor with `automation.create` — no `to` field. Use trigger `{ type: 'at', at: 'in 10 seconds' }` during an active wave, or the dormant backoff from §11 when no open slices remain. Never duplicate an active automation.
 
-Done when — the architecture checkup is closed, exactly one successor automation exists, it has no `to`, it uses `at: in 10 seconds`, and no active lane is duplicated.
+Done when — exactly one successor automation exists, it has no `to`, its trigger matches the active-wave or dormant-backoff state in §11, no active lane is duplicated, and the architecture checkup outcome did not block chaining.
 
-## 11. Termination
-Close the wave when zero open port beads remain in the lane, the final parity audit is clean, and the full workspace is green. If two consecutive generations produce no new slices, emit `PARITY_COMPLETE_OR_BLOCKED` and stop. Chaining happens only after the architecture checkup.
+## 11. Continuous Loop & Dormant Fast-Path
+The loop runs continuously; empty generations do not terminate it. Two states:
 
-Done when — all three predicates hold and the wave is closed, or two consecutive empty generations produced `PARITY_COMPLETE_OR_BLOCKED` and the chain stopped after the architecture checkup.
+- **Active wave:** at least one open port slice remains. Chain the successor in 10 seconds with `{ type: 'at', at: 'in 10 seconds' }`.
+- **Dormant fast-path:** zero open slices remain. Chain the successor with a `PARITY_DORMANT_POLL` backoff of 4 hours. Any new open bead resets the poll to the 10-second active-wave cadence.
+
+There is no completion-or-blocked stop signal and no two-empty-generation termination rule. Blocked slices are quarantined per `docs/autonomous-parity/parity-loop-charter.md`, not treated as loop completion.
+
+Done when — every wave chained exactly one successor automation, the trigger is 10 seconds while any open slice exists and `PARITY_DORMANT_POLL` (4h) while none exist, any newly opened bead restored the 10-second cadence, and no generation emitted a completion-or-blocked stop signal.

@@ -65,11 +65,16 @@ Use a detached worker when the subagent mechanism supports one; otherwise write 
 
 Done when — the retro note holds the round evidence and 2–4 ranked improvements, the worker ranking is recorded, and the deltas appear in the next brief.
 
-## 10. Chain or stop
+## 10. Chain or Dormant Backoff
 
-Stop when zero open slices remain, the final parity audit is clean, and the full workspace is green. Also stop on two consecutive generations with no new slices: emit `PARITY_COMPLETE_OR_BLOCKED`. Otherwise re-run this loop manually with the next brief.
+Chain unconditionally at the end of every wave; empty generations do not stop the loop. Two states:
 
-Done when — the stop predicates are evaluated and either the wave is closed with `PARITY_COMPLETE_OR_BLOCKED` emitted, or a new brief starts a fresh manual pass.
+- **Active wave:** open slices remain — chain the next pass with trigger `{ type: 'at', at: 'in 10 seconds' }`.
+- **Dormant fast-path:** zero open slices remain — chain with a `PARITY_DORMANT_POLL` backoff of 4 hours. Any new open bead resets the cadence to 10 seconds.
+
+Keep the chain single-flight: call `automation.list`, then create at most one successor with `automation.create` and no `to` field. Never duplicate an active automation. Blocked surfaces are quarantined in the ledger rather than ending the loop.
+
+Done when — exactly one successor automation exists with no `to`, its trigger is 10 seconds while any open slice exists and `PARITY_DORMANT_POLL` (4h) when none exist, any newly opened bead restored 10 seconds, and no active lane is duplicated.
 
 ## Shell checklist
 
