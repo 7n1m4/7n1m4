@@ -23,6 +23,10 @@ class _RecordingMemoryClient extends FakeChatClient {
   bool echoSearchQuery = false;
   Duration? searchDelay;
 
+  /// Held vault.status reply. When set, the first vault read parks here so a
+  /// test can dispose the screen before the null-vault branch resumes.
+  Completer<RpcReply>? heldVaultStatus;
+
   /// Query-keyed held replies. A `journal.search` for a keyed query returns
   /// that future, letting a test complete stale/fresh replies in any order.
   /// The empty-query load passes through the normal fake path unchanged.
@@ -62,6 +66,8 @@ class _RecordingMemoryClient extends FakeChatClient {
       );
     }
     if (action == 'vault.status') {
+      final held = heldVaultStatus;
+      if (held != null) return held.future;
       return RpcReply(
         action: action,
         ok: true,
@@ -807,4 +813,148 @@ void main() {
       isEmpty,
     );
   });
+
+  testWidgets(
+    'dispose during null-vault await does not setState after dispose',
+    (tester) async {
+      final client = _RecordingMemoryClient();
+      addTearDown(client.dispose);
+      final held = Completer<RpcReply>();
+      client.heldVaultStatus = held;
+      addTearDown(() {
+        if (!held.isCompleted) {
+          held.complete(
+            const RpcReply(action: 'vault.status', ok: true, data: null),
+          );
+        }
+      });
+
+      final previousOnError = FlutterError.onError;
+      final errors = <FlutterErrorDetails>[];
+      FlutterError.onError = (details) {
+        errors.add(details);
+        // Keep the binding's own handler in the chain: it tracks pending
+        // exceptions, and dropping it trips an unrelated framework assertion.
+        previousOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MemoryScreen(client: client)),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // The screen is parked on vault.status: no later load verb has run yet.
+      expect(client.calls.map((c) => c.action).toList(), <String>[
+        'vault.status',
+      ]);
+      expect(held.isCompleted, isFalse);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(find.byType(MemoryScreen), findsNothing);
+
+      // A null payload takes the early-return branch at memory_screen.dart:66.
+      held.complete(
+        const RpcReply(action: 'vault.status', ok: true, data: null),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Restore before asserting: flutter_test routes a failed expect() through
+      // the binding's own onError handler, which must be active at that point.
+      FlutterError.onError = previousOnError;
+
+      expect(
+        errors.where(
+          (details) => details.exception.toString().contains(
+            'setState() called after dispose',
+          ),
+        ),
+        isEmpty,
+      );
+      // The null-vault branch returned before any of the four later verbs.
+      expect(client.calls.map((c) => c.action).toList(), <String>[
+        'vault.status',
+      ]);
+    },
+  );
+
+  testWidgets(
+    'dispose during failing-load await does not setState after dispose',
+    (tester) async {
+      final client = _RecordingMemoryClient();
+      addTearDown(client.dispose);
+
+      // Hold settings.get open so _load() parks on its last read. Releasing it
+      // with a DaemonClientException after dispose exercises the catch at
+      // memory_screen.dart:92 on a dead State.
+      final held = Completer<Map<String, dynamic>>();
+      client.deferredSettings = held;
+      addTearDown(() {
+        if (!held.isCompleted) {
+          held.complete(<String, dynamic>{'remoteSyncEnabled': false});
+        }
+      });
+
+      final previousOnError = FlutterError.onError;
+      final errors = <FlutterErrorDetails>[];
+      FlutterError.onError = (details) {
+        errors.add(details);
+        // Keep the binding's own handler in the chain: it tracks pending
+        // exceptions, and dropping it trips an unrelated framework assertion.
+        previousOnError?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previousOnError);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MemoryScreen(client: client)),
+        ),
+      );
+      await tester.pump();
+
+      // All five thin-client reads were issued before the held reply parked
+      // _load() at settings.get.
+      expect(
+        client.calls.map((c) => c.action).toList(),
+        containsAllInOrder(<String>[
+          'vault.status',
+          'stmm.list',
+          'journal.search',
+          'retrieval.status',
+          'settings.get',
+        ]),
+      );
+      expect(client.calls, hasLength(5));
+      expect(held.isCompleted, isFalse);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(find.byType(MemoryScreen), findsNothing);
+
+      held.completeError(
+        const DaemonClientException(
+          kind: DaemonFailureKind.rpc,
+          message: 'settings.get failed after dispose',
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Restore before asserting: flutter_test routes a failed expect()
+      // through the binding's own onError handler, which must be active.
+      FlutterError.onError = previousOnError;
+
+      expect(
+        errors.where(
+          (details) => details.exception.toString().contains(
+            'setState() called after dispose',
+          ),
+        ),
+        isEmpty,
+      );
+    },
+  );
 }
