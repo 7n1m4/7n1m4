@@ -576,4 +576,24 @@ void main() {
     expect(balanced, isNot(contains('tail sentinel')));
     expect(balanced.length, lessThan(256 * 1024 + 64));
   });
+
+  test(
+    'helper fallback does not split a surrogate pair at the 256 KiB clamp',
+    () {
+      const cap = 256 * 1024;
+      // U+1F600 is the UTF-16 pair D83D DE00. Place its high surrogate exactly
+      // at index cap-1 so substring(0, cap) would end on a lone high surrogate.
+      final padding = 'x' * (cap - 1);
+      final input = '$padding\u{1F600}tail sentinel';
+      final balanced = balanceChatCodeFences(input);
+      final marker = '\n\n… (truncated)';
+      final preview = balanced.substring(0, balanced.indexOf(marker));
+      final last = preview.codeUnitAt(preview.length - 1);
+      expect(
+        last < 0xD800 || last > 0xDBFF,
+        isTrue,
+        reason: 'clamp split a surrogate pair: preview ends with a lone high surrogate',
+      );
+    },
+  );
 }

@@ -56,9 +56,12 @@ String balanceChatCodeFences(String text) {
       : lines.length;
   final truncated = contentLines > 2000 || normalized.length > 256 * 1024;
   if (truncated) {
-    final charCap = normalized.length > 256 * 1024
+    var charCap = normalized.length > 256 * 1024
         ? 256 * 1024
         : normalized.length;
+    // Never end the clamp on a lone UTF-16 high surrogate.
+    final lastUnit = normalized.codeUnitAt(charCap - 1);
+    if (lastUnit >= 0xD800 && lastUnit <= 0xDBFF) charCap--;
     lines = normalized.substring(0, charCap).split('\n').take(2000).toList();
   }
 
