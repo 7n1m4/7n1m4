@@ -245,6 +245,15 @@ mod golden_fixtures {
     #[test]
     fn cards_list_reply_fixture() {
         let reply = load_json("cards.list.reply");
+        // The golden is authoritative: a non-empty page must carry a
+        // well-formed keyset cursor (gateway.rs list_next_cursor).
+        let cursor = reply
+            .get("cursor")
+            .expect("a non-empty cards.list page must carry a keyset cursor");
+        assert!(
+            cursor["updatedAt"].is_i64() && cursor["rowId"].is_i64(),
+            "keyset cursor shape drifted: {cursor}"
+        );
         round_trip::<CardListReply>("cards.list.reply", &reply);
     }
 

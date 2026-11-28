@@ -5,5 +5,9 @@
       "name": "Aria"
     }
   ],
+  "cursor": {
+    "rowId": 7,
+    "updatedAt": 1700000000000
+  },
   "truncated": false
 }

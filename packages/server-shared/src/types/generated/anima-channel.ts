@@ -163,6 +163,8 @@ export type CardListReply = {
 	cards: CardInfo[],
 	/**  Whether the list was truncated. */
 	truncated: boolean,
+	/**  Keyset cursor of the last row, present on any non-empty page. */
+	cursor?: unknown,
 };
 
 /**

@@ -1969,15 +1969,12 @@ impl Gateway {
                             (rows, truncated)
                         }
                     };
-                    let mut reply = serde_json::to_value(anima_channel::wire::CardListReply {
+                    let reply = anima_channel::wire::CardListReply {
                         cards: rows.iter().map(|(card, _, _)| card.clone()).collect(),
                         truncated,
-                    })
-                    .map_err(|e| e.to_string())?;
-                    if let Some(next) = list_next_cursor(&rows) {
-                        reply["cursor"] = next;
-                    }
-                    Ok(reply)
+                        cursor: list_next_cursor(&rows),
+                    };
+                    Ok(serde_json::to_value(reply).map_err(|e| e.to_string())?)
                 }),
             );
         }

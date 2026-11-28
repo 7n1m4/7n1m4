@@ -522,12 +522,12 @@ mod tests {
             "cards.get must return the stored document verbatim"
         );
 
-        // cards.list: the golden predates the keyset cursor and has no such
-        // field. PRE-projection invariant (b) on the REAL frame: every
-        // non-empty page carries a well-formed cursor even when
-        // truncated:false (gateway.rs list_next_cursor), so assert it is
-        // present and shaped correctly BEFORE projecting it away. Never drop
-        // a cursor that the daemon actually emitted without saying so.
+        // cards.list: PRE-projection invariant (b) on the REAL frame: every
+        // non-empty page carries a well-formed keyset cursor even when
+        // truncated:false (gateway.rs list_next_cursor). Assert its shape on
+        // the real frame, then bind the runtime-minted cursor VALUES into the
+        // golden — updatedAt/rowId are generated at insert time, so they
+        // cannot be static — and require exact equality with no projection.
         let listed =
             handlers.get("cards.list").unwrap()("cards.list", &serde_json::json!({ "limit": 50 }))
                 .unwrap();
@@ -539,15 +539,13 @@ mod tests {
             cursor["updatedAt"].is_i64() && cursor["rowId"].is_i64(),
             "keyset cursor shape drifted: {cursor}"
         );
-        // Projection (b): bind the minted id and remove ONLY the cursor that
-        // was just asserted on the real frame; cards + truncated stay exact.
-        let mut real_projected = listed.clone();
-        real_projected.as_object_mut().unwrap().remove("cursor");
         let mut expected_list = load("cards.list.reply.json");
         expected_list["cards"][0]["id"] = serde_json::json!(minted);
+        expected_list["cursor"]["updatedAt"] = cursor["updatedAt"].clone();
+        expected_list["cursor"]["rowId"] = cursor["rowId"].clone();
         assert_eq!(
-            real_projected, expected_list,
-            "cards.list reply must match golden after id + cursor projection"
+            listed, expected_list,
+            "cards.list reply must match golden after id + cursor value binding"
         );
 
         // cards.update: bind the minted id into the golden request; the reply

@@ -665,6 +665,10 @@ pub struct CardListReply {
     pub cards: Vec<CardInfo>,
     /// Whether the list was truncated.
     pub truncated: bool,
+    /// Keyset cursor of the last row, present on any non-empty page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(type = specta_typescript::Unknown)]
+    pub cursor: Option<Value>,
 }
 
 /// Reply of `cards.get`: full-fidelity card document (opaque JSON).
@@ -2157,7 +2161,10 @@ mod tests {
         assert!(dv.get("cursor").is_none());
         let dd: ChatDelta = serde_json::from_value(dv).unwrap();
         assert_eq!(dd, d);
-        let d2 = ChatDelta { cursor: Some(c), ..d };
+        let d2 = ChatDelta {
+            cursor: Some(c),
+            ..d
+        };
         let dv2 = serde_json::to_value(&d2).unwrap();
         assert_eq!(dv2["cursor"], json!({"epoch": 7, "seq": 42}));
         let dd2: ChatDelta = serde_json::from_value(dv2).unwrap();

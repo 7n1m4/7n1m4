@@ -358,6 +358,7 @@ fn build_fixtures() -> Result<Vec<Fixture>, Box<dyn std::error::Error>> {
                     name: "Aria".into(),
                 }],
                 truncated: false,
+                cursor: Some(serde_json::json!({ "updatedAt": 1_700_000_000_000i64, "rowId": 7 })),
             })?,
         ),
         (
