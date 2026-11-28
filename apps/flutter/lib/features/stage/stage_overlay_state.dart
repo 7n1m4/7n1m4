@@ -70,8 +70,9 @@ class StageCaptionController extends ChangeNotifier {
   /// One amplitude window from `speech/lip_sync_generator.dart`.
   static const int _rmsWindowMs = 50;
   static final RegExp _sentenceEnd = RegExp(r'[.!?。！？]');
-  static final RegExp _cjk =
-      RegExp(r'[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]');
+  static final RegExp _cjk = RegExp(
+    r'[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF]',
+  );
 
   StageCaptionSnapshot _snapshot = const StageCaptionSnapshot();
   String? _messageId;
@@ -122,13 +123,16 @@ class StageCaptionController extends ChangeNotifier {
     final texts = failedTurn
         ? const <String>[]
         : terminal
-            ? _splitSentences(buffer)
-            : buffer.isEmpty
-                ? const <String>[]
-                : <String>[buffer];
-    final color = _snapshot.segments.isEmpty ? '' : _snapshot.segments.first.color;
-    final actorId =
-        _snapshot.segments.isEmpty ? '' : _snapshot.segments.first.actorId;
+        ? _splitSentences(buffer)
+        : buffer.isEmpty
+        ? const <String>[]
+        : <String>[buffer];
+    final color = _snapshot.segments.isEmpty
+        ? ''
+        : _snapshot.segments.first.color;
+    final actorId = _snapshot.segments.isEmpty
+        ? ''
+        : _snapshot.segments.first.actorId;
     _snapshot = StageCaptionSnapshot(
       speakerText: _snapshot.speakerText,
       segments: <CaptionSegment>[
@@ -490,6 +494,17 @@ class StageRenderState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Forget cue/frame dedupe baselines so a genuinely restarted daemon (whose
+  /// bus seq starts over at 0) can send low-seq cues and frames again.
+  ///
+  /// Kept separate from [clearTransient]: session switches call that during a
+  /// live connection, where the baselines must still block replays. Call this
+  /// only on the disconnected -> connected edge.
+  void resetSequenceBaselines() {
+    _lastCueSeq = null;
+    _lastFrameSeq = null;
+  }
+
   /// Drop turn-scoped render data when the socket drops: a half-written
   /// caption, the latest cue and the latest RMS frame must not linger on a
   /// disconnected stage. Client-owned settings (background, caption style,
@@ -523,10 +538,9 @@ class StageRenderStateBinding {
     String? boundSessionId,
   }) : _client = client,
        _state = state,
-       _boundSessionId =
-           boundSessionId != null && boundSessionId.isNotEmpty
-               ? boundSessionId
-               : null {
+       _boundSessionId = boundSessionId != null && boundSessionId.isNotEmpty
+           ? boundSessionId
+           : null {
     _unsubscribe = client.onEvent(_onEvent);
     _wasConnected = client.snapshot.isConnected;
     // The lane is opt-in: no subscription means no captions or cues. The
@@ -534,7 +548,15 @@ class StageRenderStateBinding {
     _subscribe();
     _statusSubscription = client.statusStream.listen((status) {
       final connected = status.state == DaemonConnectionState.connected;
-      if (connected && !_wasConnected) _subscribe();
+      if (connected && !_wasConnected) {
+        // A reconnect may be a genuine daemon restart with a fresh seq bus;
+        // clear the old baselines before subscribing so low-seq cues/frames
+        // are not dropped forever. Reconnecting to the SAME daemon admits one
+        // replayed low seq; accepted because airi-6anh freezes the wire (no
+        // boot_id verb) and applyCue/applyFrame re-base on the next real frame.
+        _state.resetSequenceBaselines();
+        _subscribe();
+      }
       if (!connected && _wasConnected) {
         _learnedSessionId = null;
         _state.clearTransient();
@@ -620,9 +642,7 @@ class StageRenderStateBinding {
         // cannot hold the caption lane forever; the next turn re-learns.
         final reason = data['reason'];
         final terminal =
-            data['final'] == true ||
-            reason == 'cancelled' ||
-            reason == 'error';
+            data['final'] == true || reason == 'cancelled' || reason == 'error';
         if (terminal) _learnedSessionId = null;
       default:
         break;

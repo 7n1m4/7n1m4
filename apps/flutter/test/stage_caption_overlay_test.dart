@@ -18,6 +18,7 @@ import 'package:anima_control/features/stage/stage_screen.dart';
 import 'package:anima_control/l10n/app_localizations.dart';
 import 'package:anima_control/navigation/navigation_shell.dart';
 import 'package:anima_control/speech/lip_sync_rms_data.dart';
+
 import 'support/fakes.dart';
 
 void main() {
@@ -100,35 +101,40 @@ void main() {
       tsMs: 1700000000000 + seq * 50,
     );
 
-    test('the final marker splits buffered text into sentences, first active', () {
-      final controller = StageCaptionController();
-      controller.applyTokenDelta(<String, dynamic>{
-        'message_id': 'm1',
-        'delta': 'Hello. 世界！How?',
-        'seq': 1,
-      });
-      expect(
-        controller.snapshot.segments.single.text,
-        'Hello. 世界！How?',
-        reason: 'per-delta splitting would flicker as punctuation arrives',
-      );
-      expect(controller.snapshot.segments.single.isActive, isFalse);
+    test(
+      'the final marker splits buffered text into sentences, first active',
+      () {
+        final controller = StageCaptionController();
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': 'Hello. 世界！How?',
+          'seq': 1,
+        });
+        expect(
+          controller.snapshot.segments.single.text,
+          'Hello. 世界！How?',
+          reason: 'per-delta splitting would flicker as punctuation arrives',
+        );
+        expect(controller.snapshot.segments.single.isActive, isFalse);
 
-      controller.applyTokenDelta(<String, dynamic>{
-        'message_id': 'm1',
-        'delta': '',
-        'final': true,
-        'seq': 2,
-      });
-      expect(
-        controller.snapshot.segments.map((segment) => segment.text).toList(),
-        <String>['Hello.', '世界！', 'How?'],
-      );
-      expect(
-        controller.snapshot.segments.map((segment) => segment.isActive).toList(),
-        <bool>[true, false, false],
-      );
-    });
+        controller.applyTokenDelta(<String, dynamic>{
+          'message_id': 'm1',
+          'delta': '',
+          'final': true,
+          'seq': 2,
+        });
+        expect(
+          controller.snapshot.segments.map((segment) => segment.text).toList(),
+          <String>['Hello.', '世界！', 'How?'],
+        );
+        expect(
+          controller.snapshot.segments
+              .map((segment) => segment.isActive)
+              .toList(),
+          <bool>[true, false, false],
+        );
+      },
+    );
 
     test('an unterminated tail is still a sentence', () {
       final controller = StageCaptionController();
@@ -207,14 +213,14 @@ void main() {
         controller.advanceCaptionPlayback(frame(10));
         controller.advanceCaptionPlayback(frame(11));
       }
-      expect(
-        cjk.snapshot.segments.map((s) => s.isActive).toList(),
-        <bool>[true, false],
-      );
-      expect(
-        latin.snapshot.segments.map((s) => s.isActive).toList(),
-        <bool>[false, true],
-      );
+      expect(cjk.snapshot.segments.map((s) => s.isActive).toList(), <bool>[
+        true,
+        false,
+      ]);
+      expect(latin.snapshot.segments.map((s) => s.isActive).toList(), <bool>[
+        false,
+        true,
+      ]);
     });
 
     test('consecutive terminators stay inside one sentence', () {
@@ -230,10 +236,10 @@ void main() {
         'final': true,
         'seq': 2,
       });
-      expect(
-        controller.snapshot.segments.map((s) => s.text).toList(),
-        <String>['Wow!!!', 'Really?'],
-      );
+      expect(controller.snapshot.segments.map((s) => s.text).toList(), <String>[
+        'Wow!!!',
+        'Really?',
+      ]);
     });
 
     test('cancelled and error finals drop the partial turn', () {
@@ -286,10 +292,10 @@ void main() {
         'final': true,
         'seq': 5,
       });
-      expect(
-        controller.snapshot.segments.map((s) => s.text).toList(),
-        <String>['Alpha.', 'Beta.'],
-      );
+      expect(controller.snapshot.segments.map((s) => s.text).toList(), <String>[
+        'Alpha.',
+        'Beta.',
+      ]);
       controller.advanceCaptionPlayback(frame(100));
       expect(
         controller.snapshot.segments.map((s) => s.isActive).toList(),
@@ -337,35 +343,41 @@ void main() {
   });
 
   group('StageCaptionStyle', () {
-    test('daemon camelCase caption settings map to scale, alpha and docking', () {
-      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
-        'docking': 'top',
-        'fontSize': 150,
-        'opacity': 40,
-      });
-      expect(style.docking, StageCaptionDocking.top);
-      expect(style.isTop, isTrue);
-      expect(style.scale, 1.5);
-      expect(style.alpha, 0.4);
-    });
+    test(
+      'daemon camelCase caption settings map to scale, alpha and docking',
+      () {
+        final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+          'docking': 'top',
+          'fontSize': 150,
+          'opacity': 40,
+        });
+        expect(style.docking, StageCaptionDocking.top);
+        expect(style.isTop, isTrue);
+        expect(style.scale, 1.5);
+        expect(style.alpha, 0.4);
+      },
+    );
 
-    test('legacy snake_case caption settings still map when camelCase is absent', () {
-      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
-        'docking': 'top',
-        'font_size': 150,
-        'opacity': 40,
-      });
-      expect(style.scale, 1.5);
-      expect(style.alpha, 0.4);
-      expect(style.isTop, isTrue);
-      expect(
-        StageCaptionStyle.fromSettings(<String, dynamic>{
-          'fontSize': 90,
+    test(
+      'legacy snake_case caption settings still map when camelCase is absent',
+      () {
+        final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+          'docking': 'top',
           'font_size': 150,
-        }).scale,
-        0.9,
-      );
-    });
+          'opacity': 40,
+        });
+        expect(style.scale, 1.5);
+        expect(style.alpha, 0.4);
+        expect(style.isTop, isTrue);
+        expect(
+          StageCaptionStyle.fromSettings(<String, dynamic>{
+            'fontSize': 90,
+            'font_size': 150,
+          }).scale,
+          0.9,
+        );
+      },
+    );
 
     test('the captions enabled switch hides the overlay independently', () {
       final style = StageCaptionStyle.fromSettings(<String, dynamic>{
@@ -532,98 +544,164 @@ void main() {
   });
 
   group('StageRenderStateBinding disconnect cleanup', () {
-    test(
-      'a mid-turn caption, cue and frame clear on disconnect while settings survive',
-      () async {
-        final client = FakeChatClient();
-        final style = StageCaptionStyle.fromSettings(<String, dynamic>{
-          'docking': 'top',
-          'fontSize': 150,
-          'opacity': 40,
-        });
-        final background = StageBackground.tintFromHex('#123456');
-        final state = StageRenderState(
-          actorId: 'pet-1',
-          captions: style,
-          background: background,
-        );
-        final binding = StageRenderStateBinding(client: client, state: state);
-        addTearDown(state.dispose);
-        addTearDown(binding.dispose);
-        addTearDown(client.dispose);
+    test('a mid-turn caption, cue and frame clear on disconnect while settings survive', () async {
+      final client = FakeChatClient();
+      final style = StageCaptionStyle.fromSettings(<String, dynamic>{
+        'docking': 'top',
+        'fontSize': 150,
+        'opacity': 40,
+      });
+      final background = StageBackground.tintFromHex('#123456');
+      final state = StageRenderState(
+        actorId: 'pet-1',
+        captions: style,
+        background: background,
+      );
+      final binding = StageRenderStateBinding(client: client, state: state);
+      addTearDown(state.dispose);
+      addTearDown(binding.dispose);
+      addTearDown(client.dispose);
 
-        client.emitStatus(DaemonConnectionState.connected);
+      client.emitStatus(DaemonConnectionState.connected);
+      // The status stream is broadcast (async delivery): establish the
+      // connection before cues arrive, as on the real event lane.
+      await Future<void>.delayed(Duration.zero);
 
-        // The caption and cue arrive on the daemon event lane; the frame comes
-        // from the local audio tap, as it does in the real stage.
-        client.emitEvent(tokenDelta(messageId: 'm1', delta: 'Hel'));
-        client.emitEvent(
-          GatewayEventFrame(
-            topic: EventTopic.emotionTag,
-            rawTopic: EventTopic.emotionTag.wireName,
-            data: <String, dynamic>{
-              'tag': 'happy',
-              'kind': 'emotion',
-              'intensity': 0.8,
-              'actor_id': 'pet-1',
-              'seq': 3,
-              'ts_ms': 1700000000003,
-            },
+      // The caption and cue arrive on the daemon event lane; the frame comes
+      // from the local audio tap, as it does in the real stage.
+      client.emitEvent(tokenDelta(messageId: 'm1', delta: 'Hel'));
+      client.emitEvent(
+        GatewayEventFrame(
+          topic: EventTopic.emotionTag,
+          rawTopic: EventTopic.emotionTag.wireName,
+          data: <String, dynamic>{
+            'tag': 'happy',
+            'kind': 'emotion',
+            'intensity': 0.8,
+            'actor_id': 'pet-1',
+            'seq': 3,
+            'ts_ms': 1700000000003,
+          },
+        ),
+      );
+      expect(
+        state.applyFrame(
+          const LipSyncRmsData(
+            actorId: 'pet-1',
+            level: 0.6,
+            seq: 7,
+            tsMs: 1700000000007,
           ),
-        );
-        expect(
-          state.applyFrame(
-            const LipSyncRmsData(
-              actorId: 'pet-1',
-              level: 0.6,
-              seq: 7,
-              tsMs: 1700000000007,
-            ),
+        ),
+        isTrue,
+      );
+
+      expect(state.caption.segments.single.text, 'Hel');
+      expect(state.cue?.tag, 'happy');
+      expect(state.frame?.seq, 7);
+
+      var notifications = 0;
+      state.addListener(() => notifications++);
+      client.emitStatus(DaemonConnectionState.disconnected);
+      // The fake's status stream is broadcast (async delivery).
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifications, 1, reason: 'one notification covers the clear');
+      expect(state.caption.isEmpty, isTrue);
+      expect(state.cue, isNull);
+      expect(state.frame, isNull);
+      expect(state.captionStyle, same(style));
+      expect(state.background, same(background));
+
+      // Dedupe baselines survive the clear: a replay cannot resurrect data.
+      expect(
+        state.applyFrame(
+          const LipSyncRmsData(actorId: 'pet-1', level: 0.9, seq: 7, tsMs: 1),
+        ),
+        isFalse,
+      );
+      expect(
+        state.applyCue(
+          const StageExpressionCue(
+            tag: 'happy',
+            kind: 'emotion',
+            intensity: 0.8,
+            actorId: 'pet-1',
+            seq: 3,
+            tsMs: 1,
           ),
-          isTrue,
-        );
+        ),
+        isFalse,
+      );
+      expect(state.cue, isNull);
+      expect(state.frame, isNull);
+    });
+  });
 
-        expect(state.caption.segments.single.text, 'Hel');
-        expect(state.cue?.tag, 'happy');
-        expect(state.frame?.seq, 7);
+  group('StageRenderStateBinding reconnect baseline reset', () {
+    test('a genuine reconnect accepts fresh low-seq cues and frames from a restarted daemon', () async {
+      final client = FakeChatClient();
+      final state = StageRenderState(actorId: 'pet-1');
+      final binding = StageRenderStateBinding(client: client, state: state);
+      addTearDown(binding.dispose);
+      addTearDown(state.dispose);
+      addTearDown(client.dispose);
 
-        var notifications = 0;
-        state.addListener(() => notifications++);
-        client.emitStatus(DaemonConnectionState.disconnected);
-        // The fake's status stream is broadcast (async delivery).
-        await Future<void>.delayed(Duration.zero);
+      client.emitStatus(DaemonConnectionState.connected);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(notifications, 1, reason: 'one notification covers the clear');
-        expect(state.caption.isEmpty, isTrue);
-        expect(state.cue, isNull);
-        expect(state.frame, isNull);
-        expect(state.captionStyle, same(style));
-        expect(state.background, same(background));
-
-        // Dedupe baselines survive the clear: a replay cannot resurrect data.
-        expect(
-          state.applyFrame(
-            const LipSyncRmsData(actorId: 'pet-1', level: 0.9, seq: 7, tsMs: 1),
+      // The previous daemon instance used high sequence numbers.
+      expect(
+        state.applyCue(
+          const StageExpressionCue(
+            tag: 'happy',
+            kind: 'emotion',
+            intensity: 0.8,
+            actorId: 'pet-1',
+            seq: 100,
+            tsMs: 1,
           ),
-          isFalse,
-        );
-        expect(
-          state.applyCue(
-            const StageExpressionCue(
-              tag: 'happy',
-              kind: 'emotion',
-              intensity: 0.8,
-              actorId: 'pet-1',
-              seq: 3,
-              tsMs: 1,
-            ),
+        ),
+        isTrue,
+      );
+      expect(
+        state.applyFrame(
+          const LipSyncRmsData(actorId: 'pet-1', level: 0.6, seq: 100, tsMs: 1),
+        ),
+        isTrue,
+      );
+
+      // Socket drops, then a genuinely restarted daemon reconnects: its bus
+      // seq starts over at 0, so valid cues/frames with a small seq arrive.
+      client.emitStatus(DaemonConnectionState.disconnected);
+      await Future<void>.delayed(Duration.zero);
+      client.emitStatus(DaemonConnectionState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        state.applyCue(
+          const StageExpressionCue(
+            tag: 'sad',
+            kind: 'emotion',
+            intensity: 0.8,
+            actorId: 'pet-1',
+            seq: 1,
+            tsMs: 2,
           ),
-          isFalse,
-        );
-        expect(state.cue, isNull);
-        expect(state.frame, isNull);
-      },
-    );
+        ),
+        isTrue,
+        reason: 'a fresh daemon restarts its sequence at 0',
+      );
+      expect(
+        state.applyFrame(
+          const LipSyncRmsData(actorId: 'pet-1', level: 0.6, seq: 1, tsMs: 2),
+        ),
+        isTrue,
+        reason: 'a fresh daemon restarts its sequence at 0',
+      );
+      expect(state.cue?.tag, 'sad');
+      expect(state.frame?.seq, 1);
+    });
   });
 
   group('StageRenderStateBinding session filtering', () {
@@ -641,94 +719,111 @@ void main() {
 
       final before = state.caption;
       client.emitEvent(tokenDelta(sessionId: 's2', delta: 'foreign'));
-      expect(state.caption, same(before), reason: 's2 must not clobber captions');
+      expect(
+        state.caption,
+        same(before),
+        reason: 's2 must not clobber captions',
+      );
 
       client.emitEvent(tokenDelta(sessionId: 's1', delta: 'mine'));
       expect(state.caption.segments.single.text, 'mine');
     });
 
-    test('an unbound binding learns from the stream without locking forever', () {
-      final client = FakeChatClient();
-      final state = StageRenderState();
-      final binding = StageRenderStateBinding(client: client, state: state);
-      addTearDown(binding.dispose);
-      addTearDown(state.dispose);
-      addTearDown(client.dispose);
-
-      // Self-learn from the first delta so production works without shell
-      // plumbing (mirrors chat_screen.dart:191-192).
-      client.emitEvent(tokenDelta(sessionId: 's1', delta: 'hello '));
-      expect(state.caption.segments.single.text, 'hello ');
-
-      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'intruder'));
-      expect(
-        state.caption.segments.single.text,
-        'hello ',
-        reason: 'a learned session must still filter foreign streams',
-      );
-
-      // A terminal frame ends the learned turn; the next turn may self-learn
-      // a different session instead of being stuck on the first one seen.
-      client.emitEvent(
-        tokenDelta(sessionId: 's1', messageId: 'm1', delta: '', isFinal: true),
-      );
-      expect(state.caption.segments, isEmpty);
-      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'now mine'));
-      expect(state.caption.segments.single.text, 'now mine');
-    });
-
     test(
-      'setBoundSessionId retargets in place, dropping the learned session and captions',
-      () async {
+      'an unbound binding learns from the stream without locking forever',
+      () {
         final client = FakeChatClient();
-        final actions = <String>[];
-        client.onCall = (action, payload) {
-          actions.add(action);
-          return RpcReply(action: action, ok: true, data: <String, dynamic>{});
-        };
         final state = StageRenderState();
         final binding = StageRenderStateBinding(client: client, state: state);
         addTearDown(binding.dispose);
         addTearDown(state.dispose);
         addTearDown(client.dispose);
-        await Future<void>.delayed(Duration.zero); // flush the initial subscribe
 
-        // Unbound binding learns s1 from the stream.
-        client.emitEvent(tokenDelta(sessionId: 's1', delta: 'old'));
-        expect(state.caption.segments.single.text, 'old');
-        final listeners = client.listeners.length;
-        expect(listeners, 1);
+        // Self-learn from the first delta so production works without shell
+        // plumbing (mirrors chat_screen.dart:191-192).
+        client.emitEvent(tokenDelta(sessionId: 's1', delta: 'hello '));
+        expect(state.caption.segments.single.text, 'hello ');
 
-        binding.setBoundSessionId('s2');
-        expect(state.caption.isEmpty, isTrue, reason: 'old captions clear at once');
+        client.emitEvent(tokenDelta(sessionId: 's2', delta: 'intruder'));
         expect(
-          client.listeners.length,
-          listeners,
-          reason: 'the event lane stays subscribed',
+          state.caption.segments.single.text,
+          'hello ',
+          reason: 'a learned session must still filter foreign streams',
         );
-        expect(actions, <String>['event.subscribe']);
 
-        client.emitEvent(tokenDelta(sessionId: 's1', delta: 'stale'));
-        expect(state.caption.isEmpty, isTrue, reason: 'the learned session is dropped');
-        client.emitEvent(tokenDelta(sessionId: 's2', delta: 'new'));
-        expect(state.caption.segments.single.text, 'new');
-
-        // An unchanged id is a no-op: no clear and no event-lane churn.
-        binding.setBoundSessionId('s2');
-        expect(state.caption.segments.single.text, 'new');
-        expect(client.listeners.length, listeners);
-        expect(actions, <String>['event.subscribe']);
-
-        // Empty normalizes to null: the explicit filter is released and the
-        // binding learns the next turn from the stream again.
-        binding.setBoundSessionId('');
-        expect(state.caption.isEmpty, isTrue);
-        client.emitEvent(tokenDelta(sessionId: 's3', delta: 'learned'));
-        expect(state.caption.segments.single.text, 'learned');
-        expect(client.listeners.length, listeners);
-        expect(actions, <String>['event.subscribe']);
+        // A terminal frame ends the learned turn; the next turn may self-learn
+        // a different session instead of being stuck on the first one seen.
+        client.emitEvent(
+          tokenDelta(
+            sessionId: 's1',
+            messageId: 'm1',
+            delta: '',
+            isFinal: true,
+          ),
+        );
+        expect(state.caption.segments, isEmpty);
+        client.emitEvent(tokenDelta(sessionId: 's2', delta: 'now mine'));
+        expect(state.caption.segments.single.text, 'now mine');
       },
     );
+
+    test('setBoundSessionId retargets in place, dropping the learned session and captions', () async {
+      final client = FakeChatClient();
+      final actions = <String>[];
+      client.onCall = (action, payload) {
+        actions.add(action);
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+      };
+      final state = StageRenderState();
+      final binding = StageRenderStateBinding(client: client, state: state);
+      addTearDown(binding.dispose);
+      addTearDown(state.dispose);
+      addTearDown(client.dispose);
+      await Future<void>.delayed(Duration.zero); // flush the initial subscribe
+
+      // Unbound binding learns s1 from the stream.
+      client.emitEvent(tokenDelta(sessionId: 's1', delta: 'old'));
+      expect(state.caption.segments.single.text, 'old');
+      final listeners = client.listeners.length;
+      expect(listeners, 1);
+
+      binding.setBoundSessionId('s2');
+      expect(
+        state.caption.isEmpty,
+        isTrue,
+        reason: 'old captions clear at once',
+      );
+      expect(
+        client.listeners.length,
+        listeners,
+        reason: 'the event lane stays subscribed',
+      );
+      expect(actions, <String>['event.subscribe']);
+
+      client.emitEvent(tokenDelta(sessionId: 's1', delta: 'stale'));
+      expect(
+        state.caption.isEmpty,
+        isTrue,
+        reason: 'the learned session is dropped',
+      );
+      client.emitEvent(tokenDelta(sessionId: 's2', delta: 'new'));
+      expect(state.caption.segments.single.text, 'new');
+
+      // An unchanged id is a no-op: no clear and no event-lane churn.
+      binding.setBoundSessionId('s2');
+      expect(state.caption.segments.single.text, 'new');
+      expect(client.listeners.length, listeners);
+      expect(actions, <String>['event.subscribe']);
+
+      // Empty normalizes to null: the explicit filter is released and the
+      // binding learns the next turn from the stream again.
+      binding.setBoundSessionId('');
+      expect(state.caption.isEmpty, isTrue);
+      client.emitEvent(tokenDelta(sessionId: 's3', delta: 'learned'));
+      expect(state.caption.segments.single.text, 'learned');
+      expect(client.listeners.length, listeners);
+      expect(actions, <String>['event.subscribe']);
+    });
   });
 
   group('stage captions follow the active chat session', () {
@@ -753,10 +848,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
 
       Future<void> tapDestination(String label) async {
-        await tester.tap(find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text(label),
-        ));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(label),
+          ),
+        );
         await tester.pumpAndSettle();
       }
 
@@ -857,7 +954,9 @@ void main() {
 
         Future<void> pumpStage(StageRenderState render) => tester.pumpWidget(
           MaterialApp(
-            home: Scaffold(body: StageScreen(client: client, render: render)),
+            home: Scaffold(
+              body: StageScreen(client: client, render: render),
+            ),
           ),
         );
 
@@ -971,10 +1070,7 @@ class _ShellCaptionClient extends FakeChatClient {
         return RpcReply(
           action: action,
           ok: true,
-          data: <String, dynamic>{
-            'messages': <dynamic>[],
-            'truncated': false,
-          },
+          data: <String, dynamic>{'messages': <dynamic>[], 'truncated': false},
         );
       default:
         return RpcReply(action: action, ok: true, data: <String, dynamic>{});
