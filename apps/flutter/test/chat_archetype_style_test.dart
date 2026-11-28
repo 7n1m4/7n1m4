@@ -212,6 +212,110 @@ void main() {
         BoxShadow(color: Color(0x40A855F7), blurRadius: 15),
       ]);
     });
+
+    testWidgets('paints the archetype bg tint over the opaque card surface', (
+      tester,
+    ) async {
+      // chat_screen.dart wraps this bubble around an opaque
+      // Card(color: AppTheme.surface). A background-only tint is hidden
+      // behind that card, so the tint must also be painted in front of it.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: ArchetypeStyledBubble(
+            archetypeKey: 'sad',
+            isUser: false,
+            child: Card(
+              key: Key('opaque-card'),
+              color: AppTheme.surface,
+              child: Text('assistant text'),
+            ),
+          ),
+        ),
+      );
+
+      final tintFinder = find.byKey(const Key('archetype-bg-tint'));
+      expect(tintFinder, findsOneWidget);
+      final tintBox = tester.widget<DecoratedBox>(tintFinder);
+      // A background-position DecoratedBox paints BEFORE its child, so an
+      // opaque Card would still hide the tint. Foreground paint order is
+      // the acceptance criterion, not just the decoration's presence.
+      expect(tintBox.position, DecorationPosition.foreground);
+      final tint = tintBox.decoration as BoxDecoration;
+      expect(tint.color, const Color(0x153B82F6));
+      expect(tint.border, isNull);
+      expect(tint.boxShadow, isNull);
+
+      // The foreground tint encloses both the opaque card and the
+      // unchanged keyed background decoration.
+      expect(
+        find.descendant(
+          of: tintFinder,
+          matching: find.byKey(const Key('opaque-card')),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: tintFinder,
+          matching: find.byKey(const Key('archetype-styled-bubble')),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('neutral key adds no foreground tint decoration', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: ArchetypeStyledBubble(
+            archetypeKey: null,
+            isUser: false,
+            child: Text('plain'),
+          ),
+        ),
+      );
+
+      final background = find.byKey(const Key('archetype-styled-bubble'));
+      expect(background, findsOneWidget);
+      expect(
+        tester.widget<DecoratedBox>(background).decoration,
+        const BoxDecoration(),
+      );
+      expect(find.byKey(const Key('archetype-bg-tint')), findsNothing);
+      expect(
+        find.ancestor(of: background, matching: find.byType(DecoratedBox)),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'keyed user bubble keeps subtle background with no tint overlay',
+      (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: ArchetypeStyledBubble(
+              archetypeKey: 'happy',
+              isUser: true,
+              child: Text('mine'),
+            ),
+          ),
+        );
+
+        final background = find.byKey(const Key('archetype-styled-bubble'));
+        expect(background, findsOneWidget);
+        expect(
+          tester.widget<DecoratedBox>(background).decoration,
+          BoxDecoration(color: AppTheme.subtle.withValues(alpha: 0.2)),
+        );
+        expect(find.byKey(const Key('archetype-bg-tint')), findsNothing);
+        expect(
+          find.ancestor(of: background, matching: find.byType(DecoratedBox)),
+          findsNothing,
+        );
+      },
+    );
   });
 
   group('ChatScreen assistant archetype wiring', () {

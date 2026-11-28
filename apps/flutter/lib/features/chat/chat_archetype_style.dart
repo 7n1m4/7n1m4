@@ -125,13 +125,27 @@ class ArchetypeStyledBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    final background = DecoratedBox(
       key: const Key('archetype-styled-bubble'),
       decoration: bubbleDecorationFor(
         archetypeKey: archetypeKey,
         isUser: isUser,
       ),
       child: child,
+    );
+
+    final style = styleFor(archetypeKey);
+    if (isUser || style.isNeutral) return background;
+
+    // chat_screen.dart's opaque Card paints over a background-position tint.
+    // NOTICE: foreground paints AFTER the child (RenderDecoratedBox.paint), so
+    // the token lands on the card surface; it also tints the bubble text,
+    // which stays readable at the low ported alpha (0x10-0x20).
+    return DecoratedBox(
+      key: const Key('archetype-bg-tint'),
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(color: _colorFromHex(style.bg)),
+      child: background,
     );
   }
 }
