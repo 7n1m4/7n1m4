@@ -18,6 +18,8 @@ class _RecordingMemoryClient extends FakeChatClient {
       <({String action, Map<String, dynamic>? payload})>[];
   bool remoteSync = false;
   bool searchFails = false;
+  bool echoSearchQuery = false;
+  Duration? searchDelay;
   final List<({String action, Map<String, dynamic>? payload})> deletes =
       <({String action, Map<String, dynamic>? payload})>[];
 
@@ -47,10 +49,7 @@ class _RecordingMemoryClient extends FakeChatClient {
         data: <String, dynamic>{
           'available': true,
           'stats': <String, dynamic>{
-            'memory': <String, dynamic>{
-              'summaries': 1,
-              'journalEntries': 2,
-            },
+            'memory': <String, dynamic>{'summaries': 1, 'journalEntries': 2},
           },
         },
       );
@@ -71,6 +70,23 @@ class _RecordingMemoryClient extends FakeChatClient {
       );
     }
     if (action == 'journal.search') {
+      // Hold the call open so tests can observe the in-flight `_busy` UI.
+      if (searchDelay != null) await Future<void>.delayed(searchDelay!);
+      if (echoSearchQuery) {
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'entries': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'echo',
+                'kind': 'note',
+                'content': 'echo-${payload?['query'] ?? ''}',
+              },
+            ],
+          },
+        );
+      }
       if (searchFails) {
         return RpcReply(
           action: action,
@@ -121,7 +137,9 @@ Future<_RecordingMemoryClient> _pump(tester) async {
   final client = _RecordingMemoryClient();
   addTearDown(client.dispose);
   await tester.pumpWidget(
-    MaterialApp(home: Scaffold(body: MemoryScreen(client: client))),
+    MaterialApp(
+      home: Scaffold(body: MemoryScreen(client: client)),
+    ),
   );
   await tester.pump();
   await tester.pump();
@@ -129,7 +147,11 @@ Future<_RecordingMemoryClient> _pump(tester) async {
 }
 
 Future<void> _scrollTo(tester, Key key) async {
-  await tester.scrollUntilVisible(find.byKey(key), 500.0, scrollable: find.byType(Scrollable).first);
+  await tester.scrollUntilVisible(
+    find.byKey(key),
+    500.0,
+    scrollable: find.byType(Scrollable).first,
+  );
   await tester.pumpAndSettle();
 }
 
@@ -139,20 +161,18 @@ void main() {
   ) async {
     final client = await _pump(tester);
     await _scrollTo(tester, const Key('memory-search'));
-    await tester.enterText(
-      find.byKey(const Key('memory-search')),
-      'milestone',
-    );
+    await tester.enterText(find.byKey(const Key('memory-search')), 'milestone');
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Search'))
         .onPressed!();
     await tester.pump();
     await tester.pump();
 
-    final search = client.calls
-        .where((c) => c.action == 'journal.search')
-        .last;
-    expect(search.payload, <String, dynamic>{'query': 'milestone', 'limit': 50});
+    final search = client.calls.where((c) => c.action == 'journal.search').last;
+    expect(search.payload, <String, dynamic>{
+      'query': 'milestone',
+      'limit': 50,
+    });
   });
 
   testWidgets('kind filter hides entries without changing daemon results', (
@@ -161,7 +181,9 @@ void main() {
     await _pump(tester);
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -600));
     await tester.pumpAndSettle();
-    final dropdown = tester.widget<DropdownButton<String>>(find.byType(DropdownButton<String>));
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.byType(DropdownButton<String>),
+    );
     dropdown.onChanged!('milestone');
     await tester.pump();
 
@@ -177,7 +199,10 @@ void main() {
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Search'))
         .onPressed!();
     await tester.pumpAndSettle();
-    tester.widget<Scrollable>(find.byType(Scrollable).first).controller!.jumpTo(0);
+    tester
+        .widget<Scrollable>(find.byType(Scrollable).first)
+        .controller!
+        .jumpTo(0);
     await tester.pumpAndSettle();
     expect(find.textContaining('search failed'), findsOneWidget);
   });
@@ -213,7 +238,9 @@ void main() {
     tester.widget<IconButton>(summaryDelete).onPressed!();
     await tester.pump();
     await tester.pump();
-    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete')).onPressed!();
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete'))
+        .onPressed!();
     await tester.pump();
     await tester.pump();
 
@@ -224,7 +251,9 @@ void main() {
     tester.widget<IconButton>(entryDelete.first).onPressed!();
     await tester.pump();
     await tester.pump();
-    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete')).onPressed!();
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Delete'))
+        .onPressed!();
     await tester.pump();
     await tester.pump();
 
@@ -291,4 +320,214 @@ void main() {
     expect(client.calls.where((c) => c.action == 'stmm.upsert'), isEmpty);
     expect(find.textContaining('YYYY-MM-DD'), findsWidgets);
   });
+
+  testWidgets(
+    'debounces typing: journal.search fires after the delay without pressing Search',
+    (tester) async {
+      final client = await _pump(tester);
+      await _scrollTo(tester, const Key('memory-search'));
+      await tester.enterText(
+        find.byKey(const Key('memory-search')),
+        'milestone',
+      );
+      // No Search button press: only the trailing debounce can issue this verb.
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final searches = client.calls
+          .where((c) => c.action == 'journal.search')
+          .toList();
+      expect(searches.last.payload, <String, dynamic>{
+        'query': 'milestone',
+        'limit': 50,
+      });
+    },
+  );
+
+  testWidgets(
+    'debounces rapid edits: one journal.search carrying the final query',
+    (tester) async {
+      final client = await _pump(tester);
+      await _scrollTo(tester, const Key('memory-search'));
+      final field = find.byKey(const Key('memory-search'));
+      // Three edits inside the debounce window: each must cancel the pending
+      // timer so only the final query is ever sent to the daemon.
+      await tester.enterText(field, 'mil');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(field, 'mile');
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.enterText(field, 'milestones');
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final searches = client.calls
+          .where(
+            (c) =>
+                c.action == 'journal.search' &&
+                (c.payload?['query'] as String?)?.isNotEmpty == true,
+          )
+          .toList();
+      expect(searches, hasLength(1));
+      expect(searches.single.payload, <String, dynamic>{
+        'query': 'milestones',
+        'limit': 50,
+      });
+    },
+  );
+
+  testWidgets(
+    'dispose before the debounce fires issues no new journal.search',
+    (tester) async {
+      final client = await _pump(tester);
+      await _scrollTo(tester, const Key('memory-search'));
+      await tester.enterText(
+        find.byKey(const Key('memory-search')),
+        'milestone',
+      );
+      final before = client.calls
+          .where((c) => c.action == 'journal.search')
+          .length;
+
+      // Replace the tree before 300ms elapses; dispose() must cancel the timer.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final after = client.calls
+          .where((c) => c.action == 'journal.search')
+          .length;
+      expect(after, before);
+      expect(find.byKey(const Key('memory-search')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'explicit Search mid-debounce issues exactly one journal.search',
+    (tester) async {
+      final client = await _pump(tester);
+      await _scrollTo(tester, const Key('memory-search'));
+      await tester.enterText(
+        find.byKey(const Key('memory-search')),
+        'milestone',
+      );
+      // The button supersedes the pending timer instead of duplicating it.
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Search'))
+          .onPressed!();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final searches = client.calls
+          .where(
+            (c) =>
+                c.action == 'journal.search' &&
+                (c.payload?['query'] as String?)?.isNotEmpty == true,
+          )
+          .toList();
+      expect(searches, hasLength(1));
+      expect(searches.single.payload, <String, dynamic>{
+        'query': 'milestone',
+        'limit': 50,
+      });
+    },
+  );
+
+  testWidgets('debounced search keeps the search field mounted while busy', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    client.searchDelay = const Duration(seconds: 2);
+    await _scrollTo(tester, const Key('memory-search'));
+    final field = find.byKey(const Key('memory-search'));
+    await tester.enterText(field, 'mil');
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // The debounced call is in flight (_busy == true). The field must stay
+    // mounted and keep its typed text instead of being replaced by a spinner.
+    expect(field, findsOneWidget);
+    expect(tester.widget<TextField>(field).controller!.text, 'mil');
+    // The button is disabled while the debounced call is in flight; the
+    // spinner itself lives at the top of a lazily built ListView, so check
+    // busy via a control next to the field instead.
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Search'))
+          .onPressed,
+      isNull,
+    );
+
+    // Drain the in-flight response so no async work leaks into other tests.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+  });
+
+  testWidgets('failed debounced search clears busy and re-enables Search', (
+    tester,
+  ) async {
+    final client = await _pump(tester);
+    client.searchFails = true;
+    await _scrollTo(tester, const Key('memory-search'));
+    await tester.enterText(find.byKey(const Key('memory-search')), 'x');
+    await tester.pump(const Duration(milliseconds: 350));
+    // Let the failed reply's setState flush into a frame.
+    await tester.pump();
+
+    // Busy cleared: the control next to the field is enabled again.
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Search'))
+          .onPressed,
+      isNotNull,
+    );
+
+    // Bring the error row and inline spinner slot (top of the lazily built
+    // ListView) back into the viewport before asserting on them.
+    tester
+        .widget<Scrollable>(find.byType(Scrollable).first)
+        .controller!
+        .jumpTo(0);
+    await tester.pump();
+    expect(find.textContaining('search failed'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets(
+    'a debounce during an in-flight search replays the latest query',
+    (tester) async {
+      final client = await _pump(tester);
+      client.searchDelay = const Duration(seconds: 2);
+      client.echoSearchQuery = true;
+      await _scrollTo(tester, const Key('memory-search'));
+      final field = find.byKey(const Key('memory-search'));
+      int searches() =>
+          client.calls.where((c) => c.action == 'journal.search').length;
+
+      await tester.enterText(field, 'mil');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(searches(), 2); // initial load + first debounced search
+
+      // A second edit lands while the first search is still in flight.
+      await tester.enterText(field, 'milestones');
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(searches(), 2); // not dropped, but not duplicated either
+
+      // First call completes; the pending replay must start a second search.
+      await tester.pump(const Duration(seconds: 2));
+      final allSearches = client.calls
+          .where((c) => c.action == 'journal.search')
+          .toList();
+      expect(allSearches, hasLength(3));
+      expect(allSearches.last.payload, <String, dynamic>{
+        'query': 'milestones',
+        'limit': 50,
+      });
+
+      // Let the replayed call finish and prove the UI shows its result.
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.text('echo-milestones'),
+        500.0,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('echo-milestones'), findsOneWidget);
+    },
+  );
 }
