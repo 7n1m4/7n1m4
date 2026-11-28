@@ -108,6 +108,8 @@ dbus = "0.9"
 
 # Testing
 tempfile = "3"
+# Scrub transient secret-bearing scratch buffers during provider fingerprinting
+zeroize = { version = "1", features = [ "alloc" ] }
 
 # Discord gateway WebSocket (user decision 2026-11-11)
 tungstenite = { version = "0.24", features = [ "rustls-tls-webpki-roots" ] }

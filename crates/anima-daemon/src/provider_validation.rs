@@ -28,6 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anima_channel::provider::ProviderValidationHash;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 use crate::core::CoreService;
 
@@ -69,39 +70,41 @@ pub struct ProviderValidationState {
 /// Canonical, length-delimited encoding of a JSON value. Deterministic key
 /// order, u8 type tags, u64 LE byte lengths and entry counts mean unrelated
 /// snapshots cannot collide by concatenation. Credential `str` bytes go
-/// straight into the SHA-256 state — never into a serialized value or a log.
+/// straight into the SHA-256 state — never into a serialized value or a log;
+/// the only owned scratch buffer (a numeric scalar's decimal text) is wrapped
+/// in [`Zeroizing`] so it is scrubbed on drop, including on early exit/unwind.
 fn hash_value<D: Digest>(value: &serde_json::Value, hasher: &mut D) {
     match value {
-        serde_json::Value::Null => hasher.update(&[0]),
+        serde_json::Value::Null => hasher.update([0]),
         serde_json::Value::Bool(bool_value) => {
-            hasher.update(&[1]);
-            hasher.update(&[u8::from(*bool_value)]);
+            hasher.update([1]);
+            hasher.update([u8::from(*bool_value)]);
         }
         serde_json::Value::Number(number) => {
-            hasher.update(&[2]);
-            let text = number.to_string();
-            hasher.update(&(text.len() as u64).to_le_bytes());
+            hasher.update([2]);
+            let text = Zeroizing::new(number.to_string());
+            hasher.update((text.len() as u64).to_le_bytes());
             hasher.update(text.as_bytes());
         }
         serde_json::Value::String(string) => {
-            hasher.update(&[3]);
-            hasher.update(&(string.len() as u64).to_le_bytes());
+            hasher.update([3]);
+            hasher.update((string.len() as u64).to_le_bytes());
             hasher.update(string.as_bytes());
         }
         serde_json::Value::Array(items) => {
-            hasher.update(&[4]);
-            hasher.update(&(items.len() as u64).to_le_bytes());
+            hasher.update([4]);
+            hasher.update((items.len() as u64).to_le_bytes());
             for item in items {
                 hash_value(item, hasher);
             }
         }
         serde_json::Value::Object(map) => {
-            hasher.update(&[5]);
+            hasher.update([5]);
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort_unstable();
-            hasher.update(&(keys.len() as u64).to_le_bytes());
+            hasher.update((keys.len() as u64).to_le_bytes());
             for key in keys {
-                hasher.update(&(key.len() as u64).to_le_bytes());
+                hasher.update((key.len() as u64).to_le_bytes());
                 hasher.update(key.as_bytes());
                 hash_value(&map[key], hasher);
             }
@@ -327,6 +330,208 @@ mod tests {
     use super::HASH_ALGORITHM;
     use super::SETTINGS_KEY;
 
+    // ---- Bypass matrix: transient-secret zeroization (bead airi-gx7u) ----
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    use zeroize::Zeroize;
+    use zeroize::Zeroizing;
+
+    /// Drop-time canary: `zeroize()` flips a shared flag. Wrapped in
+    /// `Zeroizing`, this proves the scrub actually runs on normal exit, early
+    /// exit and unwind — not merely that a guarded type exists in scope.
+    struct ZeroizeCanary(Arc<AtomicBool>);
+
+    impl Zeroize for ZeroizeCanary {
+        fn zeroize(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn source() -> &'static str {
+        include_str!("provider_validation.rs")
+    }
+
+    /// Slice one `match` arm of `hash_value`, bounded by the next arm. Both
+    /// qualified and bare paths work, and the bound keeps guard literals in
+    /// this test module out of the inspected region.
+    fn arm_region(kind: &str, next_kind: &str) -> &'static str {
+        let src = source();
+        let qualified = format!("serde_json::Value::{kind}");
+        let bare = format!("Value::{kind}");
+        let start = src
+            .find(&qualified)
+            .or_else(|| src.find(&bare))
+            .expect("match arm present in source");
+        let next_qualified = format!("serde_json::Value::{next_kind}");
+        let next_bare = format!("Value::{next_kind}");
+        let end = src
+            .find(&next_qualified)
+            .or_else(|| src.find(&next_bare))
+            .filter(|pos| *pos > start)
+            .expect("following match arm present in source");
+        &src[start..end]
+    }
+
+    /// Drop comments so a dead comment cannot satisfy a source guard.
+    fn code_only(region: &str) -> String {
+        let mut cleaned = String::with_capacity(region.len());
+        let mut in_block = false;
+        for line in region.lines() {
+            let mut kept = String::new();
+            let mut chars = line.chars().peekable();
+            while let Some(ch) = chars.next() {
+                if in_block {
+                    if ch == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        in_block = false;
+                    }
+                    continue;
+                }
+                if ch == '/' && chars.peek() == Some(&'/') {
+                    break;
+                }
+                if ch == '/' && chars.peek() == Some(&'*') {
+                    chars.next();
+                    in_block = true;
+                    continue;
+                }
+                kept.push(ch);
+            }
+            cleaned.push_str(&kept);
+            cleaned.push('\n');
+        }
+        cleaned
+    }
+
+    /// Static guard: the Number arm must wrap its decimal scratch. Both
+    /// equivalent constructor forms are accepted; the literals are split with
+    /// `concat!` and the inspected region is comment-stripped, so a dead
+    /// comment cannot satisfy this.
+    fn number_scratch_is_zeroizing() -> bool {
+        let arm = code_only(arm_region("Number(number)", "String(string)"));
+        let new_form = concat!("Zeroizing::new(", "number.to_string())");
+        let from_form = concat!("Zeroizing::from(", "number.to_string())");
+        arm.contains(new_form) || arm.contains(from_form)
+    }
+
+    /// Static guard: the `Value::String` arm must hash borrowed bytes only.
+    fn string_arm_copies_to_owned() -> bool {
+        let arm = code_only(arm_region("String(string)", "Array(items)"));
+        const OWNED_COPY_IDIOMS: [&str; 9] = [
+            "to_string",
+            "to_owned",
+            "String::from",
+            "format!(",
+            ".into()",
+            "from_utf8",
+            "to_string_lossy",
+            "into_owned",
+            "to_vec",
+        ];
+        OWNED_COPY_IDIOMS.iter().any(|idiom| arm.contains(*idiom))
+    }
+
+    /// B1 — a numeric scalar (rendered to decimal text) goes through a
+    /// `Zeroizing` scratch buffer, and its digest is still byte-exact.
+    #[test]
+    fn bypass_b1_numeric_scalar_scratch_is_zeroized() {
+        assert!(
+            number_scratch_is_zeroizing(),
+            "numeric scratch must be Zeroizing-wrapped"
+        );
+        let config = serde_json::json!({ "apiKey": 9876543210123456789u64 });
+        let hash = config_hash(&config);
+        assert_eq!(hash.value.len(), 64);
+        assert_eq!(hash.value, config_hash(&config).value);
+        let changed = serde_json::json!({ "apiKey": 9876543210123456788u64 });
+        assert_ne!(hash.value, config_hash(&changed).value);
+        assert!(!hash.value.contains("9876543210123456789"));
+    }
+
+    /// B2 — recursion into depth >= 3 still wraps every numeric scratch.
+    #[test]
+    fn bypass_b2_nested_config_depth_three_scratch_is_zeroized() {
+        assert!(number_scratch_is_zeroizing());
+        let deep = serde_json::json!({
+            "level1": { "level2": { "level3": { "apiKeyNumber": 4242424242u64 } } }
+        });
+        let hash = config_hash(&deep);
+        assert_eq!(hash.value.len(), 64);
+        let mut changed = deep.clone();
+        changed["level1"]["level2"]["level3"]["apiKeyNumber"] = serde_json::json!(4242424243u64);
+        assert_ne!(hash.value, config_hash(&changed).value);
+    }
+
+    /// B3 — an early exit before any digest work still runs the scrubber.
+    #[test]
+    fn bypass_b3_early_exit_still_zeroizes_scratch() {
+        let flag = Arc::new(AtomicBool::new(false));
+        'before_hash: {
+            let _scratch = Zeroizing::new(ZeroizeCanary(flag.clone()));
+            break 'before_hash;
+        }
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "early exit must run the zeroize destructor"
+        );
+        assert!(number_scratch_is_zeroizing());
+    }
+
+    /// B4 — a panic after the scratch was filled still runs the scrubber.
+    #[test]
+    fn bypass_b4_panic_unwind_after_scratch_fill_zeroizes() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let captured = flag.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut scratch = Zeroizing::new(String::from("sk-transient-secret"));
+            scratch.push_str("-tail");
+            let _canary = Zeroizing::new(ZeroizeCanary(captured));
+            panic!("simulated panic after scratch fill");
+        }));
+        assert!(result.is_err(), "panic must be caught");
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "unwind must run the zeroize destructor"
+        );
+        assert!(number_scratch_is_zeroizing());
+    }
+
+    /// B5 — mixed secret/clean fields in any order hash identically; the
+    /// numeric path stays wrapped regardless of position in the object.
+    #[test]
+    fn bypass_b5_mixed_secret_clean_ordering_is_zeroized() {
+        assert!(number_scratch_is_zeroizing());
+        let a = serde_json::json!({
+            "clean": "public", "apiKey": "sk-secret", "retries": 3u64,
+            "nested": { "token": "tok-secret", "timeout": 30u64 }
+        });
+        let b = serde_json::json!({
+            "nested": { "timeout": 30u64, "token": "tok-secret" },
+            "retries": 3u64, "apiKey": "sk-secret", "clean": "public"
+        });
+        assert_eq!(config_hash(&a), config_hash(&b));
+        let changed = serde_json::json!({
+            "clean": "public", "apiKey": "sk-secret", "retries": 4u64,
+            "nested": { "token": "tok-secret", "timeout": 30u64 }
+        });
+        assert_ne!(config_hash(&a), config_hash(&changed));
+    }
+
+    /// B6 — a string-valued credential is hashed straight from borrowed
+    /// bytes; no owned plain `String` copy is ever made for it.
+    #[test]
+    fn bypass_b6_string_credential_never_copied_into_owned_buffer() {
+        assert!(
+            !string_arm_copies_to_owned(),
+            "string credentials must be hashed from the borrowed &str"
+        );
+        let config = serde_json::json!({ "apiKey": "sk-do-not-copy-me" });
+        let hash = config_hash(&config);
+        assert_eq!(hash.value.len(), 64);
+        assert!(!hash.value.contains("sk-do-not-copy-me"));
+    }
+
     fn core_at(dir: &tempfile::TempDir) -> CoreService {
         CoreService::open(Some(dir.path().to_path_buf()))
     }
@@ -537,17 +742,13 @@ mod tests {
 
         record_validation(&core, "openai:primary", &config, true, true, false).unwrap();
         record_validation(&core, "ollama:local", &config, false, false, true).unwrap();
-        assert_eq!(
+        assert!(
             state(&core, "openai:primary")
                 .unwrap()
                 .unwrap()
-                .is_configured,
-            true
+                .is_configured
         );
-        assert_eq!(
-            state(&core, "ollama:local").unwrap().unwrap().is_configured,
-            false
-        );
+        assert!(!state(&core, "ollama:local").unwrap().unwrap().is_configured);
 
         // A later write for one instance is a read-modify-write of the raw blob:
         // the sibling instance survives and the same slot is replaced, not appended.

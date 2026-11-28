@@ -20,7 +20,11 @@ dbus = { workspace = true }
 dirs = { workspace = true }
 serde = { workspace = true, features = [ "derive" ] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
+# sha2 0.11's `zeroize` feature propagates through digest 0.11 to
+# block-buffer 0.12, whose Drop only scrubs buffered credential bytes when
+# that feature is on. Workspace 0.10 has no such scrubbing; keep it untouched.
+sha2 = { version = "0.11", features = [ "zeroize" ] }
+zeroize = { workspace = true }
 anima-a11y = { path = "../anima-a11y" }
 anima-acp = { path = "../anima-acp" }
 anima-channel = { path = "../anima-channel" }
