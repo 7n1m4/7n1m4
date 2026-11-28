@@ -43,25 +43,22 @@ const docChecks = [
   {
     file: 'docs/rosetta-stone.md',
     include: [
-      '(line 845) registers **56** `renderer.*` RPC handler insertions',
-      '`m.insert` at 900-2853; 57 distinct registered action names = 55 literals plus the dynamic `mcp.tools_call`/`mcp.call_tool` loop',
-      'src/dispatch.rs:310-317',
+      'registers **56** `renderer.*` RPC handler insertions',
+      '57 distinct registered action names = 55 literals plus the dynamic `mcp.tools_call`/`mcp.call_tool` loop',
+      'separately registers **6** built-ins',
     ],
-    exclude: ['(line 818)', 'registers **53**', 'at 873-2785', 'dispatch.rs:299-304'],
+    exclude: ['registers **53**'],
   },
   {
     file: 'docs/design-daemon-gateway.md',
     include: [
-      '`crates/anima-daemon/src/gateway.rs:845`) registers **56** RPC handler insertions',
-      '`m.insert` at lines 900-2853;',
+      'registers **56** RPC handler insertions',
       'The feature set is 57 distinct action names:',
       '8 `mcp.*` names and 4 `acp.*` names.',
       'are separate from the 56 insertions.',
     ],
     exclude: [
-      'gateway.rs:688-2122',
       'registers **47** RPC handler insertions',
-      'lines 797-2540',
       '45 distinct action names',
       '4 `mcp.*` names',
       'separate from the 42 insertions',
@@ -87,6 +84,26 @@ const docChecks = [
     exclude: ['the registry is now 42 `m.insert` insertions (40 distinct verbs)'],
   },
 ]
+
+// Line numbers and ranges in source shift on any unrelated import or cargo fmt
+// wrap. Doc checks must pin semantic counts and symbol names, not offsets.
+test('doc checks carry no volatile Rust line numbers or ranges', () => {
+  const volatile = /\(line \d+\)|:\d{2,}\b|\b\d+-\d+\b/
+  for (const { file, include, exclude } of docChecks) {
+    for (const snippet of [...include, ...exclude]) {
+      assert.ok(!volatile.test(snippet), `${file}: volatile line anchor in doc check: ${snippet}`)
+    }
+  }
+})
+
+const channelDispatch = read('crates/anima-channel/src/dispatch.rs')
+test('code anchors resolve to stable Rust symbols', () => {
+  assert.ok(gateway.includes('pub(crate) fn renderer_handlers('), 'gateway.rs lost renderer_handlers symbol')
+  assert.ok(channelDispatch.includes('pub const METHODS: &\'static [&\'static str] = &['), 'dispatch.rs lost METHODS symbol')
+  for (const verb of ['runtime.ping', 'runtime.status', 'gateway.config', 'gateway.auth', 'event.subscribe', 'event.unsubscribe']) {
+    assert.ok(channelDispatch.includes(`"${verb}"`), `dispatch.rs lost built-in verb ${verb}`)
+  }
+})
 
 for (const { file, include, exclude } of docChecks) {
   test(`${file} states the current ${insertSites} insertions / ${totalVerbs} verbs`, () => {
