@@ -17,12 +17,10 @@ import 'support/fakes.dart';
 class _RecordingProviderClient extends FakeChatClient {
   final List<({String action, Map<String, dynamic>? payload})> calls =
       <({String action, Map<String, dynamic>? payload})>[];
-  RpcReply Function(String action, Map<String, dynamic>? payload) handler =
-      (action, payload) => RpcReply(
-            action: action,
-            ok: true,
-            data: <String, dynamic>{},
-          );
+  RpcReply Function(String action, Map<String, dynamic>? payload) handler = (
+    action,
+    payload,
+  ) => RpcReply(action: action, ok: true, data: <String, dynamic>{});
 
   @override
   Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
@@ -34,19 +32,19 @@ class _RecordingProviderClient extends FakeChatClient {
 RpcReply _ok(String action, Object? data) =>
     RpcReply(action: action, ok: true, data: data);
 RpcReply _err(String action, String message) => RpcReply(
-      action: action,
-      ok: false,
-      error: RpcError(code: 'rpc_bad_payload', message: message),
-    );
+  action: action,
+  ok: false,
+  error: RpcError(code: 'rpc_bad_payload', message: message),
+);
 
 Map<String, dynamic> _seededProvider() => <String, dynamic>{
-      'id': 'p-openai',
-      'kind': 'open-ai-compatible',
-      'model': 'gpt',
-      'baseUrl': 'https://api.openai.com/v1',
-      'enabled': true,
-      'updatedAt': 1,
-    };
+  'id': 'p-openai',
+  'kind': 'open-ai-compatible',
+  'model': 'gpt',
+  'baseUrl': 'https://api.openai.com/v1',
+  'enabled': true,
+  'updatedAt': 1,
+};
 
 Future<_RecordingProviderClient> _pump(
   tester, {
@@ -70,7 +68,10 @@ Future<_RecordingProviderClient> _pump(
     return _ok(action, <String, dynamic>{'ok': true, 'id': 'p1'});
   };
   await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: ProvidersScreen(client: client))));
+    MaterialApp(
+      home: Scaffold(body: ProvidersScreen(client: client)),
+    ),
+  );
   await tester.pumpAndSettle();
   return client;
 }
@@ -85,34 +86,46 @@ Future<void> selectKind(WidgetTester tester, String value) async {
   await tester.tap(find.text(value).last);
   await tester.pumpAndSettle();
 }
+
 /// The screen renders one ListView: rows below the fold are only built once
 /// scrolled into view, so scroll until the target exists (as a user would).
-Future<void> reveal(WidgetTester tester, Finder finder,
-    {Offset dragOffset = const Offset(0, -400)}) async {
+Future<void> reveal(
+  WidgetTester tester,
+  Finder finder, {
+  Offset dragOffset = const Offset(0, -400),
+}) async {
   final scroll = find.byType(Scrollable).first;
   for (var i = 0; i < 40 && finder.evaluate().isEmpty; i++) {
     await tester.drag(scroll, dragOffset);
     await tester.pumpAndSettle();
   }
 }
+
 /// Status and error banners live at the top of the ListView; after the form
 /// has been scrolled they are built but off-stage, so scroll back to them.
 Future<void> revealStatus(WidgetTester tester, Finder finder) =>
     reveal(tester, finder, dragOffset: const Offset(0, 400));
 
 void main() {
-  testWidgets('save writes through providers.save and refreshes the list',
-      (tester) async {
+  testWidgets('save writes through providers.save and refreshes the list', (
+    tester,
+  ) async {
     final client = await _pump(tester);
 
     await tester.enterText(
-        find.widgetWithText(TextField, 'Provider ID'), 'p-new');
+      find.widgetWithText(TextField, 'Provider ID'),
+      'p-new',
+    );
     await selectKind(tester, 'anthropic');
     await tester.enterText(find.widgetWithText(TextField, 'Model'), 'qwen');
     await tester.enterText(
-        find.widgetWithText(TextField, 'Base URL'), 'http://localhost:11434/v1');
+      find.widgetWithText(TextField, 'Base URL'),
+      'http://localhost:11434/v1',
+    );
     await tester.enterText(
-        find.widgetWithText(TextField, 'API key (write-only)'), 'TOP-SECRET');
+      find.widgetWithText(TextField, 'API key (write-only)'),
+      'TOP-SECRET',
+    );
     tester
         .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
         .onPressed!();
@@ -144,8 +157,9 @@ void main() {
     expect(find.textContaining('TOP-SECRET'), findsNothing);
   });
 
-  testWidgets('save validates the provider id before calling the daemon',
-      (tester) async {
+  testWidgets('save validates the provider id before calling the daemon', (
+    tester,
+  ) async {
     final client = await _pump(tester);
 
     tester
@@ -158,15 +172,20 @@ void main() {
     expect(find.text('Provider id and kind are required.'), findsOneWidget);
   });
 
-  testWidgets('save RPC failure shows a sanitized error, no success status',
-      (tester) async {
+  testWidgets('save RPC failure shows a sanitized error, no success status', (
+    tester,
+  ) async {
     final client = await _pump(tester);
     client.handler = (action, _) {
       if (action == 'providers.list') {
-        return _ok(
-            action, <String, dynamic>{'providers': <Map<String, dynamic>>[]});
+        return _ok(action, <String, dynamic>{
+          'providers': <Map<String, dynamic>>[],
+        });
       }
-      return _err(action, 'failed to POST https://api.openai.com/v1 (key sk-LEAKED)');
+      return _err(
+        action,
+        'failed to POST https://api.openai.com/v1 (key sk-LEAKED)',
+      );
     };
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
@@ -184,11 +203,13 @@ void main() {
     expect(find.textContaining('Saved provider'), findsNothing);
   });
 
-  testWidgets('delete writes through providers.delete and refreshes the list',
-      (tester) async {
-    final client = await _pump(tester, providers: <Map<String, dynamic>>[
-      _seededProvider(),
-    ]);
+  testWidgets('delete writes through providers.delete and refreshes the list', (
+    tester,
+  ) async {
+    final client = await _pump(
+      tester,
+      providers: <Map<String, dynamic>>[_seededProvider()],
+    );
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
     tester
@@ -203,15 +224,20 @@ void main() {
     expect(find.text('Deleted provider p1'), findsOneWidget);
   });
 
-  testWidgets('delete RPC failure shows a sanitized error, no success status',
-      (tester) async {
+  testWidgets('delete RPC failure shows a sanitized error, no success status', (
+    tester,
+  ) async {
     final client = await _pump(tester);
     client.handler = (action, _) {
       if (action == 'providers.list') {
-        return _ok(
-            action, <String, dynamic>{'providers': <Map<String, dynamic>>[]});
+        return _ok(action, <String, dynamic>{
+          'providers': <Map<String, dynamic>>[],
+        });
       }
-      return _err(action, 'failed to POST https://api.openai.com/v1 (key sk-LEAKED)');
+      return _err(
+        action,
+        'failed to POST https://api.openai.com/v1 (key sk-LEAKED)',
+      );
     };
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
@@ -220,25 +246,28 @@ void main() {
         .onPressed!();
     await tester.pumpAndSettle();
 
-    expect(find.text('The daemon could not complete the request.'), findsOneWidget);
+    expect(
+      find.text('The daemon could not complete the request.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('sk-LEAKED'), findsNothing);
     expect(find.textContaining('https://api.openai.com'), findsNothing);
     expect(find.textContaining('Deleted provider'), findsNothing);
   });
 
   testWidgets('models RPC failure shows a sanitized error', (tester) async {
-    final client = await _pump(tester, providers: <Map<String, dynamic>>[
-      _seededProvider(),
-    ]);
+    final client = await _pump(
+      tester,
+      providers: <Map<String, dynamic>>[_seededProvider()],
+    );
     client.handler = (action, _) {
       if (action == 'providers.models') {
         return _err(action, 'failed /etc/anima/config.toml key sk-LEAKED');
       }
       if (action == 'providers.list') {
-        return _ok(
-            action, <String, dynamic>{'providers': <Map<String, dynamic>>[
-          _seededProvider(),
-        ]});
+        return _ok(action, <String, dynamic>{
+          'providers': <Map<String, dynamic>>[_seededProvider()],
+        });
       }
       return _ok(action, <String, dynamic>{'ok': true});
     };
@@ -257,11 +286,13 @@ void main() {
     expect(find.textContaining('/etc/anima'), findsNothing);
   });
 
-  testWidgets('enable toggle saves a partial update without credentials',
-      (tester) async {
-    final client = await _pump(tester, providers: <Map<String, dynamic>>[
-      _seededProvider(),
-    ]);
+  testWidgets('enable toggle saves a partial update without credentials', (
+    tester,
+  ) async {
+    final client = await _pump(
+      tester,
+      providers: <Map<String, dynamic>>[_seededProvider()],
+    );
 
     final disableButton = find.widgetWithText(TextButton, 'Disable');
     await reveal(tester, disableButton);
@@ -279,32 +310,40 @@ void main() {
       'kind': 'open-ai-compatible',
       'enabled': false,
     });
-    expect(saveCall.payload!.containsKey('rotateSecrets'), isFalse,
-        reason: 'a toggle must not rotate a managed credential');
+    expect(
+      saveCall.payload!.containsKey('rotateSecrets'),
+      isFalse,
+      reason: 'a toggle must not rotate a managed credential',
+    );
     final status = find.text('Disabled provider p-openai');
     await reveal(tester, status, dragOffset: const Offset(0, 400));
     expect(status, findsOneWidget);
   });
 
-  testWidgets('renders exactly the metadata the daemon supplies',
-      (tester) async {
+  testWidgets('renders exactly the metadata the daemon supplies', (
+    tester,
+  ) async {
     // The daemon's list reply is the only source of tile text: the screen
     // projects id/kind/model/baseUrl/enabled and invents no status, health,
     // or validation field of its own. Extra keys in the reply are ignored
     // rather than decoded into a claim the daemon never made.
-    await _pump(tester, providers: <Map<String, dynamic>>[
-      <String, dynamic>{
-        ..._seededProvider(),
-        'validation': <String, dynamic>{
-          'state': 'invalid',
-          'message': 'bad key',
+    await _pump(
+      tester,
+      providers: <Map<String, dynamic>>[
+        <String, dynamic>{
+          ..._seededProvider(),
+          'validation': <String, dynamic>{
+            'state': 'invalid',
+            'message': 'bad key',
+          },
+          'isValid': true,
         },
-        'isValid': true,
-      },
-    ]);
+      ],
+    );
 
     final metadata = find.text(
-        'open-ai-compatible · gpt · https://api.openai.com/v1 · enabled');
+      'open-ai-compatible · gpt · https://api.openai.com/v1 · enabled',
+    );
     await reveal(tester, metadata);
     expect(metadata, findsOneWidget);
     expect(find.textContaining('invalid'), findsNothing);
@@ -323,33 +362,90 @@ void main() {
     await reveal(tester, savedStatus, dragOffset: const Offset(0, 400));
     expect(savedStatus, findsOneWidget);
     expect(find.textContaining('invalid'), findsNothing);
+
+    // Re-pump the same daemon row with no validation/isValid keys at all.
+    // The unmount is required so a fresh State reissues providers.list; a
+    // plain re-pump would reuse the old State and keep the previously supplied
+    // verdict fields. The tile must still project the same metadata, and the
+    // screen must not invent a validation verdict when none was supplied.
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox.shrink())),
+    );
+    await _pump(tester, providers: <Map<String, dynamic>>[_seededProvider()]);
+
+    final bareMetadata = find.text(
+      'open-ai-compatible · gpt · https://api.openai.com/v1 · enabled',
+    );
+    await reveal(tester, bareMetadata);
+    expect(bareMetadata, findsOneWidget);
+    const verdicts = <String>[
+      'invalid',
+      'bad key',
+      'valid',
+      'validated',
+      'unvalidated',
+    ];
+    for (final verdict in verdicts) {
+      expect(
+        find.textContaining(verdict),
+        findsNothing,
+        reason: 'screen invented validation verdict "$verdict" on the tile',
+      );
+    }
+
+    // The same absence of an invented verdict must hold after a save.
+    await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p1');
+    await selectKind(tester, 'google-gemini');
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+        .onPressed!();
+    await tester.pumpAndSettle();
+
+    final bareSavedStatus = find.text('Saved provider p1');
+    await reveal(tester, bareSavedStatus, dragOffset: const Offset(0, 400));
+    expect(bareSavedStatus, findsOneWidget);
+    for (final verdict in verdicts) {
+      expect(
+        find.textContaining(verdict),
+        findsNothing,
+        reason: 'screen invented validation verdict "$verdict" after Save',
+      );
+    }
   });
 
   testWidgets('provider tiles never render secret material', (tester) async {
-    final client = await _pump(tester, providers: <Map<String, dynamic>>[
-      <String, dynamic>{
-        ..._seededProvider(),
-        // Even if a buggy daemon echoes a secret, the screen projects only
-        // allowlisted metadata and never sends it on a subsequent RPC.
-        'apiKey': 'sk-LEAKED',
-      },
-    ]);
+    final client = await _pump(
+      tester,
+      providers: <Map<String, dynamic>>[
+        <String, dynamic>{
+          ..._seededProvider(),
+          // Even if a buggy daemon echoes a secret, the screen projects only
+          // allowlisted metadata and never sends it on a subsequent RPC.
+          'apiKey': 'sk-LEAKED',
+        },
+      ],
+    );
 
     expect(find.textContaining('sk-'), findsNothing);
     expect(
-      client.calls
-          .every((c) => c.action != 'providers.list' || c.payload == null),
+      client.calls.every(
+        (c) => c.action != 'providers.list' || c.payload == null,
+      ),
       isTrue,
     );
     expect(
-      client.calls.where((c) => c.action != 'providers.list').every(
+      client.calls
+          .where((c) => c.action != 'providers.list')
+          .every(
             (c) => !(c.payload?.toString().contains('sk-LEAKED') ?? false),
           ),
       isTrue,
     );
   });
 
-  testWidgets('save without an API key omits the rotation opt-in', (tester) async {
+  testWidgets('save without an API key omits the rotation opt-in', (
+    tester,
+  ) async {
     final client = await _pump(tester);
 
     await tester.enterText(find.widgetWithText(TextField, 'Provider ID'), 'p2');
@@ -372,10 +468,14 @@ void main() {
     expect(saveCall.payload!.containsKey('rotateSecrets'), isFalse);
   });
 
-  testWidgets('only daemon-supported provider kinds can be selected', (tester) async {
+  testWidgets('only daemon-supported provider kinds can be selected', (
+    tester,
+  ) async {
     final client = await _pump(tester);
 
-    await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Kind'));
+    await tester.tap(
+      find.widgetWithText(DropdownButtonFormField<String>, 'Kind'),
+    );
     await tester.pumpAndSettle();
     for (final label in <String>[
       'open-ai-compatible',
@@ -403,8 +503,9 @@ void main() {
     expect(saveCall.payload!['kind'], 'aws-bedrock');
   });
 
-  testWidgets('save does not report success when model validation fails',
-      (tester) async {
+  testWidgets('save does not report success when model validation fails', (
+    tester,
+  ) async {
     final client = await _pump(tester, providers: <Map<String, dynamic>>[]);
     client.handler = (action, payload) {
       if (action == 'providers.save')
@@ -416,10 +517,16 @@ void main() {
       return _ok(action, <String, dynamic>{});
     };
     await tester.enterText(
-        find.widgetWithText(TextField, 'Provider ID'), 'p-invalid');
+      find.widgetWithText(TextField, 'Provider ID'),
+      'p-invalid',
+    );
     await selectKind(tester, 'anthropic');
-    await tester.enterText(find.widgetWithText(TextField, 'Model'), 'bad-model');
-    tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Model'),
+      'bad-model',
+    );
+    tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
         .onPressed!();
     await tester.pumpAndSettle();
 
@@ -429,7 +536,9 @@ void main() {
       reason: 'the saved provider must be checked before claiming success',
     );
     expect(find.textContaining('Saved provider'), findsNothing);
-    final error = find.textContaining('The daemon could not complete the request.');
+    final error = find.textContaining(
+      'The daemon could not complete the request.',
+    );
     await revealStatus(tester, error);
     expect(error, findsWidgets);
   });
