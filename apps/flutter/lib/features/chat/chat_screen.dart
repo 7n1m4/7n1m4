@@ -50,6 +50,10 @@ class ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _sessions = const <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _cards = const <Map<String, dynamic>>[];
   String? _selectedCardId;
+
+  /// Explicit persona key from the active card's `airi.rwkv.archetype`.
+  /// Null (or unknown) means fail-closed neutral — never sniff message text.
+  String? _cardArchetypeKey;
   bool _sessionPanelOpen = false;
   String? _contextError;
   ({String id, bool liked, bool bookmarked})? _cardMetadata;
@@ -72,6 +76,7 @@ class ChatScreenState extends State<ChatScreen> {
   StreamSubscription<DaemonStatus>? _statusSub;
   void Function()? _unsubscribeEvent;
   int _contextReadGeneration = 0;
+  int _archetypeReadGeneration = 0;
   int _historyReadGeneration = 0;
   int _metadataReadGeneration = 0;
   bool _wasConnected = false;
@@ -741,6 +746,7 @@ class ChatScreenState extends State<ChatScreen> {
         _metadataBusy = false;
       });
       unawaited(_loadCardMetadata(_selectedCardId));
+      unawaited(_loadCardArchetypeKey(_selectedCardId));
     } on Object catch (e) {
       if (!mounted || generation != _contextReadGeneration) return;
       setState(
@@ -749,6 +755,44 @@ class ChatScreenState extends State<ChatScreen> {
             : 'Could not load chat context: $e',
       );
     }
+  }
+
+  /// Read the active card's explicit persona key via `cards.get`. The key is
+  /// cleared before every read, so a card switch or a failed read can never
+  /// leave a previous card's decoration on a new bubble (fail-closed).
+  Future<void> _loadCardArchetypeKey(String? id) async {
+    final generation = ++_archetypeReadGeneration;
+    if (mounted && generation == _archetypeReadGeneration) {
+      setState(() => _cardArchetypeKey = null);
+    }
+    if (id == null || id.isEmpty) return;
+    String? key;
+    try {
+      key = _archetypeKeyFromCard(await widget.client.cardsGet(id));
+    } on Object {
+      key = null;
+    }
+    if (!mounted || generation != _archetypeReadGeneration) return;
+    setState(() => _cardArchetypeKey = key);
+  }
+
+  /// Navigate both the bare and `data`-wrapped card envelopes to
+  /// `extensions.airi.rwkv.archetype`. Anything not a non-empty String is
+  /// rejected; unknown keys are left for `styleFor` to resolve as neutral.
+  static String? _archetypeKeyFromCard(Map<String, dynamic>? card) {
+    if (card == null) return null;
+    for (final root in <Object?>[card, card['data']]) {
+      if (root is! Map<String, dynamic>) continue;
+      final extensions = root['extensions'];
+      if (extensions is! Map<String, dynamic>) continue;
+      final airi = extensions['airi'];
+      if (airi is! Map<String, dynamic>) continue;
+      final rwkv = airi['rwkv'];
+      if (rwkv is! Map<String, dynamic>) continue;
+      final value = rwkv['archetype'];
+      if (value is String && value.isNotEmpty) return value;
+    }
+    return null;
   }
 
   Future<void> _loadCardMetadata(String? id) async {
@@ -983,6 +1027,7 @@ class ChatScreenState extends State<ChatScreen> {
                       onChanged: (value) {
                         setState(() => _selectedCardId = value);
                         unawaited(_loadCardMetadata(value));
+                        unawaited(_loadCardArchetypeKey(value));
                       },
                     ),
                   ],
@@ -1136,81 +1181,85 @@ class ChatScreenState extends State<ChatScreen> {
                 final displayed = balanceChatCodeFences(
                   m.isUser ? m.text : stripMarkers(m.text),
                 );
+                final bubble = Card(
+                  color: m.isUser
+                      ? AppTheme.subtle.withValues(alpha: 0.2)
+                      : AppTheme.surface,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        MarkdownBody(
+                          data: displayed.isEmpty ? '…' : displayed,
+                          extensionSet: md.ExtensionSet.gitHubFlavored,
+                          // Assistant text is untrusted: never fetch remote
+                          // images from it (IP leak / tracking / probing).
+                          imageBuilder: (_, __, alt) => Text(alt ?? ''),
+                        ),
+                        // Only history turns carry a createdAt; streamed and
+                        // just-sent bubbles stay timestamp-free.
+                        if (m.createdAt != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              // The app declares only Locale('en'); intl has
+                              // no bare 'en' date data, so use the format the
+                              // Vue reference uses for en-US.
+                              DateFormat.jm('en_US').format(
+                                DateTime.fromMillisecondsSinceEpoch(
+                                  m.createdAt!,
+                                ),
+                              ),
+                              key: Key('chat-timestamp-$messageIndex'),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton(
+                            key: Key('chat-copy-$messageIndex'),
+                            icon: const Icon(Icons.copy_all_outlined, size: 18),
+                            tooltip: 'Copy source',
+                            // Copy the source, not the fence-balanced
+                            // display: synthetic closers are not authored
+                            // by the model (or the user).
+                            onPressed: () => Clipboard.setData(
+                              ClipboardData(
+                                text: m.isUser ? m.text : stripMarkers(m.text),
+                              ),
+                            ),
+                          ),
+                        ),
+                        for (final surfaceId in m.surfaceIds)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _genUi.surfaceWidget(surfaceId),
+                          ),
+                        if (m.genUiFailed && m.surfaceIds.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'A dynamic widget could not be displayed.',
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
                 return Align(
                   alignment: m.isUser
                       ? Alignment.centerRight
                       : Alignment.centerLeft,
-                  child: Card(
-                    color: m.isUser
-                        ? AppTheme.subtle.withValues(alpha: 0.2)
-                        : AppTheme.surface,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          MarkdownBody(
-                            data: displayed.isEmpty ? '…' : displayed,
-                            extensionSet: md.ExtensionSet.gitHubFlavored,
-                            // Assistant text is untrusted: never fetch remote
-                            // images from it (IP leak / tracking / probing).
-                            imageBuilder: (_, __, alt) => Text(alt ?? ''),
-                          ),
-                          // Only history turns carry a createdAt; streamed and
-                          // just-sent bubbles stay timestamp-free.
-                          if (m.createdAt != null)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                // The app declares only Locale('en'); intl has
-                                // no bare 'en' date data, so use the format the
-                                // Vue reference uses for en-US.
-                                DateFormat.jm('en_US').format(
-                                  DateTime.fromMillisecondsSinceEpoch(
-                                    m.createdAt!,
-                                  ),
-                                ),
-                                key: Key('chat-timestamp-$messageIndex'),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: IconButton(
-                              key: Key('chat-copy-$messageIndex'),
-                              icon: const Icon(
-                                Icons.copy_all_outlined,
-                                size: 18,
-                              ),
-                              tooltip: 'Copy source',
-                              // Copy the source, not the fence-balanced
-                              // display: synthetic closers are not authored
-                              // by the model (or the user).
-                              onPressed: () => Clipboard.setData(
-                                ClipboardData(
-                                  text: m.isUser
-                                      ? m.text
-                                      : stripMarkers(m.text),
-                                ),
-                              ),
-                            ),
-                          ),
-                          for (final surfaceId in m.surfaceIds)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: _genUi.surfaceWidget(surfaceId),
-                            ),
-                          if (m.genUiFailed && m.surfaceIds.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: Text(
-                                'A dynamic widget could not be displayed.',
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  // Only assistant content is styled; the user Card is used
+                  // verbatim and never inspected for a persona key.
+                  child: m.isUser
+                      ? bubble
+                      : ArchetypeStyledBubble(
+                          archetypeKey: _cardArchetypeKey,
+                          isUser: false,
+                          child: bubble,
+                        ),
                 );
               },
             ),

@@ -4,8 +4,78 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:anima_control/daemon_client/daemon_client.dart';
 import 'package:anima_control/features/chat/chat_archetype_style.dart';
+import 'package:anima_control/features/chat/chat_screen.dart';
 import 'package:anima_control/theme/app_theme.dart';
+
+import 'support/fakes.dart';
+
+/// Card envelope whose only relevant field is the explicit RWKV archetype key.
+class _ArchetypeChatClient extends FakeChatClient {
+  @override
+  Future<RpcReply> call(String action, {Map<String, dynamic>? payload}) async {
+    switch (action) {
+      case 'sessions.list':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{'sessions': <dynamic>[]},
+        );
+      case 'cards.list':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'cards': <Map<String, dynamic>>[
+              <String, dynamic>{'id': 'card-sad', 'name': 'Sad Card'},
+            ],
+            'truncated': false,
+          },
+        );
+      case 'cards.get':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'card': <String, dynamic>{
+              'spec': 'chara_card_v2',
+              'data': <String, dynamic>{
+                'name': 'Sad Card',
+                'extensions': <String, dynamic>{
+                  'airi': <String, dynamic>{
+                    'rwkv': <String, dynamic>{'archetype': 'sad'},
+                  },
+                },
+              },
+            },
+          },
+        );
+      case 'cards.metadata':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'id': payload?['id'] ?? 'card-sad',
+            'liked': false,
+            'bookmarked': false,
+          },
+        );
+      case 'chat.send':
+        return RpcReply(
+          action: action,
+          ok: true,
+          data: <String, dynamic>{
+            'sessionId': 's1',
+            'messageId': 'm-happy',
+            'accepted': true,
+          },
+        );
+      default:
+        return RpcReply(action: action, ok: true, data: <String, dynamic>{});
+    }
+  }
+}
 
 void main() {
   group('styleFor (pure key -> style)', () {
@@ -142,5 +212,73 @@ void main() {
         BoxShadow(color: Color(0x40A855F7), blurRadius: 15),
       ]);
     });
+  });
+
+  group('ChatScreen assistant archetype wiring', () {
+    testWidgets(
+      'spoofed happy text/sender cannot override the card archetype sad',
+      (tester) async {
+        final client = _ArchetypeChatClient();
+        addTearDown(client.dispose);
+        client.emitStatus(DaemonConnectionState.connected);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: ChatScreen(client: client)),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1));
+
+        await tester.enterText(find.byType(TextField), 'hello there');
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+            .onPressed!();
+        await tester.pump();
+
+        client.emitEvent(
+          tokenDelta(
+            messageId: 'm-happy',
+            delta: '[sender: happy] <|ACT:{"name":"happy"}|> so glad!',
+          ),
+        );
+        await tester.pump();
+        client.emitEvent(
+          tokenDelta(messageId: 'm-happy', delta: '', isFinal: true),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 1));
+
+        final finder = find.byKey(const Key('archetype-styled-bubble'));
+        expect(
+          finder,
+          findsOneWidget,
+          reason: 'the assistant bubble must be wrapped with the card key',
+        );
+        final decoration =
+            tester.widget<DecoratedBox>(finder).decoration as BoxDecoration;
+        expect(
+          decoration.border,
+          Border.all(color: const Color(0x803B82F6), width: 2),
+        );
+        expect(decoration.color, const Color(0x153B82F6));
+        expect(decoration.boxShadow, const <BoxShadow>[
+          BoxShadow(color: Color(0x303B82F6), blurRadius: 15),
+        ]);
+        // Explicitly not the spoofed happy tokens.
+        expect(decoration.color, isNot(const Color(0x1510B981)));
+        expect(
+          decoration.border,
+          isNot(Border.all(color: const Color(0x8010B981), width: 2)),
+        );
+
+        // The user bubble is not wrapped; only assistant content is.
+        expect(find.text('hello there'), findsOneWidget);
+        expect(
+          find.descendant(of: finder, matching: find.text('hello there')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }
